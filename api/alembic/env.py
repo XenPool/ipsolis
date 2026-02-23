@@ -5,8 +5,8 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 # Import all models so Alembic can detect them
-from api.app.database import Base
-import api.app.models  # noqa: F401 – registers all models
+from app.database import Base
+import app.models  # noqa: F401 – registers all models with Base.metadata
 
 config = context.config
 

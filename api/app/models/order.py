@@ -14,7 +14,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from api.app.database import Base
+from app.database import Base
 
 
 class OrderAction(str, enum.Enum):

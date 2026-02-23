@@ -5,10 +5,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from api.app.config import settings
-from api.app.database import get_db
-from api.app.models.order import Order, OrderStatus
-from api.app.schemas.order import OrderCreate, OrderRead, OrderUpdate
+from app.config import settings
+from app.database import get_db
+from app.models.order import Order, OrderStatus
+from app.schemas.order import OrderCreate, OrderRead, OrderUpdate
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -80,7 +80,7 @@ async def create_order(
     await db.flush()
 
     # Celery-Task dispatchen
-    from api.app.routes.webhook import _dispatch_runbook
+    from app.routes.webhook import _dispatch_runbook
     task_id = _dispatch_runbook(order)
     order.celery_task_id = task_id
     order.status = OrderStatus.PROCESSING
@@ -141,8 +141,8 @@ async def cancel_order(
 
     if order.status in (OrderStatus.DELIVERED, OrderStatus.PROCESSING):
         # Bei PROCESSING: Reclaim-Runbook triggern
-        from api.app.routes.webhook import _dispatch_runbook
-        from api.app.models.order import OrderAction
+        from app.routes.webhook import _dispatch_runbook
+        from app.models.order import OrderAction
         order.action = OrderAction.DELETE
         _dispatch_runbook(order)
 

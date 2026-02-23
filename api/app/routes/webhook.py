@@ -6,11 +6,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.app.config import settings
-from api.app.database import get_db
-from api.app.models.asset import AssetType
-from api.app.models.order import Order, OrderAction, OrderStatus
-from api.app.schemas.order import OrderRead, WebhookPayload
+from app.config import settings
+from app.database import get_db
+from app.models.asset import AssetType
+from app.models.order import Order, OrderAction, OrderStatus
+from app.schemas.order import OrderRead, WebhookPayload
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook", tags=["webhook"])

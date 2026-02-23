@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from api.app.models.asset import AssetCategory, AssetStatus
+from app.models.asset import AssetCategory, AssetStatus
 
 
 class AssetTypeRead(BaseModel):

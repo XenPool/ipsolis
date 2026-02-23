@@ -5,7 +5,7 @@ from sqlalchemy import DateTime, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
-from api.app.database import Base
+from app.database import Base
 
 
 class AuditLog(Base):

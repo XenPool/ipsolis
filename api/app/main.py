@@ -1,11 +1,13 @@
 import logging
+from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator
 
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.app.config import settings
-from api.app.routes import assets, health, orders, webhook
+from app.config import settings
+from app.routes import assets, health, orders, webhook
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -20,6 +22,21 @@ structlog.configure(
 
 logger = structlog.get_logger(__name__)
 
+
+# ── Lifespan ──────────────────────────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    logger.info(
+        "XenPool IT Selfservice API starting",
+        environment=settings.ENVIRONMENT,
+        version="0.1.0",
+    )
+    if settings.is_development:
+        logger.info("Mock mode ACTIVE – no real external calls will be made")
+    yield
+    logger.info("XenPool IT Selfservice API shutting down")
+
+
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="XenPool IT Selfservice API",
@@ -31,6 +48,7 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
@@ -47,20 +65,3 @@ app.include_router(health.router)
 app.include_router(webhook.router)
 app.include_router(orders.router)
 app.include_router(assets.router)
-
-
-# ── Startup / Shutdown ────────────────────────────────────────────────────────
-@app.on_event("startup")
-async def on_startup() -> None:
-    logger.info(
-        "XenPool IT Selfservice API starting",
-        environment=settings.ENVIRONMENT,
-        version="0.1.0",
-    )
-    if settings.is_development:
-        logger.info("Mock mode ACTIVE – no real external calls will be made")
-
-
-@app.on_event("shutdown")
-async def on_shutdown() -> None:
-    logger.info("XenPool IT Selfservice API shutting down")

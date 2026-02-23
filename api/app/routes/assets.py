@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.app.database import get_db
-from api.app.models.asset import AssetPool, AssetStatus, AssetType
-from api.app.schemas.asset import AssetPoolRead, AssetTypeRead
+from app.database import get_db
+from app.models.asset import AssetPool, AssetStatus, AssetType
+from app.schemas.asset import AssetPoolRead, AssetTypeRead
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 

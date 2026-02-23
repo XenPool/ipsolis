@@ -16,9 +16,6 @@ pypsrp==0.8.1
 # HTTP
 httpx==0.28.1
 
-# Email
-smtplib2==0.1.0
-
 # Utilities
 python-dotenv==1.0.1
 

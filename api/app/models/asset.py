@@ -15,7 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from api.app.database import Base
+from app.database import Base
 
 
 class AssetCategory(str, enum.Enum):

@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, EmailStr, field_validator
 
-from api.app.models.order import OrderAction, OrderStatus, StepStatus
+from app.models.order import OrderAction, OrderStatus, StepStatus
 
 
 # ── OrderStep ─────────────────────────────────────────────────────────────────
