@@ -42,7 +42,7 @@ class AssetType(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[AssetCategory] = mapped_column(
-        Enum(AssetCategory, name="asset_category"),
+        Enum(AssetCategory, name="asset_category", values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=AssetCategory.VDI,
     )
@@ -81,7 +81,7 @@ class AssetPool(Base):
         Integer, ForeignKey("asset_types.id"), nullable=False
     )
     status: Mapped[AssetStatus] = mapped_column(
-        Enum(AssetStatus, name="asset_status"),
+        Enum(AssetStatus, name="asset_status", values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=AssetStatus.FREE,
         index=True,
@@ -117,7 +117,6 @@ class AssetPool(Base):
     current_order: Mapped["Order | None"] = relationship(  # noqa: F821
         "Order",
         foreign_keys=[current_order_id],
-        back_populates="assigned_asset",
     )
 
     def __repr__(self) -> str:

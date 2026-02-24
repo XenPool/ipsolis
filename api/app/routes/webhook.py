@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
@@ -78,8 +79,11 @@ async def receive_servicenow_webhook(
     # Order anlegen
     order = Order(
         servicenow_ref=payload.servicenow_ref,
+        snow_req=payload.snow_req,
         user_email=str(payload.user_email),
         user_name=payload.user_name,
+        owner_email=str(payload.owner_email) if payload.owner_email else None,
+        owner_name=payload.owner_name,
         asset_type_id=asset_type.id,
         rdp_users=payload.rdp_users,
         admin_users=payload.admin_users,
@@ -98,7 +102,12 @@ async def receive_servicenow_webhook(
     order.status = OrderStatus.PROCESSING
 
     await db.commit()
-    await db.refresh(order)
+
+    # Re-fetch with relationships to avoid async lazy-load error
+    result = await db.execute(
+        select(Order).options(selectinload(Order.steps)).where(Order.id == order.id)
+    )
+    order = result.scalar_one()
 
     logger.info(
         "Webhook received: order_id=%s sn_ref=%s action=%s task=%s",
@@ -116,13 +125,16 @@ def _dispatch_runbook(order: Order) -> str:
 
     celery_app = Celery(broker=settings.CELERY_BROKER_URL)
 
+    # task_name, queue — must match worker --queues and @app.task(queue=...)
     task_map = {
-        OrderAction.PROVISION: "tasks.workflows.vdi_provision.run",
-        OrderAction.MODIFY: "tasks.workflows.vdi_modify.run",
-        OrderAction.EXTEND: "tasks.workflows.vdi_modify.run",
-        OrderAction.DELETE: "tasks.workflows.vdi_reclaim.run",
+        OrderAction.PROVISION: ("tasks.workflows.vdi_provision.run", "provision"),
+        OrderAction.MODIFY:    ("tasks.workflows.vdi_modify.run",    "provision"),
+        OrderAction.EXTEND:    ("tasks.workflows.vdi_modify.run",    "provision"),
+        OrderAction.DELETE:    ("tasks.workflows.vdi_reclaim.run",   "reclaim"),
     }
 
-    task_name = task_map.get(order.action, "tasks.workflows.vdi_provision.run")
-    result = celery_app.send_task(task_name, args=[order.id])
+    task_name, queue = task_map.get(
+        order.action, ("tasks.workflows.vdi_provision.run", "provision")
+    )
+    result = celery_app.send_task(task_name, args=[order.id], queue=queue)
     return result.id

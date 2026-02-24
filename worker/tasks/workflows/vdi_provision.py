@@ -21,7 +21,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from tasks import app
-from tasks.modules import active_roles, notifications, pool_manager, vsphere
+from tasks.modules import active_directory, active_roles, notifications, pool_manager, vsphere
 
 logger = logging.getLogger(__name__)
 
@@ -37,12 +37,14 @@ def _get_db_session() -> Session:
 
 
 def _get_order(db: Session, order_id: int) -> dict:
-    """Lädt Order-Daten aus DB (minimale Implementierung für Grundgerüst)."""
+    """Lädt Order-Daten aus DB."""
     from sqlalchemy import text
     row = db.execute(
         text("""
-            SELECT o.id, o.user_email, o.user_name, o.asset_type_id,
-                   o.rdp_users, o.admin_users, o.requested_until, o.status
+            SELECT o.id, o.user_email, o.user_name, o.owner_email, o.owner_name,
+                   o.asset_type_id, o.rdp_users, o.admin_users,
+                   o.requested_from, o.requested_until, o.status,
+                   o.servicenow_ref, o.snow_req
             FROM orders o WHERE o.id = :order_id
         """),
         {"order_id": order_id},
@@ -50,6 +52,18 @@ def _get_order(db: Session, order_id: int) -> dict:
     if not row:
         raise ValueError(f"Order {order_id} not found")
     return row._asdict()
+
+
+def _get_asset_type_info(db: Session, asset_type_id: int) -> dict:
+    """Liest Asset-Typ-Name und Beschreibung aus DB."""
+    from sqlalchemy import text
+    row = db.execute(
+        text("SELECT name, description FROM asset_types WHERE id = :id"),
+        {"id": asset_type_id},
+    ).fetchone()
+    if not row:
+        return {"name": f"Asset Type {asset_type_id}", "description": ""}
+    return {"name": row[0], "description": row[1] or ""}
 
 
 def _update_order_step(
@@ -123,6 +137,53 @@ def run(self: Task, order_id: int) -> dict:
     asset_name = None
     asset_id = None
 
+    # ── Schritt 0: Bestellbestätigung senden (non-critical) ───────────────────
+    step = "order.confirmation"
+    logger.info("[Step 0/7] %s", step)
+    _update_order_step(db, order_id, step, "running", started_at=datetime.now(timezone.utc))
+    try:
+        asset_type_info = _get_asset_type_info(db, order["asset_type_id"])
+
+        # Owner-Daten via AD vervollständigen falls nötig
+        owner_email = order.get("owner_email")
+        owner_name = order.get("owner_name")
+        if not owner_name and owner_email:
+            ad_result = active_directory.lookup_user(owner_email, db)
+            if ad_result["success"]:
+                owner_name = ad_result["display_name"]
+                owner_email = ad_result["email"]
+
+        requested_from = order["requested_from"]
+        if isinstance(requested_from, str):
+            requested_from = datetime.fromisoformat(requested_from)
+
+        result = notifications.send_order_confirmation(
+            db=db,
+            user_email=order["user_email"],
+            user_name=order["user_name"],
+            owner_email=owner_email,
+            owner_name=owner_name,
+            asset_type_name=asset_type_info["name"],
+            asset_type_description=asset_type_info["description"],
+            requested_from=requested_from,
+            requested_until=expires_at,
+            snow_req=order.get("snow_req"),
+            snow_ritm=order.get("servicenow_ref"),
+        )
+        _update_order_step(
+            db, order_id, step, "success",
+            log_output=str(result),
+            finished_at=datetime.now(timezone.utc),
+        )
+    except Exception as e:
+        # Bestätigungsmail ist nicht kritisch – Runbook weiter ausführen
+        logger.warning("[Step 0/7] order.confirmation failed (non-critical): %s", e)
+        _update_order_step(
+            db, order_id, step, "failed",
+            error=str(e),
+            finished_at=datetime.now(timezone.utc),
+        )
+
     # ── Schritt 1: VM aus Pool reservieren ────────────────────────────────────
     step = "pool.reserve_asset"
     logger.info("[Step 1/7] %s", step)
@@ -138,13 +199,15 @@ def run(self: Task, order_id: int) -> dict:
             log_output=f"Reserved: {asset_name} (id={asset_id})",
             finished_at=datetime.now(timezone.utc),
         )
-        # assigned_asset_id in Order eintragen
+        # assigned_asset_id in Order eintragen (nur wenn Asset in DB existiert)
         from sqlalchemy import text
-        db.execute(
-            text("UPDATE orders SET assigned_asset_id = :aid WHERE id = :oid"),
-            {"aid": asset_id, "oid": order_id},
-        )
-        db.commit()
+        import os as _os
+        if _os.getenv("ENVIRONMENT", "development") != "development":
+            db.execute(
+                text("UPDATE orders SET assigned_asset_id = :aid WHERE id = :oid"),
+                {"aid": asset_id, "oid": order_id},
+            )
+            db.commit()
     except Exception as e:
         _update_order_step(db, order_id, step, "failed", error=str(e), finished_at=datetime.now(timezone.utc))
         _update_order_status(db, order_id, "failed", str(e))

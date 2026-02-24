@@ -53,9 +53,16 @@ class Order(Base):
         String(50), nullable=True, index=True
     )
 
-    # Benutzerinformationen
+    # Benutzerinformationen – Besteller (Requestor)
     user_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     user_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Benutzerinformationen – Nutzer (Owner, kann vom Besteller abweichen)
+    owner_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    owner_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # ServiceNow REQ-Nummer (servicenow_ref enthält die RITM-Nummer)
+    snow_req: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
 
     # Asset-Typ und zugewiesene Maschine
     asset_type_id: Mapped[int] = mapped_column(
@@ -83,12 +90,12 @@ class Order(Base):
 
     # Aktion und Status
     action: Mapped[OrderAction] = mapped_column(
-        Enum(OrderAction, name="order_action"),
+        Enum(OrderAction, name="order_action", values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=OrderAction.PROVISION,
     )
     status: Mapped[OrderStatus] = mapped_column(
-        Enum(OrderStatus, name="order_status"),
+        Enum(OrderStatus, name="order_status", values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=OrderStatus.PENDING,
         index=True,
@@ -120,7 +127,6 @@ class Order(Base):
     assigned_asset: Mapped["AssetPool | None"] = relationship(  # noqa: F821
         "AssetPool",
         foreign_keys=[assigned_asset_id],
-        back_populates="current_order",
     )
     steps: Mapped[list["OrderStep"]] = relationship(
         "OrderStep", back_populates="order", cascade="all, delete-orphan"
@@ -144,7 +150,7 @@ class OrderStep(Base):
     )
     step_name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[StepStatus] = mapped_column(
-        Enum(StepStatus, name="step_status"),
+        Enum(StepStatus, name="step_status", values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=StepStatus.PENDING,
     )

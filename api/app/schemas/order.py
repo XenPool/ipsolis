@@ -26,12 +26,15 @@ class OrderStepRead(BaseModel):
 class OrderCreate(BaseModel):
     user_email: EmailStr
     user_name: str
+    owner_email: EmailStr | None = None
+    owner_name: str | None = None
     asset_type_id: int
     rdp_users: list[str] = []
     admin_users: list[str] = []
     requested_from: datetime
     requested_until: datetime
     action: OrderAction = OrderAction.PROVISION
+    snow_req: str | None = None
     config: dict[str, Any] | None = None
 
     @field_validator("requested_until")
@@ -53,8 +56,11 @@ class OrderUpdate(BaseModel):
 class OrderRead(BaseModel):
     id: int
     servicenow_ref: str | None
+    snow_req: str | None
     user_email: str
     user_name: str
+    owner_email: str | None
+    owner_name: str | None
     asset_type_id: int
     assigned_asset_id: int | None
     rdp_users: list[str]
@@ -78,10 +84,13 @@ class OrderRead(BaseModel):
 class WebhookPayload(BaseModel):
     """JSON-Payload den ServiceNow an /webhook schickt."""
 
-    servicenow_ref: str
+    servicenow_ref: str          # RITM-Nummer
+    snow_req: str | None = None  # REQ-Nummer
     action: OrderAction
     user_email: EmailStr
     user_name: str
+    owner_email: EmailStr | None = None
+    owner_name: str | None = None
     asset_type_name: str  # wird zu asset_type_id aufgelöst
     rdp_users: list[str] = []
     admin_users: list[str] = []

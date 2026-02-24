@@ -67,6 +67,9 @@ async def create_order(
     order = Order(
         user_email=str(payload.user_email),
         user_name=payload.user_name,
+        owner_email=str(payload.owner_email) if payload.owner_email else None,
+        owner_name=payload.owner_name,
+        snow_req=payload.snow_req,
         asset_type_id=payload.asset_type_id,
         rdp_users=payload.rdp_users,
         admin_users=payload.admin_users,
@@ -86,7 +89,12 @@ async def create_order(
     order.status = OrderStatus.PROCESSING
 
     await db.commit()
-    await db.refresh(order)
+
+    # Re-fetch with relationships to avoid async lazy-load error
+    result = await db.execute(
+        select(Order).options(selectinload(Order.steps)).where(Order.id == order.id)
+    )
+    order = result.scalar_one()
 
     logger.info("Order created: id=%s user=%s action=%s", order.id, order.user_email, order.action)
     return order

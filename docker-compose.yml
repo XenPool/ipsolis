@@ -85,6 +85,7 @@ services:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-xpuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-itselfservice}
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
+      PYTHONUNBUFFERED: "1"
     volumes:
       - ./worker/tasks:/app/tasks  # Hot-Reload im Dev-Modus
       - ./scripts:/app/scripts:ro  # PowerShell Scripts (read-only)
@@ -96,7 +97,7 @@ services:
     command: >
       celery -A tasks worker
       --loglevel=info
-      --concurrency=4
+      --pool=solo
       --queues=default,provision,reclaim,notifications
     healthcheck:
       test: ["CMD", "celery", "-A", "tasks", "inspect", "ping"]
