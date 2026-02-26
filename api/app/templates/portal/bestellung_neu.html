@@ -1,0 +1,342 @@
+{% extends "portal/base_portal.html" %}
+
+{% block title %}Neuen Zugang beantragen – XenPool Self-Service{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="/portal/" class="text-sm text-gray-500 hover:text-gray-800">← Bestellungen</a>
+</div>
+
+<h1 class="text-lg font-semibold text-gray-900 mb-6">Neuen Zugang beantragen</h1>
+
+{% if error %}
+<div class="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+  <p class="text-sm text-red-800 font-medium">{{ error }}</p>
+</div>
+{% endif %}
+
+<form method="post" action="/portal/bestellung/neu" class="space-y-6">
+
+  <!-- VM-Typ -->
+  <div class="bg-white rounded-lg border border-gray-200 p-5">
+    <h2 class="text-sm font-semibold text-gray-700 mb-4">VM-Typ</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {% for t in asset_types %}
+      <label class="relative flex cursor-pointer rounded-lg border border-gray-200 p-4 hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
+        <input type="radio" name="asset_type_id" value="{{ t.id }}"
+               {% if form and form.asset_type_id == t.id %}checked{% elif loop.first %}checked{% endif %}
+               class="sr-only">
+        <div>
+          <p class="text-sm font-medium text-gray-900">{{ t.name }}</p>
+          {% if t.description %}
+          <p class="text-xs text-gray-500 mt-0.5">{{ t.description }}</p>
+          {% endif %}
+          {% if t.config and t.config | length > 0 %}
+          <p class="text-xs text-gray-400 mt-1">
+            {% for attr in t.config %}
+              <span class="font-medium">{{ attr.label }}:</span> {{ attr.options | join(' / ') }}{% if not loop.last %} &middot; {% endif %}
+            {% endfor %}
+          </p>
+          {% endif %}
+        </div>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Attribute (dynamisch nach ausgewähltem Typ) -->
+  <div id="attr-section-wrapper" class="hidden bg-white rounded-lg border border-gray-200 p-5">
+    <h2 class="text-sm font-semibold text-gray-700 mb-4">Optionen</h2>
+    {% for t in asset_types %}
+    {% if t.config and t.config | length > 0 %}
+    <div id="attr-section-{{ t.id }}" class="attr-section hidden space-y-4">
+      {% for attr in t.config %}
+      {% set attr_type = attr.type if attr.type else ('ENUM' if attr.options else 'STRING') %}
+      <div class="attr-field"
+           {% if attr.visible_when %}
+           data-visible-when-field="{{ attr.visible_when.field }}"
+           data-visible-when-value="{{ attr.visible_when.value }}"
+           {% endif %}>
+        <label class="block text-xs font-medium text-gray-600 mb-1">
+          {{ attr.label }}{% if attr.required %} <span class="text-red-500">*</span>{% endif %}
+        </label>
+        {% if attr_type == 'BOOL' %}
+        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="checkbox" name="attr_{{ attr.key }}" value="true" class="rounded border-gray-300">
+          Ja
+        </label>
+        {% elif attr_type == 'INT' %}
+        <input type="number" name="attr_{{ attr.key }}"
+               value="{{ attr.default_value or '' }}"
+               class="w-32 rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        {% elif attr_type == 'ENUM' %}
+        <select name="attr_{{ attr.key }}"
+                class="rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+          {% if not attr.required %}<option value="">– bitte wählen –</option>{% endif %}
+          {% for opt in (attr.options or []) %}
+          <option value="{{ opt }}" {% if opt == (attr.default_value or '') %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+        {% elif attr_type == 'MULTI_ENUM' %}
+        <div class="flex flex-wrap gap-3">
+          {% for opt in (attr.options or []) %}
+          <label class="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" name="attr_{{ attr.key }}" value="{{ opt }}" class="rounded border-gray-300">
+            {{ opt }}
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}
+        <input type="text" name="attr_{{ attr.key }}"
+               value="{{ attr.default_value or '' }}"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+
+  <!-- Antragsteller -->
+  <div class="bg-white rounded-lg border border-gray-200 p-5">
+    <h2 class="text-sm font-semibold text-gray-700 mb-4">Antragsteller</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Name <span class="text-red-500">*</span></label>
+        <input type="text" name="user_name" required
+               value="{{ form.user_name if form else '' }}"
+               placeholder="Max Mustermann"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">E-Mail <span class="text-red-500">*</span></label>
+        <input type="email" name="user_email" required
+               value="{{ form.user_email if form else '' }}"
+               placeholder="m.mustermann@firma.de"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+      </div>
+    </div>
+
+    <!-- Owner (optional, aufklappbar) -->
+    <details class="mt-4">
+      <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-700 select-none">
+        + Stellvertretender Owner angeben (optional)
+      </summary>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Owner Name</label>
+          <input type="text" name="owner_name"
+                 value="{{ form.owner_name if form else '' }}"
+                 placeholder="Erika Musterfrau"
+                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Owner E-Mail</label>
+          <input type="email" name="owner_email"
+                 value="{{ form.owner_email if form else '' }}"
+                 placeholder="e.musterfrau@firma.de"
+                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <!-- Laufzeit -->
+  <div class="bg-white rounded-lg border border-gray-200 p-5">
+    <h2 class="text-sm font-semibold text-gray-700 mb-4">Laufzeit</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Von <span class="text-red-500">*</span></label>
+        <input type="date" name="requested_from" required
+               value="{{ form.requested_from if form else today }}"
+               min="{{ today }}"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Bis <span class="text-red-500">*</span></label>
+        <input type="date" name="requested_until" required
+               value="{{ form.requested_until if form else '' }}"
+               min="{{ today }}"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+      </div>
+    </div>
+  </div>
+
+  <!-- RDP-User -->
+  <div class="bg-white rounded-lg border border-gray-200 p-5">
+    <h2 class="text-sm font-semibold text-gray-700 mb-1">RDP-User</h2>
+    <p class="text-xs text-gray-500 mb-4">Benutzer mit Remote-Desktop-Zugriff (sAMAccountName oder E-Mail)</p>
+
+    <div id="rdp-list" class="flex flex-wrap gap-2 mb-3">
+      {% if form and form.rdp_users %}
+        {% for u in form.rdp_users %}
+        <div class="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-full px-3 py-1 text-sm">
+          <span class="text-blue-800">{{ u }}</span>
+          <input type="hidden" name="rdp_users" value="{{ u }}">
+          <button type="button" onclick="this.closest('div').remove()" class="text-blue-400 hover:text-red-500 font-bold leading-none">×</button>
+        </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+
+    <div class="flex gap-2 items-start">
+      <div class="flex-1">
+        <input type="text" id="rdp-input" name="q" placeholder="s.muster oder s.muster@firma.de"
+               hx-get="/portal/_validate-user"
+               hx-trigger="blur changed delay:400ms"
+               hx-target="#rdp-validate-result"
+               hx-include="this"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();addUser('rdp')}">
+        <div id="rdp-validate-result" class="mt-1 h-4"></div>
+      </div>
+      <button type="button" onclick="addUser('rdp')"
+              class="px-3 py-2 bg-gray-100 text-gray-700 text-sm rounded border border-gray-300 hover:bg-gray-200 whitespace-nowrap">
+        + Hinzufügen
+      </button>
+    </div>
+  </div>
+
+  <!-- Admin-User -->
+  <div class="bg-white rounded-lg border border-gray-200 p-5">
+    <h2 class="text-sm font-semibold text-gray-700 mb-1">Admin-User</h2>
+    <p class="text-xs text-gray-500 mb-4">Benutzer mit lokalem Administrator-Zugriff auf die VM</p>
+
+    <div id="admin-list" class="flex flex-wrap gap-2 mb-3">
+      {% if form and form.admin_users %}
+        {% for u in form.admin_users %}
+        <div class="flex items-center gap-2 bg-purple-50 border border-purple-200 rounded-full px-3 py-1 text-sm">
+          <span class="text-purple-800">{{ u }}</span>
+          <input type="hidden" name="admin_users" value="{{ u }}">
+          <button type="button" onclick="this.closest('div').remove()" class="text-purple-400 hover:text-red-500 font-bold leading-none">×</button>
+        </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+
+    <div class="flex gap-2 items-start">
+      <div class="flex-1">
+        <input type="text" id="admin-input" name="q" placeholder="s.muster oder s.muster@firma.de"
+               hx-get="/portal/_validate-user"
+               hx-trigger="blur changed delay:400ms"
+               hx-target="#admin-validate-result"
+               hx-include="this"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();addUser('admin')}">
+        <div id="admin-validate-result" class="mt-1 h-4"></div>
+      </div>
+      <button type="button" onclick="addUser('admin')"
+              class="px-3 py-2 bg-gray-100 text-gray-700 text-sm rounded border border-gray-300 hover:bg-gray-200 whitespace-nowrap">
+        + Hinzufügen
+      </button>
+    </div>
+  </div>
+
+  <!-- Submit -->
+  <div class="flex items-center justify-between">
+    <a href="/portal/" class="text-sm text-gray-500 hover:text-gray-800">Abbrechen</a>
+    <button type="submit"
+            class="px-6 py-2.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 focus:outline-none">
+      Bestellung absenden →
+    </button>
+  </div>
+
+</form>
+
+<script>
+function addUser(type) {
+  var input = document.getElementById(type + '-input');
+  var val = input.value.trim();
+  if (!val) return;
+
+  var list = document.getElementById(type + '-list');
+  var isRdp = type === 'rdp';
+  var bg    = isRdp ? 'bg-blue-50'    : 'bg-purple-50';
+  var bdr   = isRdp ? 'border-blue-200'   : 'border-purple-200';
+  var txt   = isRdp ? 'text-blue-800'  : 'text-purple-800';
+  var btn   = isRdp ? 'text-blue-400'  : 'text-purple-400';
+
+  var chip = document.createElement('div');
+  chip.className = 'flex items-center gap-2 ' + bg + ' border ' + bdr + ' rounded-full px-3 py-1 text-sm';
+  chip.innerHTML =
+    '<span class="' + txt + '">' + val + '</span>'
+    + '<input type="hidden" name="' + type + '_users" value="' + val + '">'
+    + '<button type="button" onclick="this.closest(\'div\').remove()"'
+    + ' class="' + btn + ' hover:text-red-500 font-bold leading-none">\xd7</button>';
+  list.appendChild(chip);
+  input.value = '';
+  document.getElementById(type + '-validate-result').innerHTML = '';
+}
+
+// ── Attribut-Abschnitt je Asset-Typ ────────────────────────────────────────────
+
+function applyVisibleWhen(sectionEl) {
+  sectionEl.querySelectorAll('[data-visible-when-field]').forEach(function(fieldDiv) {
+    var condField = fieldDiv.dataset.visibleWhenField;
+    var condValue = fieldDiv.dataset.visibleWhenValue;
+    var targetEl = sectionEl.querySelector('[name="' + condField + '"]');
+    if (!targetEl) targetEl = document.querySelector('[name="' + condField + '"]');
+    var curVal = '';
+    if (targetEl) {
+      if (targetEl.type === 'checkbox') { curVal = targetEl.checked ? 'true' : 'false'; }
+      else { curVal = targetEl.value; }
+    }
+    var visible = (curVal === condValue);
+    fieldDiv.classList.toggle('hidden', !visible);
+  });
+}
+
+function updateAttrSection() {
+  var checked = document.querySelector('[name="asset_type_id"]:checked');
+  var typeId = checked ? checked.value : null;
+  var wrapper = document.getElementById('attr-section-wrapper');
+
+  document.querySelectorAll('.attr-section').forEach(function(sec) {
+    sec.classList.add('hidden');
+  });
+
+  if (!typeId) {
+    if (wrapper) wrapper.classList.add('hidden');
+    return;
+  }
+
+  var target = document.getElementById('attr-section-' + typeId);
+  if (target) {
+    target.classList.remove('hidden');
+    applyVisibleWhen(target);
+    if (wrapper) wrapper.classList.remove('hidden');
+  } else {
+    if (wrapper) wrapper.classList.add('hidden');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Asset-Typ-Wechsel
+  document.querySelectorAll('[name="asset_type_id"]').forEach(function(r) {
+    r.addEventListener('change', updateAttrSection);
+  });
+
+  // visibleWhen: Felder innerhalb jedes Abschnitts beobachten
+  document.querySelectorAll('.attr-section').forEach(function(sec) {
+    sec.addEventListener('change', function() { applyVisibleWhen(sec); });
+  });
+
+  // Beim Absenden: Inputs in versteckten Sektionen deaktivieren
+  var form = document.querySelector('form');
+  if (form) {
+    form.addEventListener('submit', function() {
+      document.querySelectorAll('.attr-section.hidden input, .attr-section.hidden select').forEach(function(el) {
+        el.disabled = true;
+      });
+      document.querySelectorAll('.attr-field.hidden input, .attr-field.hidden select').forEach(function(el) {
+        el.disabled = true;
+      });
+    });
+  }
+
+  // Initialen Zustand setzen
+  updateAttrSection();
+});
+</script>
+{% endblock %}

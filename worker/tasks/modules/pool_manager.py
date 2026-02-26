@@ -7,7 +7,7 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, text as sql_text
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -20,9 +20,16 @@ def reserve_asset(
     order_id: int,
     asset_type_id: int,
     expires_at: datetime,
+    personal_provisioning_strategy: str = "assign_existing_free",
+    user_email: str | None = None,
 ) -> dict:
     """
-    Reserviert die erste freie VM passender Ausprägung.
+    Reserviert eine VM passender Ausprägung gemäß personal_provisioning_strategy.
+
+    Strategien:
+        assign_existing_free      – erste freie Instanz aus Pool (Standardverhalten)
+        reuse_existing_by_owner   – bereits zugewiesene Instanz des Users wiederverwenden
+        create_new                – neue Instanz anlegen (Stub; echte Provision per Runbook)
 
     Returns:
         {"success": True, "asset_id": int, "asset_name": str}
@@ -31,9 +38,41 @@ def reserve_asset(
     if ENVIRONMENT == "development":
         return _mock_reserve_asset(order_id, asset_type_id, expires_at)
 
-    # Production: Echte DB-Abfrage
+    # Production: Echte DB-Abfragen
     from worker.models import AssetPool, AssetStatus  # lazy import
 
+    # REUSE_EXISTING_BY_OWNER: User hat bereits eine zugewiesene Instanz
+    if personal_provisioning_strategy == "reuse_existing_by_owner" and user_email:
+        row = db.execute(
+            sql_text("""
+                SELECT id, name FROM asset_pool
+                WHERE asset_type_id = :at
+                  AND status IN ('busy', 'reserved')
+                  AND metadata->>'owner_email' = :email
+                LIMIT 1
+            """),
+            {"at": asset_type_id, "email": user_email},
+        ).fetchone()
+        if row:
+            logger.info("Reusing existing asset id=%s for user=%s", row[0], user_email)
+            return {"success": True, "asset_id": row[0], "asset_name": row[1], "reused": True}
+        # Kein vorhandenes Asset → fallback auf assign_existing_free
+        logger.info("No existing asset found for user=%s – falling back to assign_existing_free", user_email)
+
+    # CREATE_NEW: Stub – echte Instanzerstellung über Runbook-Step
+    if personal_provisioning_strategy == "create_new":
+        logger.info(
+            "[STUB] create_new: Neue Instanz für order_id=%s asset_type_id=%s – "
+            "Echte Erstellung muss über vsphere-Runbook erfolgen", order_id, asset_type_id,
+        )
+        return {
+            "success": True,
+            "asset_id": None,
+            "asset_name": f"NEW-INSTANCE-order-{order_id}",
+            "stub": True,
+        }
+
+    # ASSIGN_EXISTING_FREE (Default): Erste freie Instanz aus Pool
     asset = db.execute(
         select(AssetPool)
         .where(
@@ -94,6 +133,39 @@ def set_asset_busy(db: Session, asset_id: int, order_id: int, expires_at: dateti
     asset.expires_at = expires_at
     db.commit()
     return {"success": True}
+
+
+def check_capacity(db: Session, asset_type_id: int, pool_capacity: int) -> dict:
+    """Prüft ob Pool-Kapazität für pooled Assets noch frei ist.
+
+    Returns:
+        {"success": True, "current": n, "capacity": m}
+        {"success": False, "current": n, "capacity": m, "error": str}
+    """
+    if ENVIRONMENT == "development":
+        logger.info(
+            "[MOCK] check_capacity: asset_type_id=%s capacity=%s",
+            asset_type_id, pool_capacity,
+        )
+        return {"success": True, "current": 3, "capacity": pool_capacity, "mock": True}
+
+    from sqlalchemy import text as sql_text
+    row = db.execute(
+        sql_text("""
+            SELECT COUNT(*) FROM orders
+            WHERE asset_type_id = :at AND status IN ('processing', 'delivered')
+        """),
+        {"at": asset_type_id},
+    ).fetchone()
+    current = row[0] if row else 0
+    if current >= pool_capacity:
+        return {
+            "success": False,
+            "current": current,
+            "capacity": pool_capacity,
+            "error": f"Pool capacity reached ({current}/{pool_capacity})",
+        }
+    return {"success": True, "current": current, "capacity": pool_capacity}
 
 
 # ── Mocks ─────────────────────────────────────────────────────────────────────

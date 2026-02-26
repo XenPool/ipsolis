@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% set active_page = "orders" %}
+
+{% block title %}Bestellungen – XenPool IT Selfservice{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-center justify-between">
+  <h1 class="text-lg font-semibold text-gray-900">
+    Bestellungen
+    <span class="ml-2 text-sm font-normal text-gray-500">({{ total_count }} gesamt)</span>
+  </h1>
+</div>
+
+<!-- Filter Bar -->
+<form method="get" action="/ui/orders" class="mb-4 flex flex-wrap gap-3 items-end">
+  <div>
+    <label class="block text-xs font-medium text-gray-600 mb-1">Status</label>
+    <select name="status_filter"
+            class="rounded border border-gray-300 text-sm px-3 py-1.5 bg-white text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400">
+      <option value="">Alle</option>
+      {% for s in all_statuses %}
+      <option value="{{ s }}" {% if s == status_filter %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="block text-xs font-medium text-gray-600 mb-1">User E-Mail</label>
+    <input type="text" name="user_email" value="{{ user_email }}" placeholder="user@example.com"
+           class="rounded border border-gray-300 text-sm px-3 py-1.5 w-56 focus:outline-none focus:ring-1 focus:ring-blue-400">
+  </div>
+  <button type="submit"
+          class="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 focus:outline-none">
+    Filtern
+  </button>
+  {% if status_filter or user_email %}
+  <a href="/ui/orders" class="px-4 py-1.5 text-sm text-gray-600 hover:text-gray-900 underline">Zurücksetzen</a>
+  {% endif %}
+</form>
+
+<!-- Orders Table -->
+<div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+  <table class="min-w-full divide-y divide-gray-200 text-sm">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">ID</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">User</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Asset</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Aktion</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Steps</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Laufzeit bis</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Erstellt</th>
+        <th class="px-4 py-3"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for order in orders %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3 font-mono text-gray-600">#{{ order.id }}</td>
+        <td class="px-4 py-3">
+          <div class="font-medium text-gray-900">{{ order.user_name }}</div>
+          <div class="text-xs text-gray-500">{{ order.user_email }}</div>
+        </td>
+        <td class="px-4 py-3 text-gray-700">
+          {{ asset_names.get(order.assigned_asset_id, "–") if order.assigned_asset_id else "–" }}
+        </td>
+        <td class="px-4 py-3">
+          <span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+            {{ order.action.value }}
+          </span>
+        </td>
+        <td class="px-4 py-3">
+          <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold {{ status_colors.get(order.status.value, 'bg-gray-100 text-gray-700') }}">
+            {{ order.status.value }}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-gray-500 text-xs">
+          {% set done = order.steps | selectattr("status.value", "in", ["success", "skipped"]) | list | length %}
+          {% set total = order.steps | length %}
+          {% if total > 0 %}{{ done }}/{{ total }}{% else %}–{% endif %}
+        </td>
+        <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+          {% if order.requested_until %}{{ order.requested_until.strftime("%d.%m.%Y") }}{% else %}–{% endif %}
+        </td>
+        <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+          {{ order.created_at.strftime("%d.%m.%Y %H:%M") }}
+        </td>
+        <td class="px-4 py-3 text-right">
+          <a href="/ui/orders/{{ order.id }}" class="text-blue-600 hover:underline text-xs">Detail</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="9" class="px-4 py-8 text-center text-gray-400 text-sm">Keine Bestellungen gefunden.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Pagination -->
+{% if has_prev or has_next %}
+<div class="mt-4 flex items-center justify-between text-sm">
+  <div class="text-gray-500">Seite {{ page }}</div>
+  <div class="flex gap-2">
+    {% if has_prev %}
+    <a href="?page={{ page - 1 }}&status_filter={{ status_filter }}&user_email={{ user_email }}"
+       class="px-3 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50">← Zurück</a>
+    {% endif %}
+    {% if has_next %}
+    <a href="?page={{ page + 1 }}&status_filter={{ status_filter }}&user_email={{ user_email }}"
+       class="px-3 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50">Weiter →</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

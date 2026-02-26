@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     API_SECRET_KEY: str = "dev_secret_key_not_for_production"
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
     WEBHOOK_SECRET_TOKEN: str = "dev_webhook_token"
+    ADMIN_API_KEY: str = "xpdev_admin_key_change_in_production"
 
     # ── vSphere ───────────────────────────────────────────────────
     VSPHERE_SERVER: str = "vcenter.example.com"

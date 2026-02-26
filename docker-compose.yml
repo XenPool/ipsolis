@@ -58,7 +58,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./api/app:/app/app  # Hot-Reload im Dev-Modus
+      - ./api/app:/app/app          # Hot-Reload im Dev-Modus
+      - ./api/alembic:/app/alembic  # Migrationen ohne Rebuild sichtbar
+      - ./scripts:/app/scripts      # Script-Editor: Lese- und Schreibzugriff
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,0 +1,661 @@
+{% extends "base.html" %}
+
+{% block title %}{% if asset_type %}Asset-Typ bearbeiten{% else %}Neuer Asset-Typ{% endif %} – XenPool Admin{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="/ui/asset-types" class="text-sm text-gray-500 hover:text-gray-800">← Asset-Typen</a>
+</div>
+
+<h1 class="text-lg font-semibold text-gray-900 mb-6">
+  {% if asset_type %}Asset-Typ bearbeiten: {{ asset_type.name }}{% else %}Neuer Asset-Typ{% endif %}
+</h1>
+
+<div class="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+  <form id="at-form" class="space-y-6">
+
+    <!-- Name + Beschreibung -->
+    <div class="grid grid-cols-1 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Name <span class="text-red-500">*</span></label>
+        <input type="text" name="name" required
+               value="{{ asset_type.name if asset_type else '' }}"
+               placeholder="z.B. Business VDI"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Beschreibung</label>
+        <input type="text" name="description"
+               value="{{ asset_type.description if asset_type else '' }}"
+               placeholder="Kurzbeschreibung"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+      </div>
+    </div>
+
+    <!-- Kategorie -->
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-2">Kategorie</label>
+      {% set categories = [
+        ("platform_access",       "VDI / Server / Cloud",          "VDI, Server, Cloud Workloads"),
+        ("application_access",    "Business- & SaaS-Apps",         "Business- & SaaS-Anwendungen"),
+        ("data_access",           "Daten & Collaboration",          "Files, DBs, Collaboration"),
+        ("device_access",         "Clients / MDM / WLAN",           "Clients, MDM, WLAN"),
+        ("infrastructure_access", "Netzwerk / Firewall / Admin",    "Netzwerk, Firewall, Admin-Tiering")
+      ] %}
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {% for cat_val, cat_short, cat_desc in categories %}
+        <label class="relative flex cursor-pointer rounded-lg border border-gray-200 p-3 hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50"
+               title="{{ cat_desc }}">
+          <input type="radio" name="category" value="{{ cat_val }}"
+                 {% if asset_type and (asset_type.category.value == cat_val or asset_type.category == cat_val) %}checked
+                 {% elif not asset_type and cat_val == 'platform_access' %}checked{% endif %}
+                 class="sr-only">
+          <div>
+            <p class="text-sm font-medium text-gray-900">{{ cat_short }}</p>
+            <p class="text-xs text-gray-400 mt-0.5">{{ cat_desc }}</p>
+          </div>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Zuweisungsmodell -->
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-2">Zuweisungsmodell</label>
+      <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+
+        <label class="relative flex cursor-pointer rounded-lg border border-gray-200 p-3 hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
+          <input type="radio" name="assignment_model" value="assigned_personal"
+                 {% if not asset_type or asset_type.assignment_model == 'assigned_personal' %}checked{% endif %}
+                 class="sr-only">
+          <div>
+            <p class="text-sm font-medium text-gray-900">Persönlich</p>
+            <p class="text-xs text-gray-400 mt-0.5">Eindeutige Instanz, 1:1 zugewiesen (Personal VDI, Laptop)</p>
+          </div>
+        </label>
+
+        <label class="relative flex cursor-pointer rounded-lg border border-gray-200 p-3 hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
+          <input type="radio" name="assignment_model" value="dedicated_shared"
+                 {% if asset_type and asset_type.assignment_model == 'dedicated_shared' %}checked{% endif %}
+                 class="sr-only">
+          <div>
+            <p class="text-sm font-medium text-gray-900">Gemeinsam</p>
+            <p class="text-xs text-gray-400 mt-0.5">Instanz existiert, kein fester Owner (Jump Host, Shared WS)</p>
+          </div>
+        </label>
+
+        <label class="relative flex cursor-pointer rounded-lg border border-gray-200 p-3 hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
+          <input type="radio" name="assignment_model" value="capacity_pooled"
+                 {% if asset_type and asset_type.assignment_model == 'capacity_pooled' %}checked{% endif %}
+                 class="sr-only">
+          <div>
+            <p class="text-sm font-medium text-gray-900">Kontingent</p>
+            <p class="text-xs text-gray-400 mt-0.5">Pool/Lizenzslot ohne individuelle Instanz (RDS, SaaS)</p>
+          </div>
+        </label>
+
+      </div>
+    </div>
+
+    <!-- Deprovision Policy -->
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-2">Deprovision-Strategie
+        <span class="text-gray-400 font-normal ml-1">– was passiert bei Revoke/Abbestellen?</span>
+      </label>
+      {% set dp_opts = [
+        ("access_only",          "Nur Zugriff entziehen",    "Gruppenmitgliedschaft entfernen – Instanz bleibt unberührt"),
+        ("return_to_pool",       "Zurück in Pool",            "Zuweisung lösen, Ressource wieder für andere verfügbar"),
+        ("deallocate_instance",  "Instanz anhalten",          "VM stoppen / deallocaten, aber nicht löschen"),
+        ("delete_instance",      "Instanz löschen",           "VM unwiderruflich löschen inkl. Cleanup"),
+        ("custom_runbook",       "Runbook",                   "Revoke-Logik über separates Runbook definieren"),
+      ] %}
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        {% for dp_val, dp_short, dp_desc in dp_opts %}
+        <label class="relative flex cursor-pointer rounded-lg border border-gray-200 p-3 hover:border-orange-400 has-[:checked]:border-orange-500 has-[:checked]:bg-orange-50">
+          <input type="radio" name="deprovision_policy" value="{{ dp_val }}"
+                 {% if asset_type and (asset_type.deprovision_policy == dp_val) %}checked
+                 {% elif not asset_type and dp_val == 'access_only' %}checked{% endif %}
+                 class="sr-only">
+          <div>
+            <p class="text-sm font-medium text-gray-900">{{ dp_short }}</p>
+            <p class="text-xs text-gray-400 mt-0.5">{{ dp_desc }}</p>
+          </div>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Persönliche Zuweisung (nur bei assigned_personal) -->
+    <div id="personal-provision-section" class="{% if not asset_type or asset_type.assignment_model != 'assigned_personal' %}hidden{% endif %} border border-blue-100 rounded-lg p-4 bg-blue-50/40">
+      <label class="block text-xs font-semibold text-blue-700 mb-3">Persönliche Zuweisung
+        <span class="font-normal text-blue-500 ml-1">– nur bei Zuweisungsmodell "Persönlich"</span>
+      </label>
+
+      <div class="mb-3">
+        <label class="block text-xs font-medium text-gray-600 mb-2">Provisionierungs-Strategie</label>
+        {% set ps_opts = [
+          ("assign_existing_free",     "Freie Instanz zuweisen",    "Erste verfügbare Instanz aus dem Pool reservieren"),
+          ("reuse_existing_by_owner",  "Bestehende wiederverwenden","Falls User bereits eine Instanz hat, diese nutzen"),
+          ("create_new",               "Neue Instanz anlegen",      "Neue VM erzeugen (Stub – über Runbook zu implementieren)"),
+        ] %}
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {% for ps_val, ps_short, ps_desc in ps_opts %}
+          <label class="relative flex cursor-pointer rounded-lg border border-gray-200 bg-white p-3 hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
+            <input type="radio" name="personal_provisioning_strategy" value="{{ ps_val }}"
+                   {% if asset_type and asset_type.personal_provisioning_strategy == ps_val %}checked
+                   {% elif not asset_type and ps_val == 'assign_existing_free' %}checked{% endif %}
+                   class="sr-only">
+            <div>
+              <p class="text-sm font-medium text-gray-900">{{ ps_short }}</p>
+              <p class="text-xs text-gray-400 mt-0.5">{{ ps_desc }}</p>
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="flex flex-wrap gap-4 items-end">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Naming-Pattern <span class="text-gray-400">(optional)</span></label>
+          <input type="text" name="naming_pattern"
+                 value="{{ asset_type.naming_pattern if asset_type and asset_type.naming_pattern else '' }}"
+                 placeholder="z.B. VDI-{sam} oder LAP-{employeeId}"
+                 class="w-52 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Max. Instanzen/User</label>
+          <input type="number" name="max_per_user" min="1"
+                 value="{{ asset_type.max_per_user if asset_type else 1 }}"
+                 class="w-20 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        </div>
+      </div>
+    </div>
+
+    <!-- Pool-Kapazität (nur für capacity_pooled) -->
+    <div id="capacity-row" class="{% if not asset_type or asset_type.assignment_model != 'capacity_pooled' %}hidden{% endif %}">
+      <label class="block text-xs font-medium text-gray-600 mb-1">Pool-Kapazität (max. gleichzeitige Zugänge)</label>
+      <input type="number" name="pool_capacity" min="1"
+             value="{{ asset_type.pool_capacity if asset_type else '' }}"
+             placeholder="z.B. 20"
+             class="w-32 rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+    </div>
+
+    <!-- Lifecycle -->
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-2">Laufzeit-Vorgaben (optional)</label>
+      <div class="flex flex-wrap gap-4 items-end">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Standard-Laufzeit (Tage)</label>
+          <input type="number" name="lifecycle_ttl_days" min="1"
+                 value="{{ asset_type.lifecycle_ttl_days if asset_type and asset_type.lifecycle_ttl_days else '' }}"
+                 placeholder="z.B. 90"
+                 class="w-28 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        </div>
+        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer pb-1">
+          <input type="checkbox" name="lifecycle_renewable"
+                 {% if not asset_type or asset_type.lifecycle_renewable %}checked{% endif %}
+                 class="rounded border-gray-300">
+          Verlängerbar
+        </label>
+      </div>
+    </div>
+
+    <!-- Automation Strategy -->
+    {% set strat = asset_type.automation_strategy if asset_type and asset_type.automation_strategy else ('group_only' if asset_type and asset_type.automation_mode == 'targets_only' else 'runbook_only') %}
+    <div class="border-t border-gray-100 pt-5">
+      <label class="block text-xs font-medium text-gray-600 mb-2">Automations-Modus</label>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+
+        <label class="relative flex cursor-pointer rounded-lg border border-gray-200 p-4 hover:border-green-400 has-[:checked]:border-green-500 has-[:checked]:bg-green-50">
+          <input type="radio" name="automation_strategy" value="group_only"
+                 {% if strat == 'group_only' %}checked{% endif %}
+                 class="sr-only" onchange="updateAutomationUI()">
+          <div>
+            <p class="text-sm font-medium text-gray-900">Gruppen-Zugriff</p>
+            <p class="text-xs text-gray-500 mt-0.5">Zugriff per AD/Entra-Gruppenmitgliedschaft – kein Script nötig</p>
+          </div>
+        </label>
+
+        <label class="relative flex cursor-pointer rounded-lg border border-gray-200 p-4 hover:border-purple-400 has-[:checked]:border-purple-500 has-[:checked]:bg-purple-50">
+          <input type="radio" name="automation_strategy" value="runbook_only"
+                 {% if strat == 'runbook_only' or not asset_type %}checked{% endif %}
+                 class="sr-only" onchange="updateAutomationUI()">
+          <div>
+            <p class="text-sm font-medium text-gray-900">Runbook</p>
+            <p class="text-xs text-gray-500 mt-0.5">Benutzerdefiniertes Runbook mit PowerShell-Scripts</p>
+          </div>
+        </label>
+
+        <label class="relative flex cursor-pointer rounded-lg border border-gray-200 p-4 hover:border-indigo-400 has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50">
+          <input type="radio" name="automation_strategy" value="composite"
+                 {% if strat == 'composite' %}checked{% endif %}
+                 class="sr-only" onchange="updateAutomationUI()">
+          <div>
+            <p class="text-sm font-medium text-gray-900">Kombiniert</p>
+            <p class="text-xs text-gray-500 mt-0.5">Gruppen-Targets und Runbook in konfigurierbarer Reihenfolge</p>
+          </div>
+        </label>
+
+      </div>
+    </div>
+
+    <!-- COMPOSITE: Reihenfolge -->
+    {% set cs0type = asset_type.composite_steps[0].type if asset_type and asset_type.composite_steps else 'GROUP_TARGETS' %}
+    <div id="composite-order-section" class="{% if strat != 'composite' %}hidden{% endif %} rounded-lg bg-indigo-50 border border-indigo-100 px-4 py-3">
+      <label class="block text-xs font-semibold text-indigo-700 mb-2">Reihenfolge
+        <span class="font-normal text-indigo-500 ml-1">– welcher Schritt wird zuerst ausgeführt?</span>
+      </label>
+      <div class="flex gap-6">
+        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="radio" name="composite_order" value="groups_first"
+                 {% if cs0type != 'RUNBOOK' %}checked{% endif %}>
+          <span>Gruppen-Zugriff zuerst</span>
+        </label>
+        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="radio" name="composite_order" value="runbook_first"
+                 {% if cs0type == 'RUNBOOK' %}checked{% endif %}>
+          <span>Runbook zuerst</span>
+        </label>
+      </div>
+      <p class="mt-2 text-xs text-indigo-400">Beide Schritte werden ausgeführt – bei kritischem Fehler bricht die Sequenz ab.</p>
+    </div>
+
+    <!-- Targets-Editor (bei group_only und composite) -->
+    <div id="targets-section" class="{% if strat not in ('group_only', 'composite') %}hidden{% endif %}">
+      <label class="block text-xs font-medium text-gray-600 mb-1">
+        Zugriffs-Targets
+        <span class="text-gray-400 font-normal ml-1">– welche Gruppen erhält der Nutzer</span>
+      </label>
+      <div class="grid grid-cols-12 gap-2 mb-1 text-xs text-gray-400 px-0.5">
+        <span class="col-span-3">Typ</span>
+        <span class="col-span-5">Identifier (DN / ObjectId)</span>
+        <span class="col-span-3">Zugewiesen an</span>
+      </div>
+      <div id="target-rows" class="space-y-2">
+        {% if asset_type and asset_type.targets %}
+          {% for tgt in asset_type.targets %}
+          <div class="grid grid-cols-12 gap-2 items-center target-row">
+            <select name="target_type[]"
+                    class="col-span-3 rounded border border-gray-300 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
+              <option value="ad_group" {% if tgt.type == 'ad_group' %}selected{% endif %}>AD-Gruppe</option>
+              <option value="entra_group" {% if tgt.type == 'entra_group' %}selected{% endif %}>Entra-Gruppe</option>
+              <option value="rds_collection" {% if tgt.type == 'rds_collection' %}selected{% endif %}>RDS Collection</option>
+              <option value="other" {% if tgt.type == 'other' %}selected{% endif %}>Sonstiges</option>
+            </select>
+            <input type="text" name="target_identifier[]" value="{{ tgt.identifier }}" placeholder="CN=Gruppe,OU=..."
+                   class="col-span-5 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
+            <select name="target_principal_source[]"
+                    class="col-span-3 rounded border border-gray-300 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
+              <option value="requester" {% if tgt.principal_source == 'requester' %}selected{% endif %}>Antragsteller</option>
+              <option value="rdp_users" {% if tgt.principal_source == 'rdp_users' %}selected{% endif %}>RDP-User</option>
+              <option value="admin_users" {% if tgt.principal_source == 'admin_users' %}selected{% endif %}>Admin-User</option>
+              <option value="all_users" {% if tgt.principal_source == 'all_users' %}selected{% endif %}>Alle User</option>
+            </select>
+            <button type="button" onclick="this.closest('.target-row').remove()"
+                    class="col-span-1 text-red-400 hover:text-red-600 text-lg leading-none text-center">×</button>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="grid grid-cols-12 gap-2 items-center target-row">
+            <select name="target_type[]"
+                    class="col-span-3 rounded border border-gray-300 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
+              <option value="ad_group">AD-Gruppe</option>
+              <option value="entra_group">Entra-Gruppe</option>
+              <option value="rds_collection">RDS Collection</option>
+              <option value="other">Sonstiges</option>
+            </select>
+            <input type="text" name="target_identifier[]" placeholder="CN=Gruppe,OU=..."
+                   class="col-span-5 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
+            <select name="target_principal_source[]"
+                    class="col-span-3 rounded border border-gray-300 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
+              <option value="requester">Antragsteller</option>
+              <option value="rdp_users">RDP-User</option>
+              <option value="admin_users">Admin-User</option>
+              <option value="all_users">Alle User</option>
+            </select>
+            <button type="button" onclick="this.closest('.target-row').remove()"
+                    class="col-span-1 text-red-400 hover:text-red-600 text-lg leading-none text-center">×</button>
+          </div>
+        {% endif %}
+      </div>
+      <button type="button" onclick="addTargetRow()"
+              class="mt-2 text-xs text-green-600 hover:underline">+ Target hinzufügen</button>
+      <p class="mt-2 text-xs text-gray-400">
+        Provision/Revoke läuft automatisch über diese Targets – kein Runbook-Editor nötig.
+      </p>
+    </div>
+
+    <!-- Runbook-Hinweis (bei runbook_only und composite) -->
+    <div id="runbook-hint" class="{% if strat == 'group_only' %}hidden{% endif %} rounded-lg bg-purple-50 border border-purple-100 px-4 py-3">
+      <p class="text-xs text-purple-700">
+        Runbook-Modus: Nach dem Anlegen das Runbook im
+        <a href="/ui/runbooks" class="underline hover:text-purple-900">Runbook-Editor</a>
+        konfigurieren (Provision, Modify, Delete).
+      </p>
+    </div>
+
+    <!-- Attribute -->
+    <div class="border-t border-gray-100 pt-5">
+      <label class="block text-xs font-medium text-gray-600 mb-1">
+        Attribute
+        <span class="text-gray-400 font-normal ml-1">– optional, z.B. CPU-Optionen, Lizenztypen</span>
+      </label>
+      <div class="grid grid-cols-12 gap-2 mb-1 text-xs text-gray-400 px-0.5">
+        <span class="col-span-3">Schlüssel</span>
+        <span class="col-span-3">Anzeigename</span>
+        <span class="col-span-2">Typ</span>
+        <span class="col-span-1 text-center" title="Pflichtfeld">Pfl.</span>
+        <span class="col-span-2">Standardwert</span>
+        <span class="col-span-1"></span>
+      </div>
+      <div id="attr-rows" class="space-y-2">
+        {% if asset_type and asset_type.config %}
+          {% for attr in asset_type.config %}
+          {% set attr_type = attr.type if attr.type else ('ENUM' if attr.options else 'STRING') %}
+          <div class="attr-row">
+            <div class="grid grid-cols-12 gap-2 items-center">
+              <input type="text" name="attr_key[]" value="{{ attr.key }}" placeholder="z.B. cpu"
+                     class="col-span-3 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+              <input type="text" name="attr_label[]" value="{{ attr.label }}" placeholder="z.B. Anzahl CPU"
+                     class="col-span-3 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+              <select name="attr_type[]" onchange="updateAttrTypeUI(this.closest('.attr-row'))"
+                      class="col-span-2 rounded border border-gray-300 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+                <option value="STRING"     {% if attr_type == 'STRING' %}selected{% endif %}>Text</option>
+                <option value="INT"        {% if attr_type == 'INT' %}selected{% endif %}>Zahl</option>
+                <option value="BOOL"       {% if attr_type == 'BOOL' %}selected{% endif %}>Ja/Nein</option>
+                <option value="ENUM"       {% if attr_type == 'ENUM' %}selected{% endif %}>Auswahl</option>
+                <option value="MULTI_ENUM" {% if attr_type == 'MULTI_ENUM' %}selected{% endif %}>Mehrfach</option>
+              </select>
+              <div class="col-span-1 flex justify-center">
+                <input type="checkbox" name="attr_required[]" value="1"
+                       {% if attr.required %}checked{% endif %}
+                       class="rounded border-gray-300 mt-0.5">
+              </div>
+              <input type="text" name="attr_default[]"
+                     value="{{ attr.default_value or '' }}"
+                     placeholder="Standard"
+                     class="col-span-2 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+              <button type="button" onclick="this.closest('.attr-row').remove()"
+                      class="col-span-1 text-red-400 hover:text-red-600 text-lg leading-none text-center">×</button>
+            </div>
+            <div class="attr-options-row grid grid-cols-12 gap-2 items-center mt-1 {% if attr_type not in ('ENUM', 'MULTI_ENUM') %}hidden{% endif %}">
+              <span class="col-span-2 text-xs text-gray-400 text-right pr-1">Optionen:</span>
+              <input type="text" name="attr_options[]"
+                     value="{{ attr.options | default([]) | join(', ') }}"
+                     placeholder="z.B. 2, 4, 8"
+                     class="col-span-9 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+              <span class="col-span-1"></span>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="attr-row">
+            <div class="grid grid-cols-12 gap-2 items-center">
+              <input type="text" name="attr_key[]" placeholder="z.B. cpu"
+                     class="col-span-3 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+              <input type="text" name="attr_label[]" placeholder="z.B. Anzahl CPU"
+                     class="col-span-3 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+              <select name="attr_type[]" onchange="updateAttrTypeUI(this.closest('.attr-row'))"
+                      class="col-span-2 rounded border border-gray-300 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+                <option value="STRING">Text</option>
+                <option value="INT">Zahl</option>
+                <option value="BOOL">Ja/Nein</option>
+                <option value="ENUM">Auswahl</option>
+                <option value="MULTI_ENUM">Mehrfach</option>
+              </select>
+              <div class="col-span-1 flex justify-center">
+                <input type="checkbox" name="attr_required[]" value="1" class="rounded border-gray-300 mt-0.5">
+              </div>
+              <input type="text" name="attr_default[]" placeholder="Standard"
+                     class="col-span-2 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+              <button type="button" onclick="this.closest('.attr-row').remove()"
+                      class="col-span-1 text-red-400 hover:text-red-600 text-lg leading-none text-center">×</button>
+            </div>
+            <div class="attr-options-row grid grid-cols-12 gap-2 items-center mt-1 hidden">
+              <span class="col-span-2 text-xs text-gray-400 text-right pr-1">Optionen:</span>
+              <input type="text" name="attr_options[]" placeholder="z.B. 2, 4, 8"
+                     class="col-span-9 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+              <span class="col-span-1"></span>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+      <button type="button" onclick="addAttrRow()"
+              class="mt-2 text-xs text-blue-600 hover:underline">+ Attribut hinzufügen</button>
+    </div>
+
+    <!-- Buttons -->
+    <div class="flex items-center justify-between pt-2 border-t border-gray-100">
+      <a href="/ui/asset-types" class="text-sm text-gray-500 hover:text-gray-800">Abbrechen</a>
+      <button type="button" onclick="submitForm()"
+              class="px-6 py-2.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        {% if asset_type %}Speichern{% else %}Anlegen{% endif %} →
+      </button>
+    </div>
+
+  </form>
+
+  <div id="form-result" class="mt-4"></div>
+</div>
+
+<script>
+function updateAutomationUI() {
+  var sel = document.querySelector('[name="automation_strategy"]:checked');
+  var val = sel ? sel.value : 'runbook_only';
+  var isGroup    = val === 'group_only';
+  var isRunbook  = val === 'runbook_only';
+  var isComposite = val === 'composite';
+
+  document.getElementById('targets-section').classList.toggle('hidden', !isGroup && !isComposite);
+  document.getElementById('runbook-hint').classList.toggle('hidden', !isRunbook && !isComposite);
+  document.getElementById('composite-order-section').classList.toggle('hidden', !isComposite);
+}
+
+// Compat-Alias (wird von älteren onchange-Attributen gerufen)
+function showTargetsEditor(show) { updateAutomationUI(); }
+
+// Mapping: assignment_model → sinnvoller deprovision_policy Default
+var _dpDefaults = {
+  'capacity_pooled':   'return_to_pool',
+  'dedicated_shared':  'access_only',
+  'assigned_personal': 'deallocate_instance',
+};
+
+function toggleAssignmentDependents() {
+  var sel = document.querySelector('[name="assignment_model"]:checked');
+  var val = sel ? sel.value : 'assigned_personal';
+
+  // Pool-Kapazität nur bei capacity_pooled
+  document.getElementById('capacity-row').classList.toggle('hidden', val !== 'capacity_pooled');
+
+  // Persönliche Zuweisung nur bei assigned_personal
+  document.getElementById('personal-provision-section').classList.toggle('hidden', val !== 'assigned_personal');
+
+  // Deprovision-Policy Default setzen
+  var dp = _dpDefaults[val] || 'access_only';
+  var dpRadio = document.querySelector('[name="deprovision_policy"][value="' + dp + '"]');
+  if (dpRadio) dpRadio.checked = true;
+}
+
+// Compat-Alias (wird auch von bestehenden Listeners gerufen)
+function toggleCapacity() { toggleAssignmentDependents(); }
+
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('[name="assignment_model"]').forEach(function(r) {
+    r.addEventListener('change', toggleAssignmentDependents);
+  });
+});
+
+function addTargetRow() {
+  var row = document.createElement('div');
+  row.className = 'grid grid-cols-12 gap-2 items-center target-row';
+  row.innerHTML =
+    '<select name="target_type[]"'
+    + ' class="col-span-3 rounded border border-gray-300 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">'
+    + '<option value="ad_group">AD-Gruppe</option>'
+    + '<option value="entra_group">Entra-Gruppe</option>'
+    + '<option value="rds_collection">RDS Collection</option>'
+    + '<option value="other">Sonstiges</option>'
+    + '</select>'
+    + '<input type="text" name="target_identifier[]" placeholder="CN=Gruppe,OU=..."'
+    + ' class="col-span-5 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">'
+    + '<select name="target_principal_source[]"'
+    + ' class="col-span-3 rounded border border-gray-300 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">'
+    + '<option value="requester">Antragsteller</option>'
+    + '<option value="rdp_users">RDP-User</option>'
+    + '<option value="admin_users">Admin-User</option>'
+    + '<option value="all_users">Alle User</option>'
+    + '</select>'
+    + '<button type="button" onclick="this.closest(\'.target-row\').remove()"'
+    + ' class="col-span-1 text-red-400 hover:text-red-600 text-lg leading-none text-center">\xd7</button>';
+  document.getElementById('target-rows').appendChild(row);
+}
+
+function updateAttrTypeUI(row) {
+  var typeEl = row.querySelector('[name="attr_type[]"]');
+  var optRow = row.querySelector('.attr-options-row');
+  var needsOpts = typeEl && (typeEl.value === 'ENUM' || typeEl.value === 'MULTI_ENUM');
+  if (optRow) optRow.classList.toggle('hidden', !needsOpts);
+}
+
+function addAttrRow() {
+  var row = document.createElement('div');
+  row.className = 'attr-row';
+  row.innerHTML =
+    '<div class="grid grid-cols-12 gap-2 items-center">'
+    + '<input type="text" name="attr_key[]" placeholder="z.B. cpu"'
+    + ' class="col-span-3 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">'
+    + '<input type="text" name="attr_label[]" placeholder="z.B. Anzahl CPU"'
+    + ' class="col-span-3 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">'
+    + '<select name="attr_type[]" onchange="updateAttrTypeUI(this.closest(\'.attr-row\'))"'
+    + ' class="col-span-2 rounded border border-gray-300 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">'
+    + '<option value="STRING">Text</option>'
+    + '<option value="INT">Zahl</option>'
+    + '<option value="BOOL">Ja/Nein</option>'
+    + '<option value="ENUM">Auswahl</option>'
+    + '<option value="MULTI_ENUM">Mehrfach</option>'
+    + '</select>'
+    + '<div class="col-span-1 flex justify-center">'
+    + '<input type="checkbox" name="attr_required[]" value="1" class="rounded border-gray-300 mt-0.5">'
+    + '</div>'
+    + '<input type="text" name="attr_default[]" placeholder="Standard"'
+    + ' class="col-span-2 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">'
+    + '<button type="button" onclick="this.closest(\'.attr-row\').remove()"'
+    + ' class="col-span-1 text-red-400 hover:text-red-600 text-lg leading-none text-center">\xd7</button>'
+    + '</div>'
+    + '<div class="attr-options-row grid grid-cols-12 gap-2 items-center mt-1 hidden">'
+    + '<span class="col-span-2 text-xs text-gray-400 text-right pr-1">Optionen:</span>'
+    + '<input type="text" name="attr_options[]" placeholder="z.B. 2, 4, 8"'
+    + ' class="col-span-9 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">'
+    + '<span class="col-span-1"></span>'
+    + '</div>';
+  document.getElementById('attr-rows').appendChild(row);
+}
+
+async function submitForm() {
+  var form = document.getElementById('at-form');
+  var name = form.querySelector('[name="name"]').value.trim();
+  if (!name) { alert('Name ist erforderlich'); return; }
+
+  // Targets
+  var tTypes   = Array.from(form.querySelectorAll('[name="target_type[]"]')).map(function(s) { return s.value; });
+  var tIdents  = Array.from(form.querySelectorAll('[name="target_identifier[]"]')).map(function(i) { return i.value.trim(); });
+  var tSources = Array.from(form.querySelectorAll('[name="target_principal_source[]"]')).map(function(s) { return s.value; });
+  var targets = [];
+  tTypes.forEach(function(t, i) {
+    if (!tIdents[i]) return;
+    targets.push({ type: t, identifier: tIdents[i], principal_source: tSources[i] || 'requester' });
+  });
+
+  // Attribute
+  var config = [];
+  Array.from(form.querySelectorAll('.attr-row')).forEach(function(rowEl) {
+    var k = rowEl.querySelector('[name="attr_key[]"]').value.trim();
+    if (!k) return;
+    var type    = rowEl.querySelector('[name="attr_type[]"]').value;
+    var reqCb   = rowEl.querySelector('[name="attr_required[]"]');
+    var required = reqCb ? reqCb.checked : false;
+    var defEl   = rowEl.querySelector('[name="attr_default[]"]');
+    var defVal  = defEl ? defEl.value.trim() : '';
+    var optEl   = rowEl.querySelector('[name="attr_options[]"]');
+    var opts    = optEl && optEl.value.trim()
+      ? optEl.value.trim().split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; })
+      : [];
+    var entry = {
+      key: k,
+      label: rowEl.querySelector('[name="attr_label[]"]').value.trim() || k,
+      type: type,
+      required: required,
+    };
+    if (defVal) entry.default_value = defVal;
+    if (opts.length) entry.options = opts;
+    config.push(entry);
+  });
+
+  var automationStrategyEl = form.querySelector('[name="automation_strategy"]:checked');
+  var automationStrategy = automationStrategyEl ? automationStrategyEl.value : 'runbook_only';
+  var assignmentModel = form.querySelector('[name="assignment_model"]:checked').value;
+  var dpPolicyEl = form.querySelector('[name="deprovision_policy"]:checked');
+  var psStratEl = form.querySelector('[name="personal_provisioning_strategy"]:checked');
+
+  // Legacy automation_mode (deprecated fallback für bestehende Records)
+  var legacyModeMap = { 'group_only': 'targets_only', 'runbook_only': 'runbook', 'composite': 'runbook' };
+  var automationMode = legacyModeMap[automationStrategy] || 'runbook';
+
+  // composite_steps aus Reihenfolge-Radio ableiten
+  var compositeSteps = null;
+  if (automationStrategy === 'composite') {
+    var compositeOrderEl = form.querySelector('[name="composite_order"]:checked');
+    var compositeOrderVal = compositeOrderEl ? compositeOrderEl.value : 'groups_first';
+    if (compositeOrderVal === 'runbook_first') {
+      compositeSteps = [{ type: 'RUNBOOK', order: 1 }, { type: 'GROUP_TARGETS', order: 2 }];
+    } else {
+      compositeSteps = [{ type: 'GROUP_TARGETS', order: 1 }, { type: 'RUNBOOK', order: 2 }];
+    }
+  }
+
+  var showTargets = automationStrategy === 'group_only' || automationStrategy === 'composite';
+
+  var payload = {
+    name: name,
+    description: form.querySelector('[name="description"]').value.trim() || null,
+    category: form.querySelector('[name="category"]:checked').value,
+    assignment_model: assignmentModel,
+    pool_capacity: form.querySelector('[name="pool_capacity"]').value
+      ? parseInt(form.querySelector('[name="pool_capacity"]').value) : null,
+    lifecycle_ttl_days: form.querySelector('[name="lifecycle_ttl_days"]').value
+      ? parseInt(form.querySelector('[name="lifecycle_ttl_days"]').value) : null,
+    lifecycle_renewable: form.querySelector('[name="lifecycle_renewable"]').checked,
+    automation_mode: automationMode,
+    automation_strategy: automationStrategy,
+    composite_steps: compositeSteps,
+    targets: showTargets && targets.length ? targets : null,
+    config: config.length ? config : null,
+    deprovision_policy: dpPolicyEl ? dpPolicyEl.value : 'access_only',
+    personal_provisioning_strategy: assignmentModel === 'assigned_personal' && psStratEl
+      ? psStratEl.value : null,
+    naming_pattern: form.querySelector('[name="naming_pattern"]').value.trim() || null,
+    max_per_user: form.querySelector('[name="max_per_user"]').value
+      ? parseInt(form.querySelector('[name="max_per_user"]').value) : 1,
+  };
+
+  {% if asset_type %}
+  var resp = await fetch('/admin/asset-types/{{ asset_type.id }}', {
+    method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+  });
+  {% else %}
+  var resp = await fetch('/admin/asset-types', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+  });
+  {% endif %}
+
+  if (resp.ok) {
+    window.location.href = '/ui/asset-types';
+  } else {
+    var err = await resp.json();
+    document.getElementById('form-result').innerHTML =
+      '<div class="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">' + JSON.stringify(err) + '</div>';
+  }
+}
+</script>
+{% endblock %}

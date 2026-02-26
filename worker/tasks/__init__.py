@@ -16,6 +16,7 @@ app = Celery(
         "tasks.workflows.vdi_provision",
         "tasks.workflows.vdi_modify",
         "tasks.workflows.vdi_reclaim",
+        "tasks.workflows.dynamic_runner",
     ],
 )
 
@@ -32,18 +33,14 @@ app.conf.update(
         "tasks.workflows.vdi_provision.*": {"queue": "provision"},
         "tasks.workflows.vdi_modify.*": {"queue": "provision"},
         "tasks.workflows.vdi_reclaim.*": {"queue": "reclaim"},
+        "tasks.workflows.dynamic_runner.*": {"queue": "provision"},
         "tasks.modules.notifications.*": {"queue": "notifications"},
     },
     beat_schedule={
-        # Stündlich ablaufende Assets prüfen
+        # Stündlich ablaufende Assets prüfen + Erinnerungsmails senden
         "check-expiring-assets": {
             "task": "tasks.workflows.vdi_reclaim.check_expiring_assets",
             "schedule": crontab(minute=0),  # Jede volle Stunde
-        },
-        # Erinnerungsmail X Stunden vor Ablauf
-        "send-expiry-reminders": {
-            "task": "tasks.modules.notifications.send_expiry_reminders",
-            "schedule": crontab(minute=0, hour="*/4"),  # Alle 4 Stunden
         },
     },
 )

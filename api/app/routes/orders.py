@@ -9,6 +9,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.order import Order, OrderStatus
 from app.schemas.order import OrderCreate, OrderRead, OrderUpdate
+from app.utils.audit import _order_snap, aaudit
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -88,6 +89,7 @@ async def create_order(
     order.celery_task_id = task_id
     order.status = OrderStatus.PROCESSING
 
+    await aaudit(db, "order", order.id, "created", new=_order_snap(order), by="api:create_order")
     await db.commit()
 
     # Re-fetch with relationships to avoid async lazy-load error
@@ -117,6 +119,8 @@ async def update_order(
             detail=f"Order {order_id} not found",
         )
 
+    old_snap = _order_snap(order)
+
     if payload.rdp_users is not None:
         order.rdp_users = payload.rdp_users
     if payload.admin_users is not None:
@@ -128,6 +132,7 @@ async def update_order(
     if payload.error_message is not None:
         order.error_message = payload.error_message
 
+    await aaudit(db, "order", order.id, "updated", old=old_snap, new=_order_snap(order), by="api:update_order")
     await db.commit()
     await db.refresh(order)
     return order
@@ -147,6 +152,8 @@ async def cancel_order(
             detail=f"Order {order_id} not found",
         )
 
+    old_status = order.status.value
+
     if order.status in (OrderStatus.DELIVERED, OrderStatus.PROCESSING):
         # Bei PROCESSING: Reclaim-Runbook triggern
         from app.routes.webhook import _dispatch_runbook
@@ -155,4 +162,9 @@ async def cancel_order(
         _dispatch_runbook(order)
 
     order.status = OrderStatus.CANCELLED
+    await aaudit(
+        db, "order", order.id, "status_changed",
+        old={"status": old_status}, new={"status": "cancelled"},
+        by="api:cancel_order",
+    )
     await db.commit()

@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models.asset import AssetType
 from app.models.order import Order, OrderAction, OrderStatus
 from app.schemas.order import OrderRead, WebhookPayload
+from app.utils.audit import _order_snap, aaudit
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook", tags=["webhook"])
@@ -101,6 +102,12 @@ async def receive_servicenow_webhook(
     order.celery_task_id = task_id
     order.status = OrderStatus.PROCESSING
 
+    await aaudit(
+        db, "order", order.id, "created",
+        new=_order_snap(order),
+        by="api:servicenow_webhook",
+        ctx=order.servicenow_ref,
+    )
     await db.commit()
 
     # Re-fetch with relationships to avoid async lazy-load error
@@ -120,21 +127,20 @@ async def receive_servicenow_webhook(
 
 
 def _dispatch_runbook(order: Order) -> str:
-    """Dispatcht den passenden Celery-Runbook-Task für die Order."""
+    """Dispatcht den dynamischen Runbook-Task für die Order.
+
+    Alle Actions laufen über dynamic_runner.run, der das passende
+    Runbook aus der DB lädt. Queue bleibt action-abhängig.
+    """
     from celery import Celery
 
     celery_app = Celery(broker=settings.CELERY_BROKER_URL)
 
-    # task_name, queue — must match worker --queues and @app.task(queue=...)
-    task_map = {
-        OrderAction.PROVISION: ("tasks.workflows.vdi_provision.run", "provision"),
-        OrderAction.MODIFY:    ("tasks.workflows.vdi_modify.run",    "provision"),
-        OrderAction.EXTEND:    ("tasks.workflows.vdi_modify.run",    "provision"),
-        OrderAction.DELETE:    ("tasks.workflows.vdi_reclaim.run",   "reclaim"),
-    }
-
-    task_name, queue = task_map.get(
-        order.action, ("tasks.workflows.vdi_provision.run", "provision")
+    # DELETE/reclaim auf separate Queue für Priorität
+    queue = "reclaim" if order.action == OrderAction.DELETE else "provision"
+    result = celery_app.send_task(
+        "tasks.workflows.dynamic_runner.run",
+        args=[order.id],
+        queue=queue,
     )
-    result = celery_app.send_task(task_name, args=[order.id], queue=queue)
     return result.id

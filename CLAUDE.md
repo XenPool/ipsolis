@@ -1,5 +1,9 @@
 # XenPool IT Selfservice – Projektkontext für Claude Code
 
+## Task-Backlog
+Offene und abgeschlossene Tasks: siehe [`TASKS.md`](TASKS.md)
+Bitte zu Sessionbeginn lesen und bei Abschluss eines Tasks aktualisieren.
+
 ## Projektziel
 
 Eigenständiger, produktreifer Ersatz für **Ivanti Automation** zur Orchestrierung
@@ -16,7 +20,7 @@ Bringt eigenes Self-Service-Portal mit, kann aber auch ServiceNow-Webhooks empfa
 | Datenbank | PostgreSQL (via SQLAlchemy + Alembic) |
 | Externe Systeme | vSphere (PowerCLI), Active Roles (WinRM/pypsrp), SCCM, SMTP |
 | Container | Docker / Docker Compose |
-| Frontend | React oder HTMX (später) |
+| Frontend | HTMX + Tailwind CSS |
 
 ## Branch-Strategie
 
@@ -33,8 +37,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-API läuft dann auf http://localhost:8000
-Celery Flower (Monitoring) auf http://localhost:5555
+API läuft auf http://localhost:8000 · Celery Flower auf http://localhost:5555
 
 ## Entwicklungshinweise
 
@@ -44,9 +47,9 @@ Alle externen Aufrufe (vSphere, Active Roles, SCCM, SMTP) sind gemockt wenn
 Verhalten inkl. Laufzeiten und Logging.
 
 ### PowerShell Scripts
-**Die Scripts in `scripts/` werden NICHT verändert.** Sie sind atomar, fertig und
-geben strukturiertes JSON auf stdout zurück (exit 0 = OK, exit 1 = Fehler).
-Python ist der Dirigent, PowerShell die Ausführenden.
+**Die Scripts in `scripts/ivanti/` werden NICHT verändert.** Sie sind die originalen
+Ivanti-Module und dienen als Vorlage/Referenz für neue Scripts in `scripts/vsphere/`
+und `scripts/active_roles/`.
 
 ### Datenbankmigrationen
 ```bash
@@ -57,22 +60,39 @@ docker compose exec api alembic revision --autogenerate -m "beschreibung"
 docker compose exec api alembic upgrade head
 ```
 
-### Wichtige Dateipfade
-- `api/app/main.py` – FastAPI-Einstiegspunkt
-- `api/app/config.py` – Pydantic Settings (Env-Variablen)
-- `api/app/database.py` – SQLAlchemy Engine + Session
-- `api/app/models/` – ORM-Models
-- `api/app/routes/` – API-Routen
-- `worker/tasks/__init__.py` – Celery App-Instanz
-- `worker/tasks/workflows/` – Runbooks (Modul-Ketten)
-- `worker/tasks/modules/` – Atomare Module
+**Hinweis:** Alembic-Migrationsdateien werden beim Image-Build eingebettet.
+Bei laufendem Container: `docker cp` + `alembic upgrade head` direkt im Container.
+Enum-Typen (z.B. `order_action`) bereits vorhanden → `op.execute(raw SQL)` statt
+`op.create_table()` mit `sa.Enum`, um `DuplicateObject`-Fehler zu vermeiden.
+
+### Jinja2 in Templates
+JS-Template-Literals mit `{{` / `}}` kollidieren mit Jinja2-Syntax.
+Statt `` `{{${p}}}` `` immer `'{{' + p + '}}'` (String-Konkatenation) verwenden.
+
+## Wichtige Dateipfade
+
+| Pfad | Beschreibung |
+|------|-------------|
+| `api/app/main.py` | FastAPI-Einstiegspunkt, Router-Registrierung |
+| `api/app/config.py` | Pydantic Settings (Env-Variablen) |
+| `api/app/database.py` | SQLAlchemy Engine + Session |
+| `api/app/models/` | ORM-Models |
+| `api/app/routes/` | API-Routen |
+| `api/app/templates/` | Jinja2-Templates (HTMX-UI + Portal) |
+| `api/app/utils/module_registry.py` | Modul-Metadaten-Spiegel für Admin-UI |
+| `worker/tasks/__init__.py` | Celery App-Instanz |
+| `worker/tasks/workflows/` | Runbook-Workflows (Celery Tasks) |
+| `worker/tasks/modules/` | Atomare Module (pool, active_roles, vsphere, …) |
+| `scripts/ivanti/` | Referenz-Scripts (read-only) |
+| `scripts/vsphere/` | Editierbare vSphere-Scripts |
+| `scripts/active_roles/` | Editierbare Active-Roles-Scripts |
 
 ## Konzeptionelle Entsprechungen Ivanti → XenPool
 
 | Ivanti | XenPool IT Selfservice |
 |---|---|
 | Modul | `worker/tasks/modules/*.py` |
-| Runbook | `worker/tasks/workflows/*.py` (Celery Task-Chain) |
+| Runbook | DB-Tabelle `runbook_definitions` + `runbook_steps` (dynamic_runner) |
 | Variablenverwaltung | `app_config`-Tabelle + `.env` |
 | Dispatcher | FastAPI `/webhook` oder `/orders` |
 | Audit-Log | `audit_log`-Tabelle (unveränderlich) |
@@ -82,13 +102,17 @@ docker compose exec api alembic upgrade head
 - **vSphere**: PowerCLI-Scripts via `subprocess` (pwsh in Worker-Container)
 - **Active Roles**: pypsrp / WinRM → Windows-Host mit Active Roles Console
 - **SCCM**: WinRM-Aufruf für Unattended Reinstall-Tasksequenz
-- **SMTP**: Python `smtplib` oder `fastmail` für Benachrichtigungen
+- **SMTP**: Python `smtplib` für Benachrichtigungen
 
 ## Datenbankschema (Überblick)
 
-- `asset_types` – Typdefinitionen (Test VDI, Business VDI, etc.)
-- `asset_pool` – Alle verwalteten VMs/Assets
-- `orders` – Bestellungen und Änderungsaufträge
-- `order_steps` – Einzelne Modul-Schritte je Bestellung
-- `audit_log` – Unveränderliches Protokoll
-- `app_config` – Zentrale Konfigurationsvariablen
+| Tabelle | Beschreibung |
+|---------|-------------|
+| `asset_types` | Typdefinitionen inkl. `asset_model` (named/pooled), `pool_capacity` |
+| `asset_pool` | Alle verwalteten VMs/Assets |
+| `orders` | Bestellungen und Änderungsaufträge |
+| `order_steps` | Einzelne Modul-Schritte je Bestellung (mit structured JSON log) |
+| `runbook_definitions` | Ein Runbook pro Asset-Typ + Action |
+| `runbook_steps` | Geordnete Modul-Aufrufe je Runbook |
+| `audit_log` | Unveränderliches Protokoll |
+| `app_config` | Zentrale Konfigurationsvariablen |

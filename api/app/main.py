@@ -5,9 +5,10 @@ from collections.abc import AsyncGenerator
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.routes import assets, health, orders, webhook
+from app.routes import admin, admin_runbooks, assets, health, orders, portal, scripts, ui, webhook
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -60,8 +61,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Static Files ──────────────────────────────────────────────────────────────
+app.mount("/static", StaticFiles(directory="/app/app/static"), name="static")
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 app.include_router(health.router)
 app.include_router(webhook.router)
 app.include_router(orders.router)
 app.include_router(assets.router)
+app.include_router(admin.router)
+app.include_router(admin_runbooks.router)
+app.include_router(scripts.router)
+app.include_router(ui.router)
+app.include_router(portal.router)

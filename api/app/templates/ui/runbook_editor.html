@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+
+{% block title %}Runbook bearbeiten – XenPool Admin{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="/ui/runbooks" class="text-sm text-gray-500 hover:text-gray-800">← Runbooks</a>
+</div>
+
+<div class="mb-6 flex items-start justify-between">
+  <div>
+    <h1 class="text-lg font-semibold text-gray-900">{{ runbook.name }}</h1>
+    <p class="text-xs text-gray-500 mt-1">
+      Asset-Typ: <strong>{{ asset_type.name if asset_type else runbook.asset_type_id }}</strong> ·
+      Action: <strong class="font-mono">{{ runbook.action }}</strong>
+    </p>
+  </div>
+  <label class="flex items-center gap-2 cursor-pointer">
+    <input type="checkbox" id="is-active-toggle"
+           {% if runbook.is_active %}checked{% endif %}
+           onchange="toggleActive()"
+           class="w-4 h-4 rounded">
+    <span class="text-sm text-gray-600">Aktiv</span>
+  </label>
+</div>
+
+<!-- Steps Liste -->
+<div class="bg-white rounded-lg border border-gray-200 mb-6">
+  <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-gray-50">
+    <h2 class="text-sm font-semibold text-gray-700">Steps</h2>
+    <span class="text-xs text-gray-400">{{ runbook.steps | length }} Steps</span>
+  </div>
+
+  <div id="steps-list">
+    {% if runbook.steps %}
+    {% for step in runbook.steps %}
+    <div class="step-row flex items-center gap-3 px-4 py-3 border-b border-gray-100 last:border-0 hover:bg-gray-50"
+         data-step-id="{{ step.id }}">
+      <!-- Position Badge -->
+      <span class="w-6 h-6 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 text-xs font-mono font-medium flex-shrink-0">
+        {{ step.position }}
+      </span>
+
+      <!-- Step-Info -->
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-medium text-gray-900">{{ step.step_name }}</span>
+          <span class="text-xs font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{{ step.module_key }}</span>
+          {% if step.is_critical %}
+          <span class="text-xs px-1 py-0.5 rounded bg-red-100 text-red-600">kritisch</span>
+          {% else %}
+          <span class="text-xs px-1 py-0.5 rounded bg-gray-100 text-gray-400">optional</span>
+          {% endif %}
+        </div>
+        {% if step.params_template %}
+        <div class="text-xs text-gray-400 mt-0.5 font-mono">
+          {{ step.params_template.keys() | list | join(', ') }}
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Aktionen -->
+      <div class="flex items-center gap-1 flex-shrink-0">
+        <button onclick="moveStep({{ step.id }}, 'up')"
+                class="p-1 text-gray-400 hover:text-gray-700 rounded" title="Nach oben">↑</button>
+        <button onclick="moveStep({{ step.id }}, 'down')"
+                class="p-1 text-gray-400 hover:text-gray-700 rounded" title="Nach unten">↓</button>
+        <button onclick="editStep({{ step.id }}, {{ step | tojson | safe }})"
+                class="px-2 py-1 text-xs text-gray-500 hover:text-blue-600 rounded">Bearbeiten</button>
+        <button onclick="deleteStep({{ step.id }})"
+                class="px-2 py-1 text-xs text-gray-400 hover:text-red-500 rounded">Entfernen</button>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div id="no-steps" class="px-4 py-8 text-center text-gray-400 text-sm">
+      Noch keine Steps definiert. Füge unten den ersten Step hinzu.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Step hinzufügen -->
+<div class="bg-white rounded-lg border border-gray-200 p-5">
+  <h2 class="text-sm font-semibold text-gray-700 mb-4">+ Step hinzufügen</h2>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Step-Name <span class="text-red-500">*</span></label>
+      <input type="text" id="new-step-name" placeholder="z.B. RDP-Gruppe konfigurieren"
+             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Modul <span class="text-red-500">*</span></label>
+      <select id="new-step-module"
+              hx-get="/ui/_module-params"
+              hx-trigger="change"
+              hx-include="this"
+              hx-vals='{"key": ""}'
+              hx-target="#module-info"
+              onchange="this.setAttribute('hx-vals', JSON.stringify({key: this.value})); htmx.trigger(this, 'change')"
+              class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        <option value="">– Modul wählen –</option>
+        {% for group in module_groups %}
+        {% if grouped_modules.get(group) %}
+        <optgroup label="{{ group }}">
+          {% for m in grouped_modules[group] %}
+          <option value="{{ m.key }}">{{ m.key }}</option>
+          {% endfor %}
+        </optgroup>
+        {% endif %}
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <!-- Modul-Info (HTMX) -->
+  <div id="module-info" class="mb-4"></div>
+
+  <div class="grid grid-cols-3 gap-4 mb-4">
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Kritisch</label>
+      <label class="flex items-center gap-2 text-sm cursor-pointer">
+        <input type="checkbox" id="new-step-critical" checked class="w-4 h-4">
+        Ja (Abbruch bei Fehler)
+      </label>
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Retry-Count</label>
+      <input type="number" id="new-step-retry" value="3" min="0" max="10"
+             class="w-24 rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Timeout (s)</label>
+      <input type="number" id="new-step-timeout" value="120" min="10"
+             class="w-24 rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+    </div>
+  </div>
+
+  <!-- Params Template (JSON) -->
+  <div class="mb-4">
+    <label class="block text-xs font-medium text-gray-600 mb-1">
+      Params Template (JSON)
+      <span class="font-normal text-gray-400 ml-1">– Verwende {{key}} für Kontext-Variablen</span>
+    </label>
+    <textarea id="new-step-params" rows="4"
+              placeholder='{"asset_name": "{{asset_name}}", "rdp_users": "{{rdp_users}}"}'
+              class="w-full rounded border border-gray-300 text-xs font-mono px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"></textarea>
+    <p class="text-xs text-gray-400 mt-1">
+      Verfügbare Kontext-Variablen: order_id, asset_type_id, asset_name, asset_id,
+      rdp_users, admin_users, user_email, user_name, expires_at, requested_from, u.v.m.
+    </p>
+  </div>
+
+  <div class="flex justify-end">
+    <button type="button" onclick="addStep()"
+            class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+      Step hinzufügen
+    </button>
+  </div>
+  <div id="step-result" class="mt-2"></div>
+</div>
+
+<script>
+const RUNBOOK_ID = {{ runbook.id }};
+
+async function toggleActive() {
+  const active = document.getElementById('is-active-toggle').checked;
+  await fetch(`/admin/runbooks/${RUNBOOK_ID}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({is_active: active}),
+  });
+}
+
+async function addStep() {
+  const name = document.getElementById('new-step-name').value.trim();
+  const module_key = document.getElementById('new-step-module').value;
+  const paramsRaw = document.getElementById('new-step-params').value.trim();
+
+  if (!name || !module_key) {
+    alert('Step-Name und Modul sind erforderlich');
+    return;
+  }
+
+  let params_template = null;
+  if (paramsRaw) {
+    try { params_template = JSON.parse(paramsRaw); }
+    catch(e) { alert('Params Template ist kein gültiges JSON'); return; }
+  }
+
+  // Position = nächste nach letztem Step
+  const rows = document.querySelectorAll('.step-row');
+  const position = rows.length + 1;
+
+  const resp = await fetch(`/admin/runbooks/${RUNBOOK_ID}/steps`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      position,
+      step_name: name,
+      module_key,
+      params_template,
+      is_critical: document.getElementById('new-step-critical').checked,
+      retry_count: parseInt(document.getElementById('new-step-retry').value),
+      timeout_seconds: parseInt(document.getElementById('new-step-timeout').value),
+    }),
+  });
+
+  if (resp.ok) {
+    location.reload();
+  } else {
+    const err = await resp.json();
+    document.getElementById('step-result').innerHTML =
+      `<div class="text-xs text-red-600">${JSON.stringify(err)}</div>`;
+  }
+}
+
+async function deleteStep(stepId) {
+  if (!confirm('Step wirklich entfernen?')) return;
+  const resp = await fetch(`/admin/runbooks/${RUNBOOK_ID}/steps/${stepId}`, {method: 'DELETE'});
+  if (resp.ok) location.reload();
+}
+
+async function moveStep(stepId, direction) {
+  const rows = [...document.querySelectorAll('.step-row')];
+  const idx = rows.findIndex(r => r.dataset.stepId == stepId);
+  if (direction === 'up' && idx === 0) return;
+  if (direction === 'down' && idx === rows.length - 1) return;
+
+  const swap = direction === 'up' ? idx - 1 : idx + 1;
+  [rows[idx], rows[swap]] = [rows[swap], rows[idx]];
+
+  const newOrder = rows.map(r => parseInt(r.dataset.stepId));
+  await fetch(`/admin/runbooks/${RUNBOOK_ID}/steps/reorder`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({step_ids: newOrder}),
+  });
+  location.reload();
+}
+
+function editStep(stepId, step) {
+  document.getElementById('new-step-name').value = step.step_name;
+  document.getElementById('new-step-module').value = step.module_key;
+  document.getElementById('new-step-critical').checked = step.is_critical;
+  document.getElementById('new-step-retry').value = step.retry_count;
+  document.getElementById('new-step-timeout').value = step.timeout_seconds;
+  document.getElementById('new-step-params').value =
+    step.params_template ? JSON.stringify(step.params_template, null, 2) : '';
+  document.getElementById('new-step-name').focus();
+}
+</script>
+{% endblock %}

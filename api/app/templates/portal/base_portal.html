@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="de" class="h-full bg-gray-50">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}XenPool Self-Service{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous"></script>
+</head>
+<body class="h-full">
+
+  <nav class="bg-white border-b border-gray-200 shadow-sm">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-14">
+        <div class="flex items-center gap-6">
+          <a href="/portal/" class="font-semibold text-gray-900 text-sm tracking-wide">
+            XenPool Self-Service
+          </a>
+          <div class="flex gap-1">
+            <a href="/portal/"
+               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'overview' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+              Meine Bestellungen
+            </a>
+            <a href="/portal/bestellung/neu"
+               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'new' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+              Neue VDI bestellen
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+</body>
+</html>

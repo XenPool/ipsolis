@@ -11,7 +11,19 @@ class AssetTypeRead(BaseModel):
     name: str
     description: str | None
     category: AssetCategory
-    config: dict[str, Any] | None
+    config: list[dict[str, Any]] | None
+    assignment_model: str
+    pool_capacity: int | None
+    automation_mode: str
+    targets: list[dict[str, Any]] | None
+    lifecycle_ttl_days: int | None
+    lifecycle_renewable: bool
+    deprovision_policy: str
+    personal_provisioning_strategy: str | None
+    naming_pattern: str | None
+    max_per_user: int
+    automation_strategy: str
+    composite_steps: list[dict[str, Any]] | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -26,7 +38,7 @@ class AssetPoolRead(BaseModel):
     expires_at: datetime | None
     last_reclaim_at: datetime | None
     # ORM attribute is "asset_metadata"; serialise as "metadata" in JSON responses
-    asset_metadata: dict[str, Any] | None = Field(None, alias="metadata")
+    asset_metadata: dict[str, Any] | None = Field(None, serialization_alias="metadata")
     created_at: datetime
     updated_at: datetime
 

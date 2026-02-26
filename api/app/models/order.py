@@ -25,12 +25,16 @@ class OrderAction(str, enum.Enum):
 
 
 class OrderStatus(str, enum.Enum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    DELIVERED = "delivered"
-    FAILED = "failed"
-    EXPIRED = "expired"
-    CANCELLED = "cancelled"
+    PENDING      = "pending"
+    PROCESSING   = "processing"
+    PROVISIONING = "provisioning"   # Worker hat Provision gestartet
+    PROVISIONED  = "provisioned"    # Provision abgeschlossen (aktiv)
+    DELIVERED    = "delivered"      # Legacy-Alias für PROVISIONED
+    REVOKING     = "revoking"       # Worker hat Revoke gestartet
+    REVOKED      = "revoked"        # Revoke abgeschlossen
+    FAILED       = "failed"
+    EXPIRED      = "expired"
+    CANCELLED    = "cancelled"
 
 
 class StepStatus(str, enum.Enum):
@@ -106,6 +110,9 @@ class Order(Base):
 
     # Zusätzliche Parameter als JSON (flexible Erweiterung)
     config: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    # Snapshot nach erfolgreicher Provision (deterministisches Revoke)
+    provisioned_state: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     # Fehlermeldung bei Status FAILED
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init:*)",
+      "Bash(git checkout:*)",
+      "Bash(git remote add:*)",
+      "Bash(git add:*)",
+      "Bash(git config:*)",
+      "Bash(git commit:*)",
+      "Bash(export PATH=\"/c/Program Files/GitHub CLI:$PATH\")",
+      "Bash(gh auth login:*)",
+      "Bash(gh repo create:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(git push:*)",
+      "Bash(python3:*)",
+      "Bash(git rm:*)",
+      "Bash(docker compose:*)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(__NEW_LINE_9bf2a83e7e4b7c56__ echo \"\")",
+      "Bash(docker cp:*)",
+      "Bash(docker exec xp_postgres psql -U xpuser -d itselfservice -c \"SELECT id, status, error_message FROM orders WHERE id=12;\")"
+    ]
+  }
+}

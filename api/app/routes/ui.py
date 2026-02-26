@@ -1,0 +1,391 @@
+"""Admin UI – Server-Side Rendered HTML via Jinja2 + HTMX."""
+
+import logging
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.database import get_db
+from app.models.asset import AssetPool, AssetStatus, AssetType
+from app.models.order import Order, OrderStatus
+from app.models.runbook import RunbookDefinition, RunbookStep
+from app.utils.auth import require_admin_key
+from app.utils.module_registry import MODULE_GROUPS, MODULE_MAP, MODULE_METADATA
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(
+    prefix="/ui",
+    tags=["ui"],
+    dependencies=[Depends(require_admin_key)],
+)
+templates = Jinja2Templates(directory="/app/app/templates")
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+_STATUS_COLORS = {
+    "pending":    "bg-gray-100 text-gray-700",
+    "processing": "bg-blue-100 text-blue-700",
+    "delivered":  "bg-green-100 text-green-700",
+    "failed":     "bg-red-100 text-red-700",
+    "expired":    "bg-orange-100 text-orange-700",
+    "cancelled":  "bg-gray-100 text-gray-500",
+}
+
+_STEP_COLORS = {
+    "pending": "bg-gray-100 text-gray-600",
+    "running": "bg-blue-100 text-blue-700",
+    "success": "bg-green-100 text-green-700",
+    "failed":  "bg-red-100 text-red-700",
+    "skipped": "bg-gray-100 text-gray-400",
+}
+
+_ASSET_STATUS_COLORS = {
+    "free":        "bg-green-100 text-green-700",
+    "reserved":    "bg-yellow-100 text-yellow-700",
+    "busy":        "bg-blue-100 text-blue-700",
+    "reclaiming":  "bg-orange-100 text-orange-700",
+    "maintenance": "bg-gray-100 text-gray-600",
+}
+
+
+async def _pool_summary(db: AsyncSession) -> dict:
+    """Returns pool status counts."""
+    rows = await db.execute(
+        select(AssetPool.status, func.count().label("cnt"))
+        .group_by(AssetPool.status)
+    )
+    counts = {row.status.value: row.cnt for row in rows}
+    total = sum(counts.values())
+    return {
+        "free":        counts.get("free", 0),
+        "busy":        counts.get("busy", 0),
+        "reclaiming":  counts.get("reclaiming", 0),
+        "maintenance": counts.get("maintenance", 0),
+        "reserved":    counts.get("reserved", 0),
+        "total":       total,
+    }
+
+
+# ── HTMX Fragment: Pool Summary ───────────────────────────────────────────────
+
+@router.get("/_pool-summary", response_class=HTMLResponse)
+async def pool_summary_fragment(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """HTMX-Fragment: Pool-Status-Karten (auto-refreshed every 30s)."""
+    summary = await _pool_summary(db)
+    return templates.TemplateResponse(
+        request, "fragments/pool_summary.html",
+        {"summary": summary, "asset_status_colors": _ASSET_STATUS_COLORS},
+    )
+
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+
+@router.get("/", response_class=HTMLResponse)
+async def dashboard(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    summary = await _pool_summary(db)
+
+    # Last 20 orders
+    result = await db.execute(
+        select(Order)
+        .options(selectinload(Order.steps))
+        .order_by(Order.created_at.desc())
+        .limit(20)
+    )
+    recent_orders = result.scalars().all()
+
+    # Asset name lookup for assigned assets
+    asset_ids = [o.assigned_asset_id for o in recent_orders if o.assigned_asset_id]
+    asset_names: dict[int, str] = {}
+    if asset_ids:
+        asset_rows = await db.execute(
+            select(AssetPool.id, AssetPool.name).where(AssetPool.id.in_(asset_ids))
+        )
+        asset_names = {row.id: row.name for row in asset_rows}
+
+    return templates.TemplateResponse(
+        request, "dashboard.html",
+        {
+            "summary": summary,
+            "recent_orders": recent_orders,
+            "asset_names": asset_names,
+            "status_colors": _STATUS_COLORS,
+            "asset_status_colors": _ASSET_STATUS_COLORS,
+            "now": datetime.now(timezone.utc),
+        },
+    )
+
+
+# ── Orders List ───────────────────────────────────────────────────────────────
+
+@router.get("/orders", response_class=HTMLResponse)
+async def orders_list(
+    request: Request,
+    status_filter: str | None = None,
+    user_email: str | None = None,
+    page: int = 1,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    limit = 50
+    offset = (page - 1) * limit
+
+    query = select(Order).options(selectinload(Order.steps))
+    if status_filter:
+        try:
+            query = query.where(Order.status == OrderStatus(status_filter))
+        except ValueError:
+            pass
+    if user_email:
+        query = query.where(Order.user_email.ilike(f"%{user_email}%"))
+
+    query = query.order_by(Order.created_at.desc()).limit(limit).offset(offset)
+    result = await db.execute(query)
+    orders = result.scalars().all()
+
+    # Count total for pagination
+    count_query = select(func.count()).select_from(Order)
+    if status_filter:
+        try:
+            count_query = count_query.where(Order.status == OrderStatus(status_filter))
+        except ValueError:
+            pass
+    if user_email:
+        count_query = count_query.where(Order.user_email.ilike(f"%{user_email}%"))
+    total_count = (await db.execute(count_query)).scalar_one()
+
+    # Asset name lookup
+    asset_ids = [o.assigned_asset_id for o in orders if o.assigned_asset_id]
+    asset_names: dict[int, str] = {}
+    if asset_ids:
+        asset_rows = await db.execute(
+            select(AssetPool.id, AssetPool.name).where(AssetPool.id.in_(asset_ids))
+        )
+        asset_names = {row.id: row.name for row in asset_rows}
+
+    return templates.TemplateResponse(
+        request, "orders.html",
+        {
+            "orders": orders,
+            "asset_names": asset_names,
+            "status_colors": _STATUS_COLORS,
+            "status_filter": status_filter or "",
+            "user_email": user_email or "",
+            "page": page,
+            "total_count": total_count,
+            "limit": limit,
+            "has_prev": page > 1,
+            "has_next": offset + limit < total_count,
+            "all_statuses": [s.value for s in OrderStatus],
+        },
+    )
+
+
+# ── Order Detail ──────────────────────────────────────────────────────────────
+
+@router.get("/orders/{order_id}", response_class=HTMLResponse)
+async def order_detail(
+    request: Request,
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    result = await db.execute(
+        select(Order)
+        .options(selectinload(Order.steps))
+        .where(Order.id == order_id)
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Order {order_id} not found")
+
+    # Asset name
+    asset_name = None
+    if order.assigned_asset_id:
+        asset_row = await db.execute(
+            select(AssetPool.name).where(AssetPool.id == order.assigned_asset_id)
+        )
+        asset_name = asset_row.scalar_one_or_none()
+
+    # Compute step durations
+    steps_with_duration = []
+    for step in sorted(order.steps, key=lambda s: s.id):
+        duration = None
+        if step.started_at and step.finished_at:
+            delta = step.finished_at - step.started_at.replace(
+                tzinfo=step.finished_at.tzinfo
+            ) if step.finished_at.tzinfo and not step.started_at.tzinfo else (
+                step.finished_at - step.started_at
+            )
+            duration = f"{delta.total_seconds():.1f}s"
+        steps_with_duration.append({"step": step, "duration": duration})
+
+    return templates.TemplateResponse(
+        request, "order_detail.html",
+        {
+            "order": order,
+            "asset_name": asset_name,
+            "steps_with_duration": steps_with_duration,
+            "status_colors": _STATUS_COLORS,
+            "step_colors": _STEP_COLORS,
+        },
+    )
+
+
+# ── Asset Types UI ─────────────────────────────────────────────────────────────
+
+@router.get("/asset-types", response_class=HTMLResponse)
+async def asset_types_list(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    result = await db.execute(select(AssetType).order_by(AssetType.name))
+    asset_types = result.scalars().all()
+
+    # Runbook-Counts je Asset-Typ
+    rb_counts: dict[int, int] = {}
+    if asset_types:
+        rows = await db.execute(
+            text("""
+                SELECT asset_type_id, COUNT(*) as cnt
+                FROM runbook_definitions
+                WHERE asset_type_id = ANY(:ids)
+                GROUP BY asset_type_id
+            """),
+            {"ids": [t.id for t in asset_types]},
+        )
+        rb_counts = {row[0]: row[1] for row in rows}
+
+    return templates.TemplateResponse(
+        request, "ui/asset_types.html",
+        {
+            "asset_types": asset_types,
+            "rb_counts": rb_counts,
+            "active_page": "asset-types",
+        },
+    )
+
+
+@router.get("/asset-types/neu", response_class=HTMLResponse)
+async def asset_type_new_form(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request, "ui/asset_type_form.html",
+        {"asset_type": None, "active_page": "asset-types"},
+    )
+
+
+@router.get("/asset-types/{type_id}/bearbeiten", response_class=HTMLResponse)
+async def asset_type_edit_form(
+    request: Request,
+    type_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    t = await db.get(AssetType, type_id)
+    if not t:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    return templates.TemplateResponse(
+        request, "ui/asset_type_form.html",
+        {"asset_type": t, "active_page": "asset-types"},
+    )
+
+
+# ── Runbooks UI ────────────────────────────────────────────────────────────────
+
+_ACTIONS = ["provision", "modify", "extend", "delete"]
+
+
+@router.get("/runbooks", response_class=HTMLResponse)
+async def runbooks_list(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    at_result = await db.execute(select(AssetType).order_by(AssetType.name))
+    asset_types = at_result.scalars().all()
+
+    rb_result = await db.execute(
+        select(RunbookDefinition)
+        .options(selectinload(RunbookDefinition.steps))
+        .order_by(RunbookDefinition.asset_type_id, RunbookDefinition.action)
+    )
+    runbooks = rb_result.scalars().all()
+
+    # Gruppiert: {asset_type_id: {action: runbook}}
+    rb_by_type: dict[int, dict] = {t.id: {} for t in asset_types}
+    for rb in runbooks:
+        rb_by_type.setdefault(rb.asset_type_id, {})[rb.action] = rb
+
+    return templates.TemplateResponse(
+        request, "ui/runbooks.html",
+        {
+            "asset_types": asset_types,
+            "rb_by_type": rb_by_type,
+            "actions": _ACTIONS,
+            "active_page": "runbooks",
+        },
+    )
+
+
+@router.get("/runbooks/{runbook_id}/bearbeiten", response_class=HTMLResponse)
+async def runbook_editor(
+    request: Request,
+    runbook_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    result = await db.execute(
+        select(RunbookDefinition)
+        .options(selectinload(RunbookDefinition.steps))
+        .where(RunbookDefinition.id == runbook_id)
+    )
+    rb = result.scalar_one_or_none()
+    if not rb:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+
+    at = await db.get(AssetType, rb.asset_type_id)
+
+    # Module gruppiert für Dropdown
+    grouped_modules: dict[str, list] = {g: [] for g in MODULE_GROUPS}
+    for m in MODULE_METADATA:
+        grouped_modules.setdefault(m["group"], []).append(m)
+
+    return templates.TemplateResponse(
+        request, "ui/runbook_editor.html",
+        {
+            "runbook": rb,
+            "asset_type": at,
+            "grouped_modules": grouped_modules,
+            "module_groups": MODULE_GROUPS,
+            "active_page": "runbooks",
+        },
+    )
+
+
+@router.get("/_module-params", response_class=HTMLResponse)
+async def module_params_fragment(
+    request: Request,
+    key: str = "",
+) -> HTMLResponse:
+    """HTMX-Fragment: Param-Felder für das gewählte Modul."""
+    module = MODULE_MAP.get(key)
+    return templates.TemplateResponse(
+        request, "ui/fragments/module_params.html",
+        {"module": module, "module_key": key},
+    )
+
+
+# ── Script-Editor UI ───────────────────────────────────────────────────────────
+
+@router.get("/scripts", response_class=HTMLResponse)
+async def scripts_editor(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request, "ui/scripts.html",
+        {"active_page": "scripts"},
+    )

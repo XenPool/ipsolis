@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="de" class="h-full bg-gray-50">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}XenPool IT Selfservice{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous"></script>
+</head>
+<body class="h-full">
+
+  <!-- Navigation -->
+  <nav class="bg-white border-b border-gray-200 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-14">
+        <div class="flex items-center gap-6">
+          <span class="font-semibold text-gray-900 text-sm tracking-wide">XenPool IT Selfservice</span>
+          <div class="flex gap-1">
+            <a href="/ui/"
+               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'dashboard' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+              Dashboard
+            </a>
+            <a href="/ui/orders"
+               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'orders' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+              Bestellungen
+            </a>
+            <a href="/ui/asset-types"
+               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'asset-types' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+              Asset-Typen
+            </a>
+            <a href="/ui/runbooks"
+               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'runbooks' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+              Runbooks
+            </a>
+            <a href="/ui/scripts"
+               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'scripts' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+              Scripts
+            </a>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 text-xs text-gray-400">
+          <a href="/docs" target="_blank" class="hover:text-gray-700">Swagger UI</a>
+          <span>·</span>
+          <a href="http://localhost:5555" target="_blank" class="hover:text-gray-700">Flower</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Page Content -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+</body>
+</html>

@@ -21,7 +21,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from tasks import app
-from tasks.modules import active_roles, notifications, pool_manager, sccm
+from tasks.modules import active_roles, audit_helper, notifications, pool_manager, sccm
+from tasks.modules.step_helper import update_order_step, update_order_status
 
 logger = logging.getLogger(__name__)
 
@@ -66,44 +67,111 @@ def run(self: Task, order_id: int) -> dict:
         asset_name = order.get("asset_name") or f"VDI-MOCK-{order_id}"
         asset_id = order.get("assigned_asset_id")
 
-        # Step 1: AD-Gruppen leeren
-        logger.info("[Step 1/4] active_roles.remove_all_groups for '%s'", asset_name)
-        result = active_roles.remove_all_groups(asset_name)
-        if not result["success"]:
-            logger.warning("[Step 1/4] Warning: %s", result.get("error"))
+        # ── Schritt 1/4: AD-Gruppen leeren ────────────────────────────────────
+        step = "active_roles.remove_all_groups"
+        logger.info("[Step 1/4] %s for '%s'", step, asset_name)
+        update_order_step(db, order_id, step, "running", started_at=datetime.now(timezone.utc))
+        try:
+            result = active_roles.remove_all_groups(asset_name)
+            if not result["success"]:
+                raise RuntimeError(result.get("error"))
+            update_order_step(db, order_id, step, "success",
+                              log_output=str(result),
+                              finished_at=datetime.now(timezone.utc))
+        except Exception as e:
+            update_order_step(db, order_id, step, "failed", error=str(e),
+                              finished_at=datetime.now(timezone.utc))
+            logger.warning("[Step 1/4] %s failed (non-critical): %s", step, e)
 
-        # Step 2: SCCM Reinstall triggern
-        logger.info("[Step 2/4] sccm.trigger_reinstall for '%s'", asset_name)
-        result = sccm.trigger_reinstall(asset_name)
-        if not result["success"]:
-            raise RuntimeError(f"SCCM trigger failed: {result.get('error')}")
-
-        # Step 3: Asset auf RECLAIMING setzen
-        logger.info("[Step 3/4] Setting asset to RECLAIMING")
-        if asset_id:
-            db.execute(
-                text("""
-                    UPDATE asset_pool
-                    SET status = 'reclaiming', current_order_id = NULL,
-                        expires_at = NULL, last_reclaim_at = NOW(), updated_at = NOW()
-                    WHERE id = :asset_id
-                """),
-                {"asset_id": asset_id},
+        # ── Schritt 2/4: SCCM Reinstall triggern ──────────────────────────────
+        step = "sccm.trigger_reinstall"
+        logger.info("[Step 2/4] %s for '%s'", step, asset_name)
+        update_order_step(db, order_id, step, "running", started_at=datetime.now(timezone.utc))
+        try:
+            result = sccm.trigger_reinstall(asset_name)
+            if not result["success"]:
+                raise RuntimeError(f"SCCM trigger failed: {result.get('error')}")
+            update_order_step(db, order_id, step, "success",
+                              log_output=str(result),
+                              finished_at=datetime.now(timezone.utc))
+        except Exception as e:
+            update_order_step(db, order_id, step, "failed", error=str(e),
+                              finished_at=datetime.now(timezone.utc))
+            update_order_status(db, order_id, "failed", str(e))
+            audit_helper.waudit(
+                db, "order", order_id, "status_changed",
+                old={"status": "processing"}, new={"status": "failed", "error": str(e)},
+                by="celery:vdi_reclaim", ctx=str(self.request.id),
             )
             db.commit()
+            logger.error("[Step 2/4] FAILED: %s", e)
+            raise self.retry(exc=e)
 
-        # Step 4: Benachrichtigung
-        logger.info("[Step 4/4] notifications.send_reclaim_notification")
-        notifications.send_reclaim_notification(
-            user_email=order["user_email"],
-            user_name=order["user_name"],
-            asset_name=asset_name,
-        )
+        # ── Schritt 3/4: Asset auf RECLAIMING setzen ──────────────────────────
+        step = "pool.set_reclaiming"
+        logger.info("[Step 3/4] %s asset_id=%s", step, asset_id)
+        update_order_step(db, order_id, step, "running", started_at=datetime.now(timezone.utc))
+        try:
+            if asset_id:
+                db.execute(
+                    text("""
+                        UPDATE asset_pool
+                        SET status = 'reclaiming', current_order_id = NULL,
+                            expires_at = NULL, last_reclaim_at = NOW(), updated_at = NOW()
+                        WHERE id = :asset_id
+                    """),
+                    {"asset_id": asset_id},
+                )
+                audit_helper.waudit(
+                    db, "asset", asset_id, "status_changed",
+                    old={"status": "busy", "current_order_id": order_id},
+                    new={"status": "reclaiming", "current_order_id": None},
+                    by="celery:vdi_reclaim", ctx=str(order_id),
+                )
+                db.commit()
+                update_order_step(db, order_id, step, "success",
+                                  log_output=f"Asset {asset_id} set to reclaiming",
+                                  finished_at=datetime.now(timezone.utc))
+            else:
+                update_order_step(db, order_id, step, "skipped",
+                                  log_output="Skipped: no assigned_asset_id",
+                                  finished_at=datetime.now(timezone.utc))
+        except Exception as e:
+            update_order_step(db, order_id, step, "failed", error=str(e),
+                              finished_at=datetime.now(timezone.utc))
+            update_order_status(db, order_id, "failed", str(e))
+            audit_helper.waudit(
+                db, "order", order_id, "status_changed",
+                old={"status": "processing"}, new={"status": "failed", "error": str(e)},
+                by="celery:vdi_reclaim", ctx=str(self.request.id),
+            )
+            db.commit()
+            logger.error("[Step 3/4] FAILED: %s", e)
+            raise self.retry(exc=e)
 
-        # Order auf EXPIRED setzen
-        db.execute(
-            text("UPDATE orders SET status = 'expired', updated_at = NOW() WHERE id = :id"),
-            {"id": order_id},
+        # ── Schritt 4/4: Benachrichtigung ─────────────────────────────────────
+        step = "notifications.send_reclaim_notification"
+        logger.info("[Step 4/4] %s to %s", step, order["user_email"])
+        update_order_step(db, order_id, step, "running", started_at=datetime.now(timezone.utc))
+        try:
+            notifications.send_reclaim_notification(
+                user_email=order["user_email"],
+                user_name=order["user_name"],
+                asset_name=asset_name,
+            )
+            update_order_step(db, order_id, step, "success",
+                              finished_at=datetime.now(timezone.utc))
+        except Exception as e:
+            logger.warning("[Step 4/4] Notification failed (non-critical): %s", e)
+            update_order_step(db, order_id, step, "failed", error=str(e),
+                              finished_at=datetime.now(timezone.utc))
+
+        # ── Order auf EXPIRED setzen ───────────────────────────────────────────
+        update_order_status(db, order_id, "expired")
+        audit_helper.waudit(
+            db, "order", order_id, "status_changed",
+            old={"status": "delivered"}, new={"status": "expired"},
+            by="celery:vdi_reclaim",
         )
         db.commit()
 
@@ -118,6 +186,11 @@ def run(self: Task, order_id: int) -> dict:
         db.execute(
             text("UPDATE orders SET status = 'failed', error_message = :err, updated_at = NOW() WHERE id = :id"),
             {"err": str(e), "id": order_id},
+        )
+        audit_helper.waudit(
+            db, "order", order_id, "status_changed",
+            old={"status": "processing"}, new={"status": "failed", "error": str(e)},
+            by="celery:vdi_reclaim",
         )
         db.commit()
         raise self.retry(exc=e)

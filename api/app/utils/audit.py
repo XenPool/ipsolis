@@ -1,0 +1,98 @@
+"""Async Audit-Helper für FastAPI-Routen.
+
+Alle Schreibvorgänge landen in derselben Transaktion wie die Haupt-Änderung —
+kein separates Commit nötig. Einträge im audit_log sind unveränderlich (kein UPDATE/DELETE).
+"""
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.audit import AuditLog
+
+
+async def aaudit(
+    db: AsyncSession,
+    entity_type: str,
+    entity_id: int,
+    action: str,
+    *,
+    old: dict | None = None,
+    new: dict | None = None,
+    by: str,
+    ctx: str | None = None,
+) -> None:
+    """Schreibt einen Audit-Log-Eintrag in die laufende Transaktion.
+
+    Args:
+        db:          Aktive AsyncSession (wird vom Caller committed)
+        entity_type: "order" | "asset" | "asset_type" | "app_config"
+        entity_id:   PK des geänderten Datensatzes
+        action:      "created" | "updated" | "status_changed" | "deleted"
+        old:         Snapshot vor der Änderung (None bei created)
+        new:         Snapshot nach der Änderung (None bei deleted)
+        by:          Auslöser, z.B. "api:create_order" | "api:servicenow_webhook"
+        ctx:         Optionaler Kontext (servicenow_ref, celery_task_id, ...)
+    """
+    db.add(AuditLog(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action=action,
+        old_value=old,
+        new_value=new,
+        triggered_by=by,
+        context=ctx,
+    ))
+
+
+# ── Snapshot-Helfer ────────────────────────────────────────────────────────────
+
+def _order_snap(order) -> dict:
+    return {
+        "id": order.id,
+        "status": order.status.value if hasattr(order.status, "value") else order.status,
+        "action": order.action.value if hasattr(order.action, "value") else order.action,
+        "user_email": order.user_email,
+        "asset_type_id": order.asset_type_id,
+        "assigned_asset_id": order.assigned_asset_id,
+        "rdp_users": list(order.rdp_users or []),
+        "admin_users": list(order.admin_users or []),
+        "requested_until": order.requested_until.isoformat() if order.requested_until else None,
+    }
+
+
+def _asset_snap(asset) -> dict:
+    return {
+        "id": asset.id,
+        "name": asset.name,
+        "status": asset.status.value if hasattr(asset.status, "value") else asset.status,
+        "asset_type_id": asset.asset_type_id,
+        "current_order_id": asset.current_order_id,
+        "expires_at": asset.expires_at.isoformat() if asset.expires_at else None,
+    }
+
+
+def _config_snap(cfg) -> dict:
+    return {
+        "id": cfg.id,
+        "key": cfg.key,
+        "value": "***" if cfg.is_secret else cfg.value,
+        "is_secret": cfg.is_secret,
+        "description": cfg.description,
+    }
+
+
+def _type_snap(t) -> dict:
+    return {
+        "id": t.id,
+        "name": t.name,
+        "category": t.category.value if hasattr(t.category, "value") else t.category,
+        "description": t.description,
+        "config": t.config,
+        "assignment_model": t.assignment_model,
+        "automation_mode": t.automation_mode,
+        "automation_strategy": t.automation_strategy,
+        "composite_steps": t.composite_steps,
+        "deprovision_policy": t.deprovision_policy,
+        "personal_provisioning_strategy": t.personal_provisioning_strategy,
+        "naming_pattern": t.naming_pattern,
+        "max_per_user": t.max_per_user,
+    }
