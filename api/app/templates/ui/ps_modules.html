@@ -11,12 +11,19 @@
 
 <!-- Add module form -->
 <div class="bg-white rounded-lg border border-gray-200 p-4 mb-6">
-  <h2 class="text-sm font-semibold text-gray-700 mb-3">Modul hinzufügen</h2>
+  <h2 class="text-sm font-semibold text-gray-700 mb-2">Modul hinzufügen</h2>
+  <p class="text-xs text-gray-500 mb-3">
+    Der <strong>exakte Modulname</strong> aus der
+    <a href="https://www.powershellgallery.com" target="_blank" rel="noopener"
+       class="text-blue-600 hover:underline">PowerShell Gallery</a>
+    muss angegeben werden (Groß-/Kleinschreibung beachten, z.&nbsp;B.&nbsp;<code class="font-mono bg-gray-100 px-1 rounded">VMware.PowerCLI</code>).
+    Die Suche liefert Vorschläge – bei Problemen den Namen direkt eingeben.
+  </p>
   <div class="flex gap-3 items-end">
     <div class="relative">
       <label class="block text-xs font-medium text-gray-600 mb-1">Name <span class="text-red-500">*</span></label>
       <input type="text" id="add-name" autocomplete="off"
-             placeholder="Modul suchen…"
+             placeholder="Modul suchen oder Namen eingeben…"
              oninput="onSearchInput()"
              onkeydown="if(event.key==='Escape') document.getElementById('search-dropdown').classList.add('hidden')"
              class="rounded border border-gray-300 text-sm px-3 py-2 w-96 focus:outline-none focus:ring-1 focus:ring-blue-400">

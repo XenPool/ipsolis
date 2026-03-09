@@ -157,27 +157,68 @@
 </div>
 
 <script>
-// Structured Log Viewer: rendert JSON-Logs als lesbares Format
 document.querySelectorAll('.step-log-structured').forEach(el => {
   try {
     const log = JSON.parse(el.dataset.log);
-    const mock = log.mock
-      ? '<span class="ml-1 px-1 py-0.5 rounded bg-yellow-100 text-yellow-700 text-xs font-sans">mock</span>' : '';
-    const dur = log.duration_ms ? ` <span class="text-gray-400 text-xs font-sans">${log.duration_ms}ms</span>` : '';
-    let html = `<div class="flex items-center gap-1 mb-1 font-mono font-medium text-gray-700">${log.module || ''}${mock}${dur}</div>`;
+    const success = log.output?.success !== false && !log.output?.error;
+    const hasMock = !!log.mock;
+    const dur = log.duration_ms != null ? `${log.duration_ms}ms` : '';
+    const moduleName = log.module || log.module_key || '';
+
+    // ── Header bar ──────────────────────────────────────────────────────────
+    let html = `<div class="flex items-center gap-2 mb-2 text-xs">`;
+    html += `<span class="font-mono font-semibold text-gray-700">${esc(moduleName)}</span>`;
+    if (hasMock) html += `<span class="px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 font-sans">mock</span>`;
+    if (dur)     html += `<span class="text-gray-400 font-sans">${esc(dur)}</span>`;
+    const statusCls = success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700';
+    const statusTxt = success ? 'success' : 'failed';
+    html += `<span class="ml-auto px-1.5 py-0.5 rounded ${statusCls} font-sans">${statusTxt}</span>`;
+    html += `</div>`;
+
+    // ── Input params ─────────────────────────────────────────────────────────
     if (log.input && Object.keys(log.input).length) {
-      html += `<div class="text-gray-400 text-xs">↓ input</div>`;
-      html += `<pre class="text-gray-600 font-mono text-xs whitespace-pre-wrap break-all">${JSON.stringify(log.input, null, 2)}</pre>`;
+      html += `<div class="mb-1.5">`;
+      html += `<div class="text-xs text-gray-400 mb-0.5 font-sans uppercase tracking-wide">Parameter</div>`;
+      html += `<div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs font-mono">`;
+      for (const [k, v] of Object.entries(log.input)) {
+        const val = Array.isArray(v) ? (v.length ? v.join(', ') : '[ ]') : String(v ?? '');
+        html += `<span class="text-gray-400">${esc(k)}</span><span class="text-gray-700 truncate">${esc(val)}</span>`;
+      }
+      html += `</div></div>`;
     }
-    if (log.output) {
-      const bad = log.output.error || log.output.success === false;
-      html += `<div class="${bad ? 'text-red-500' : 'text-green-600'} text-xs mt-1">↑ output</div>`;
-      html += `<pre class="${bad ? 'text-red-700' : 'text-gray-700'} font-mono text-xs whitespace-pre-wrap break-all">${JSON.stringify(log.output, null, 2)}</pre>`;
+
+    // ── stdout ───────────────────────────────────────────────────────────────
+    const stdout = log.stdout || log.output?.output || '';
+    if (stdout) {
+      html += `<div class="mt-1.5 rounded bg-gray-900 px-3 py-2">`;
+      html += `<div class="text-xs text-gray-500 mb-1 font-sans uppercase tracking-wide">stdout</div>`;
+      html += `<pre class="text-green-400 text-xs font-mono whitespace-pre-wrap break-all leading-relaxed">${esc(stdout)}</pre>`;
+      html += `</div>`;
     }
+
+    // ── stderr ───────────────────────────────────────────────────────────────
+    const stderr = log.stderr || '';
+    if (stderr) {
+      html += `<div class="mt-1.5 rounded bg-red-950 px-3 py-2">`;
+      html += `<div class="text-xs text-red-400 mb-1 font-sans uppercase tracking-wide">stderr</div>`;
+      html += `<pre class="text-red-300 text-xs font-mono whitespace-pre-wrap break-all">${esc(stderr)}</pre>`;
+      html += `</div>`;
+    }
+
+    // ── error (non-script failures) ──────────────────────────────────────────
+    const errMsg = log.output?.error || '';
+    if (!success && errMsg && !stderr) {
+      html += `<div class="mt-1.5 text-xs text-red-700 bg-red-50 rounded px-2 py-1 font-mono break-all">${esc(errMsg)}</div>`;
+    }
+
     el.innerHTML = html;
   } catch(e) {
     el.textContent = el.dataset.log;
   }
 });
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 </script>
 {% endblock %}

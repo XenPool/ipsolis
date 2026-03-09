@@ -52,6 +52,7 @@ def validate_asset_type(
     personal_provisioning_strategy: str | None,
     runbook_provision_id: int | None,
     runbook_revoke_id: int | None,
+    skip_runbook_rules: bool = False,
 ) -> list[ConstraintViolation]:
     """Validate an AssetType payload against the 5 core constraint rules.
 
@@ -114,17 +115,20 @@ def validate_asset_type(
         ))
 
     # ── Rule 4 – Runbook requirements ─────────────────────────────────────────
-    if automation_strategy == _RUNBOOK_ONLY and not runbook_provision_id:
-        errors.append(ConstraintViolation(
-            code="RUNBOOK_ONLY_REQUIRES_PROVISION_RUNBOOK",
-            message="automation_strategy='runbook_only' requires runbook_provision_id to be set.",
-        ))
+    # Skipped on initial create: runbooks can't exist before the asset type has an ID.
+    # The update path looks up existing runbooks in the DB and enforces this rule there.
+    if not skip_runbook_rules:
+        if automation_strategy == _RUNBOOK_ONLY and not runbook_provision_id:
+            errors.append(ConstraintViolation(
+                code="RUNBOOK_ONLY_REQUIRES_PROVISION_RUNBOOK",
+                message="automation_strategy='runbook_only' requires runbook_provision_id to be set.",
+            ))
 
-    if deprovision_policy == _CUSTOM_RUNBOOK and not runbook_revoke_id:
-        errors.append(ConstraintViolation(
-            code="RUNBOOK_POLICY_REQUIRES_REVOKE_RUNBOOK",
-            message="deprovision_policy='custom_runbook' requires runbook_revoke_id to be set.",
-        ))
+        if deprovision_policy == _CUSTOM_RUNBOOK and not runbook_revoke_id:
+            errors.append(ConstraintViolation(
+                code="RUNBOOK_POLICY_REQUIRES_REVOKE_RUNBOOK",
+                message="deprovision_policy='custom_runbook' requires runbook_revoke_id to be set.",
+            ))
 
     # ── Rule 5 – COMPOSITE flexibility ────────────────────────────────────────
     # COMPOSITE allows all deprovision_policy values. No additional restrictions

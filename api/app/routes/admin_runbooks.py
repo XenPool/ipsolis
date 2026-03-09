@@ -421,6 +421,18 @@ async def update_step(
     return {"id": step_id, "updated": True}
 
 
+@router.delete("/runbooks/{runbook_id}/steps", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_all_steps(
+    runbook_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await db.execute(
+        text("DELETE FROM runbook_steps WHERE runbook_id = :rid"),
+        {"rid": runbook_id},
+    )
+    await db.commit()
+
+
 @router.delete("/runbooks/{runbook_id}/steps/{step_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_step(
     runbook_id: int,

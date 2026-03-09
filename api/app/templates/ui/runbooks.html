@@ -67,6 +67,8 @@
         </td>
         <td class="px-4 py-3 text-right text-xs">
           {% if rb %}
+          <button onclick="deleteRunbook({{ rb.id }}, '{{ rb.name | replace("'", "\\'") }}')"
+                  class="text-red-400 hover:text-red-600 mr-3">Löschen</button>
           <a href="/ui/runbooks/{{ rb.id }}/bearbeiten" class="text-blue-600 hover:underline">Bearbeiten →</a>
           {% else %}
           <button
@@ -87,6 +89,16 @@
 {% endfor %}
 
 <script>
+async function deleteRunbook(runbookId, name) {
+  if (!confirm('Runbook "' + name + '" inklusive aller Steps wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')) return;
+  const resp = await fetch('/admin/runbooks/' + runbookId, {method: 'DELETE'});
+  if (resp.ok) {
+    location.reload();
+  } else {
+    alert('Fehler beim Löschen des Runbooks');
+  }
+}
+
 async function createRunbook(assetTypeId, action, typeName) {
   const name = `${typeName} – ${action.charAt(0).toUpperCase() + action.slice(1)}`;
   const resp = await fetch('/admin/runbooks', {

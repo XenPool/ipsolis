@@ -21,6 +21,7 @@
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Automation</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Kapazität</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Runbooks</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Pool</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Attribute</th>
         <th class="px-4 py-3"></th>
       </tr>
@@ -74,6 +75,17 @@
             {{ rb_counts.get(t.id, 0) }} Runbooks →
           </a>
         </td>
+        <td class="px-4 py-3 text-xs">
+          {% if t.assignment_model in ('assigned_personal', 'dedicated_shared') %}
+            {% set pc = pool_counts.get(t.id, {'free': 0, 'total': 0}) %}
+            <a href="/ui/asset-pool?asset_type_id={{ t.id }}"
+               class="text-blue-600 hover:underline whitespace-nowrap">
+              {{ pc.get('free', 0) }} / {{ pc.get('total', 0) }} frei →
+            </a>
+          {% else %}
+            <span class="text-gray-400">–</span>
+          {% endif %}
+        </td>
         <td class="px-4 py-3 text-xs text-gray-400">
           {% if t.config and t.config | length > 0 %}
             {% set remaining = t.config | length - 2 %}
@@ -94,7 +106,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="8" class="px-4 py-12 text-center text-gray-400 text-sm">
+        <td colspan="9" class="px-4 py-12 text-center text-gray-400 text-sm">
           Keine Asset-Typen vorhanden.
           <a href="/ui/asset-types/neu" class="ml-1 text-blue-600 hover:underline">Jetzt anlegen →</a>
         </td>

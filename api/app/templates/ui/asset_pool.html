@@ -1,0 +1,372 @@
+{% extends "base.html" %}
+
+{% block title %}Asset-Pool – XenPool Admin{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex items-center justify-between">
+  <h1 class="text-lg font-semibold text-gray-900">Asset-Pool</h1>
+  <button onclick="toggleAddForm()"
+          class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+    + Host hinzufügen
+  </button>
+</div>
+
+<!-- Add Form (hidden by default) -->
+<div id="add-form-wrap" class="hidden mb-4 bg-white rounded-lg border border-blue-200 p-4">
+  <h2 class="text-sm font-semibold text-gray-700 mb-3">Neuer Host</h2>
+  <div class="grid grid-cols-12 gap-3 items-end">
+    <div class="col-span-3">
+      <label class="block text-xs font-medium text-gray-600 mb-1">Hostname <span class="text-red-500">*</span></label>
+      <input type="text" id="add-name" placeholder="z.B. VDI-PC01"
+             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+    </div>
+    <div class="col-span-3">
+      <label class="block text-xs font-medium text-gray-600 mb-1">Asset-Typ <span class="text-red-500">*</span></label>
+      <select id="add-type"
+              class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        <option value="">– Typ wählen –</option>
+        {% for t in asset_types %}
+        <option value="{{ t.id }}" {% if selected_type_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-span-2">
+      <label class="block text-xs font-medium text-gray-600 mb-1">IP-Adresse</label>
+      <input type="text" id="add-ip" placeholder="10.0.1.1"
+             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+    </div>
+    <div class="col-span-3">
+      <label class="block text-xs font-medium text-gray-600 mb-1">Notizen</label>
+      <input type="text" id="add-notes" placeholder="Optionale Notizen"
+             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+    </div>
+    <div class="col-span-1 flex gap-2">
+      <button onclick="addAsset()"
+              class="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 whitespace-nowrap">
+        Hinzufügen
+      </button>
+    </div>
+  </div>
+  <div id="add-error" class="hidden mt-2 text-xs text-red-600"></div>
+</div>
+
+<!-- Filter bar -->
+<div class="mb-3 flex items-center gap-3">
+  <select id="filter-type" onchange="applyFilters()"
+          class="rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+    <option value="">Alle Asset-Typen</option>
+    {% for t in asset_types %}
+    <option value="{{ t.id }}" {% if selected_type_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+    {% endfor %}
+  </select>
+  <select id="filter-status" onchange="applyFilters()"
+          class="rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+    <option value="">Alle Status</option>
+    <option value="free">Frei</option>
+    <option value="reserved">Reserviert</option>
+    <option value="busy">Vergeben</option>
+    <option value="maintenance">Wartung</option>
+    <option value="reclaiming">Freigabe...</option>
+  </select>
+  <span id="count-label" class="text-xs text-gray-400"></span>
+</div>
+
+<!-- Table -->
+<div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+  <table class="min-w-full divide-y divide-gray-200 text-sm" id="pool-table">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Hostname</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Asset-Typ</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Bestellung</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Läuft bis</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">IP-Adresse</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Notizen</th>
+        <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide text-right">Aktionen</th>
+      </tr>
+    </thead>
+    <tbody id="pool-tbody" class="divide-y divide-gray-100">
+      <tr id="loading-row">
+        <td colspan="8" class="px-4 py-10 text-center text-gray-400 text-sm">Lade Assets…</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+var _allAssets = [];
+var _editingId = null;
+
+var _STATUS_LABELS = {
+  free:        'Frei',
+  reserved:    'Reserviert',
+  busy:        'Vergeben',
+  maintenance: 'Wartung',
+  reclaiming:  'Freigabe\u2026',
+};
+var _STATUS_CLASSES = {
+  free:        'bg-green-100 text-green-700',
+  reserved:    'bg-yellow-100 text-yellow-700',
+  busy:        'bg-blue-100 text-blue-700',
+  maintenance: 'bg-gray-100 text-gray-600',
+  reclaiming:  'bg-orange-100 text-orange-700',
+};
+
+// ── Load ──────────────────────────────────────────────────────────
+async function loadAssets() {
+  var typeId = document.getElementById('filter-type').value;
+  var url = '/admin/assets' + (typeId ? '?asset_type_id=' + typeId : '');
+  try {
+    var resp = await fetch(url);
+    _allAssets = await resp.json();
+    renderTable();
+  } catch(e) {
+    document.getElementById('pool-tbody').innerHTML =
+      '<tr><td colspan="8" class="px-4 py-10 text-center text-red-400 text-sm">Fehler beim Laden: ' + e.message + '</td></tr>';
+  }
+}
+
+// ── Render ────────────────────────────────────────────────────────
+function applyFilters() {
+  // When type filter changes, reload from server for accuracy
+  var newTypeId = document.getElementById('filter-type').value;
+  var currentTypeId = '';
+  // Compare to current data
+  loadAssets();
+}
+
+function renderTable() {
+  var statusFilter = document.getElementById('filter-status').value;
+  var filtered = _allAssets.filter(function(a) {
+    return !statusFilter || a.status === statusFilter;
+  });
+
+  document.getElementById('count-label').textContent = filtered.length + ' Einträge';
+
+  var tbody = document.getElementById('pool-tbody');
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-10 text-center text-gray-400 text-sm">Keine Assets gefunden.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  filtered.forEach(function(a) {
+    tbody.appendChild(buildRow(a));
+  });
+}
+
+function _statusBadge(status) {
+  var cls = _STATUS_CLASSES[status] || 'bg-gray-100 text-gray-500';
+  var lbl = _STATUS_LABELS[status] || status;
+  return '<span class="inline-block px-2 py-0.5 rounded text-xs font-medium ' + cls + '">' + lbl + '</span>';
+}
+
+function _esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function buildRow(a) {
+  var canEdit = (a.status === 'free' || a.status === 'maintenance');
+  var ip = (a.asset_metadata && a.asset_metadata.ip_address) ? a.asset_metadata.ip_address : '';
+  var notes = (a.asset_metadata && a.asset_metadata.notes) ? a.asset_metadata.notes : '';
+  var expiresStr = a.expires_at ? new Date(a.expires_at).toLocaleDateString('de-DE') : '–';
+  var orderCell = a.current_order_id
+    ? '<a href="/ui/orders/' + a.current_order_id + '" class="text-blue-600 hover:underline">#' + a.current_order_id + '</a>'
+    : '<span class="text-gray-400">–</span>';
+
+  var actionsHtml = '';
+  if (canEdit) {
+    actionsHtml =
+      '<button onclick="startEdit(' + a.id + ')" title="Bearbeiten"'
+      + ' class="text-gray-400 hover:text-blue-600 mr-2">✏</button>'
+      + '<button onclick="deleteAsset(' + a.id + ', \'' + _esc(a.name) + '\')" title="Löschen"'
+      + ' class="text-gray-400 hover:text-red-600">×</button>';
+  } else {
+    actionsHtml = '<span class="text-gray-300 text-xs">–</span>';
+  }
+
+  var tr = document.createElement('tr');
+  tr.id = 'row-' + a.id;
+  tr.className = 'hover:bg-gray-50';
+  tr.innerHTML =
+    '<td class="px-4 py-3 font-mono text-sm font-medium text-gray-900">' + _esc(a.name) + '</td>'
+    + '<td class="px-4 py-3 text-xs text-gray-600">' + _esc(a.type_name) + '</td>'
+    + '<td class="px-4 py-3">' + _statusBadge(a.status) + '</td>'
+    + '<td class="px-4 py-3 text-xs">' + orderCell + '</td>'
+    + '<td class="px-4 py-3 text-xs text-gray-500">' + _esc(expiresStr) + '</td>'
+    + '<td class="px-4 py-3 text-xs text-gray-500 font-mono">' + _esc(ip) + '</td>'
+    + '<td class="px-4 py-3 text-xs text-gray-500 max-w-xs truncate" title="' + _esc(notes) + '">' + _esc(notes) + '</td>'
+    + '<td class="px-4 py-3 text-right text-sm">' + actionsHtml + '</td>';
+  return tr;
+}
+
+// ── Edit inline ───────────────────────────────────────────────────
+function startEdit(id) {
+  if (_editingId && _editingId !== id) cancelEdit();
+  _editingId = id;
+  var a = _allAssets.find(function(x) { return x.id === id; });
+  if (!a) return;
+  var ip = (a.asset_metadata && a.asset_metadata.ip_address) ? a.asset_metadata.ip_address : '';
+  var notes = (a.asset_metadata && a.asset_metadata.notes) ? a.asset_metadata.notes : '';
+
+  var tr = document.getElementById('row-' + id);
+  tr.innerHTML =
+    '<td class="px-4 py-2"><input id="edit-name-' + id + '" value="' + _esc(a.name) + '"'
+    + ' class="w-full rounded border border-gray-300 text-xs px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"></td>'
+    + '<td class="px-4 py-2 text-xs text-gray-500">' + _esc(a.type_name) + '</td>'
+    + '<td class="px-4 py-2">'
+    + '<select id="edit-status-' + id + '" class="rounded border border-gray-300 text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400">'
+    + '<option value="free"' + (a.status === 'free' ? ' selected' : '') + '>Frei</option>'
+    + '<option value="maintenance"' + (a.status === 'maintenance' ? ' selected' : '') + '>Wartung</option>'
+    + '</select>'
+    + '</td>'
+    + '<td class="px-4 py-2 text-xs text-gray-400">–</td>'
+    + '<td class="px-4 py-2 text-xs text-gray-400">–</td>'
+    + '<td class="px-4 py-2"><input id="edit-ip-' + id + '" value="' + _esc(ip) + '" placeholder="10.0.1.x"'
+    + ' class="w-full rounded border border-gray-300 text-xs px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"></td>'
+    + '<td class="px-4 py-2"><input id="edit-notes-' + id + '" value="' + _esc(notes) + '" placeholder="Notizen"'
+    + ' class="w-full rounded border border-gray-300 text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"></td>'
+    + '<td class="px-4 py-2 text-right">'
+    + '<button onclick="saveEdit(' + id + ')" class="text-xs text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded mr-1">Speichern</button>'
+    + '<button onclick="cancelEdit()" class="text-xs text-gray-600 hover:text-gray-800 px-2 py-1 rounded border border-gray-300">Abbruch</button>'
+    + '</td>';
+}
+
+function cancelEdit() {
+  _editingId = null;
+  renderTable();
+}
+
+async function saveEdit(id) {
+  var newName = document.getElementById('edit-name-' + id).value.trim();
+  var newStatus = document.getElementById('edit-status-' + id).value;
+  var newIp = document.getElementById('edit-ip-' + id).value.trim();
+  var newNotes = document.getElementById('edit-notes-' + id).value.trim();
+
+  if (!newName) { alert('Hostname darf nicht leer sein.'); return; }
+
+  var a = _allAssets.find(function(x) { return x.id === id; });
+  var meta = Object.assign({}, a.asset_metadata || {});
+  meta.ip_address = newIp || undefined;
+  meta.notes = newNotes || undefined;
+
+  // Name change requires delete + recreate (name is immutable on the model)
+  // Instead we just update status + metadata via PUT
+  var payload = {
+    status: newStatus,
+    asset_metadata: meta,
+  };
+
+  try {
+    var resp = await fetch('/admin/assets/' + id, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      var err = {};
+      try { err = await resp.json(); } catch(e) {}
+      alert('Fehler: ' + (err.detail || resp.status));
+      return;
+    }
+    var updated = await resp.json();
+    // Update local cache
+    var idx = _allAssets.findIndex(function(x) { return x.id === id; });
+    if (idx >= 0) {
+      _allAssets[idx].status = updated.status;
+      _allAssets[idx].asset_metadata = meta;
+    }
+    _editingId = null;
+    renderTable();
+  } catch(e) {
+    alert('Netzwerkfehler: ' + e.message);
+  }
+}
+
+// ── Delete ────────────────────────────────────────────────────────
+async function deleteAsset(id, name) {
+  if (!confirm('Host "' + name + '" wirklich löschen?\n\nNur freie oder Wartungs-Hosts können gelöscht werden.')) return;
+  try {
+    var resp = await fetch('/admin/assets/' + id, {method: 'DELETE'});
+    if (resp.status === 204) {
+      _allAssets = _allAssets.filter(function(a) { return a.id !== id; });
+      renderTable();
+    } else {
+      var err = {};
+      try { err = await resp.json(); } catch(e) {}
+      alert('Fehler: ' + (err.detail || resp.status));
+    }
+  } catch(e) {
+    alert('Netzwerkfehler: ' + e.message);
+  }
+}
+
+// ── Add ───────────────────────────────────────────────────────────
+function toggleAddForm() {
+  var wrap = document.getElementById('add-form-wrap');
+  wrap.classList.toggle('hidden');
+  if (!wrap.classList.contains('hidden')) {
+    document.getElementById('add-name').focus();
+  }
+}
+
+async function addAsset() {
+  var name = document.getElementById('add-name').value.trim();
+  var typeId = document.getElementById('add-type').value;
+  var ip = document.getElementById('add-ip').value.trim();
+  var notes = document.getElementById('add-notes').value.trim();
+  var errEl = document.getElementById('add-error');
+
+  if (!name) { errEl.textContent = 'Hostname ist erforderlich.'; errEl.classList.remove('hidden'); return; }
+  if (!typeId) { errEl.textContent = 'Bitte einen Asset-Typ wählen.'; errEl.classList.remove('hidden'); return; }
+  errEl.classList.add('hidden');
+
+  var meta = {};
+  if (ip) meta.ip_address = ip;
+  if (notes) meta.notes = notes;
+
+  try {
+    var resp = await fetch('/admin/assets', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        name: name,
+        asset_type_id: parseInt(typeId),
+        asset_metadata: Object.keys(meta).length ? meta : null,
+      }),
+    });
+    if (!resp.ok) {
+      var err = {};
+      try { err = await resp.json(); } catch(e) {}
+      errEl.textContent = 'Fehler: ' + (err.detail || resp.status);
+      errEl.classList.remove('hidden');
+      return;
+    }
+    // Clear form
+    document.getElementById('add-name').value = '';
+    document.getElementById('add-ip').value = '';
+    document.getElementById('add-notes').value = '';
+    // Reload
+    await loadAssets();
+    document.getElementById('add-form-wrap').classList.add('hidden');
+  } catch(e) {
+    errEl.textContent = 'Netzwerkfehler: ' + e.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+// Enter key in add form
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !document.getElementById('add-form-wrap').classList.contains('hidden')) {
+    if (document.activeElement && document.activeElement.closest('#add-form-wrap')) {
+      addAsset();
+    }
+  }
+});
+
+// ── Init ──────────────────────────────────────────────────────────
+loadAssets();
+</script>
+{% endblock %}

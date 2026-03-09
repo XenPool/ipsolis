@@ -323,9 +323,19 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   // Beim Absenden: Inputs in versteckten Sektionen deaktivieren
+  // + noch nicht bestätigte User-Eingaben automatisch als Chip hinzufügen
   var form = document.querySelector('form');
   if (form) {
-    form.addEventListener('submit', function() {
+    form.addEventListener('submit', function(e) {
+      // Warnung wenn Text im Eingabefeld steht aber noch nicht als Chip bestätigt wurde
+      var pending = [];
+      if (document.getElementById('rdp-input')?.value.trim())   pending.push('RDP-User');
+      if (document.getElementById('admin-input')?.value.trim()) pending.push('Admin-User');
+      if (pending.length) {
+        e.preventDefault();
+        alert('Bitte zuerst ' + pending.join(' und ') + ' mit "+ Hinzufügen" bestätigen (oder Feld leeren).');
+        return;
+      }
       document.querySelectorAll('.attr-section.hidden input, .attr-section.hidden select').forEach(function(el) {
         el.disabled = true;
       });

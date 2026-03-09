@@ -267,12 +267,44 @@ async def asset_types_list(
         )
         rb_counts = {row[0]: row[1] for row in rows}
 
+    # Pool counts per asset type
+    pool_counts: dict[int, dict] = {}
+    if asset_types:
+        count_rows = (await db.execute(
+            text("SELECT asset_type_id, status, count(*) FROM asset_pool GROUP BY asset_type_id, status"),
+        )).all()
+        for r in count_rows:
+            tid = r[0]
+            pool_counts.setdefault(tid, {"free": 0, "total": 0})
+            pool_counts[tid]["total"] += r[2]
+            if r[1] == "free":
+                pool_counts[tid]["free"] += r[2]
+
     return templates.TemplateResponse(
         request, "ui/asset_types.html",
         {
             "asset_types": asset_types,
             "rb_counts": rb_counts,
+            "pool_counts": pool_counts,
             "active_page": "asset-types",
+        },
+    )
+
+
+@router.get("/asset-pool", response_class=HTMLResponse)
+async def asset_pool_page(
+    request: Request,
+    asset_type_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    types_result = await db.execute(select(AssetType).order_by(AssetType.name))
+    asset_types = types_result.scalars().all()
+    return templates.TemplateResponse(
+        request, "ui/asset_pool.html",
+        {
+            "asset_types": asset_types,
+            "selected_type_id": asset_type_id,
+            "active_page": "asset-pool",
         },
     )
 
@@ -359,10 +391,27 @@ async def runbook_editor(
     )
     script_modules = mod_result.scalars().all()
 
+    # Serialize steps to plain dicts so Jinja2 tojson works
+    steps_data = [
+        {
+            "id": s.id,
+            "position": s.position,
+            "step_name": s.step_name,
+            "module_key": s.module_key,
+            "script_module_id": s.script_module_id,
+            "params_template": s.params_template or {},
+            "is_critical": s.is_critical,
+            "retry_count": s.retry_count,
+            "timeout_seconds": s.timeout_seconds,
+        }
+        for s in rb.steps
+    ]
+
     return templates.TemplateResponse(
         request, "ui/runbook_editor.html",
         {
             "runbook": rb,
+            "steps": steps_data,
             "asset_type": at,
             "script_modules": script_modules,
             "active_page": "runbooks",

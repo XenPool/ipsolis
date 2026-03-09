@@ -109,10 +109,43 @@
 
     <!-- Editor header -->
     <div class="flex items-center justify-between bg-white rounded border border-gray-200 px-3 py-2">
-      <span class="text-sm text-gray-600 font-mono" id="editor-lang-label">
-        {% if module %}{{ module.script_type | title }}{% else %}PowerShell{% endif %}
-      </span>
-      <span class="text-xs text-gray-400">Script-Inhalt</span>
+      <div class="flex items-center gap-2">
+        <span class="text-sm text-gray-600 font-mono" id="editor-lang-label">
+          {% if module %}{{ module.script_type | title }}{% else %}PowerShell{% endif %}
+        </span>
+        <span id="editor-dirty-dot" class="hidden w-2 h-2 rounded-full bg-orange-400" title="Ungespeicherte Änderungen"></span>
+        <button onclick="editorUndo()" title="Rückgängig (Ctrl+Z)"
+                class="px-1.5 py-0.5 rounded text-gray-500 hover:bg-gray-100 hover:text-gray-800 text-sm leading-none">↩</button>
+        <button onclick="editorRedo()" title="Wiederholen (Ctrl+Y)"
+                class="px-1.5 py-0.5 rounded text-gray-500 hover:bg-gray-100 hover:text-gray-800 text-sm leading-none">↪</button>
+      </div>
+      <div class="relative flex items-center gap-3">
+        <button onclick="toggleVarPicker(event)"
+                class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50 border border-blue-200">
+          <span>§</span> Variablen einfügen
+        </button>
+        <!-- Variable picker dropdown -->
+        <div id="var-picker" class="hidden absolute right-0 top-8 w-72 bg-white border border-gray-200 rounded-lg shadow-xl z-20 text-xs overflow-hidden">
+          <div class="px-3 py-2 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+            <span class="font-semibold text-gray-700">Variable einfügen</span>
+            <button onclick="document.getElementById('var-picker').classList.add('hidden')"
+                    class="text-gray-400 hover:text-gray-600 text-base leading-none">×</button>
+          </div>
+          <div id="var-picker-params" class="border-b border-gray-100">
+            <div class="px-3 py-1.5 bg-gray-50 text-xs text-gray-500 uppercase tracking-wide font-medium">PARAMS (lokal)</div>
+            <div id="var-picker-params-list" class="py-1"></div>
+          </div>
+          <div id="var-picker-vars" class="border-b border-gray-100">
+            <div class="px-3 py-1.5 bg-gray-50 text-xs text-gray-500 uppercase tracking-wide font-medium">VARS (global)</div>
+            <div id="var-picker-vars-list" class="py-1 max-h-32 overflow-y-auto"></div>
+          </div>
+          <div id="var-picker-ctx">
+            <div class="px-3 py-1.5 bg-gray-50 text-xs text-gray-500 uppercase tracking-wide font-medium">CTX (Runbook-Kontext)</div>
+            <div id="var-picker-ctx-list" class="py-1 max-h-48 overflow-y-auto"></div>
+          </div>
+        </div>
+        <span class="text-xs text-gray-400">Script-Inhalt</span>
+      </div>
     </div>
 
     <!-- Monaco editor -->
@@ -131,9 +164,16 @@
           ▶ Ausführen
         </button>
       </div>
-      <div id="test-output" class="hidden">
-        <pre id="test-output-pre"
-             class="rounded bg-gray-900 text-gray-100 text-xs font-mono p-3 overflow-auto max-h-48"></pre>
+      <div id="test-result-panel" class="hidden mt-3 rounded overflow-hidden border border-gray-700 text-xs font-mono">
+        <div id="test-result-status" class="px-3 py-1.5 flex items-center gap-3 bg-gray-800 text-gray-200 text-xs"></div>
+        <div id="test-stdout-wrap">
+          <div class="px-2 py-1 bg-gray-700 text-gray-400 text-xs uppercase tracking-wide">stdout</div>
+          <pre id="test-stdout" class="bg-gray-900 text-green-300 px-3 py-2 overflow-auto max-h-64 whitespace-pre-wrap"></pre>
+        </div>
+        <div id="test-stderr-wrap" class="hidden">
+          <div class="px-2 py-1 bg-red-900 text-red-300 text-xs uppercase tracking-wide">stderr</div>
+          <pre id="test-stderr" class="bg-gray-900 text-red-300 px-3 py-2 overflow-auto max-h-32 whitespace-pre-wrap"></pre>
+        </div>
       </div>
     </div>
   </div>
@@ -144,6 +184,8 @@
 <script>
 var MODULE_ID = {{ module.id if module else 'null' }};
 var editor;
+var _savedContent = {{ (module.script_content if module else "") | tojson }};
+var _globalVars = [];
 
 // Initial script content
 var INITIAL_CONTENT = {{ (module.script_content if module else "") | tojson }};
@@ -161,7 +203,18 @@ require(['vs/editor/editor.main'], function () {
     automaticLayout: true,
     scrollBeyondLastLine: false,
   });
+
+  // Dirty-state tracking
+  editor.onDidChangeModelContent(function() {
+    var dirty = editor.getValue() !== _savedContent;
+    document.getElementById('editor-dirty-dot').classList.toggle('hidden', !dirty);
+  });
 });
+
+// Load global vars for the picker
+fetch('/admin/global-vars').then(function(r) { return r.json(); }).then(function(data) {
+  _globalVars = Array.isArray(data) ? data : (data.items || []);
+}).catch(function() { _globalVars = []; });
 
 document.getElementById('mod-type').addEventListener('change', function() {
   var lang = this.value;
@@ -241,6 +294,8 @@ async function saveModule() {
         MODULE_ID = data.id;
         history.replaceState(null, '', '/ui/modules/' + MODULE_ID + '/bearbeiten');
       }
+      _savedContent = editor ? editor.getValue() : payload.script_content;
+      document.getElementById('editor-dirty-dot').classList.add('hidden');
       document.getElementById('save-result').innerHTML =
         '<div class="text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">Gespeichert.</div>';
       setTimeout(function() { document.getElementById('save-result').innerHTML = ''; }, 3000);
@@ -263,14 +318,134 @@ async function saveModule() {
   }
 }
 
+function _renderTestResult(data) {
+  var out  = (data && data.output) ? data.output : data || {};
+  var ok   = out.success !== false && (data ? data.success !== false : true);
+  var ms   = (data && data.duration_ms) ? data.duration_ms : 0;
+  var mock = out.mock === true;
+
+  // Status bar
+  document.getElementById('test-result-status').innerHTML =
+    (ok ? '<span class="text-green-400 font-semibold">✓ Erfolg</span>'
+        : '<span class="text-red-400 font-semibold">✗ Fehler</span>')
+    + '<span class="text-gray-500">' + ms + ' ms</span>'
+    + (mock ? '<span class="bg-yellow-800 text-yellow-300 px-1.5 py-0.5 rounded text-xs ml-1">mock</span>' : '');
+
+  // Stdout: prefer out.stdout, then string output field, then error message
+  var stdout = (out.stdout != null ? out.stdout : null)
+    || (typeof out.output === 'string' ? out.output : null)
+    || (!ok ? (out.error || data.error || '') : '')
+    || '';
+  document.getElementById('test-stdout').textContent = stdout || '(no output)';
+
+  // Stderr: show when non-empty, also surface error on failure
+  var stderr = out.stderr || '';
+  if (!ok && !stderr && out.error) stderr = out.error;
+  var stderrWrap = document.getElementById('test-stderr-wrap');
+  if (stderr) {
+    document.getElementById('test-stderr').textContent = stderr;
+    stderrWrap.classList.remove('hidden');
+  } else {
+    stderrWrap.classList.add('hidden');
+  }
+
+  document.getElementById('test-result-panel').classList.remove('hidden');
+}
+
+// ── Editor helpers ──────────────────────────────────────────────
+function editorUndo() { if (editor) editor.trigger('toolbar', 'undo', null); }
+function editorRedo() { if (editor) editor.trigger('toolbar', 'redo', null); }
+
+// ── Variable picker ─────────────────────────────────────────────
+function _varRow(label, snippet, title) {
+  var escaped = JSON.stringify(snippet).replace(/"/g, '&quot;');
+  return '<button type="button" onclick="insertVar(' + escaped + ')"'
+    + ' class="w-full text-left px-3 py-1.5 hover:bg-blue-50 flex items-center gap-2 group">'
+    + '<code class="text-blue-700 font-mono bg-blue-50 group-hover:bg-blue-100 px-1 rounded flex-1 truncate">' + snippet + '</code>'
+    + '<span class="text-gray-400 text-xs shrink-0">' + label + '</span>'
+    + '</button>';
+}
+
+function buildVarPicker() {
+  var isPs = document.getElementById('mod-type').value !== 'python';
+  var paramsList = document.getElementById('var-picker-params-list');
+  var rows = document.querySelectorAll('.param-row');
+  var html = '';
+  rows.forEach(function(row) {
+    var name = row.querySelector('[name="param_name[]"]').value.trim();
+    if (!name) return;
+    var snippet = isPs ? ('$PARAMS.' + name) : ("PARAMS['" + name + "']");
+    html += _varRow(name, snippet, 'param');
+  });
+  paramsList.innerHTML = html || '<div class="px-3 py-1.5 text-gray-400 italic">Keine Parameter definiert</div>';
+
+  var varsList = document.getElementById('var-picker-vars-list');
+  html = '';
+  _globalVars.forEach(function(v) {
+    var key = v.key || v.name || String(v);
+    var snippet = isPs ? ('$VARS.' + key) : ("VARS['" + key + "']");
+    html += _varRow(key, snippet, 'global');
+  });
+  varsList.innerHTML = html || '<div class="px-3 py-1.5 text-gray-400 italic">Keine globalen Variablen</div>';
+
+  var ctxVars = [
+    'asset_name', 'asset_id', 'order_id',
+    'user_email', 'user_name', 'owner_email', 'owner_name',
+    'rdp_users', 'admin_users',
+    'expires_at', 'requested_from',
+    'asset_type_id', 'asset_type_name',
+    'snow_req', 'snow_ritm',
+  ];
+  var ctxList = document.getElementById('var-picker-ctx-list');
+  html = ctxVars.map(function(key) {
+    var snippet = isPs ? ('$PARAMS.' + key) : ("PARAMS['" + key + "']");
+    return _varRow(key, snippet, 'ctx');
+  }).join('');
+  ctxList.innerHTML = html;
+}
+
+function toggleVarPicker(evt) {
+  if (evt) evt.stopPropagation();
+  var picker = document.getElementById('var-picker');
+  if (picker.classList.contains('hidden')) {
+    buildVarPicker();
+    picker.classList.remove('hidden');
+  } else {
+    picker.classList.add('hidden');
+  }
+}
+
+function insertVar(snippet) {
+  if (!editor) return;
+  var sel = editor.getSelection();
+  editor.executeEdits('insert-var', [{ range: sel, text: snippet, forceMoveMarkers: true }]);
+  editor.focus();
+  document.getElementById('var-picker').classList.add('hidden');
+}
+
+// Close picker when clicking outside
+document.addEventListener('click', function(evt) {
+  var picker = document.getElementById('var-picker');
+  if (picker && !picker.contains(evt.target)) picker.classList.add('hidden');
+});
+
+// ── Test runner ─────────────────────────────────────────────────
 async function runTest() {
   if (!MODULE_ID) { alert('Bitte zuerst speichern.'); return; }
+
+  // Guard: warn if script was changed since last save
+  if (editor && editor.getValue() !== _savedContent) {
+    if (!confirm('Das Script enthält ungespeicherte Änderungen.\n\nEs wird die zuletzt gespeicherte Version ausgeführt – nicht die aktuelle.\n\nTrotzdem fortfahren?')) return;
+  }
   var paramsRaw = document.getElementById('test-params-input').value.trim() || '{}';
   var params;
   try { params = JSON.parse(paramsRaw); } catch(e) { alert('Ungültiges JSON in Parametern.'); return; }
 
-  document.getElementById('test-output').classList.remove('hidden');
-  document.getElementById('test-output-pre').textContent = 'Wird ausgeführt…';
+  // Show panel with running indicator
+  document.getElementById('test-result-panel').classList.remove('hidden');
+  document.getElementById('test-result-status').innerHTML = '<span class="text-gray-400 animate-pulse">⏳ Wird ausgeführt…</span>';
+  document.getElementById('test-stdout').textContent = '';
+  document.getElementById('test-stderr-wrap').classList.add('hidden');
 
   // Trigger test via Celery task
   var resp = await fetch('/admin/script-modules/' + MODULE_ID + '/test', {
@@ -282,31 +457,31 @@ async function runTest() {
   if (!resp.ok) {
     var err = {};
     try { err = await resp.json(); } catch(e) {}
-    document.getElementById('test-output-pre').textContent = 'Fehler: ' + JSON.stringify(err.detail || err);
+    _renderTestResult({ success: false, output: { success: false, error: JSON.stringify(err.detail || err) } });
     return;
   }
 
   var data = await resp.json();
   var taskId = data.task_id;
   if (!taskId) {
-    document.getElementById('test-output-pre').textContent = JSON.stringify(data, null, 2);
+    _renderTestResult({ success: false, output: { success: false, error: JSON.stringify(data) } });
     return;
   }
 
   // Poll for result
-  for (var i = 0; i < 30; i++) {
+  for (var i = 0; i < 60; i++) {
     await new Promise(function(r) { setTimeout(r, 1000); });
     var pollResp = await fetch('/admin/script-module-test/' + taskId);
     if (!pollResp.ok) continue;
     var pollData = await pollResp.json();
     if (pollData.status === 'SUCCESS' || pollData.status === 'FAILURE') {
-      document.getElementById('test-output-pre').textContent =
-        JSON.stringify(pollData.result || pollData, null, 2);
+      _renderTestResult(pollData.result || pollData);
       return;
     }
-    document.getElementById('test-output-pre').textContent = 'Status: ' + pollData.status + '…';
+    document.getElementById('test-result-status').innerHTML =
+      '<span class="text-gray-400 animate-pulse">⏳ ' + pollData.status + '…</span>';
   }
-  document.getElementById('test-output-pre').textContent = 'Timeout – bitte Flower prüfen.';
+  _renderTestResult({ success: false, output: { success: false, error: 'Timeout – Task läuft noch. Bitte Flower prüfen.' } });
 }
 </script>
 {% endblock %}

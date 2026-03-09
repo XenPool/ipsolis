@@ -8,9 +8,12 @@ Python-Änderungen oder Redeploy angepasst werden.
 import json
 import logging
 import os
+import re
 import subprocess
 import tempfile
 import time
+
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[mGKHFABCDJsu]")
 from datetime import datetime, timezone
 
 from celery import Task
@@ -29,6 +32,7 @@ DATABASE_URL = os.getenv(
 ).replace("postgresql+asyncpg://", "postgresql+psycopg2://")
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+MOCK_SCRIPTS = os.getenv("MOCK_SCRIPTS", "true" if ENVIRONMENT == "development" else "false").lower() == "true"
 
 
 def _get_db_session() -> Session:
@@ -378,10 +382,12 @@ def _run_db_script(
     db: Session,
     script_module_id: int,
     rendered_params: dict,
+    force_real: bool = False,
 ) -> dict:
     """Executes a script_module from the DB.
 
-    In development mode: returns a mock success result without actually running.
+    In development mode: returns a mock success result without actually running,
+    unless force_real=True (used by the module editor test runner).
     In production: writes to a temp file and calls pwsh.
     Returns a dict with at minimum {"success": bool}.
     """
@@ -395,7 +401,7 @@ def _run_db_script(
 
     script_name, script_content, script_type = row[0], row[1], row[2]
 
-    if ENVIRONMENT == "development":
+    if MOCK_SCRIPTS and not force_real:
         logger.info(
             "[MOCK] script_module=%s params=%s – returning mock success",
             script_name, list(rendered_params.keys()),
@@ -426,15 +432,19 @@ def _run_db_script(
             timeout=120,
         )
 
+        stdout_raw = _ANSI_ESCAPE.sub("", proc.stdout).strip()
+        stderr_raw = _ANSI_ESCAPE.sub("", proc.stderr).strip()
+
         if proc.returncode != 0:
             return {
                 "success": False,
                 "module": script_name,
-                "error": proc.stderr.strip() or f"Exit code {proc.returncode}",
-                "stdout": proc.stdout.strip(),
+                "error": stderr_raw or f"Exit code {proc.returncode}",
+                "stdout": stdout_raw,
+                "stderr": stderr_raw,
             }
 
-        stdout = proc.stdout.strip()
+        stdout = stdout_raw
         try:
             result = json.loads(stdout)
             if "success" not in result:
@@ -443,6 +453,8 @@ def _run_db_script(
             result = {"success": True, "output": stdout}
 
         result["module"] = script_name
+        result["stdout"] = stdout
+        result["stderr"] = stderr_raw
         return result
 
     except subprocess.TimeoutExpired:
@@ -479,6 +491,7 @@ def _run_runbook_path(
     assignment_model: str = "assigned_personal",
     deprovision_policy: str = "access_only",
     automation_strategy: str = "runbook_only",
+    personal_provisioning_strategy: str = "assign_existing_free",
     _set_delivered: bool = True,
 ) -> dict:
     """Führt das konfigurierte Runbook für den Asset-Typ und die Action aus.
@@ -546,6 +559,34 @@ def _run_runbook_path(
         ).fetchone()
         if ar:
             pre_asset_name = ar[0]
+
+    # Auto-Reserve aus Pool für provision + pool-basierte Asset-Typen
+    if (
+        action == "provision"
+        and assignment_model in ("assigned_personal", "dedicated_shared")
+        and not pre_asset_id
+    ):
+        from tasks.modules.pool_manager import reserve_asset as _reserve_asset
+        res = _reserve_asset(
+            db,
+            order_id=order_id,
+            asset_type_id=order["asset_type_id"],
+            expires_at=expires_at,
+            personal_provisioning_strategy=personal_provisioning_strategy,
+            user_email=order["user_email"],
+        )
+        if res.get("success"):
+            pre_asset_id = res["asset_id"]
+            pre_asset_name = res["asset_name"]
+            logger.info(
+                "[runbook_path] Auto-reserved asset: id=%s name=%s",
+                pre_asset_id, pre_asset_name,
+            )
+        else:
+            err = res.get("error", "Kein freier Asset im Pool verfügbar")
+            logger.error("[runbook_path] Auto-reserve failed: %s", err)
+            update_order_status(db, order_id, "failed", err)
+            return {"success": False, "error": err}
 
     ctx: dict = {
         "order_id": order_id,
@@ -813,7 +854,8 @@ def run(self: Task, order_id: int) -> dict:
         at_row = db.execute(
             text("""
                 SELECT name, description, automation_mode, assignment_model,
-                       deprovision_policy, automation_strategy, composite_steps
+                       deprovision_policy, automation_strategy, composite_steps,
+                       personal_provisioning_strategy
                 FROM asset_types WHERE id = :id
             """),
             {"id": order["asset_type_id"]},
@@ -825,6 +867,7 @@ def run(self: Task, order_id: int) -> dict:
         deprovision_policy = at_row[4] if at_row else "access_only"
         automation_strategy = at_row[5] if at_row else None
         composite_steps = at_row[6] if at_row else None
+        personal_provisioning_strategy = at_row[7] if at_row else "assign_existing_free"
 
         # Fallback: automation_strategy aus automation_mode ableiten (Legacy-Records)
         if not automation_strategy:
@@ -877,6 +920,7 @@ def run(self: Task, order_id: int) -> dict:
             assignment_model=assignment_model,
             deprovision_policy=deprovision_policy,
             automation_strategy=automation_strategy,
+            personal_provisioning_strategy=personal_provisioning_strategy,
         )
 
     except Exception as e:
@@ -907,7 +951,7 @@ def test_script_module(self: Task, script_module_id: int, params: dict) -> dict:
     db = _get_db_session()
     t_start = time.monotonic()
     try:
-        result = _run_db_script(db, script_module_id, params)
+        result = _run_db_script(db, script_module_id, params, force_real=True)
         duration_ms = (time.monotonic() - t_start) * 1000
         return {
             "success": result.get("success", True),

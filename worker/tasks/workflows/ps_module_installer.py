@@ -60,7 +60,7 @@ def install_ps_module(self, ps_module_id: int) -> dict:
         _set_status(db, ps_module_id, "installing", error_log=None, installed_version=None)
         logger.info("ps_module_installer: installing %s (version=%s)", module_name, required_version or "latest")
 
-        # ── Real install (runs in all environments) ───────────────────────────
+        # ── Install ────────────────────────────────────────────────────────────
         version_clause = (
             f"-RequiredVersion '{required_version}' " if required_version else ""
         )
@@ -83,7 +83,10 @@ def install_ps_module(self, ps_module_id: int) -> dict:
             logger.error("ps_module_installer: failed %s: %s", module_name, error[:200])
             return {"success": False, "error": error}
 
-        # Query the actually installed version
+        # ── Verify installation succeeded via Get-InstalledModule ──────────────
+        # This is the authoritative check: if the module is not found locally
+        # after a successful Install-Module call, PSGallery silently accepted an
+        # unknown module name (e.g. due to API issues). Treat that as failure.
         ver_result = subprocess.run(
             [
                 "pwsh", "-NonInteractive", "-NoProfile", "-Command",
@@ -93,7 +96,17 @@ def install_ps_module(self, ps_module_id: int) -> dict:
             text=True,
             timeout=30,
         )
-        installed_version = ver_result.stdout.strip() or required_version or "unknown"
+        installed_version = ver_result.stdout.strip()
+
+        if not installed_version:
+            error = (
+                f"Modul '{module_name}' wurde nicht installiert. "
+                "Der Modulname existiert möglicherweise nicht in der PSGallery. "
+                "Bitte den exakten Namen unter https://www.powershellgallery.com prüfen."
+            )
+            _set_status(db, ps_module_id, "failed", error_log=error)
+            logger.warning("ps_module_installer: Get-InstalledModule returned nothing for %s", module_name)
+            return {"success": False, "error": error}
 
         _set_status(db, ps_module_id, "installed", installed_version=installed_version)
         logger.info("ps_module_installer: installed %s=%s", module_name, installed_version)

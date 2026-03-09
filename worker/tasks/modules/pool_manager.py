@@ -3,16 +3,18 @@
 Entspricht dem Ivanti-Modul 'Pool Management'.
 """
 
+import json
 import logging
 import os
 from datetime import datetime, timezone
 
-from sqlalchemy import select, text as sql_text
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+MOCK_SCRIPTS = os.getenv("MOCK_SCRIPTS", "true" if ENVIRONMENT == "development" else "false").lower() == "true"
 
 
 def reserve_asset(
@@ -35,11 +37,8 @@ def reserve_asset(
         {"success": True, "asset_id": int, "asset_name": str}
         {"success": False, "error": str}
     """
-    if ENVIRONMENT == "development":
+    if MOCK_SCRIPTS:
         return _mock_reserve_asset(order_id, asset_type_id, expires_at)
-
-    # Production: Echte DB-Abfragen
-    from worker.models import AssetPool, AssetStatus  # lazy import
 
     # REUSE_EXISTING_BY_OWNER: User hat bereits eine zugewiesene Instanz
     if personal_provisioning_strategy == "reuse_existing_by_owner" and user_email:
@@ -72,46 +71,66 @@ def reserve_asset(
             "stub": True,
         }
 
-    # ASSIGN_EXISTING_FREE (Default): Erste freie Instanz aus Pool
-    asset = db.execute(
-        select(AssetPool)
-        .where(
-            AssetPool.asset_type_id == asset_type_id,
-            AssetPool.status == AssetStatus.FREE,
-        )
-        .with_for_update(skip_locked=True)  # Race-Condition-safe
-        .limit(1)
-    ).scalar_one_or_none()
+    # ASSIGN_EXISTING_FREE (Default): Erste freie Instanz aus Pool – Race-Condition-safe
+    row = db.execute(
+        sql_text("""
+            SELECT id, name, metadata FROM asset_pool
+            WHERE asset_type_id = :at AND status = 'free'
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+        """),
+        {"at": asset_type_id},
+    ).fetchone()
 
-    if not asset:
+    if not row:
         return {"success": False, "error": f"No free asset available for type {asset_type_id}"}
 
-    asset.status = AssetStatus.RESERVED
-    asset.current_order_id = order_id
-    asset.expires_at = expires_at
+    asset_id, asset_name, metadata = row[0], row[1], row[2] or {}
     if user_email:
-        asset.metadata = {**(asset.metadata or {}), "owner_email": user_email}
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata)
+        metadata = {**metadata, "owner_email": user_email}
+
+    db.execute(
+        sql_text("""
+            UPDATE asset_pool
+            SET status = 'reserved',
+                current_order_id = :order_id,
+                expires_at = :expires_at,
+                metadata = CAST(:metadata AS jsonb)
+            WHERE id = :id
+        """),
+        {
+            "id": asset_id,
+            "order_id": order_id,
+            "expires_at": expires_at,
+            "metadata": json.dumps(metadata),
+        },
+    )
     db.commit()
 
-    logger.info("Asset reserved: asset_id=%s order_id=%s owner=%s", asset.id, order_id, user_email)
-    return {"success": True, "asset_id": asset.id, "asset_name": asset.name}
+    logger.info("Asset reserved: asset_id=%s order_id=%s owner=%s", asset_id, order_id, user_email)
+    return {"success": True, "asset_id": asset_id, "asset_name": asset_name}
 
 
 def release_asset(db: Session, asset_id: int) -> dict:
     """Gibt eine VM zurück in den Pool (Status FREE)."""
-    if ENVIRONMENT == "development":
+    if MOCK_SCRIPTS:
         return _mock_release_asset(asset_id)
 
-    from worker.models import AssetPool, AssetStatus
-
-    asset = db.get(AssetPool, asset_id)
-    if not asset:
+    result = db.execute(
+        sql_text("""
+            UPDATE asset_pool
+            SET status = 'free',
+                current_order_id = NULL,
+                expires_at = NULL,
+                last_reclaim_at = :now
+            WHERE id = :id
+        """),
+        {"id": asset_id, "now": datetime.now(timezone.utc)},
+    )
+    if result.rowcount == 0:
         return {"success": False, "error": f"Asset {asset_id} not found"}
-
-    asset.status = AssetStatus.FREE
-    asset.current_order_id = None
-    asset.expires_at = None
-    asset.last_reclaim_at = datetime.now(timezone.utc)
     db.commit()
 
     logger.info("Asset released: asset_id=%s", asset_id)
@@ -120,19 +139,22 @@ def release_asset(db: Session, asset_id: int) -> dict:
 
 def set_asset_busy(db: Session, asset_id: int, order_id: int, expires_at: datetime) -> dict:
     """Setzt VM auf BUSY nach erfolgreicher Bereitstellung."""
-    if ENVIRONMENT == "development":
+    if MOCK_SCRIPTS:
         logger.info("[MOCK] set_asset_busy: asset_id=%s order_id=%s", asset_id, order_id)
         return {"success": True}
 
-    from worker.models import AssetPool, AssetStatus
-
-    asset = db.get(AssetPool, asset_id)
-    if not asset:
+    result = db.execute(
+        sql_text("""
+            UPDATE asset_pool
+            SET status = 'busy',
+                current_order_id = :order_id,
+                expires_at = :expires_at
+            WHERE id = :id
+        """),
+        {"id": asset_id, "order_id": order_id, "expires_at": expires_at},
+    )
+    if result.rowcount == 0:
         return {"success": False, "error": f"Asset {asset_id} not found"}
-
-    asset.status = AssetStatus.BUSY
-    asset.current_order_id = order_id
-    asset.expires_at = expires_at
     db.commit()
     return {"success": True}
 
@@ -144,14 +166,13 @@ def check_capacity(db: Session, asset_type_id: int, pool_capacity: int) -> dict:
         {"success": True, "current": n, "capacity": m}
         {"success": False, "current": n, "capacity": m, "error": str}
     """
-    if ENVIRONMENT == "development":
+    if MOCK_SCRIPTS:
         logger.info(
             "[MOCK] check_capacity: asset_type_id=%s capacity=%s",
             asset_type_id, pool_capacity,
         )
         return {"success": True, "current": 3, "capacity": pool_capacity, "mock": True}
 
-    from sqlalchemy import text as sql_text
     row = db.execute(
         sql_text("""
             SELECT COUNT(*) FROM orders

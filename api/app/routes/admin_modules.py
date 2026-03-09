@@ -333,14 +333,25 @@ async def search_psgallery(q: str = "") -> list[dict]:
     """Search PSGallery for modules matching q (min 2 chars)."""
     if len(q) < 2:
         return []
+    # PSGallery OData v2: $filter=IsLatestVersion no longer works.
+    # Use %27-quoted searchTerm + semVerLevel=2.0.0 + PS User-Agent instead.
+    # Fetch extra entries and deduplicate by name server-side.
+    from urllib.parse import quote as _quote
     url = (
         "https://www.powershellgallery.com/api/v2/Search()"
-        f"?$filter=IsLatestVersion&searchTerm='{q}'"
-        "&$orderby=DownloadCount+desc&$top=15&includePrerelease=false"
+        f"?searchTerm=%27{_quote(q)}%27"
+        "&$orderby=DownloadCount+desc&$top=40"
+        "&includePrerelease=false&semVerLevel=2.0.0"
     )
     try:
         async with httpx.AsyncClient(timeout=8) as client:
-            resp = await client.get(url, headers={"Accept": "application/atom+xml"})
+            resp = await client.get(
+                url,
+                headers={
+                    "Accept": "application/atom+xml",
+                    "User-Agent": "WindowsPowerShell/5.1",
+                },
+            )
             resp.raise_for_status()
     except Exception as exc:
         logger.warning("psgallery search failed for q=%r: %s", q, exc)
@@ -356,6 +367,7 @@ async def search_psgallery(q: str = "") -> list[dict]:
     except ET.ParseError:
         return []
 
+    seen: set[str] = set()
     results = []
     for entry in root.findall("a:entry", ns):
         props = entry.find("m:properties", ns)
@@ -368,8 +380,11 @@ async def search_psgallery(q: str = "") -> list[dict]:
             or props.findtext("d:Description", "", ns)
             or ""
         ).strip()[:120]
-        if name:
+        if name and name not in seen:
+            seen.add(name)
             results.append({"name": name, "version": version, "description": summary})
+        if len(results) >= 15:
+            break
     return results
 
 

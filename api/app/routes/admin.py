@@ -141,6 +141,7 @@ async def create_asset_type(
         personal_provisioning_strategy=payload.personal_provisioning_strategy,
         runbook_provision_id=payload.runbook_provision_id,
         runbook_revoke_id=payload.runbook_revoke_id,
+        skip_runbook_rules=True,  # runbooks can't exist before the asset type has an ID
     )
     if violations:
         raise HTTPException(
@@ -363,6 +364,29 @@ async def delete_asset(asset_id: int, db: AsyncSession = Depends(get_db)) -> Non
     await db.delete(asset)
     await db.commit()
     logger.info("admin: deleted asset id=%s", asset_id)
+
+
+@router.get("/assets")
+async def list_assets(
+    asset_type_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    q = (
+        select(AssetPool, AssetType.name.label("type_name"))
+        .join(AssetType, AssetPool.asset_type_id == AssetType.id)
+        .order_by(AssetPool.asset_type_id, AssetPool.name)
+    )
+    if asset_type_id:
+        q = q.where(AssetPool.asset_type_id == asset_type_id)
+    rows = (await db.execute(q)).all()
+    result = []
+    for asset, type_name in rows:
+        d = _asset_snap(asset)
+        d["type_name"] = type_name
+        d["last_reclaim_at"] = asset.last_reclaim_at.isoformat() if asset.last_reclaim_at else None
+        d["asset_metadata"] = asset.asset_metadata or {}
+        result.append(d)
+    return result
 
 
 # ── Audit-Log ──────────────────────────────────────────────────────────────────
