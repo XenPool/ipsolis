@@ -1,0 +1,19 @@
+# Prelive overlay – adds nginx reverse proxy with SSL.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prelive.yml --profile dev up -d
+#
+# Prerequisites on the host VM (run once):
+#   mkcert -cert-file certs/cert.pem -key-file certs/key.pem it-selfservice-pre.xenpool.local
+
+services:
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      api:
+        condition: service_healthy
