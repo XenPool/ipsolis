@@ -7,9 +7,11 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
-from app.models.order import Order, OrderStatus
+from app.models.asset import AssetType, AssignmentModel
+from app.models.order import Order, OrderAction, OrderStatus
 from app.schemas.order import OrderCreate, OrderRead, OrderUpdate
 from app.utils.audit import _order_snap, aaudit
+from app.utils.capacity import enforce_pool_capacity
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -65,6 +67,23 @@ async def create_order(
     Erstellt eine neue Bestellung via Self-Service-Portal.
     (For ServiceNow webhooks: POST /webhook/servicenow)
     """
+    # Pre-flight capacity check — PROVISION only
+    if payload.action == OrderAction.PROVISION:
+        at_result = await db.execute(
+            select(AssetType).where(AssetType.id == payload.asset_type_id)
+        )
+        asset_type = at_result.scalar_one_or_none()
+        if not asset_type:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown asset_type_id: {payload.asset_type_id}",
+            )
+        if (
+            asset_type.assignment_model == AssignmentModel.CAPACITY_POOLED
+            and asset_type.pool_capacity is not None
+        ):
+            await enforce_pool_capacity(db, asset_type.id, asset_type.pool_capacity)
+
     order = Order(
         user_email=str(payload.user_email),
         user_name=payload.user_name,

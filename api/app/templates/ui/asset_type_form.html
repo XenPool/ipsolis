@@ -198,7 +198,7 @@
                  class="rounded border-gray-300">
           Renewable
         </label>
-        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer pb-1">
+        <label id="allow-user-lists-row" class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer pb-1">
           <input type="checkbox" name="allow_user_lists"
                  {% if asset_type and asset_type.allow_user_lists %}checked{% endif %}
                  class="rounded border-gray-300">
@@ -478,6 +478,14 @@ function toggleAssignmentDependents() {
 
   // Personal assignment only for assigned_personal
   document.getElementById('personal-provision-section').classList.toggle('hidden', val !== 'assigned_personal');
+
+  // RDP/admin user lists only relevant for Personal; hide + uncheck for Shared/Pooled
+  var userListsRow = document.getElementById('allow-user-lists-row');
+  var isPersonalModel = val === 'assigned_personal';
+  userListsRow.classList.toggle('hidden', !isPersonalModel);
+  if (!isPersonalModel) {
+    userListsRow.querySelector('[name="allow_user_lists"]').checked = false;
+  }
 
   // Set default deprovision policy
   var dp = _dpDefaults[val] || 'access_only';

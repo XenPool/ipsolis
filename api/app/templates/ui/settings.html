@@ -402,10 +402,94 @@
 </div>
 
 <!-- ── Tab: Hosting Infra ────────────────────────────────────────────────── -->
-<div id="tab-hosting" class="hidden">
-  <div class="bg-white rounded-lg border border-gray-200 p-10 text-center text-gray-400 text-sm">
-    Hosting infrastructure configuration coming soon.
+<div id="tab-hosting" class="hidden space-y-6">
+
+  <div id="hosting-banner" class="hidden mb-2 px-4 py-3 rounded text-sm font-medium"></div>
+
+  <!-- vSphere / vCenter -->
+  <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+    <h2 class="text-sm font-semibold text-gray-700 mb-1">vSphere / vCenter</h2>
+    <p class="text-xs text-gray-400 mb-4">
+      Used in PowerShell modules as
+      <code class="font-mono bg-gray-100 px-1 rounded">$PARAMS.vSphereServerHost</code> /
+      <code class="font-mono bg-gray-100 px-1 rounded">$PARAMS.vSphereServerAdminUser</code> /
+      <code class="font-mono bg-gray-100 px-1 rounded">$PARAMS.vSphereServerAdminPW</code>
+    </p>
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Host (hostname or IP)</label>
+        <input type="text" id="cfg-vsphere-host"
+               value="{{ hosting_vsphere.get('host', '') }}"
+               placeholder="vcenter.example.com"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Username</label>
+          <input type="text" id="cfg-vsphere-username"
+                 value="{{ hosting_vsphere.get('username', '') }}"
+                 placeholder="administrator@vsphere.local"
+                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Password</label>
+          <input type="password" id="cfg-vsphere-password"
+                 value=""
+                 placeholder="{{ '(set – leave blank to keep)' if hosting_vsphere.get('password') == '***' else '(not set)' }}"
+                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        </div>
+      </div>
+    </div>
+    <div class="mt-6">
+      <button onclick="saveHostingConfig('vsphere', ['host','username'], 'password')"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save
+      </button>
+    </div>
   </div>
+
+  <!-- XenServer / XCP-ng -->
+  <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+    <h2 class="text-sm font-semibold text-gray-700 mb-1">XenServer / XCP-ng</h2>
+    <p class="text-xs text-gray-400 mb-4">
+      Used in PowerShell modules as
+      <code class="font-mono bg-gray-100 px-1 rounded">$PARAMS.XenServerHost</code> /
+      <code class="font-mono bg-gray-100 px-1 rounded">$PARAMS.XenServerAdminUser</code> /
+      <code class="font-mono bg-gray-100 px-1 rounded">$PARAMS.XenServerAdminPW</code>
+    </p>
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Host (hostname or IP)</label>
+        <input type="text" id="cfg-xenserver-host"
+               value="{{ hosting_xenserver.get('host', '') }}"
+               placeholder="xcp-ng.example.com"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Username</label>
+          <input type="text" id="cfg-xenserver-username"
+                 value="{{ hosting_xenserver.get('username', '') }}"
+                 placeholder="root"
+                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Password</label>
+          <input type="password" id="cfg-xenserver-password"
+                 value=""
+                 placeholder="{{ '(set – leave blank to keep)' if hosting_xenserver.get('password') == '***' else '(not set)' }}"
+                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        </div>
+      </div>
+    </div>
+    <div class="mt-6">
+      <button onclick="saveHostingConfig('xenserver', ['host','username'], 'password')"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save
+      </button>
+    </div>
+  </div>
+
 </div>
 
 
@@ -478,6 +562,54 @@ function showBanner(data) {
   }
   el.textContent = data.message;
   el.classList.remove('hidden');
+}
+
+// ── Hosting Infrastructure ─────────────────────────────────────────────────────
+async function _upsertConfig(key, value, isSecret) {
+  // Try PUT first; if key doesn't exist yet fall back to POST (create)
+  var resp = await fetch('/admin/config/' + key, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({value: value}),
+  });
+  if (resp.status === 404) {
+    resp = await fetch('/admin/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key: key, value: value, is_secret: isSecret || false}),
+    });
+  }
+  return resp.ok;
+}
+
+async function saveHostingConfig(prefix, textFields, pwField) {
+  var errors = [];
+  for (var i = 0; i < textFields.length; i++) {
+    var k = textFields[i];
+    var el = document.getElementById('cfg-' + prefix + '-' + k);
+    if (el) {
+      var ok = await _upsertConfig(prefix + '.' + k, el.value.trim(), false);
+      if (!ok) errors.push(prefix + '.' + k);
+    }
+  }
+  var pwEl = document.getElementById('cfg-' + prefix + '-' + pwField);
+  if (pwEl && pwEl.value) {
+    var ok = await _upsertConfig(prefix + '.' + pwField, pwEl.value, true);
+    if (!ok) errors.push(prefix + '.' + pwField);
+  }
+
+  var banner = document.getElementById('hosting-banner');
+  banner.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'border', 'border-green-200',
+                           'bg-red-50', 'text-red-800', 'border-red-200');
+  if (errors.length === 0) {
+    banner.classList.add('bg-green-50', 'text-green-800', 'border', 'border-green-200');
+    banner.textContent = 'Settings saved.';
+    if (pwEl) pwEl.value = '';
+  } else {
+    banner.classList.add('bg-red-50', 'text-red-800', 'border', 'border-red-200');
+    banner.textContent = 'Failed to save: ' + errors.join(', ');
+  }
+  banner.classList.remove('hidden');
 }
 
 // ── Script Variables ───────────────────────────────────────────────────────────

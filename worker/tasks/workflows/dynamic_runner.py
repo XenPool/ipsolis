@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session  # noqa: F401 – used by _run_step_inline/_r
 
 from tasks import app
 from tasks.modules import audit_helper
+from tasks.modules.config_reader import get_config
 from tasks.modules.step_helper import make_log_json, update_order_step, update_order_status
 
 logger = logging.getLogger(__name__)
@@ -374,7 +375,14 @@ def _build_ps_preamble(global_vars: dict, params: dict) -> str:
 
     vars_pairs = "; ".join(f"{k} = {_ps_escape(v)}" for k, v in global_vars.items())
     params_pairs = "; ".join(f"{k} = {_ps_escape(v)}" for k, v in params.items())
-    return f"$VARS = @{{ {vars_pairs} }}\n$PARAMS = @{{ {params_pairs} }}\n"
+    # Bypass SSL cert validation globally — required for XCP-ng / XenServer and vSphere
+    # hosts that use self-signed certs. Without this, Connect-XenServer / Connect-VIServer
+    # trigger an interactive PromptForChoice which fails in headless/NonInteractive mode.
+    ssl_bypass = (
+        "[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }\n"
+        "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12\n"
+    )
+    return f"{ssl_bypass}$VARS = @{{ {vars_pairs} }}\n$PARAMS = @{{ {params_pairs} }}\n"
 
 
 def _run_db_script(
@@ -408,7 +416,10 @@ def _run_db_script(
 
     try:
         if script_type == "powershell":
-            cmd = ["pwsh", "-NonInteractive", "-NoProfile", "-File", tmp_path]
+            # -InputFormat None: don't read from stdin (prevents hangs on prompts)
+            # No -NonInteractive: allows SDK cert-trust prompts to auto-accept when
+            # stdin is DEVNULL (XenServer / vSphere SDKs use PromptForChoice for certs)
+            cmd = ["pwsh", "-NoProfile", "-InputFormat", "None", "-File", tmp_path]
         elif script_type == "python":
             cmd = ["python", tmp_path]
         else:
@@ -416,6 +427,8 @@ def _run_db_script(
 
         proc = subprocess.run(
             cmd,
+            # "Y\n" repeated: auto-answers certificate trust prompts from XenServer/vSphere SDKs
+            input="Y\nY\nY\nY\nY\n",
             capture_output=True,
             text=True,
             timeout=120,
@@ -602,6 +615,13 @@ def _run_runbook_path(
         "asset_name": pre_asset_name,
         "snow_req": order.get("snow_req"),
         "snow_ritm": order.get("servicenow_ref"),
+        # Hosting infrastructure — available as {{config.vsphere.host}} etc. in params templates
+        "config.vsphere.host":       get_config(db, "vsphere.host", ""),
+        "config.vsphere.username":   get_config(db, "vsphere.username", ""),
+        "config.vsphere.password":   get_config(db, "vsphere.password", ""),
+        "config.xenserver.host":     get_config(db, "xenserver.host", ""),
+        "config.xenserver.username": get_config(db, "xenserver.username", ""),
+        "config.xenserver.password": get_config(db, "xenserver.password", ""),
     }
 
     # 4. Execute steps
@@ -976,11 +996,35 @@ def test_script_module(self: Task, script_module_id: int, params: dict) -> dict:
     """Executes a DB script_module for the module editor test runner.
 
     Always returns a structured result dict – never raises.
+    Hosting config values are auto-injected so scripts that use
+    $PARAMS.XenServerHost etc. work without manual test-param entry.
+    User-supplied params always take precedence.
     """
     db = _get_db_session()
     t_start = time.monotonic()
     try:
-        result = _run_db_script(db, script_module_id, params)
+        # Load param_schema defaults for params not explicitly provided
+        schema_row = db.execute(
+            text("SELECT param_schema FROM script_modules WHERE id = :id"),
+            {"id": script_module_id},
+        ).fetchone()
+        schema_defaults = {}
+        if schema_row and schema_row[0]:
+            for p in schema_row[0]:
+                if p.get("name") and p.get("default") not in (None, ""):
+                    schema_defaults[p["name"]] = p["default"]
+
+        # Priority: schema defaults < hosting config < user-supplied params
+        hosting_defaults = {
+            "vSphereServerHost":      get_config(db, "vsphere.host", ""),
+            "vSphereServerAdminUser": get_config(db, "vsphere.username", ""),
+            "vSphereServerAdminPW":   get_config(db, "vsphere.password", ""),
+            "XenServerHost":          get_config(db, "xenserver.host", ""),
+            "XenServerAdminUser":     get_config(db, "xenserver.username", ""),
+            "XenServerAdminPW":       get_config(db, "xenserver.password", ""),
+        }
+        merged_params = {**schema_defaults, **hosting_defaults, **params}
+        result = _run_db_script(db, script_module_id, merged_params)
         duration_ms = (time.monotonic() - t_start) * 1000
         return {
             "success": result.get("success", True),

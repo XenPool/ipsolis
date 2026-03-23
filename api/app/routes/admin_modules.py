@@ -4,12 +4,12 @@ import logging
 import os
 import xml.etree.ElementTree as ET
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
 from celery.result import AsyncResult
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -295,6 +295,7 @@ async def delete_global_var(var_id: int, db: AsyncSession = Depends(get_db)) -> 
 class PsModuleCreate(BaseModel):
     name: str
     required_version: str | None = None
+    source_type: Literal["gallery", "upload"] = "gallery"
 
 
 class PsModuleUpdate(BaseModel):
@@ -309,6 +310,7 @@ def _ps_module_dict(m: PsModule) -> dict:
         "status": m.status,
         "installed_version": m.installed_version,
         "error_log": m.error_log,
+        "source_type": m.source_type,
         "updated_at": m.updated_at.isoformat() if m.updated_at else None,
     }
 
@@ -404,7 +406,19 @@ async def create_ps_module(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"PS module {payload.name!r} already exists",
         )
-    m = PsModule(name=payload.name, required_version=payload.required_version, status="pending")
+    if payload.source_type == "upload":
+        m = PsModule(
+            name=payload.name,
+            required_version=None,
+            status="awaiting_upload",
+            source_type="upload",
+        )
+        db.add(m)
+        await db.commit()
+        await db.refresh(m)
+        logger.info("admin: created ps_module id=%s name=%s source=upload (awaiting zip)", m.id, m.name)
+        return _ps_module_dict(m)
+    m = PsModule(name=payload.name, required_version=payload.required_version, status="pending", source_type="gallery")
     db.add(m)
     await db.commit()
     await db.refresh(m)
@@ -454,6 +468,32 @@ async def get_ps_module_install_result(task_id: str) -> dict:
         "status": res.status,
         "result": res.result if res.ready() else None,
     }
+
+
+@router.post("/ps-modules/{ps_module_id}/upload")
+async def upload_ps_module(
+    ps_module_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Upload a zip (or .psm1/.psd1) for a manually-sourced PS module."""
+    m = await db.get(PsModule, ps_module_id)
+    if not m:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"PS module {ps_module_id} not found")
+    if m.source_type != "upload":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Module source_type is not 'upload'")
+    filename = file.filename or ""
+    if not filename.lower().endswith((".zip", ".psm1", ".psd1")):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .zip, .psm1, or .psd1 files accepted")
+    data = await file.read()
+    await db.execute(
+        text("UPDATE ps_modules SET upload_data = :d, status = 'pending', updated_at = NOW() WHERE id = :id"),
+        {"d": data, "id": ps_module_id},
+    )
+    await db.commit()
+    task_id = _enqueue_install(ps_module_id)
+    logger.info("admin: upload received for ps_module id=%s filename=%s task=%s", ps_module_id, filename, task_id)
+    return {"task_id": task_id}
 
 
 @router.delete("/ps-modules/{ps_module_id}", status_code=status.HTTP_204_NO_CONTENT)
