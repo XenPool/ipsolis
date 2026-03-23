@@ -7,17 +7,19 @@ Add new tasks at the top.
 
 ## Open
 
-### [open] Commit & Cleanup Pending Changes — Prio 0 (hygiene)
-~13 modified files + 4 untracked files from the 2026-03-16 feature batch are uncommitted.
-- [ ] Stage and commit: migrations 0017/0018, capacity.py, xenserver scripts, all modified routes/templates/models/workers
-- [ ] Clean commit message summarising the feature batch
+### [done] Commit & Cleanup Pending Changes — Prio 0 (hygiene) (2026-03-23)
+- Committed 23 files (4cada00): migrations 0017/0018, capacity.py, xenserver scripts,
+  SCCM scripts, all modified routes/templates/models/workers
 
-### [open] Beat-Scheduler → migrate to dynamic_runner — Prio 1
-The hourly expiry/reclaim task (`check_expiring_assets`) still calls the hardcoded
-`vdi_reclaim` workflow. Must be migrated to `dynamic_runner` so the lifecycle
-completion is also DB-driven.
-- [ ] `worker/tasks/workflows/vdi_reclaim.py`: switch `check_expiring_assets` to `dynamic_runner.run`
-- [ ] Ensure a `delete` runbook is defined for affected asset types
+### [done] Beat-Scheduler → migrate to dynamic_runner (2026-03-23)
+- `check_expiring_assets` now creates a `delete` order per expired asset (copies
+  `provisioned_state` from the provision order for deterministic revoke) and dispatches
+  `dynamic_runner.run` instead of the hardcoded `vdi_reclaim.run`
+- Original provision order is immediately set to `expired`; the new delete order
+  progresses through `dynamic_runner` with the asset type's configured runbook/strategy
+- Reminder email logic unchanged
+- Note: a `delete` runbook must be configured per asset type in the Admin UI for
+  `runbook_only` / `composite` asset types; `group_only` types work without a runbook
 
 ### [open] Legacy Workflow Cleanup — Prio 1b (depends on Beat-Scheduler migration)
 After `check_expiring_assets` is migrated, the three hardcoded workflow files are fully obsolete.

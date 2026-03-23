@@ -12,6 +12,7 @@ Flow:
 Celery Beat Task: check_expiring_assets – checks hourly for expiring assets.
 """
 
+import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -204,12 +205,14 @@ def run(self: Task, order_id: int) -> dict:
 )
 def check_expiring_assets() -> dict:
     """
-    Celery Beat Task: Checks hourly for expiring assets and triggers reclaim.
+    Celery Beat Task: Checks hourly for expiring assets and triggers lifecycle completion.
 
-    - Immediately expired (expires_at <= NOW): start reclaim runbook
-    - Expiring soon (expires_at <= NOW + REMINDER_HOURS): send reminder email
+    - Immediately expired (expires_at <= NOW): create a 'delete' order and dispatch
+      dynamic_runner so the full DB-driven deprovision runbook is executed.
+    - Expiring soon (expires_at <= NOW + REMINDER_HOURS): send reminder email.
     """
     from datetime import timedelta
+    from tasks.workflows.dynamic_runner import run as dynamic_run
 
     reminder_hours = int(os.getenv("REMINDER_HOURS_BEFORE_EXPIRY", "24"))
 
@@ -219,11 +222,12 @@ def check_expiring_assets() -> dict:
     db = Session(engine)
 
     try:
-        # Expired assets (reclaim immediately)
+        # ── Expired assets: create delete order + dispatch dynamic_runner ──
         expired = db.execute(
             text("""
                 SELECT a.id as asset_id, a.name as asset_name, o.id as order_id,
-                       o.user_email, o.user_name, a.expires_at
+                       o.user_email, o.user_name, o.owner_email, o.owner_name,
+                       o.asset_type_id, o.provisioned_state, a.expires_at
                 FROM asset_pool a
                 JOIN orders o ON o.id = a.current_order_id
                 WHERE a.status = 'busy'
@@ -235,13 +239,63 @@ def check_expiring_assets() -> dict:
         reclaim_count = 0
         for row in expired:
             logger.info(
-                "Asset expired: %s (order_id=%s, expired_at=%s) – triggering reclaim",
+                "Asset expired: %s (order_id=%s, expired_at=%s) – creating delete order",
                 row.asset_name, row.order_id, row.expires_at,
             )
-            run.delay(row.order_id)
+
+            # Serialise provisioned_state (JSONB → Python dict via psycopg2; may be None)
+            ps_json = json.dumps(row.provisioned_state) if row.provisioned_state else None
+
+            # Create a new 'delete' order that dynamic_runner can execute
+            new_order = db.execute(
+                text("""
+                    INSERT INTO orders (
+                        user_email, user_name, owner_email, owner_name,
+                        asset_type_id, assigned_asset_id,
+                        action, status, provisioned_state,
+                        requested_from, requested_until,
+                        created_at, updated_at
+                    ) VALUES (
+                        :user_email, :user_name, :owner_email, :owner_name,
+                        :asset_type_id, :asset_id,
+                        'delete', 'processing',
+                        CAST(:provisioned_state AS jsonb),
+                        NOW(), NOW(),
+                        NOW(), NOW()
+                    )
+                    RETURNING id
+                """),
+                {
+                    "user_email": row.user_email,
+                    "user_name": row.user_name,
+                    "owner_email": row.owner_email,
+                    "owner_name": row.owner_name,
+                    "asset_type_id": row.asset_type_id,
+                    "asset_id": row.asset_id,
+                    "provisioned_state": ps_json,
+                },
+            )
+            new_order_id = new_order.fetchone()[0]
+
+            # Mark the original provision order as expired immediately
+            db.execute(
+                text("""
+                    UPDATE orders
+                    SET status = 'expired', updated_at = NOW()
+                    WHERE id = :id
+                """),
+                {"id": row.order_id},
+            )
+            db.commit()
+
+            dynamic_run.delay(new_order_id)
+            logger.info(
+                "Dispatched dynamic_runner delete order_id=%s for asset '%s'",
+                new_order_id, row.asset_name,
+            )
             reclaim_count += 1
 
-        # Assets expiring soon (reminder email)
+        # ── Assets expiring soon: reminder email ──
         reminder_time = datetime.now(timezone.utc) + timedelta(hours=reminder_hours)
         expiring_soon = db.execute(
             text("""
