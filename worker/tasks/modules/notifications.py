@@ -155,8 +155,13 @@ def send_provision_confirmation(
     asset_name: str,
     rdp_users: list[str],
     expires_at: datetime,
+    rdp_hostname: str | None = None,
 ) -> dict:
-    """Sends provisioning confirmation to the user."""
+    """Sends provisioning confirmation to the user.
+
+    If rdp_hostname is provided (personal VDI assignment), a .rdp file is
+    attached so the user can connect directly by opening the attachment.
+    """
     from tasks.modules.config_reader import get_config
 
     company_name = get_config(db, "company.name", "XenPool")
@@ -177,7 +182,50 @@ def send_provision_confirmation(
         return {"success": True, "skipped": True, "reason": "template inactive"}
 
     html = _build_branded_html(body, company_name, subject)
-    return _send_html_email_multi(db, [user_email], bcc, mail_from, subject, html)
+    return _send_html_email_multi(
+        db, [user_email], bcc, mail_from, subject, html,
+        rdp_hostname=rdp_hostname,
+    )
+
+
+def send_modify_confirmation(
+    db: "Session",
+    user_email: str,
+    user_name: str,
+    asset_name: str,
+    rdp_users: list[str],
+    expires_at: datetime,
+    rdp_hostname: str | None = None,
+) -> dict:
+    """Sends access-change confirmation for modify orders (personal VDI only).
+
+    If rdp_hostname is provided, a .rdp file is attached.
+    Silently skipped if no active 'modify_confirmation' template exists.
+    """
+    from tasks.modules.config_reader import get_config
+
+    company_name = get_config(db, "company.name", "XenPool")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    variables = {
+        "company_name": company_name,
+        "requester_name": user_name,
+        "requester_email": user_email,
+        "asset_name": asset_name,
+        "rdp_users": ", ".join(rdp_users) if rdp_users else "(none)",
+        "expires_at": expires_at.strftime("%d.%m.%Y %H:%M"),
+    }
+
+    subject, body = _render_template(db, "modify_confirmation", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+
+    html = _build_branded_html(body, company_name, subject)
+    return _send_html_email_multi(
+        db, [user_email], bcc, mail_from, subject, html,
+        rdp_hostname=rdp_hostname,
+    )
 
 
 def send_expiry_reminder(
@@ -247,6 +295,17 @@ def send_expiry_reminders() -> dict:
     return {"sent": 0}
 
 
+# ── RDP attachment helper ──────────────────────────────────────────────────────
+
+def _make_rdp_content(hostname: str) -> bytes:
+    """Generates a minimal .rdp file for a direct Remote Desktop connection."""
+    return (
+        f"full address:s:{hostname}\r\n"
+        "prompt for credentials:i:1\r\n"
+        "administrative session:i:0\r\n"
+    ).encode("utf-8")
+
+
 # ── SMTP helpers ───────────────────────────────────────────────────────────────
 
 def _send_html_email_multi(
@@ -256,9 +315,13 @@ def _send_html_email_multi(
     mail_from: str,
     subject: str,
     html_body: str,
+    rdp_hostname: str | None = None,
 ) -> dict:
-    """Sends HTML email to multiple recipients (with optional BCC)."""
-    return _production_send_html_email(db, recipients, bcc, mail_from, subject, html_body)
+    """Sends HTML email to multiple recipients (with optional BCC and RDP attachment)."""
+    return _production_send_html_email(
+        db, recipients, bcc, mail_from, subject, html_body,
+        rdp_hostname=rdp_hostname,
+    )
 
 
 def _production_send_html_email(
@@ -268,8 +331,11 @@ def _production_send_html_email(
     mail_from: str,
     subject: str,
     html_body: str,
+    rdp_hostname: str | None = None,
 ) -> dict:
     import smtplib
+    from email import encoders as email_encoders
+    from email.mime.base import MIMEBase
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
@@ -285,13 +351,31 @@ def _production_send_html_email(
     if bcc:
         all_recipients.append(bcc)
 
-    msg = MIMEMultipart("alternative")
+    # Use multipart/mixed when an attachment is present so clients handle it correctly.
+    # Structure: mixed → [ alternative → [ text/html ], application/x-rdp ]
+    if rdp_hostname:
+        msg = MIMEMultipart("mixed")
+        alt = MIMEMultipart("alternative")
+        alt.attach(MIMEText(html_body, "html", "utf-8"))
+        msg.attach(alt)
+
+        rdp_part = MIMEBase("application", "x-rdp")
+        rdp_part.set_payload(_make_rdp_content(rdp_hostname))
+        email_encoders.encode_base64(rdp_part)
+        rdp_part.add_header(
+            "Content-Disposition", "attachment",
+            filename=f"{rdp_hostname}.rdp",
+        )
+        msg.attach(rdp_part)
+    else:
+        msg = MIMEMultipart("alternative")
+        msg.attach(MIMEText(html_body, "html", "utf-8"))
+
     msg["Subject"] = subject
     msg["From"] = f"{from_name} <{mail_from}>"
     msg["To"] = ", ".join(recipients)
     if bcc:
         msg["Bcc"] = bcc
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     try:
         with smtplib.SMTP(smtp_host, smtp_port) as server:
@@ -300,7 +384,7 @@ def _production_send_html_email(
             if smtp_user:
                 server.login(smtp_user, smtp_password)
             server.sendmail(mail_from, all_recipients, msg.as_string())
-        logger.info("Email sent: to=%s subject=%r", recipients, subject)
+        logger.info("Email sent: to=%s subject=%r rdp=%s", recipients, subject, bool(rdp_hostname))
         return {"success": True, "to": recipients}
     except Exception as e:
         logger.error("Email failed: to=%s error=%s", recipients, e)

@@ -20,7 +20,10 @@ logger = logging.getLogger(__name__)
 
 # Entra ID OIDC/OAuth2 endpoints
 _AUTHORITY_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}"
-_SCOPES = ["openid", "profile", "email"]
+# MSAL automatically includes openid/profile/offline_access for OIDC flows.
+# Passing them explicitly raises ValueError("scope value that is reserved").
+# An empty list is correct when only an ID token (login) is needed.
+_SCOPES: list[str] = []
 
 
 async def _get_entra_config(db: AsyncSession) -> dict:

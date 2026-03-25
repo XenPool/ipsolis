@@ -60,6 +60,8 @@ services:
     volumes:
       - ./api/app:/app/app          # Hot-Reload im Dev-Modus
       - ./api/alembic:/app/alembic  # Migrationen ohne Rebuild sichtbar
+      - ./api/tests:/app/tests      # Tests (pytest)
+      - ./worker:/app/worker        # Worker code accessible for tests
       - ./scripts:/app/scripts      # Script-Editor: Lese- und Schreibzugriff
     depends_on:
       postgres:

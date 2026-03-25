@@ -135,6 +135,27 @@ def _stub_delete_instance(order_id: int) -> dict:
     return {"success": True, "stub": True, "message": "VM-Delete mocked (runbook implementation pending)"}
 
 
+def _lookup_asset_name(db: Session, order: dict) -> str | None:
+    """Returns the asset name for an order.
+
+    Tries assigned_asset_id DB lookup first, then falls back to the
+    provisioned_state snapshot (present on auto-created delete orders).
+    """
+    asset_id = order.get("assigned_asset_id")
+    if asset_id:
+        row = db.execute(
+            text("SELECT name FROM asset_pool WHERE id = :id"),
+            {"id": asset_id},
+        ).fetchone()
+        if row:
+            return row[0]
+    # Fallback: provisioned_state snapshot (delete orders created by check_expiring_assets)
+    ps = order.get("provisioned_state") or {}
+    if isinstance(ps, str):
+        ps = json.loads(ps)
+    return (ps.get("instance_binding") or {}).get("asset_name")
+
+
 def _run_targets_mode(
     celery_task,
     db: Session,
@@ -248,6 +269,23 @@ def _run_targets_mode(
         if reserved_asset_id:
             pool_manager.set_asset_busy(db, reserved_asset_id, order_id, expires_at)
 
+        # Grant confirmation email — personal VDI only (asset name + RDP attachment)
+        if assignment_model == "assigned_personal" and reserved_asset_name:
+            _hostname = reserved_asset_name
+            _run_step_inline(
+                db, order_id, "Grant confirmation email",
+                lambda: notif.send_provision_confirmation(
+                    db=db,
+                    user_email=order.get("user_email") or "",
+                    user_name=order.get("user_name") or "",
+                    asset_name=_hostname,
+                    rdp_users=order.get("rdp_users") or [],
+                    expires_at=expires_at,
+                    rdp_hostname=_hostname,
+                ),
+                critical=False,
+            )
+
         # Write provisioned_state after successful provision
         _write_provisioned_state(
             db, order_id,
@@ -279,6 +317,22 @@ def _run_targets_mode(
             )
             db.commit()
             return {"success": False, "order_id": order_id, "failed_step": "Revoke access"}
+
+        # Revoke confirmation email — personal VDI only
+        if assignment_model == "assigned_personal":
+            _revoke_asset_name = _lookup_asset_name(db, order)
+            if _revoke_asset_name:
+                _rname = _revoke_asset_name
+                _run_step_inline(
+                    db, order_id, "Revoke confirmation email",
+                    lambda: notif.send_reclaim_notification(
+                        db=db,
+                        user_email=order.get("user_email") or "",
+                        user_name=order.get("user_name") or "",
+                        asset_name=_rname,
+                    ),
+                    critical=False,
+                )
 
         # Step 2+: Policy-Routing
         asset_id = order.get("assigned_asset_id")
@@ -335,6 +389,28 @@ def _run_targets_mode(
             logger.warning(
                 "[targets_only] Unknown deprovision_policy=%r – fallback: access_only", deprovision_policy,
             )
+
+    elif action == "modify":
+        # Access change — re-notify personal VDI user with updated details + RDP attachment
+        if assignment_model == "assigned_personal":
+            _mod_asset_name = _lookup_asset_name(db, order)
+            if _mod_asset_name:
+                _mname = _mod_asset_name
+                _run_step_inline(
+                    db, order_id, "Modify confirmation email",
+                    lambda: notif.send_modify_confirmation(
+                        db=db,
+                        user_email=order.get("user_email") or "",
+                        user_name=order.get("user_name") or "",
+                        asset_name=_mname,
+                        rdp_users=order.get("rdp_users") or [],
+                        expires_at=expires_at,
+                        rdp_hostname=_mname,
+                    ),
+                    critical=False,
+                )
+        else:
+            logger.info("[targets_only] modify order_id=%s – no group changes needed", order_id)
 
     elif action == "extend":
         # TTL update only – no group change required

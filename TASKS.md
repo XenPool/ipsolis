@@ -52,11 +52,16 @@ Extend `target_executor` to manage Entra cloud-only security groups for asset ty
 that define `{"type": "entra_group", "group_id": "..."}` targets.
 Requires Microsoft Graph API integration (separate sprint).
 
-### [open] Basic Tests (Happy Path) — Prio 3
-No automated tests exist yet.
-- [ ] pytest setup in `api/tests/`
-- [ ] Happy path: create order → dynamic_runner completes → status = delivered
-- [ ] Runbook lookup: correct runbook found for asset type + action
+### [done] Basic Tests (Happy Path) — Prio 3 (2026-03-24)
+- `pytest>=8.0.0` + `pytest-asyncio` added to `api/requirements.txt`
+- `api/tests/conftest.py` — adds `worker/` to sys.path; worker code imported without Celery/Redis
+- `api/tests/test_happy_path.py` — 14 tests, 31 total passing:
+  - `_final_status` for all 4 actions (provision/delete/modify/extend)
+  - `_render_params` template substitution (hit/miss/literal/multi-key)
+  - Runbook lookup: found→provisioned, not-found→failure, inactive→failure, modify-noop
+  - Targets mode: group_only provision→provisioned, delete access_only→revoked
+- `docker-compose.yml`: added `./api/tests` and `./worker` volume mounts to api service for in-container test runs
+- Run: `docker compose exec api python -m pytest tests/ -v`
 
 ---
 
