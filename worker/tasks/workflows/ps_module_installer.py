@@ -1,13 +1,17 @@
-"""Celery Task: Install a PowerShell module from PSGallery.
+"""Celery Task: Install a PowerShell module from PSGallery or a manual zip upload.
 
-Reads the desired module from the ps_modules DB table, runs
-Install-Module -Scope CurrentUser (persisted via Docker volume),
-and updates the status to installed / failed.
+Reads the desired module from the ps_modules DB table.
+- source_type='gallery': runs Install-Module -Scope CurrentUser (persisted via Docker volume).
+- source_type='upload': extracts the stored zip to ~/.local/share/powershell/Modules/.
+Updates the status to installed / failed.
 """
 
+import io
 import logging
 import os
+import shutil
 import subprocess
+import zipfile
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
@@ -37,6 +41,73 @@ def _set_status(db: Session, ps_module_id: int, status: str, **kwargs) -> None:
     db.commit()
 
 
+def _install_from_upload(db: Session, ps_module_id: int, module_name: str, upload_data) -> dict:
+    """Extract a manually-uploaded zip into the PowerShell Modules directory."""
+    if not upload_data:
+        err = "No upload data found — please upload a zip file first"
+        _set_status(db, ps_module_id, "failed", error_log=err)
+        return {"success": False, "error": err}
+
+    modules_root = os.path.expanduser("~/.local/share/powershell/Modules")
+    target_dir = os.path.join(modules_root, module_name)
+
+    _set_status(db, ps_module_id, "installing", error_log=None, installed_version=None)
+    logger.info("ps_module_installer: installing %s from upload (zip size=%d)", module_name, len(upload_data))
+
+    try:
+        # Remove any previous install
+        if os.path.exists(target_dir):
+            shutil.rmtree(target_dir)
+
+        with zipfile.ZipFile(io.BytesIO(bytes(upload_data))) as zf:
+            # Detect structure: zip may contain {ModuleName}/ subfolder or be flat
+            top_dirs = {p.split("/")[0] for p in zf.namelist() if "/" in p}
+            if module_name in top_dirs:
+                # Zip contains {ModuleName}/... — extract to modules_root directly
+                zf.extractall(modules_root)
+            else:
+                # Flat zip — extract into modules_root/{ModuleName}/
+                os.makedirs(target_dir, exist_ok=True)
+                zf.extractall(target_dir)
+
+        # Verify a .psd1 or .psm1 exists in the target dir
+        psd1_path = None
+        if os.path.isdir(target_dir):
+            for f in os.listdir(target_dir):
+                if f.lower().endswith(".psd1"):
+                    psd1_path = os.path.join(target_dir, f)
+                    break
+            found = psd1_path is not None or any(
+                f.lower().endswith(".psm1") for f in os.listdir(target_dir)
+            )
+        else:
+            found = False
+
+        if not found:
+            raise RuntimeError(f"No .psd1/.psm1 found in extracted module dir: {target_dir}")
+
+        # Try to read ModuleVersion from the .psd1 manifest
+        installed_version = "manual"
+        if psd1_path:
+            try:
+                import re
+                content = open(psd1_path, encoding="utf-8", errors="replace").read()
+                m = re.search(r"ModuleVersion\s*=\s*['\"]([^'\"]+)['\"]", content)
+                if m:
+                    installed_version = m.group(1)
+            except Exception:
+                pass
+
+        _set_status(db, ps_module_id, "installed", installed_version=installed_version)
+        logger.info("ps_module_installer: installed %s from upload, version=%s", module_name, installed_version)
+        return {"success": True, "installed_version": installed_version}
+
+    except Exception as exc:
+        logger.error("ps_module_installer: upload install failed for %s: %s", module_name, exc)
+        _set_status(db, ps_module_id, "failed", error_log=str(exc)[:4000])
+        return {"success": False, "error": str(exc)}
+
+
 @app.task(
     name="tasks.workflows.ps_module_installer.install_ps_module",
     bind=True,
@@ -47,7 +118,7 @@ def install_ps_module(self, ps_module_id: int) -> dict:
     db = _get_db_session()
     try:
         row = db.execute(
-            text("SELECT id, name, required_version FROM ps_modules WHERE id = :id"),
+            text("SELECT id, name, required_version, source_type, upload_data FROM ps_modules WHERE id = :id"),
             {"id": ps_module_id},
         ).fetchone()
 
@@ -56,6 +127,10 @@ def install_ps_module(self, ps_module_id: int) -> dict:
 
         module_name = row.name
         required_version = row.required_version
+        source_type = row.source_type or "gallery"
+
+        if source_type == "upload":
+            return _install_from_upload(db, ps_module_id, module_name, row.upload_data)
 
         _set_status(db, ps_module_id, "installing", error_log=None, installed_version=None)
         logger.info("ps_module_installer: installing %s (version=%s)", module_name, required_version or "latest")

@@ -1,4 +1,4 @@
-"""AssetType Constraint Validation – 5 core rules.
+"""AssetType Constraint Validation – 7 core rules.
 
 Pure function, no DB access. Called by create/update route handlers.
 
@@ -8,6 +8,7 @@ Mapping (spec → codebase string values):
     COMPOSITE      → "composite"
     PERSONAL       → "assigned_personal"
     SHARED         → "dedicated_shared"
+    POOLED         → "capacity_pooled"
     RETURN_TO_POOL → "return_to_pool"
     STOP_INSTANCE  → "deallocate_instance"
     DELETE_INSTANCE→ "delete_instance"
@@ -31,6 +32,7 @@ _RUNBOOK_ONLY  = "runbook_only"
 
 _PERSONAL = "assigned_personal"
 _SHARED   = "dedicated_shared"
+_POOLED   = "capacity_pooled"
 
 _RETURN_TO_POOL     = "return_to_pool"
 _DEALLOCATE         = "deallocate_instance"   # spec: STOP_INSTANCE
@@ -41,11 +43,16 @@ _ASSIGN_EXISTING_FREE = "assign_existing_free"
 
 _INSTANCE_LIFECYCLE_POLICIES = {_DEALLOCATE, _DELETE_INSTANCE}
 
+# Categories that represent pure access grants with no per-user VM instance.
+# These must use capacity_pooled and cannot use instance lifecycle deprovision actions.
+_POOLED_ONLY_CATEGORIES = {"application_access", "data_access", "device_access"}
+
 
 # ── Public validator ───────────────────────────────────────────────────────────
 
 def validate_asset_type(
     *,
+    category: str,
     assignment_model: str,
     automation_strategy: str,
     deprovision_policy: str,
@@ -133,5 +140,42 @@ def validate_asset_type(
     # ── Rule 5 – COMPOSITE flexibility ────────────────────────────────────────
     # COMPOSITE allows all deprovision_policy values. No additional restrictions
     # beyond Rules 2 and 3 which already apply unconditionally above.
+
+    # ── Rule 6 – Non-instance categories require capacity_pooled ──────────────
+    # application_access, data_access, device_access are pure access grants with
+    # no dedicated VM per user. Only capacity_pooled is a valid assignment model.
+    if category in _POOLED_ONLY_CATEGORIES and assignment_model != _POOLED:
+        errors.append(ConstraintViolation(
+            code="CATEGORY_REQUIRES_CAPACITY_POOLED",
+            message=(
+                f"category='{category}' represents an access grant without a dedicated VM instance. "
+                f"Only assignment_model='capacity_pooled' is valid, got '{assignment_model}'."
+            ),
+        ))
+
+    # ── Rule 7 (was 6b) – create_new requires runbook/composite ──────────────
+    # Group-only automation has no script execution; create_new needs a runbook.
+    _CREATE_NEW = "create_new"
+    if personal_provisioning_strategy == _CREATE_NEW and automation_strategy == _GROUP_ONLY:
+        errors.append(ConstraintViolation(
+            code="CREATE_NEW_REQUIRES_RUNBOOK_AUTOMATION",
+            message=(
+                "personal_provisioning_strategy='create_new' requires a runbook to provision the VM. "
+                "automation_strategy='group_only' cannot execute scripts. "
+                "Use 'runbook_only' or 'composite'."
+            ),
+        ))
+
+    # ── Rule 8 – capacity_pooled forbids instance lifecycle deprovision ────────
+    # A pooled slot has no per-user VM to pause or destroy.
+    if assignment_model == _POOLED and deprovision_policy in _INSTANCE_LIFECYCLE_POLICIES:
+        errors.append(ConstraintViolation(
+            code="POOLED_FORBIDS_INSTANCE_LIFECYCLE",
+            message=(
+                f"assignment_model='capacity_pooled' has no per-user VM instance. "
+                f"deprovision_policy='{deprovision_policy}' is not allowed. "
+                f"Allowed for pooled: 'access_only', 'custom_runbook'."
+            ),
+        ))
 
     return errors

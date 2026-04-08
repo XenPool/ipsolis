@@ -44,7 +44,6 @@ class DeprovisionPolicy(str, enum.Enum):
 class PersonalProvisioningStrategy(str, enum.Enum):
     ASSIGN_EXISTING_FREE = "assign_existing_free"       # Assign free instance from pool
     CREATE_NEW = "create_new"                            # Create new instance (stub MVP)
-    REUSE_EXISTING_BY_OWNER = "reuse_existing_by_owner" # User already has an instance → reuse it
 
 
 class AutomationStrategy(str, enum.Enum):
@@ -112,7 +111,10 @@ class AssetType(Base):
     lifecycle_renewable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
-    allow_user_lists: Mapped[bool] = mapped_column(
+    allow_rdp_users: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    allow_admin_users: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
     created_at: Mapped[datetime] = mapped_column(

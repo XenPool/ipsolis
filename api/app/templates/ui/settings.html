@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Settings – XenPool Admin{% endblock %}
+{% block title %}Settings – {{ app_title }}{% endblock %}
 
 {% block content %}
 <div class="mb-6">
@@ -11,8 +11,12 @@
 <!-- Tab bar -->
 <div class="border-b border-gray-200 mb-6">
   <nav class="flex gap-1" id="tab-nav">
-    <button onclick="showTab('ad')" id="tab-btn-ad"
+    <button onclick="showTab('general')" id="tab-btn-general"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-700">
+      General
+    </button>
+    <button onclick="showTab('ad')" id="tab-btn-ad"
+            class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
       Active Directory
     </button>
     <button onclick="showTab('vars')" id="tab-btn-vars"
@@ -34,12 +38,210 @@
   </nav>
 </div>
 
+<!-- ── Tab: General ──────────────────────────────────────────────────────── -->
+<div id="tab-general">
+  <div id="general-banner" class="hidden mb-4 px-4 py-3 rounded text-sm font-medium"></div>
+
+  <!-- Application Title -->
+  <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mb-4">
+    <h2 class="text-sm font-semibold text-gray-700 mb-1">Application</h2>
+    <p class="text-xs text-gray-500 mb-4">
+      The application title is shown in the navigation bar and browser tab for both the Admin UI and the Self-Service Portal.
+    </p>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Application Title</label>
+      <input type="text" id="cfg-app-title"
+             value="{{ app_title }}"
+             placeholder="IT Selfservice"
+             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+    </div>
+    <div class="mt-6">
+      <button onclick="saveAppTitle()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save
+      </button>
+    </div>
+  </div>
+
+  <!-- Portal Logo -->
+  <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+    <h2 class="text-sm font-semibold text-gray-700 mb-1">Portal Logo</h2>
+    <p class="text-xs text-gray-500 mb-4">
+      Shown in the self-service portal sidebar. Recommended: SVG or PNG with transparent background,
+      landscape orientation (e.g. 400 × 120 px), max 1 MB.
+    </p>
+
+    <!-- Current logo preview -->
+    <div id="logo-preview-wrap" class="mb-4 p-3 rounded border border-gray-200 bg-gray-50 min-h-[72px] flex items-center
+         {% if not app_logo %}hidden{% endif %}
+         {% if app_logo_position == 'center' %}justify-center{% elif app_logo_position == 'right' %}justify-end{% else %}justify-start{% endif %}">
+      <img id="logo-preview-img"
+           src="{% if app_logo %}/portal/logo{% endif %}"
+           style="max-height: 64px; max-width: 100%;"
+           alt="Logo preview">
+    </div>
+
+    <!-- File picker -->
+    <div class="mb-4">
+      <label class="block text-xs font-medium text-gray-600 mb-1">Upload logo</label>
+      <input type="file" id="logo-file" accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp"
+             class="block text-sm text-gray-600
+                    file:mr-3 file:py-1.5 file:px-4 file:rounded file:border file:border-gray-300
+                    file:text-xs file:font-medium file:bg-white file:text-gray-700 hover:file:bg-gray-50 file:cursor-pointer">
+      <p class="mt-1 text-xs text-gray-400">SVG, PNG, JPG or WebP · max 1 MB</p>
+    </div>
+
+    <!-- Position + size -->
+    <div class="grid grid-cols-2 gap-4 mb-6">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Position in sidebar</label>
+        <select id="logo-position"
+                class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+          <option value="left"   {% if app_logo_position == 'left'   %}selected{% endif %}>Left</option>
+          <option value="center" {% if app_logo_position == 'center' %}selected{% endif %}>Center</option>
+          <option value="right"  {% if app_logo_position == 'right'  %}selected{% endif %}>Right</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">
+          Size — <span id="logo-size-label">{{ app_logo_size }}%</span>
+        </label>
+        <input type="range" id="logo-size" min="20" max="100" step="5"
+               value="{{ app_logo_size }}"
+               oninput="document.getElementById('logo-size-label').textContent = this.value + '%'"
+               class="w-full accent-blue-600">
+      </div>
+    </div>
+
+    <!-- Show title + text size -->
+    <div class="grid grid-cols-2 gap-4 mb-6 items-start">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-2">Title below logo</label>
+        <label class="flex items-center gap-2.5 cursor-pointer select-none">
+          <input type="checkbox" id="logo-show-title"
+                 {% if app_logo_show_title == 'true' %}checked{% endif %}
+                 class="rounded border-gray-300 text-blue-600 focus:ring-blue-400 cursor-pointer">
+          <span class="text-sm text-gray-700">Show application title</span>
+        </label>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">
+          Text size — <span id="logo-title-size-label">{{ app_logo_title_size }}px</span>
+        </label>
+        <input type="range" id="logo-title-size" min="8" max="24" step="1"
+               value="{{ app_logo_title_size }}"
+               oninput="document.getElementById('logo-title-size-label').textContent = this.value + 'px'"
+               class="w-full accent-blue-600">
+        <div class="flex justify-between text-xs text-gray-400 mt-0.5">
+          <span>8px</span><span>24px</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex items-center gap-3">
+      <button onclick="saveLogo()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save
+      </button>
+      {% if app_logo %}
+      <button onclick="removeLogo()"
+              class="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded hover:bg-red-50">
+        Remove logo
+      </button>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
 <!-- ── Tab: Active Directory ─────────────────────────────────────────────── -->
-<div id="tab-ad">
+<div id="tab-ad" class="hidden">
   <div id="ad-banner" class="hidden mb-4 px-4 py-3 rounded text-sm font-medium"></div>
 
+  <!-- ── Entra ID / Azure AD (Portal SSO) ──────────────────────────────── -->
+  <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl mb-6">
+    <h2 class="text-sm font-semibold text-gray-700 mb-1">Entra ID / Azure AD — Portal SSO</h2>
+    <p class="text-xs text-gray-500 mb-4">
+      OAuth2/OIDC login for the self-service portal. Works with cloud-only accounts and
+      on-premises accounts synced via Entra ID Connect (hybrid).
+      Set <strong>Mode = disabled</strong> to keep the portal open (development / before Entra setup).
+    </p>
+    <div class="space-y-4">
+
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Mode</label>
+        <select id="entra-mode"
+                class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+          <option value="disabled"   {% if entra_config.get('entra.mode','disabled') == 'disabled'             %}selected{% endif %}>disabled — portal open (no login required)</option>
+          <option value="entra_only" {% if entra_config.get('entra.mode','disabled') == 'entra_only'           %}selected{% endif %}>entra_only — Entra ID login required</option>
+          <option value="entra_with_onprem" {% if entra_config.get('entra.mode','disabled') == 'entra_with_onprem' %}selected{% endif %}>entra_with_onprem — Entra ID + on-prem LDAP check</option>
+        </select>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Tenant ID</label>
+          <input type="text" id="entra-tenant-id"
+                 value="{{ entra_config.get('entra.tenant_id', '') }}"
+                 placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Client ID (App Registration)</label>
+          <input type="text" id="entra-client-id"
+                 value="{{ entra_config.get('entra.client_id', '') }}"
+                 placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Client Secret</label>
+        <input type="password" id="entra-client-secret"
+               value=""
+               placeholder="(leave blank to keep current)"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Redirect URI</label>
+        <input type="text" id="entra-redirect-uri"
+               value="{{ entra_config.get('entra.redirect_uri', '') }}"
+               placeholder="https://selfservice.xenpool.de/portal/auth/callback"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+        <p class="text-xs text-gray-400 mt-1">Must match the Redirect URI registered in your Entra ID App Registration.</p>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Allowed UPN Domains <span class="font-normal text-gray-400">(optional)</span></label>
+        <input type="text" id="entra-allowed-domains"
+               value="{{ entra_config.get('entra.allowed_domains', '') }}"
+               placeholder="xenpool.de, xenpool.local"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+        <p class="text-xs text-gray-400 mt-1">Comma-separated. Leave blank to allow all domains in your tenant.</p>
+      </div>
+
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveEntraConfig()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save
+      </button>
+      <button onclick="testEntraConfig()"
+              class="px-5 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded hover:bg-gray-200 border border-gray-300">
+        Test Connection
+      </button>
+    </div>
+  </div>
+
+  <!-- ── On-Premises AD / LDAP ──────────────────────────────────────────── -->
   <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
-    <h2 class="text-sm font-semibold text-gray-700 mb-4">LDAP / Active Directory Connection</h2>
+    <h2 class="text-sm font-semibold text-gray-700 mb-1">On-Premises Active Directory / LDAP</h2>
+    <p class="text-xs text-gray-500 mb-4">
+      Service account for on-premises AD group management (Active Roles) and user lookups.
+      Required regardless of the Entra ID mode above.
+    </p>
     <div class="space-y-4">
 
       <div class="grid grid-cols-2 gap-4">
@@ -105,8 +307,8 @@
         Test Connection
       </button>
     </div>
-  </div>
-</div>
+  </div><!-- /on-prem AD card -->
+</div><!-- /tab-ad -->
 
 <!-- ── Tab: Script Variables ─────────────────────────────────────────────── -->
 <div id="tab-vars" class="hidden">
@@ -269,7 +471,7 @@
         <div>
           <label class="block text-xs font-medium text-gray-600 mb-1">From Name</label>
           <input type="text" id="email-from-name" value="{{ email_config.get('email.from_name', '') }}"
-                 placeholder="XenPool IT Selfservice"
+                 placeholder="{{ app_title }}"
                  class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
         </div>
       </div>
@@ -402,17 +604,103 @@
 </div>
 
 <!-- ── Tab: Hosting Infra ────────────────────────────────────────────────── -->
-<div id="tab-hosting" class="hidden">
-  <div class="bg-white rounded-lg border border-gray-200 p-10 text-center text-gray-400 text-sm">
-    Hosting infrastructure configuration coming soon.
+<div id="tab-hosting" class="hidden space-y-6">
+
+  <div id="hosting-banner" class="hidden mb-2 px-4 py-3 rounded text-sm font-medium"></div>
+
+  <!-- vSphere / vCenter -->
+  <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+    <h2 class="text-sm font-semibold text-gray-700 mb-1">vSphere / vCenter</h2>
+    <p class="text-xs text-gray-400 mb-4">
+      Used in PowerShell modules as
+      <code class="font-mono bg-gray-100 px-1 rounded">$PARAMS.vSphereServerHost</code> /
+      <code class="font-mono bg-gray-100 px-1 rounded">$PARAMS.vSphereServerAdminUser</code> /
+      <code class="font-mono bg-gray-100 px-1 rounded">$PARAMS.vSphereServerAdminPW</code>
+    </p>
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Host (hostname or IP)</label>
+        <input type="text" id="cfg-vsphere-host"
+               value="{{ hosting_vsphere.get('host', '') }}"
+               placeholder="vcenter.example.com"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Username</label>
+          <input type="text" id="cfg-vsphere-username"
+                 value="{{ hosting_vsphere.get('username', '') }}"
+                 placeholder="administrator@vsphere.local"
+                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Password</label>
+          <input type="password" id="cfg-vsphere-password"
+                 value=""
+                 placeholder="{{ '(set – leave blank to keep)' if hosting_vsphere.get('password') == '***' else '(not set)' }}"
+                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        </div>
+      </div>
+    </div>
+    <div class="mt-6">
+      <button onclick="saveHostingConfig('vsphere', ['host','username'], 'password')"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save
+      </button>
+    </div>
   </div>
+
+  <!-- XenServer / XCP-ng -->
+  <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
+    <h2 class="text-sm font-semibold text-gray-700 mb-1">XenServer / XCP-ng</h2>
+    <p class="text-xs text-gray-400 mb-4">
+      Used in PowerShell modules as
+      <code class="font-mono bg-gray-100 px-1 rounded">$PARAMS.XenServerHost</code> /
+      <code class="font-mono bg-gray-100 px-1 rounded">$PARAMS.XenServerAdminUser</code> /
+      <code class="font-mono bg-gray-100 px-1 rounded">$PARAMS.XenServerAdminPW</code>
+    </p>
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Host (hostname or IP)</label>
+        <input type="text" id="cfg-xenserver-host"
+               value="{{ hosting_xenserver.get('host', '') }}"
+               placeholder="xcp-ng.example.com"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Username</label>
+          <input type="text" id="cfg-xenserver-username"
+                 value="{{ hosting_xenserver.get('username', '') }}"
+                 placeholder="root"
+                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Password</label>
+          <input type="password" id="cfg-xenserver-password"
+                 value=""
+                 placeholder="{{ '(set – leave blank to keep)' if hosting_xenserver.get('password') == '***' else '(not set)' }}"
+                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        </div>
+      </div>
+    </div>
+    <div class="mt-6">
+      <button onclick="saveHostingConfig('xenserver', ['host','username'], 'password')"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save
+      </button>
+    </div>
+  </div>
+
 </div>
 
 
 <script>
 // ── Tab switching ──────────────────────────────────────────────────────────────
+var _ALL_TABS = ['general', 'ad', 'vars', 'email', 'sccm', 'hosting'];
+
 function showTab(name) {
-  ['ad', 'vars', 'email', 'sccm', 'hosting'].forEach(function(t) {
+  _ALL_TABS.forEach(function(t) {
     document.getElementById('tab-' + t).classList.add('hidden');
     var btn = document.getElementById('tab-btn-' + t);
     btn.classList.remove('border-blue-600', 'text-blue-700');
@@ -424,9 +712,128 @@ function showTab(name) {
   active.classList.add('border-blue-600', 'text-blue-700');
 }
 
-// Show tab from URL hash
+// Show tab from URL hash, default to 'general'
 var hash = window.location.hash.replace('#', '');
-if (['ad', 'vars', 'email', 'sccm', 'hosting'].indexOf(hash) !== -1) showTab(hash);
+showTab(_ALL_TABS.indexOf(hash) !== -1 ? hash : 'general');
+
+// ── General ────────────────────────────────────────────────────────────────────
+async function saveAppTitle() {
+  var title = document.getElementById('cfg-app-title').value.trim();
+  var resp = await fetch('/admin/config/app.title', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({value: title || 'IT Selfservice'}),
+  });
+  var banner = document.getElementById('general-banner');
+  if (resp.ok) {
+    banner.className = 'mb-4 px-4 py-3 rounded text-sm font-medium bg-green-50 text-green-800 border border-green-200';
+    banner.textContent = 'Settings saved.';
+    setTimeout(function() { location.reload(); }, 800);
+  } else {
+    var err = {}; try { err = await resp.json(); } catch(e) {}
+    banner.className = 'mb-4 px-4 py-3 rounded text-sm font-medium bg-red-50 text-red-800 border border-red-200';
+    banner.textContent = err.detail || 'Error saving settings.';
+  }
+  banner.classList.remove('hidden');
+}
+
+// ── Logo ───────────────────────────────────────────────────────────────────────
+document.getElementById('logo-file').addEventListener('change', function() {
+  var file = this.files[0];
+  if (!file) return;
+  if (file.size > 1024 * 1024) {
+    alert('File too large. Maximum allowed size is 1 MB.');
+    this.value = '';
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var wrap = document.getElementById('logo-preview-wrap');
+    var img  = document.getElementById('logo-preview-img');
+    img.src  = e.target.result;
+    wrap.classList.remove('hidden');
+  };
+  reader.readAsDataURL(file);
+});
+
+async function _cfgPut(key, value) {
+  var r = await fetch('/admin/config/' + key, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({value: String(value)}),
+  });
+  return r.ok;
+}
+
+async function saveLogo() {
+  var banner = document.getElementById('general-banner');
+  var errors = [];
+
+  var file = document.getElementById('logo-file').files[0];
+  if (file) {
+    var dataUrl = await new Promise(function(resolve) {
+      var r = new FileReader();
+      r.onload = function(e) { resolve(e.target.result); };
+      r.readAsDataURL(file);
+    });
+    if (!await _cfgPut('app.logo', dataUrl)) errors.push('logo');
+  }
+
+  if (!await _cfgPut('app.logo_position',   document.getElementById('logo-position').value))                            errors.push('position');
+  if (!await _cfgPut('app.logo_size',       document.getElementById('logo-size').value))                                errors.push('size');
+  if (!await _cfgPut('app.logo_show_title',  document.getElementById('logo-show-title').checked ? 'true' : 'false'))  errors.push('show_title');
+  if (!await _cfgPut('app.logo_title_size',  document.getElementById('logo-title-size').value))                        errors.push('title_size');
+
+  if (errors.length === 0) {
+    banner.className = 'mb-4 px-4 py-3 rounded text-sm font-medium bg-green-50 text-green-800 border border-green-200';
+    banner.textContent = 'Logo settings saved.';
+    setTimeout(function() { location.reload(); }, 800);
+  } else {
+    banner.className = 'mb-4 px-4 py-3 rounded text-sm font-medium bg-red-50 text-red-800 border border-red-200';
+    banner.textContent = 'Error saving: ' + errors.join(', ');
+  }
+  banner.classList.remove('hidden');
+}
+
+async function removeLogo() {
+  if (!confirm('Remove the portal logo?')) return;
+  var ok = await _cfgPut('app.logo', '');
+  if (ok) location.reload();
+}
+
+// ── Entra ID ───────────────────────────────────────────────────────────────────
+async function saveEntraConfig() {
+  var fields = {
+    'entra.mode':            document.getElementById('entra-mode').value,
+    'entra.tenant_id':       document.getElementById('entra-tenant-id').value.trim(),
+    'entra.client_id':       document.getElementById('entra-client-id').value.trim(),
+    'entra.redirect_uri':    document.getElementById('entra-redirect-uri').value.trim(),
+    'entra.allowed_domains': document.getElementById('entra-allowed-domains').value.trim(),
+  };
+  var secret = document.getElementById('entra-client-secret').value;
+  if (secret) fields['entra.client_secret'] = secret;
+
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showBanner(errors.length === 0
+    ? {ok: true,  message: 'Entra ID settings saved.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
+
+async function testEntraConfig() {
+  await saveEntraConfig();
+  showBanner({ok: null, message: 'Testing Entra ID connection…'});
+  var resp = await fetch('/admin/config/entra/test', {method: 'POST'});
+  var data = await resp.json();
+  showBanner(data);
+}
 
 // ── Active Directory ───────────────────────────────────────────────────────────
 async function saveAdConfig() {
@@ -478,6 +885,54 @@ function showBanner(data) {
   }
   el.textContent = data.message;
   el.classList.remove('hidden');
+}
+
+// ── Hosting Infrastructure ─────────────────────────────────────────────────────
+async function _upsertConfig(key, value, isSecret) {
+  // Try PUT first; if key doesn't exist yet fall back to POST (create)
+  var resp = await fetch('/admin/config/' + key, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({value: value}),
+  });
+  if (resp.status === 404) {
+    resp = await fetch('/admin/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key: key, value: value, is_secret: isSecret || false}),
+    });
+  }
+  return resp.ok;
+}
+
+async function saveHostingConfig(prefix, textFields, pwField) {
+  var errors = [];
+  for (var i = 0; i < textFields.length; i++) {
+    var k = textFields[i];
+    var el = document.getElementById('cfg-' + prefix + '-' + k);
+    if (el) {
+      var ok = await _upsertConfig(prefix + '.' + k, el.value.trim(), false);
+      if (!ok) errors.push(prefix + '.' + k);
+    }
+  }
+  var pwEl = document.getElementById('cfg-' + prefix + '-' + pwField);
+  if (pwEl && pwEl.value) {
+    var ok = await _upsertConfig(prefix + '.' + pwField, pwEl.value, true);
+    if (!ok) errors.push(prefix + '.' + pwField);
+  }
+
+  var banner = document.getElementById('hosting-banner');
+  banner.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'border', 'border-green-200',
+                           'bg-red-50', 'text-red-800', 'border-red-200');
+  if (errors.length === 0) {
+    banner.classList.add('bg-green-50', 'text-green-800', 'border', 'border-green-200');
+    banner.textContent = 'Settings saved.';
+    if (pwEl) pwEl.value = '';
+  } else {
+    banner.classList.add('bg-red-50', 'text-red-800', 'border', 'border-red-200');
+    banner.textContent = 'Failed to save: ' + errors.join(', ');
+  }
+  banner.classList.remove('hidden');
 }
 
 // ── Script Variables ───────────────────────────────────────────────────────────

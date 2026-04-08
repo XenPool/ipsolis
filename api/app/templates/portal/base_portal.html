@@ -1,43 +1,98 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-gray-50">
+<html lang="en" class="h-full">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}XenPool Self-Service{% endblock %}</title>
+  <title>{% block title %}{{ app_title }}{% endblock %}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous"></script>
 </head>
-<body class="h-full">
+<body class="h-full flex bg-gray-50">
 
-  <nav class="bg-white border-b border-gray-200 shadow-sm">
-    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex items-center justify-between h-14">
-        <div class="flex items-center gap-6">
-          <a href="/portal/" class="font-semibold text-gray-900 text-sm tracking-wide">
-            XenPool Self-Service
-          </a>
-          <div class="flex gap-1">
-            <a href="/portal/"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'overview' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              My Orders
-            </a>
-            <a href="/portal/my-it"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'my-it' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              My IT
-            </a>
-            <a href="/portal/orders/new"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'new' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Request New Access
-            </a>
-          </div>
-        </div>
-      </div>
+  <!-- ── Left Sidebar ──────────────────────────────────────────────────────── -->
+  <aside class="w-56 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 min-h-full">
+
+    <!-- Logo / Brand -->
+    <div class="px-4 py-5 border-b border-gray-100 flex flex-col gap-1.5
+      {% if app_logo_position == 'center' %}items-center
+      {% elif app_logo_position == 'right' %}items-end
+      {% else %}items-start{% endif %}">
+      {% if app_logo %}
+        <a href="/portal/">
+          <img src="/portal/logo"
+               style="width: {{ app_logo_size }}%; max-width: 100%; max-height: 64px; object-fit: contain;"
+               alt="{{ app_title }}">
+        </a>
+        {% if app_logo_show_title == 'true' %}
+        <a href="/portal/"
+           style="font-size: {{ app_logo_title_size }}px;"
+           class="font-semibold text-gray-600 leading-snug
+             {% if app_logo_position == 'center' %}text-center{% elif app_logo_position == 'right' %}text-right{% else %}text-left{% endif %}">
+          {{ app_title }}
+        </a>
+        {% endif %}
+      {% else %}
+        <a href="/portal/" class="font-semibold text-gray-900 text-sm tracking-wide leading-snug">
+          {{ app_title }}
+        </a>
+      {% endif %}
     </div>
-  </nav>
 
-  <main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    {% block content %}{% endblock %}
-  </main>
+    <!-- Navigation -->
+    <nav class="flex-1 px-3 py-4 space-y-0.5">
+      <a href="/portal/"
+         class="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
+                {% if active_page == 'overview' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+        </svg>
+        My Orders
+      </a>
+      <a href="/portal/my-it"
+         class="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
+                {% if active_page == 'my-it' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+        </svg>
+        My IT
+      </a>
+      <a href="/portal/orders/new"
+         class="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
+                {% if active_page == 'new' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+        </svg>
+        Request Access
+      </a>
+    </nav>
+
+    <!-- User info + sign out -->
+    {% if user is defined and user %}
+    <div class="px-4 py-4 border-t border-gray-100">
+      <div class="flex items-center gap-2.5 mb-2.5">
+        <div class="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center
+                    text-white text-xs font-semibold select-none flex-shrink-0">
+          {{ user.name[0] | upper if user.name else '?' }}
+        </div>
+        <span class="text-xs text-gray-700 truncate leading-tight">{{ user.name }}</span>
+      </div>
+      <a href="/portal/logout"
+         class="text-xs text-gray-400 hover:text-gray-600 hover:underline">
+        Sign out
+      </a>
+    </div>
+    {% endif %}
+
+  </aside>
+
+  <!-- ── Main content ───────────────────────────────────────────────────────── -->
+  <div class="flex-1 overflow-auto">
+    <main class="max-w-6xl mx-auto px-6 sm:px-8 py-8">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 
 </body>
 </html>

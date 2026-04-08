@@ -1,6 +1,6 @@
 {% extends "portal/base_portal.html" %}
 
-{% block title %}Orders – XenPool Self-Service{% endblock %}
+{% block title %}Orders – {{ app_title }}{% endblock %}
 
 {% block content %}
 <div class="mb-6 flex items-center justify-between">
@@ -14,7 +14,7 @@
   </a>
 </div>
 
-<div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+<div class="bg-white rounded-lg border border-gray-200 overflow-x-auto">
   <table class="min-w-full divide-y divide-gray-200 text-sm">
     <thead class="bg-gray-50">
       <tr>

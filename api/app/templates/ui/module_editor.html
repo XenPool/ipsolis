@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{% if module %}Edit module{% else %}New module{% endif %} – XenPool Admin{% endblock %}
+{% block title %}{% if module %}Edit module{% else %}New module{% endif %} – {{ app_title }}{% endblock %}
 
 {% block content %}
 <div class="mb-4">
@@ -143,6 +143,10 @@
             <div class="px-3 py-1.5 bg-gray-50 text-xs text-gray-500 uppercase tracking-wide font-medium">CTX (Runbook-Kontext)</div>
             <div id="var-picker-ctx-list" class="py-1 max-h-48 overflow-y-auto"></div>
           </div>
+          <div id="var-picker-hosting" class="border-t border-gray-100">
+            <div class="px-3 py-1.5 bg-gray-50 text-xs text-gray-500 uppercase tracking-wide font-medium">Hosting Infra</div>
+            <div id="var-picker-hosting-list" class="py-1"></div>
+          </div>
         </div>
         <span class="text-xs text-gray-400">Script-Inhalt</span>
       </div>
@@ -186,6 +190,24 @@ var MODULE_ID = {{ module.id if module else 'null' }};
 var editor;
 var _savedContent = {{ (module.script_content if module else "") | tojson }};
 var _globalVars = [];
+
+// Pre-fill test params from param_schema defaults
+(function() {
+  var schema = {{ (module.param_schema if module and module.param_schema else []) | tojson }};
+  if (!schema.length) return;
+  var defaults = {};
+  schema.forEach(function(p) {
+    if (p.name && p.default !== undefined && p.default !== null && p.default !== '') {
+      defaults[p.name] = p.default;
+    }
+  });
+  if (Object.keys(defaults).length) {
+    var el = document.getElementById('test-params-input');
+    if (el && !el.value.trim()) {
+      el.value = JSON.stringify(defaults);
+    }
+  }
+})();
 
 // Initial script content
 var INITIAL_CONTENT = {{ (module.script_content if module else "") | tojson }};
@@ -402,6 +424,23 @@ function buildVarPicker() {
     return _varRow(key, snippet, 'ctx');
   }).join('');
   ctxList.innerHTML = html;
+
+  // HOSTING — vSphere and XenServer connection params
+  // Map via config.vsphere.host / config.xenserver.host in the runbook step params template
+  var hostingVars = [
+    {label: 'vSphere Host',       key: 'vSphereServerHost'},
+    {label: 'vSphere User',       key: 'vSphereServerAdminUser'},
+    {label: 'vSphere Password',   key: 'vSphereServerAdminPW'},
+    {label: 'XenServer Host',     key: 'XenServerHost'},
+    {label: 'XenServer User',     key: 'XenServerAdminUser'},
+    {label: 'XenServer Password', key: 'XenServerAdminPW'},
+  ];
+  var hostingList = document.getElementById('var-picker-hosting-list');
+  html = hostingVars.map(function(v) {
+    var snippet = isPs ? ('$PARAMS.' + v.key) : ("PARAMS['" + v.key + "']");
+    return _varRow(v.label, snippet, 'hosting');
+  }).join('');
+  hostingList.innerHTML = html;
 }
 
 function toggleVarPicker(evt) {

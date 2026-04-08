@@ -12,6 +12,7 @@ import re
 import subprocess
 import tempfile
 import time
+from datetime import timedelta
 
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[mGKHFABCDJsu]")
 from datetime import datetime, timezone
@@ -22,6 +23,7 @@ from sqlalchemy.orm import Session  # noqa: F401 – used by _run_step_inline/_r
 
 from tasks import app
 from tasks.modules import audit_helper
+from tasks.modules.config_reader import get_config
 from tasks.modules.step_helper import make_log_json, update_order_step, update_order_status
 
 logger = logging.getLogger(__name__)
@@ -56,7 +58,13 @@ def _run_step_inline(
         log_json = make_log_json(step_name, {}, result, duration_ms)
 
         if not result.get("success", True):
-            raise RuntimeError(result.get("error", f"Step {step_name!r} returned success=False"))
+            # Prefer explicit error message; fall back to joining errors list (target_executor style)
+            error_msg = (
+                result.get("error")
+                or "; ".join(result.get("errors", []))
+                or f"Step {step_name!r} returned success=False"
+            )
+            raise RuntimeError(error_msg)
 
         update_order_step(
             db, order_id, step_name, "success",
@@ -133,6 +141,27 @@ def _stub_delete_instance(order_id: int) -> dict:
     return {"success": True, "stub": True, "message": "VM-Delete mocked (runbook implementation pending)"}
 
 
+def _lookup_asset_name(db: Session, order: dict) -> str | None:
+    """Returns the asset name for an order.
+
+    Tries assigned_asset_id DB lookup first, then falls back to the
+    provisioned_state snapshot (present on auto-created delete orders).
+    """
+    asset_id = order.get("assigned_asset_id")
+    if asset_id:
+        row = db.execute(
+            text("SELECT name FROM asset_pool WHERE id = :id"),
+            {"id": asset_id},
+        ).fetchone()
+        if row:
+            return row[0]
+    # Fallback: provisioned_state snapshot (delete orders created by check_expiring_assets)
+    ps = order.get("provisioned_state") or {}
+    if isinstance(ps, str):
+        ps = json.loads(ps)
+    return (ps.get("instance_binding") or {}).get("asset_name")
+
+
 def _run_targets_mode(
     celery_task,
     db: Session,
@@ -190,31 +219,8 @@ def _run_targets_mode(
             critical=False,
         )
 
-        # Step 2: Grant access (critical)
-        result = _run_step_inline(
-            db, order_id, "Grant access",
-            lambda: target_executor.grant(
-                db=db,
-                order_id=order_id,
-                asset_type_id=order["asset_type_id"],
-                user_email=order.get("user_email") or "",
-                rdp_users=order.get("rdp_users") or [],
-                admin_users=order.get("admin_users") or [],
-            ),
-            critical=True,
-        )
-        if result is None:
-            audit_helper.waudit(
-                db, "order", order_id, "status_changed",
-                old={"status": "processing"},
-                new={"status": "failed", "step": "Grant access"},
-                by="celery:dynamic_runner[targets_only]",
-                ctx=str(celery_task.request.id),
-            )
-            db.commit()
-            return {"success": False, "order_id": order_id, "failed_step": "Grant access"}
-
-        # Step 3: Asset reservieren (critical, nur bei assigned_personal/dedicated_shared)
+        # Step 2: Reserve asset first (critical, nur bei assigned_personal/dedicated_shared)
+        # Must happen before Grant access so {asset_name} can be substituted in target identifiers.
         reserved_asset_id = None
         reserved_asset_name = None
         if needs_asset:
@@ -242,9 +248,52 @@ def _run_targets_mode(
             reserved_asset_id = result.get("asset_id")
             reserved_asset_name = result.get("asset_name")
 
+        # Step 3: Grant access (critical)
+        _grant_asset_name = reserved_asset_name or ""
+        result = _run_step_inline(
+            db, order_id, "Grant access",
+            lambda: target_executor.grant(
+                db=db,
+                order_id=order_id,
+                asset_type_id=order["asset_type_id"],
+                user_email=order.get("user_email") or "",
+                rdp_users=order.get("rdp_users") or [],
+                admin_users=order.get("admin_users") or [],
+                asset_name=_grant_asset_name,
+            ),
+            critical=True,
+        )
+        if result is None:
+            audit_helper.waudit(
+                db, "order", order_id, "status_changed",
+                old={"status": "processing"},
+                new={"status": "failed", "step": "Grant access"},
+                by="celery:dynamic_runner[targets_only]",
+                ctx=str(celery_task.request.id),
+            )
+            db.commit()
+            return {"success": False, "order_id": order_id, "failed_step": "Grant access"}
+
         # Set asset to BUSY (pure DB op, no mock)
         if reserved_asset_id:
             pool_manager.set_asset_busy(db, reserved_asset_id, order_id, expires_at)
+
+        # Grant confirmation email — personal VDI only (asset name + RDP attachment)
+        if assignment_model == "assigned_personal" and reserved_asset_name:
+            _hostname = reserved_asset_name
+            _run_step_inline(
+                db, order_id, "Grant confirmation email",
+                lambda: notif.send_provision_confirmation(
+                    db=db,
+                    user_email=order.get("user_email") or "",
+                    user_name=order.get("user_name") or "",
+                    asset_name=_hostname,
+                    rdp_users=order.get("rdp_users") or [],
+                    expires_at=expires_at,
+                    rdp_hostname=_hostname,
+                ),
+                critical=False,
+            )
 
         # Write provisioned_state after successful provision
         _write_provisioned_state(
@@ -277,6 +326,22 @@ def _run_targets_mode(
             )
             db.commit()
             return {"success": False, "order_id": order_id, "failed_step": "Revoke access"}
+
+        # Revoke confirmation email — personal VDI only
+        if assignment_model == "assigned_personal":
+            _revoke_asset_name = _lookup_asset_name(db, order)
+            if _revoke_asset_name:
+                _rname = _revoke_asset_name
+                _run_step_inline(
+                    db, order_id, "Revoke confirmation email",
+                    lambda: notif.send_reclaim_notification(
+                        db=db,
+                        user_email=order.get("user_email") or "",
+                        user_name=order.get("user_name") or "",
+                        asset_name=_rname,
+                    ),
+                    critical=False,
+                )
 
         # Step 2+: Policy-Routing
         asset_id = order.get("assigned_asset_id")
@@ -334,6 +399,63 @@ def _run_targets_mode(
                 "[targets_only] Unknown deprovision_policy=%r – fallback: access_only", deprovision_policy,
             )
 
+    elif action == "modify":
+        _mod_asset_name = _lookup_asset_name(db, order)
+
+        # Step 1: Revoke existing grants, then re-grant with the updated user lists.
+        # This handles add/remove of rdp_users and admin_users atomically.
+        _run_step_inline(
+            db, order_id, "Revoke old memberships",
+            lambda: target_executor.revoke(
+                db=db,
+                user_email=order.get("user_email") or "",
+                asset_type_id=order["asset_type_id"],
+            ),
+            critical=False,  # Non-critical: if nothing was granted before, revoke is a no-op
+        )
+
+        _upd_asset_name = _mod_asset_name or ""
+        result = _run_step_inline(
+            db, order_id, "Update group memberships",
+            lambda: target_executor.grant(
+                db=db,
+                order_id=order_id,
+                asset_type_id=order["asset_type_id"],
+                user_email=order.get("user_email") or "",
+                rdp_users=order.get("rdp_users") or [],
+                admin_users=order.get("admin_users") or [],
+                asset_name=_upd_asset_name,
+            ),
+            critical=True,
+        )
+        if result is None:
+            audit_helper.waudit(
+                db, "order", order_id, "status_changed",
+                old={"status": "processing"},
+                new={"status": "failed", "step": "Update group memberships"},
+                by="celery:dynamic_runner[targets_only]",
+                ctx=str(celery_task.request.id),
+            )
+            db.commit()
+            return None
+
+        # Re-notify personal VDI user with updated details + RDP attachment
+        if assignment_model == "assigned_personal" and _mod_asset_name:
+            _mname = _mod_asset_name
+            _run_step_inline(
+                db, order_id, "Modify confirmation email",
+                lambda: notif.send_modify_confirmation(
+                    db=db,
+                    user_email=order.get("user_email") or "",
+                    user_name=order.get("user_name") or "",
+                    asset_name=_mname,
+                    rdp_users=order.get("rdp_users") or [],
+                    expires_at=expires_at,
+                    rdp_hostname=_mname,
+                ),
+                critical=False,
+            )
+
     elif action == "extend":
         # TTL update only – no group change required
         logger.info("[targets_only] extend order_id=%s – no group changes needed", order_id)
@@ -374,7 +496,14 @@ def _build_ps_preamble(global_vars: dict, params: dict) -> str:
 
     vars_pairs = "; ".join(f"{k} = {_ps_escape(v)}" for k, v in global_vars.items())
     params_pairs = "; ".join(f"{k} = {_ps_escape(v)}" for k, v in params.items())
-    return f"$VARS = @{{ {vars_pairs} }}\n$PARAMS = @{{ {params_pairs} }}\n"
+    # Bypass SSL cert validation globally — required for XCP-ng / XenServer and vSphere
+    # hosts that use self-signed certs. Without this, Connect-XenServer / Connect-VIServer
+    # trigger an interactive PromptForChoice which fails in headless/NonInteractive mode.
+    ssl_bypass = (
+        "[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }\n"
+        "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12\n"
+    )
+    return f"{ssl_bypass}$VARS = @{{ {vars_pairs} }}\n$PARAMS = @{{ {params_pairs} }}\n"
 
 
 def _run_db_script(
@@ -408,7 +537,10 @@ def _run_db_script(
 
     try:
         if script_type == "powershell":
-            cmd = ["pwsh", "-NonInteractive", "-NoProfile", "-File", tmp_path]
+            # -InputFormat None: don't read from stdin (prevents hangs on prompts)
+            # No -NonInteractive: allows SDK cert-trust prompts to auto-accept when
+            # stdin is DEVNULL (XenServer / vSphere SDKs use PromptForChoice for certs)
+            cmd = ["pwsh", "-NoProfile", "-InputFormat", "None", "-File", tmp_path]
         elif script_type == "python":
             cmd = ["python", tmp_path]
         else:
@@ -416,6 +548,8 @@ def _run_db_script(
 
         proc = subprocess.run(
             cmd,
+            # "Y\n" repeated: auto-answers certificate trust prompts from XenServer/vSphere SDKs
+            input="Y\nY\nY\nY\nY\n",
             capture_output=True,
             text=True,
             timeout=120,
@@ -481,6 +615,7 @@ def _run_runbook_path(
     deprovision_policy: str = "access_only",
     automation_strategy: str = "runbook_only",
     personal_provisioning_strategy: str = "assign_existing_free",
+    naming_pattern: str | None = None,
     _set_delivered: bool = True,
 ) -> dict:
     """Executes the configured runbook for the asset type and action.
@@ -590,6 +725,7 @@ def _run_runbook_path(
         "asset_type_id": order["asset_type_id"],
         "asset_type_name": asset_type_name,
         "asset_type_description": asset_type_description,
+        "asset_type.naming_pattern": naming_pattern or "",
         "user_email": order["user_email"],
         "user_name": order["user_name"],
         "owner_email": order.get("owner_email"),
@@ -602,6 +738,13 @@ def _run_runbook_path(
         "asset_name": pre_asset_name,
         "snow_req": order.get("snow_req"),
         "snow_ritm": order.get("servicenow_ref"),
+        # Hosting infrastructure — available as {{config.vsphere.host}} etc. in params templates
+        "config.vsphere.host":       get_config(db, "vsphere.host", ""),
+        "config.vsphere.username":   get_config(db, "vsphere.username", ""),
+        "config.vsphere.password":   get_config(db, "vsphere.password", ""),
+        "config.xenserver.host":     get_config(db, "xenserver.host", ""),
+        "config.xenserver.username": get_config(db, "xenserver.username", ""),
+        "config.xenserver.password": get_config(db, "xenserver.password", ""),
     }
 
     # 4. Execute steps
@@ -735,6 +878,7 @@ def _run_composite_mode(
     assignment_model: str,
     deprovision_policy: str = "access_only",
     composite_steps: list | None = None,
+    naming_pattern: str | None = None,
 ) -> dict:
     """Executes an order in COMPOSITE mode.
 
@@ -778,6 +922,7 @@ def _run_composite_mode(
                 assignment_model=assignment_model,
                 deprovision_policy=deprovision_policy,
                 automation_strategy="composite",
+                naming_pattern=naming_pattern,
                 _set_delivered=False,
             )
             if not result.get("success"):
@@ -850,7 +995,7 @@ def run(self: Task, order_id: int) -> dict:
             text("""
                 SELECT name, description, automation_mode, assignment_model,
                        deprovision_policy, automation_strategy, composite_steps,
-                       personal_provisioning_strategy
+                       personal_provisioning_strategy, naming_pattern
                 FROM asset_types WHERE id = :id
             """),
             {"id": order["asset_type_id"]},
@@ -863,6 +1008,7 @@ def run(self: Task, order_id: int) -> dict:
         automation_strategy = at_row[5] if at_row else None
         composite_steps = at_row[6] if at_row else None
         personal_provisioning_strategy = at_row[7] if at_row else "assign_existing_free"
+        naming_pattern = at_row[8] if at_row else None
 
         # Fallback: derive automation_strategy from automation_mode (legacy records)
         if not automation_strategy:
@@ -905,6 +1051,7 @@ def run(self: Task, order_id: int) -> dict:
                 asset_type_name, asset_type_description, assignment_model,
                 deprovision_policy=deprovision_policy,
                 composite_steps=composite_steps,
+                naming_pattern=naming_pattern,
             )
         else:
             # runbook_only: execute runbook
@@ -915,6 +1062,7 @@ def run(self: Task, order_id: int) -> dict:
                 deprovision_policy=deprovision_policy,
                 automation_strategy=automation_strategy,
                 personal_provisioning_strategy=personal_provisioning_strategy,
+                naming_pattern=naming_pattern,
             )
 
         # Post-DELETE: return asset to pool + revoke original PROVISION order
@@ -976,11 +1124,35 @@ def test_script_module(self: Task, script_module_id: int, params: dict) -> dict:
     """Executes a DB script_module for the module editor test runner.
 
     Always returns a structured result dict – never raises.
+    Hosting config values are auto-injected so scripts that use
+    $PARAMS.XenServerHost etc. work without manual test-param entry.
+    User-supplied params always take precedence.
     """
     db = _get_db_session()
     t_start = time.monotonic()
     try:
-        result = _run_db_script(db, script_module_id, params)
+        # Load param_schema defaults for params not explicitly provided
+        schema_row = db.execute(
+            text("SELECT param_schema FROM script_modules WHERE id = :id"),
+            {"id": script_module_id},
+        ).fetchone()
+        schema_defaults = {}
+        if schema_row and schema_row[0]:
+            for p in schema_row[0]:
+                if p.get("name") and p.get("default") not in (None, ""):
+                    schema_defaults[p["name"]] = p["default"]
+
+        # Priority: schema defaults < hosting config < user-supplied params
+        hosting_defaults = {
+            "vSphereServerHost":      get_config(db, "vsphere.host", ""),
+            "vSphereServerAdminUser": get_config(db, "vsphere.username", ""),
+            "vSphereServerAdminPW":   get_config(db, "vsphere.password", ""),
+            "XenServerHost":          get_config(db, "xenserver.host", ""),
+            "XenServerAdminUser":     get_config(db, "xenserver.username", ""),
+            "XenServerAdminPW":       get_config(db, "xenserver.password", ""),
+        }
+        merged_params = {**schema_defaults, **hosting_defaults, **params}
+        result = _run_db_script(db, script_module_id, merged_params)
         duration_ms = (time.monotonic() - t_start) * 1000
         return {
             "success": result.get("success", True),
@@ -995,5 +1167,137 @@ def test_script_module(self: Task, script_module_id: int, params: dict) -> dict:
             "error": str(e),
             "duration_ms": round(duration_ms),
         }
+    finally:
+        db.close()
+
+
+@app.task(
+    name="tasks.workflows.dynamic_runner.check_expiring_assets",
+    queue="reclaim",
+)
+def check_expiring_assets() -> dict:
+    """
+    Celery Beat Task: Checks hourly for expiring assets and triggers lifecycle completion.
+
+    - Immediately expired (expires_at <= NOW): create a 'delete' order and dispatch
+      dynamic_runner.run so the full DB-driven deprovision runbook is executed.
+    - Expiring soon (expires_at <= NOW + REMINDER_HOURS): send reminder email.
+    """
+    from tasks.modules.notifications import send_expiry_reminder
+
+    reminder_hours = int(os.getenv("REMINDER_HOURS_BEFORE_EXPIRY", "24"))
+    logger.info("=== check_expiring_assets: Checking for expired/expiring assets ===")
+
+    db = _get_db_session()
+    try:
+        # ── Expired assets: create delete order + dispatch dynamic_runner ──
+        expired = db.execute(
+            text("""
+                SELECT a.id as asset_id, a.name as asset_name, o.id as order_id,
+                       o.user_email, o.user_name, o.owner_email, o.owner_name,
+                       o.asset_type_id, o.provisioned_state, a.expires_at
+                FROM asset_pool a
+                JOIN orders o ON o.id = a.current_order_id
+                WHERE a.status = 'busy'
+                  AND a.expires_at <= NOW()
+                  AND o.status NOT IN ('expired', 'cancelled', 'failed')
+            """),
+        ).fetchall()
+
+        reclaim_count = 0
+        for row in expired:
+            logger.info(
+                "Asset expired: %s (order_id=%s, expired_at=%s) – creating delete order",
+                row.asset_name, row.order_id, row.expires_at,
+            )
+
+            # Serialise provisioned_state (JSONB → Python dict via psycopg2; may be None)
+            ps_json = json.dumps(row.provisioned_state) if row.provisioned_state else None
+
+            # Create a new 'delete' order that dynamic_runner can execute
+            new_order = db.execute(
+                text("""
+                    INSERT INTO orders (
+                        user_email, user_name, owner_email, owner_name,
+                        asset_type_id, assigned_asset_id,
+                        action, status, provisioned_state,
+                        requested_from, requested_until,
+                        created_at, updated_at
+                    ) VALUES (
+                        :user_email, :user_name, :owner_email, :owner_name,
+                        :asset_type_id, :asset_id,
+                        'delete', 'processing',
+                        CAST(:provisioned_state AS jsonb),
+                        NOW(), NOW(),
+                        NOW(), NOW()
+                    )
+                    RETURNING id
+                """),
+                {
+                    "user_email": row.user_email,
+                    "user_name": row.user_name,
+                    "owner_email": row.owner_email,
+                    "owner_name": row.owner_name,
+                    "asset_type_id": row.asset_type_id,
+                    "asset_id": row.asset_id,
+                    "provisioned_state": ps_json,
+                },
+            )
+            new_order_id = new_order.fetchone()[0]
+
+            # Mark the original provision order as expired immediately
+            db.execute(
+                text("UPDATE orders SET status = 'expired', updated_at = NOW() WHERE id = :id"),
+                {"id": row.order_id},
+            )
+            db.commit()
+
+            run.delay(new_order_id)
+            logger.info(
+                "Dispatched dynamic_runner delete order_id=%s for asset '%s'",
+                new_order_id, row.asset_name,
+            )
+            reclaim_count += 1
+
+        # ── Assets expiring soon: reminder email ──
+        reminder_time = datetime.now(timezone.utc) + timedelta(hours=reminder_hours)
+        expiring_soon = db.execute(
+            text("""
+                SELECT a.name as asset_name, o.user_email, o.user_name, a.expires_at
+                FROM asset_pool a
+                JOIN orders o ON o.id = a.current_order_id
+                WHERE a.status = 'busy'
+                  AND a.expires_at > NOW()
+                  AND a.expires_at <= :reminder_time
+                  AND o.status IN ('delivered', 'provisioned')
+            """),
+            {"reminder_time": reminder_time},
+        ).fetchall()
+
+        reminder_count = 0
+        for row in expiring_soon:
+            hours_remaining = (
+                row.expires_at.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)
+            ).total_seconds() / 3600
+            logger.info(
+                "Asset expiring soon: %s (user=%s, in %.1fh) – sending reminder",
+                row.asset_name, row.user_email, hours_remaining,
+            )
+            send_expiry_reminder(
+                db=db,
+                user_email=row.user_email,
+                user_name=row.user_name,
+                asset_name=row.asset_name,
+                expires_at=row.expires_at,
+                hours_remaining=hours_remaining,
+            )
+            reminder_count += 1
+
+        logger.info(
+            "=== check_expiring_assets DONE: %s reclaimed, %s reminders sent ===",
+            reclaim_count, reminder_count,
+        )
+        return {"reclaimed": reclaim_count, "reminders_sent": reminder_count}
+
     finally:
         db.close()

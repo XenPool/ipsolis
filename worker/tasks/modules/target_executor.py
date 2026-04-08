@@ -211,9 +211,13 @@ def grant(
     user_email: str,
     rdp_users: list | None = None,
     admin_users: list | None = None,
+    asset_name: str = "",
 ) -> dict:
     """Reads targets from asset_types, adds principals to groups,
     writes order change log.
+
+    Identifiers may contain {asset_name} which is substituted with the
+    assigned asset name (e.g. CN=XenPool-VDI-{asset_name}-RDP-Users,...).
 
     Returns:
         {"success": True, "grants": n, "mock": bool}
@@ -234,7 +238,7 @@ def grant(
 
     for target in targets:
         target_type = target.get("type", "")
-        identifier = target.get("identifier", "")
+        identifier = target.get("identifier", "").format(asset_name=asset_name)
         principal_source = target.get("principal_source", "requester")
 
         principals = _resolve_principals(

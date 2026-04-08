@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{% if asset_type %}Edit Asset Type{% else %}New Asset Type{% endif %} – XenPool Admin{% endblock %}
+{% block title %}{% if asset_type %}Edit Asset Type{% else %}New Asset Type{% endif %} – {{ app_title }}{% endblock %}
 
 {% block content %}
 <div class="mb-6">
@@ -49,7 +49,7 @@
           <input type="radio" name="category" value="{{ cat_val }}"
                  {% if asset_type and (asset_type.category.value == cat_val or asset_type.category == cat_val) %}checked
                  {% elif not asset_type and cat_val == 'platform_access' %}checked{% endif %}
-                 class="sr-only">
+                 class="sr-only" onchange="onCategoryChange()">
           <div>
             <p class="text-sm font-medium text-gray-900">{{ cat_short }}</p>
             <p class="text-xs text-gray-400 mt-0.5">{{ cat_desc }}</p>
@@ -97,35 +97,6 @@
       </div>
     </div>
 
-    <!-- Deprovision Policy -->
-    <div>
-      <label class="block text-xs font-medium text-gray-600 mb-2">Deprovision Strategy
-        <span class="text-gray-400 font-normal ml-1">– what happens on revoke/cancel?</span>
-      </label>
-      {% set dp_opts = [
-        ("access_only",          "Revoke access only",    "Remove group membership – instance remains untouched"),
-        ("return_to_pool",       "Return to pool",            "Release assignment, resource available for others"),
-        ("deallocate_instance",  "Pause instance",          "Stop / deallocate VM, but do not delete"),
-        ("delete_instance",      "Delete instance",           "Permanently delete VM including cleanup"),
-        ("custom_runbook",       "Runbook",                   "Define revoke logic via separate runbook"),
-      ] %}
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-        {% for dp_val, dp_short, dp_desc in dp_opts %}
-        <label class="relative flex cursor-pointer rounded-lg border border-gray-200 p-3 hover:border-orange-400 has-[:checked]:border-orange-500 has-[:checked]:bg-orange-50">
-          <input type="radio" name="deprovision_policy" value="{{ dp_val }}"
-                 {% if asset_type and (asset_type.deprovision_policy == dp_val) %}checked
-                 {% elif not asset_type and dp_val == 'access_only' %}checked{% endif %}
-                 class="sr-only">
-          <div>
-            <p class="text-sm font-medium text-gray-900">{{ dp_short }}</p>
-            <p class="text-xs text-gray-400 mt-0.5">{{ dp_desc }}</p>
-          </div>
-        </label>
-        {% endfor %}
-      </div>
-      <div id="dp-constraint-banner" class="hidden mt-2 text-xs rounded px-3 py-2 bg-amber-50 border border-amber-200 text-amber-700"></div>
-    </div>
-
     <!-- Personal assignment (only for assigned_personal) -->
     <div id="personal-provision-section" class="{% if not asset_type or asset_type.assignment_model != 'assigned_personal' %}hidden{% endif %} border border-blue-100 rounded-lg p-4 bg-blue-50/40">
       <label class="block text-xs font-semibold text-blue-700 mb-3">Personal Assignment
@@ -136,7 +107,6 @@
         <label class="block text-xs font-medium text-gray-600 mb-2">Provisioning Strategy</label>
         {% set ps_opts = [
           ("assign_existing_free",     "Assign free instance",    "Reserve the first available instance from the pool"),
-          ("reuse_existing_by_owner",  "Reuse existing",          "Use existing instance if the user already has one"),
           ("create_new",               "Create new instance",     "Create a new VM (stub – implement via runbook)"),
         ] %}
         <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -145,7 +115,7 @@
             <input type="radio" name="personal_provisioning_strategy" value="{{ ps_val }}"
                    {% if asset_type and asset_type.personal_provisioning_strategy == ps_val %}checked
                    {% elif not asset_type and ps_val == 'assign_existing_free' %}checked{% endif %}
-                   class="sr-only">
+                   class="sr-only" onchange="onProvisioningStrategyChange()">
             <div>
               <p class="text-sm font-medium text-gray-900">{{ ps_short }}</p>
               <p class="text-xs text-gray-400 mt-0.5">{{ ps_desc }}</p>
@@ -156,12 +126,15 @@
       </div>
 
       <div class="flex flex-wrap gap-4 items-end">
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Naming Pattern <span class="text-gray-400">(optional)</span></label>
+        <div id="naming-pattern-row" class="{% if not asset_type or asset_type.personal_provisioning_strategy != 'create_new' %}hidden{% endif %}">
+          <label class="block text-xs text-gray-500 mb-1">Naming Pattern
+            <span class="text-gray-400">(optional)</span>
+            <span class="ml-1 text-blue-500" title="Available as {{asset_type.naming_pattern}} in runbook step parameters">– used in runbook as <code class="font-mono">{{'{{'}}asset_type.naming_pattern{{'}}'}}</code></span>
+          </label>
           <input type="text" name="naming_pattern"
                  value="{{ asset_type.naming_pattern if asset_type and asset_type.naming_pattern else '' }}"
                  placeholder="e.g. VDI-{sam} or LAP-{employeeId}"
-                 class="w-52 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+                 class="w-64 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
         </div>
         <div>
           <label class="block text-xs text-gray-500 mb-1">Max. Instances/User</label>
@@ -198,13 +171,24 @@
                  class="rounded border-gray-300">
           Renewable
         </label>
-        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer pb-1">
-          <input type="checkbox" name="allow_user_lists"
-                 {% if asset_type and asset_type.allow_user_lists %}checked{% endif %}
-                 class="rounded border-gray-300">
-          Enable RDP and admin user lists
-          <span class="text-xs text-gray-400">(for VDI / Server / Cloud assets)</span>
-        </label>
+        <div id="allow-user-lists-row" class="flex flex-col gap-1">
+          <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer pb-1">
+            <input type="checkbox" id="allow-rdp-users-cb" name="allow_rdp_users"
+                   {% if asset_type and asset_type.allow_rdp_users %}checked{% endif %}
+                   onchange="updatePrincipalSourceOptions()"
+                   class="rounded border-gray-300">
+            Enable RDP user list
+            <span class="text-xs text-gray-400">(users added to RDP group)</span>
+          </label>
+          <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer pb-1">
+            <input type="checkbox" id="allow-admin-users-cb" name="allow_admin_users"
+                   {% if asset_type and asset_type.allow_admin_users %}checked{% endif %}
+                   onchange="updatePrincipalSourceOptions()"
+                   class="rounded border-gray-300">
+            Enable Admin user list
+            <span class="text-xs text-gray-400">(users added to local admin group)</span>
+          </label>
+        </div>
       </div>
     </div>
 
@@ -432,6 +416,35 @@
               class="mt-2 text-xs text-blue-600 hover:underline">+ Add Attribute</button>
     </div>
 
+    <!-- Deprovision Policy -->
+    <div class="border-t border-gray-100 pt-5">
+      <label class="block text-xs font-medium text-gray-600 mb-2">Deprovision Strategy
+        <span class="text-gray-400 font-normal ml-1">– what happens on revoke/cancel?</span>
+      </label>
+      {% set dp_opts = [
+        ("access_only",          "Revoke access only",    "Remove group membership – instance remains untouched"),
+        ("return_to_pool",       "Return to pool",            "Release assignment, resource available for others"),
+        ("deallocate_instance",  "Pause instance",          "Stop / deallocate VM, but do not delete"),
+        ("delete_instance",      "Delete instance",           "Permanently delete VM including cleanup"),
+        ("custom_runbook",       "Runbook",                   "Define revoke logic via separate runbook"),
+      ] %}
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        {% for dp_val, dp_short, dp_desc in dp_opts %}
+        <label class="relative flex cursor-pointer rounded-lg border border-gray-200 p-3 hover:border-orange-400 has-[:checked]:border-orange-500 has-[:checked]:bg-orange-50">
+          <input type="radio" name="deprovision_policy" value="{{ dp_val }}"
+                 {% if asset_type and (asset_type.deprovision_policy == dp_val) %}checked
+                 {% elif not asset_type and dp_val == 'access_only' %}checked{% endif %}
+                 class="sr-only">
+          <div>
+            <p class="text-sm font-medium text-gray-900">{{ dp_short }}</p>
+            <p class="text-xs text-gray-400 mt-0.5">{{ dp_desc }}</p>
+          </div>
+        </label>
+        {% endfor %}
+      </div>
+      <div id="dp-constraint-banner" class="hidden mt-2 text-xs rounded px-3 py-2 bg-amber-50 border border-amber-200 text-amber-700"></div>
+    </div>
+
     <!-- Buttons -->
     <div class="flex items-center justify-between pt-2 border-t border-gray-100">
       <a href="/ui/asset-types" class="text-sm text-gray-500 hover:text-gray-800">Cancel</a>
@@ -464,7 +477,7 @@ function showTargetsEditor(show) { updateAutomationUI(); }
 
 // Mapping: assignment_model → sensible deprovision_policy default
 var _dpDefaults = {
-  'capacity_pooled':   'return_to_pool',
+  'capacity_pooled':   'access_only',
   'dedicated_shared':  'access_only',
   'assigned_personal': 'deallocate_instance',
 };
@@ -479,6 +492,16 @@ function toggleAssignmentDependents() {
   // Personal assignment only for assigned_personal
   document.getElementById('personal-provision-section').classList.toggle('hidden', val !== 'assigned_personal');
 
+  // RDP/admin user lists only relevant for Personal; hide + uncheck for Shared/Pooled
+  var userListsRow = document.getElementById('allow-user-lists-row');
+  var isPersonalModel = val === 'assigned_personal';
+  userListsRow.classList.toggle('hidden', !isPersonalModel);
+  if (!isPersonalModel) {
+    document.getElementById('allow-rdp-users-cb').checked = false;
+    document.getElementById('allow-admin-users-cb').checked = false;
+    updatePrincipalSourceOptions();
+  }
+
   // Set default deprovision policy
   var dp = _dpDefaults[val] || 'access_only';
   var dpRadio = document.querySelector('[name="deprovision_policy"][value="' + dp + '"]');
@@ -488,6 +511,63 @@ function toggleAssignmentDependents() {
 
 // Compat alias (also called by existing listeners)
 function toggleCapacity() { toggleAssignmentDependents(); }
+
+// ── Provisioning strategy: create_new requires runbook/composite ──────────────
+function onProvisioningStrategyChange() {
+  var ps = (document.querySelector('[name="personal_provisioning_strategy"]:checked') || {}).value || '';
+  var isCreateNew = ps === 'create_new';
+
+  // Show naming_pattern only for create_new
+  var npRow = document.getElementById('naming-pattern-row');
+  if (npRow) npRow.classList.toggle('hidden', !isCreateNew);
+
+  // Disable group_only automation when create_new is selected (needs a runbook)
+  document.querySelectorAll('[name="automation_strategy"]').forEach(function(radio) {
+    var card = radio.closest('label');
+    var mustDisable = isCreateNew && radio.value === 'group_only';
+    radio.disabled = mustDisable;
+    if (mustDisable) {
+      card.classList.add('opacity-40', 'cursor-not-allowed', 'pointer-events-none');
+      if (radio.checked) {
+        radio.checked = false;
+        var fallback = document.querySelector('[name="automation_strategy"][value="runbook_only"]');
+        if (fallback) fallback.checked = true;
+        updateAutomationUI();
+      }
+    } else {
+      card.classList.remove('opacity-40', 'cursor-not-allowed', 'pointer-events-none');
+    }
+  });
+
+  enforceConstraints();
+}
+
+// ── Category constraint: non-instance categories force capacity_pooled ────────
+var _POOLED_ONLY_CATS = new Set(['application_access', 'data_access', 'device_access']);
+
+function onCategoryChange() {
+  var cat = (document.querySelector('[name="category"]:checked') || {}).value || '';
+  var forcePooled = _POOLED_ONLY_CATS.has(cat);
+
+  document.querySelectorAll('[name="assignment_model"]').forEach(function(radio) {
+    var card = radio.closest('label');
+    var mustDisable = forcePooled && radio.value !== 'capacity_pooled';
+    radio.disabled = mustDisable;
+    if (mustDisable) {
+      card.classList.add('opacity-40', 'cursor-not-allowed', 'pointer-events-none');
+      if (radio.checked) radio.checked = false;
+    } else {
+      card.classList.remove('opacity-40', 'cursor-not-allowed', 'pointer-events-none');
+    }
+  });
+
+  if (forcePooled) {
+    var pooledRadio = document.querySelector('[name="assignment_model"][value="capacity_pooled"]');
+    if (pooledRadio && !pooledRadio.checked) pooledRadio.checked = true;
+  }
+
+  toggleAssignmentDependents();
+}
 
 // ── Asset-Type Constraint Enforcement (Rules 1–4) ─────────────────────────────
 // Rule 1: GROUP_ONLY forbids deallocate_instance + delete_instance
@@ -500,6 +580,7 @@ function enforceConstraints() {
   var isGroupOnly   = strategy === 'group_only';
   var isShared      = model === 'dedicated_shared';
   var isPersonal    = model === 'assigned_personal';
+  var isPooled      = model === 'capacity_pooled';
   var isRunbookMode = strategy === 'runbook_only' || strategy === 'composite';
 
   // Build forbidden set for deprovision_policy
@@ -507,6 +588,7 @@ function enforceConstraints() {
   if (isGroupOnly) { forbidden.add('deallocate_instance'); forbidden.add('delete_instance'); }
   if (isShared)    { forbidden.add('delete_instance'); }
   if (!isPersonal) { forbidden.add('return_to_pool'); }
+  if (isPooled)    { forbidden.add('deallocate_instance'); forbidden.add('delete_instance'); }
 
   // Apply disabled state; auto-fallback to access_only if selected option becomes forbidden
   var needFallback = false;
@@ -559,6 +641,9 @@ function enforceConstraints() {
     if (isGroupOnly) notes.push('Group access: instance actions (pause / delete) not available.');
     if (isShared)    notes.push('Shared model: "delete instance" not available.');
     if (!isPersonal) notes.push('"Return to pool" only available for personal assignment.');
+    if (isPooled)    notes.push('Pooled model: instance actions (pause / delete) not available.');
+    var ps = (document.querySelector('[name="personal_provisioning_strategy"]:checked') || {}).value || '';
+    if (ps === 'create_new' && isGroupOnly) notes.push('"Create new instance" requires Runbook or Combined automation.');
     if (notes.length) {
       banner.textContent = notes.join(' \u2022 ');
       banner.classList.remove('hidden');
@@ -569,14 +654,44 @@ function enforceConstraints() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('[name="category"]').forEach(function(r) {
+    r.addEventListener('change', onCategoryChange);
+  });
   document.querySelectorAll('[name="assignment_model"]').forEach(function(r) {
     r.addEventListener('change', toggleAssignmentDependents);
   });
   document.querySelectorAll('[name="deprovision_policy"]').forEach(function(r) {
     r.addEventListener('change', enforceConstraints);
   });
-  enforceConstraints();
+  document.querySelectorAll('[name="personal_provisioning_strategy"]').forEach(function(r) {
+    r.addEventListener('change', onProvisioningStrategyChange);
+  });
+  onCategoryChange();            // apply category constraints on initial load (handles edit mode)
+  onProvisioningStrategyChange(); // apply provisioning strategy constraints on initial load
+  updatePrincipalSourceOptions(); // filter principal_source dropdowns based on checked user list flags
 });
+
+function _buildPrincipalOptions(selected) {
+  var allowRdp   = document.getElementById('allow-rdp-users-cb')   ? document.getElementById('allow-rdp-users-cb').checked   : false;
+  var allowAdmin = document.getElementById('allow-admin-users-cb') ? document.getElementById('allow-admin-users-cb').checked : false;
+  var sel = selected || 'requester';
+  var html = '<option value="requester"' + (sel === 'requester' ? ' selected' : '') + '>Requester</option>';
+  if (allowRdp)   { html += '<option value="rdp_users"'   + (sel === 'rdp_users'   ? ' selected' : '') + '>RDP users</option>'; }
+  if (allowAdmin) { html += '<option value="admin_users"' + (sel === 'admin_users' ? ' selected' : '') + '>Admin users</option>'; }
+  html += '<option value="all_users"' + (sel === 'all_users' ? ' selected' : '') + '>All users</option>';
+  return html;
+}
+
+function updatePrincipalSourceOptions() {
+  document.querySelectorAll('[name="target_principal_source[]"]').forEach(function(sel) {
+    var current = sel.value;
+    sel.innerHTML = _buildPrincipalOptions(current);
+    // If previously selected option was removed, reset to requester
+    if (!sel.querySelector('option[value="' + current + '"]')) {
+      sel.value = 'requester';
+    }
+  });
+}
 
 function addTargetRow() {
   var row = document.createElement('div');
@@ -593,10 +708,7 @@ function addTargetRow() {
     + ' class="col-span-5 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">'
     + '<select name="target_principal_source[]"'
     + ' class="col-span-3 rounded border border-gray-300 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">'
-    + '<option value="requester">Requester</option>'
-    + '<option value="rdp_users">RDP users</option>'
-    + '<option value="admin_users">Admin users</option>'
-    + '<option value="all_users">All users</option>'
+    + _buildPrincipalOptions('requester')
     + '</select>'
     + '<button type="button" onclick="this.closest(\'.target-row\').remove()"'
     + ' class="col-span-1 text-red-400 hover:text-red-600 text-lg leading-none text-center">\xd7</button>';
@@ -727,6 +839,19 @@ async function submitForm() {
   if (assignmentModel === 'dedicated_shared' && dpPolicy === 'delete_instance') {
     constraintErrors.push('Shared assets cannot be automatically deleted ("delete instance" is not allowed).');
   }
+  var category = (form.querySelector('[name="category"]:checked') || {}).value || '';
+  var pooledOnlyCats = ['application_access', 'data_access', 'device_access'];
+  if (pooledOnlyCats.indexOf(category) >= 0 && assignmentModel !== 'capacity_pooled') {
+    constraintErrors.push('This category only supports assignment model "Pooled".');
+  }
+  if (assignmentModel === 'capacity_pooled' &&
+      (dpPolicy === 'deallocate_instance' || dpPolicy === 'delete_instance')) {
+    constraintErrors.push('Pooled model does not support instance actions (pause / delete).');
+  }
+  var psStrategy = psStratEl ? psStratEl.value : null;
+  if (psStrategy === 'create_new' && automationStrategy === 'group_only') {
+    constraintErrors.push('"Create new instance" requires Runbook or Combined automation (Group Access cannot run scripts).');
+  }
   if (constraintErrors.length) {
     document.getElementById('form-result').innerHTML =
       '<div class="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">'
@@ -746,7 +871,8 @@ async function submitForm() {
     lifecycle_ttl_days: form.querySelector('[name="lifecycle_ttl_days"]').value
       ? parseInt(form.querySelector('[name="lifecycle_ttl_days"]').value) : null,
     lifecycle_renewable: form.querySelector('[name="lifecycle_renewable"]').checked,
-    allow_user_lists: form.querySelector('[name="allow_user_lists"]').checked,
+    allow_rdp_users: document.getElementById('allow-rdp-users-cb') ? document.getElementById('allow-rdp-users-cb').checked : false,
+    allow_admin_users: document.getElementById('allow-admin-users-cb') ? document.getElementById('allow-admin-users-cb').checked : false,
     automation_mode: automationMode,
     automation_strategy: automationStrategy,
     composite_steps: compositeSteps,

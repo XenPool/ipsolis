@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -18,16 +17,16 @@ from app.models.ps_module import PsModule
 from app.models.order import Order, OrderAction, OrderStatus
 from app.models.runbook import RunbookDefinition, RunbookStep
 from app.models.script_module import ScriptModule
-from app.utils.auth import require_admin_key
+from app.utils.auth import require_admin_session
+from app.templates_instance import templates
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/ui",
     tags=["ui"],
-    dependencies=[Depends(require_admin_key)],
+    dependencies=[Depends(require_admin_session)],
 )
-templates = Jinja2Templates(directory="/app/app/templates")
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -401,7 +400,7 @@ async def asset_types_list(
         )
         rb_counts = {row[0]: row[1] for row in rows}
 
-    # Pool counts per asset type
+    # Pool counts per asset type (assigned_personal / dedicated_shared)
     pool_counts: dict[int, dict] = {}
     if asset_types:
         count_rows = (await db.execute(
@@ -414,12 +413,29 @@ async def asset_types_list(
             if r[1] == "free":
                 pool_counts[tid]["free"] += r[2]
 
+    # Active slot usage for capacity_pooled asset types (counted via orders)
+    pooled_usage: dict[int, int] = {}
+    pooled_ids = [t.id for t in asset_types if t.assignment_model == "capacity_pooled"]
+    if pooled_ids:
+        usage_rows = (await db.execute(
+            text("""
+                SELECT asset_type_id, COUNT(*) as cnt
+                FROM orders
+                WHERE asset_type_id = ANY(:ids)
+                  AND status IN ('pending', 'processing', 'provisioning', 'provisioned', 'delivered')
+                GROUP BY asset_type_id
+            """),
+            {"ids": pooled_ids},
+        )).all()
+        pooled_usage = {row[0]: row[1] for row in usage_rows}
+
     return templates.TemplateResponse(
         request, "ui/asset_types.html",
         {
             "asset_types": asset_types,
             "rb_counts": rb_counts,
             "pool_counts": pool_counts,
+            "pooled_usage": pooled_usage,
             "active_page": "asset-types",
         },
     )
@@ -667,10 +683,32 @@ async def settings_page(
         for r in tpl_result.fetchall()
     ]
 
+    # Load entra.* config keys
+    entra_result = await db.execute(
+        select(AppConfig).where(AppConfig.key.like("entra.%")).order_by(AppConfig.key)
+    )
+    entra_rows = entra_result.scalars().all()
+    entra_config = {r.key: (_MASK if r.is_secret else (r.value or "")) for r in entra_rows}
+
+    # Load hosting config keys (vsphere.* / xenserver.*)
+    def _cfg_dict(rows: list) -> dict:
+        return {r.key.split(".", 1)[1]: (_MASK if r.is_secret else (r.value or "")) for r in rows}
+
+    vsphere_rows = (await db.execute(
+        select(AppConfig).where(AppConfig.key.like("vsphere.%")).order_by(AppConfig.key)
+    )).scalars().all()
+    xenserver_rows = (await db.execute(
+        select(AppConfig).where(AppConfig.key.like("xenserver.%")).order_by(AppConfig.key)
+    )).scalars().all()
+    hosting_vsphere = _cfg_dict(vsphere_rows)
+    hosting_xenserver = _cfg_dict(xenserver_rows)
+
     return templates.TemplateResponse(
         request, "ui/settings.html",
-        {"vars": masked_vars, "ad_config": ad_config, "email_config": email_config,
-         "email_templates": email_templates, "active_page": "settings"},
+        {"vars": masked_vars, "ad_config": ad_config, "entra_config": entra_config,
+         "email_config": email_config, "email_templates": email_templates,
+         "hosting_vsphere": hosting_vsphere, "hosting_xenserver": hosting_xenserver,
+         "active_page": "settings"},
     )
 
 

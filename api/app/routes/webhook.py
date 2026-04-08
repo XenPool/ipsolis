@@ -9,10 +9,11 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
-from app.models.asset import AssetType
+from app.models.asset import AssetType, AssignmentModel
 from app.models.order import Order, OrderAction, OrderStatus
 from app.schemas.order import OrderRead, WebhookPayload
 from app.utils.audit import _order_snap, aaudit
+from app.utils.capacity import enforce_pool_capacity
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook", tags=["webhook"])
@@ -66,6 +67,14 @@ async def receive_servicenow_webhook(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unknown asset_type_name: {payload.asset_type_name!r}",
         )
+
+    # Pre-flight capacity check — PROVISION only
+    if (
+        payload.action == OrderAction.PROVISION
+        and asset_type.assignment_model == AssignmentModel.CAPACITY_POOLED
+        and asset_type.pool_capacity is not None
+    ):
+        await enforce_pool_capacity(db, asset_type.id, asset_type.pool_capacity)
 
     # Check for duplicate ServiceNow reference (idempotency)
     existing = await db.execute(

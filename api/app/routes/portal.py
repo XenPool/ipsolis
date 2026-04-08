@@ -1,26 +1,96 @@
 """User Self-Service Portal – HTML routes.
 
-No admin key required (internal tool, no login for MVP).
-Actions: Order new access, extend, change RDP/admin users.
+Authentication: Entra ID SSO when entra.mode != 'disabled' (controlled via
+admin settings). In development mode or when mode='disabled' a mock user is
+injected so the portal works without Entra credentials.
 """
 import logging
 from datetime import date, datetime, timezone
 
+import base64
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.database import get_db
+from app.templates_instance import templates, get_app_logo
 from app.models.asset import AssetPool, AssetType
+from app.models.config import AppConfig
 from app.models.order import Order, OrderAction, OrderStatus
 from app.utils.ad_lookup import lookup_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/portal", tags=["portal"])
-templates = Jinja2Templates(directory="/app/app/templates")
+_DEV_USER = {"email": "dev@xenpool.local", "name": "Dev User (bypass)", "oid": "", "upn": "dev@xenpool.local"}
+
+
+@router.get("/logo", include_in_schema=False)
+async def portal_logo() -> Response:
+    """Serves the portal logo image from the in-memory cache (set at startup / config save).
+    Returns 404 when no logo is configured. Browser-cacheable for 1 hour.
+    """
+    data_url = get_app_logo()
+    if not data_url:
+        raise HTTPException(status_code=404, detail="No logo configured")
+    try:
+        # data URL format: data:<mime>;base64,<b64data>
+        header, b64_data = data_url.split(",", 1)
+        mime = header.split(":")[1].split(";")[0]
+        raw = base64.b64decode(b64_data)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid logo data")
+    return Response(content=raw, media_type=mime, headers={"Cache-Control": "max-age=3600"})
+
+
+def _user_order_filter(email: str):
+    """Returns a SQLAlchemy filter that matches orders belonging to the given user
+    (either as requester or as the asset owner)."""
+    return or_(Order.user_email == email, Order.owner_email == email)
+
+
+def _assert_owns_order(order: Order, email: str) -> None:
+    """Raises HTTP 403 if the current user is not the requester or owner of the order."""
+    if order.user_email != email and order.owner_email != email:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+
+async def require_portal_auth(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """FastAPI dependency: returns the authenticated portal user dict.
+
+    - entra.mode == 'disabled' OR ENVIRONMENT=development → returns _DEV_USER (no redirect)
+    - session["portal_user"] present → returns stored user
+    - Otherwise → stores intended URL in session and redirects to /portal/login
+    """
+    if settings.is_development:
+        return _DEV_USER
+
+    # Read entra.mode from DB (cached per-request via the dependency)
+    mode_row = await db.execute(
+        select(AppConfig).where(AppConfig.key == "entra.mode")
+    )
+    mode_cfg = mode_row.scalar_one_or_none()
+    mode = (mode_cfg.value or "disabled") if mode_cfg else "disabled"
+
+    if mode == "disabled":
+        return _DEV_USER
+
+    user = request.session.get("portal_user")
+    if user:
+        return user
+
+    # Store the originally requested URL so callback can redirect back
+    request.session["login_next"] = str(request.url)
+    raise HTTPException(
+        status_code=302,
+        headers={"Location": "/portal/login"},
+    )
 
 _STATUS_COLORS = {
     "pending":      "bg-gray-100 text-gray-700",
@@ -47,10 +117,15 @@ _STEP_COLORS = {
 # ── Overview ───────────────────────────────────────────────────────────────────
 
 @router.get("/", response_class=HTMLResponse)
-async def portal_index(request: Request, db: AsyncSession = Depends(get_db)):
+async def portal_index(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
+):
     result = await db.execute(
         select(Order)
         .options(selectinload(Order.steps))
+        .where(_user_order_filter(current_user["email"]))
         .order_by(Order.created_at.desc())
         .limit(100)
     )
@@ -79,6 +154,7 @@ async def portal_index(request: Request, db: AsyncSession = Depends(get_db)):
     return templates.TemplateResponse("portal/index.html", {
         "request": request,
         "active_page": "overview",
+        "user": current_user,
         "orders": orders,
         "asset_type_names": asset_type_names,
         "asset_type_categories": asset_type_categories,
@@ -90,12 +166,17 @@ async def portal_index(request: Request, db: AsyncSession = Depends(get_db)):
 # ── New Order ──────────────────────────────────────────────────────────────────
 
 @router.get("/orders/new", response_class=HTMLResponse)
-async def portal_new_order_form(request: Request, db: AsyncSession = Depends(get_db)):
+async def portal_new_order_form(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
+):
     types_result = await db.execute(select(AssetType).order_by(AssetType.name))
     asset_types = list(types_result.scalars().all())
     return templates.TemplateResponse("portal/order_new.html", {
         "request": request,
         "active_page": "new",
+        "user": current_user,
         "asset_types": asset_types,
         "today": date.today().isoformat(),
         "error": None,
@@ -179,6 +260,7 @@ def _validate_order_attrs(
 async def portal_create_order(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
     user_name: str = Form(...),
     user_email: str = Form(...),
     owner_name: str = Form(""),
@@ -197,6 +279,7 @@ async def portal_create_order(
         return templates.TemplateResponse("portal/order_new.html", {
             "request": request,
             "active_page": "new",
+            "user": current_user,
             "asset_types": list(types_result.scalars().all()),
             "today": date.today().isoformat(),
             "error": msg,
@@ -267,6 +350,7 @@ async def portal_order_detail(
     request: Request,
     order_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
 ):
     result = await db.execute(
         select(Order).options(selectinload(Order.steps)).where(Order.id == order_id)
@@ -274,6 +358,7 @@ async def portal_order_detail(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    _assert_owns_order(order, current_user["email"])
 
     asset_type_name = None
     asset_type = None
@@ -299,6 +384,7 @@ async def portal_order_detail(
     return templates.TemplateResponse("portal/order_detail.html", {
         "request": request,
         "active_page": "overview",
+        "user": current_user,
         "order": order,
         "asset_type": asset_type,
         "asset_type_name": asset_type_name,
@@ -316,12 +402,14 @@ async def portal_order_detail(
 async def portal_extend_order(
     order_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
     new_until: str = Form(...),
 ):
     result = await db.execute(select(Order).where(Order.id == order_id))
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Order not found")
+    _assert_owns_order(original, current_user["email"])
 
     try:
         until_dt = datetime.fromisoformat(new_until).replace(tzinfo=timezone.utc)
@@ -360,6 +448,7 @@ async def portal_extend_order(
 async def portal_modify_order(
     order_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
     rdp_users: list[str] = Form(default=[]),
     admin_users: list[str] = Form(default=[]),
 ):
@@ -367,6 +456,7 @@ async def portal_modify_order(
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Order not found")
+    _assert_owns_order(original, current_user["email"])
 
     rdp_clean = [u.strip() for u in rdp_users if u.strip()]
     admin_clean = [u.strip() for u in admin_users if u.strip()]
@@ -403,6 +493,7 @@ async def portal_modify_order(
 async def portal_change_order(
     order_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
     new_until: str | None = Form(default=None),
     rdp_users: list[str] = Form(default=[]),
     admin_users: list[str] = Form(default=[]),
@@ -411,6 +502,7 @@ async def portal_change_order(
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Order not found")
+    _assert_owns_order(original, current_user["email"])
 
     is_active = original.status in (OrderStatus.DELIVERED, OrderStatus.PROVISIONED)
     is_failed_change = (
@@ -474,11 +566,13 @@ async def portal_change_order(
 async def portal_cancel_order(
     order_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
 ):
     result = await db.execute(select(Order).where(Order.id == order_id))
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Order not found")
+    _assert_owns_order(original, current_user["email"])
 
     if original.status not in (OrderStatus.DELIVERED, OrderStatus.PROVISIONED):
         raise HTTPException(
@@ -517,17 +611,22 @@ async def portal_cancel_order(
 # ── My IT – Active Assets Overview ────────────────────────────────────────────
 
 @router.get("/my-it", response_class=HTMLResponse)
-async def portal_my_it(request: Request, db: AsyncSession = Depends(get_db)):
+async def portal_my_it(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
+):
     result = await db.execute(
         select(Order)
         .options(selectinload(Order.steps))
+        .where(_user_order_filter(current_user["email"]))
         .where(Order.action == OrderAction.PROVISION)
         .where(Order.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED]))
         .order_by(Order.created_at.desc())
     )
-    orders = list(result.scalars().all())
+    raw_orders = list(result.scalars().all())
 
-    type_ids = {o.asset_type_id for o in orders}
+    type_ids = {o.asset_type_id for o in raw_orders}
     asset_type_names: dict[int, str] = {}
     asset_type_categories: dict[int, str] = {}
     asset_types_by_id: dict[int, AssetType] = {}
@@ -538,7 +637,7 @@ async def portal_my_it(request: Request, db: AsyncSession = Depends(get_db)):
             asset_type_categories[t.id] = t.category.value
             asset_types_by_id[t.id] = t
 
-    asset_ids = [o.assigned_asset_id for o in orders if o.assigned_asset_id]
+    asset_ids = [o.assigned_asset_id for o in raw_orders if o.assigned_asset_id]
     asset_names: dict[int, str] = {}
     if asset_ids:
         asset_rows = await db.execute(
@@ -546,9 +645,20 @@ async def portal_my_it(request: Request, db: AsyncSession = Depends(get_db)):
         )
         asset_names = {row.id: row.name for row in asset_rows}
 
+    # Drop orders whose asset was deleted (assigned_personal requires a live asset)
+    orders = [
+        o for o in raw_orders
+        if not (
+            asset_types_by_id.get(o.asset_type_id) is not None
+            and asset_types_by_id[o.asset_type_id].assignment_model == "assigned_personal"
+            and o.assigned_asset_id is None
+        )
+    ]
+
     return templates.TemplateResponse("portal/my_it.html", {
         "request": request,
         "active_page": "my-it",
+        "user": current_user,
         "orders": orders,
         "asset_type_names": asset_type_names,
         "asset_type_categories": asset_type_categories,
@@ -563,11 +673,13 @@ async def portal_my_it_detail(
     request: Request,
     order_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
 ):
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    _assert_owns_order(order, current_user["email"])
 
     if order.status not in (OrderStatus.DELIVERED, OrderStatus.PROVISIONED):
         raise HTTPException(status_code=422, detail="Only active assets can be managed here")
@@ -585,15 +697,38 @@ async def portal_my_it_detail(
         )
         asset_name = asset_row.scalar_one_or_none()
 
+    # Determine effective current user lists: use the most recent completed MODIFY
+    # order (if any), otherwise fall back to the provision order's lists.
+    effective_rdp_users = list(order.rdp_users or [])
+    effective_admin_users = list(order.admin_users or [])
+    if order.asset_type_id and order.assigned_asset_id:
+        latest_modify_result = await db.execute(
+            select(Order)
+            .where(
+                Order.assigned_asset_id == order.assigned_asset_id,
+                Order.action == OrderAction.MODIFY,
+                Order.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED]),
+            )
+            .order_by(Order.id.desc())
+            .limit(1)
+        )
+        latest_modify = latest_modify_result.scalar_one_or_none()
+        if latest_modify:
+            effective_rdp_users = list(latest_modify.rdp_users or [])
+            effective_admin_users = list(latest_modify.admin_users or [])
+
     return templates.TemplateResponse("portal/my_it_detail.html", {
         "request": request,
         "active_page": "my-it",
+        "user": current_user,
         "order": order,
         "asset_type": asset_type,
         "asset_type_name": asset_type_name,
         "asset_name": asset_name,
         "today": date.today().isoformat(),
         "status_colors": _STATUS_COLORS,
+        "effective_rdp_users": effective_rdp_users,
+        "effective_admin_users": effective_admin_users,
     })
 
 
