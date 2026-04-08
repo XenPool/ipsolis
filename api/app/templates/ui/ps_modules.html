@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}PS Modules – XenPool Admin{% endblock %}
+{% block title %}PS Modules – {{ app_title }}{% endblock %}
 
 {% macro status_class(s) %}{% if s == 'installed' %}bg-green-100 text-green-700{% elif s == 'installing' %}bg-blue-100 text-blue-700{% elif s == 'failed' %}bg-red-100 text-red-600{% elif s == 'awaiting_upload' %}bg-yellow-50 text-yellow-700{% else %}bg-gray-100 text-gray-600{% endif %}{% endmacro %}
 

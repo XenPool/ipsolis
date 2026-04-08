@@ -1,6 +1,6 @@
 {% extends "portal/base_portal.html" %}
 
-{% block title %}Request New Access – XenPool Self-Service{% endblock %}
+{% block title %}Request New Access – {{ app_title }}{% endblock %}
 
 {% block content %}
 <div class="mb-6">
@@ -98,46 +98,42 @@
     {% endfor %}
   </div>
 
-  <!-- Requester -->
+  <!-- Requester (pre-filled from login, read-only) -->
   <div class="bg-white rounded-lg border border-gray-200 p-5">
     <h2 class="text-sm font-semibold text-gray-700 mb-4">Requester</h2>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <div class="flex items-center justify-between rounded bg-gray-50 border border-gray-100 px-4 py-3">
       <div>
-        <label class="block text-xs font-medium text-gray-600 mb-1">Name <span class="text-red-500">*</span></label>
-        <input type="text" name="user_name" required
-               value="{{ form.user_name if form else '' }}"
-               placeholder="John Doe"
-               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        <p class="text-sm font-medium text-gray-900">{{ user.name }}</p>
+        <p class="text-xs text-gray-500">{{ user.email }}</p>
       </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-600 mb-1">E-Mail <span class="text-red-500">*</span></label>
-        <input type="email" name="user_email" required
-               value="{{ form.user_email if form else '' }}"
-               placeholder="j.doe@company.com"
-               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
-      </div>
+      <span class="text-xs text-gray-400 italic">You</span>
     </div>
+    <input type="hidden" name="user_name" value="{{ user.name }}">
+    <input type="hidden" name="user_email" value="{{ user.email }}">
 
-    <!-- Owner (optional, collapsible) -->
-    <details class="mt-4">
+    <!-- Deputy (optional, must be a valid AD user) -->
+    <details class="mt-4" {% if form and form.owner_email %}open{% endif %}>
       <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-700 select-none">
-        + Specify deputy owner (optional)
+        + Specify deputy (optional)
       </summary>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
-        <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">Owner Name</label>
-          <input type="text" name="owner_name"
-                 value="{{ form.owner_name if form else '' }}"
-                 placeholder="Jane Doe"
-                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">Owner E-Mail</label>
-          <input type="email" name="owner_email"
-                 value="{{ form.owner_email if form else '' }}"
-                 placeholder="j.doe@company.com"
-                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
-        </div>
+      <div class="mt-3">
+        <label class="block text-xs font-medium text-gray-600 mb-1">
+          Deputy
+          <span class="text-gray-400 font-normal ml-1">sAMAccountName or email · must be a valid domain user</span>
+        </label>
+        <input type="text" id="deputy-input" name="q"
+               value="{{ form.owner_email if form and form.owner_email else '' }}"
+               placeholder="j.doe or j.doe@company.com"
+               autocomplete="off"
+               hx-get="/portal/_validate-user"
+               hx-trigger="blur changed delay:400ms"
+               hx-target="#deputy-validate-result"
+               hx-include="this"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        <div id="deputy-validate-result" class="mt-1 min-h-[1.25rem]"></div>
+        <!-- Resolved values written by JS after successful validation -->
+        <input type="hidden" id="owner-name-hidden" name="owner_name" value="{{ form.owner_name if form and form.owner_name else '' }}">
+        <input type="hidden" id="owner-email-hidden" name="owner_email" value="{{ form.owner_email if form and form.owner_email else '' }}">
       </div>
     </details>
   </div>
@@ -163,8 +159,8 @@
     </div>
   </div>
 
-  <!-- RDP-User + Admin-User (nur wenn allow_user_lists) -->
-  <div id="user-lists-section" class="hidden space-y-4">
+  <!-- RDP-User (nur wenn allow_rdp_users) -->
+  <div id="rdp-section" class="hidden space-y-4">
 
   <div class="bg-white rounded-lg border border-gray-200 p-5">
     <h2 class="text-sm font-semibold text-gray-700 mb-1">RDP-User</h2>
@@ -190,7 +186,8 @@
                hx-target="#rdp-validate-result"
                hx-include="this"
                class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"
-               onkeydown="if(event.key==='Enter'){event.preventDefault();addUser('rdp')}">
+               onkeydown="if(event.key==='Enter'){event.preventDefault();addUser('rdp')}"
+               autocomplete="off">
         <div id="rdp-validate-result" class="mt-1 h-4"></div>
       </div>
       <button type="button" onclick="addUser('rdp')"
@@ -200,7 +197,10 @@
     </div>
   </div>
 
-  <!-- Admin-User -->
+  </div><!-- /#rdp-section -->
+
+  <!-- Admin-User (nur wenn allow_admin_users) -->
+  <div id="admin-section" class="hidden space-y-4">
   <div class="bg-white rounded-lg border border-gray-200 p-5">
     <h2 class="text-sm font-semibold text-gray-700 mb-1">Admin-User</h2>
     <p class="text-xs text-gray-500 mb-4">Users with local administrator access on the VM</p>
@@ -225,7 +225,8 @@
                hx-target="#admin-validate-result"
                hx-include="this"
                class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"
-               onkeydown="if(event.key==='Enter'){event.preventDefault();addUser('admin')}">
+               onkeydown="if(event.key==='Enter'){event.preventDefault();addUser('admin')}"
+               autocomplete="off">
         <div id="admin-validate-result" class="mt-1 h-4"></div>
       </div>
       <button type="button" onclick="addUser('admin')"
@@ -234,8 +235,7 @@
       </button>
     </div>
   </div>
-
-  </div><!-- /#user-lists-section -->
+  </div><!-- /#admin-section -->
 
   <!-- Submit -->
   <div class="flex items-center justify-between">
@@ -249,10 +249,33 @@
 </form>
 
 <script>
-function addUser(type) {
+async function _validateUserFetch(val, resultDivId) {
+  var resultDiv = document.getElementById(resultDivId);
+  try {
+    var r = await fetch('/portal/_validate-user?q=' + encodeURIComponent(val));
+    var html = await r.text();
+    if (resultDiv) resultDiv.innerHTML = html;
+    var span = resultDiv ? resultDiv.querySelector('span[data-valid]') : null;
+    return span && span.dataset.valid === 'true'
+      ? { valid: true, email: span.dataset.email, name: span.dataset.name }
+      : { valid: false };
+  } catch(e) {
+    if (resultDiv) resultDiv.innerHTML = '<span class="text-xs text-red-600">Validation error</span>';
+    return { valid: false };
+  }
+}
+
+async function addUser(type) {
   var input = document.getElementById(type + '-input');
   var val = input.value.trim();
   if (!val) return;
+
+  // Prevent duplicates
+  var existing = Array.from(document.querySelectorAll('#' + type + '-list input[type=hidden]')).map(function(i) { return i.value; });
+  if (existing.indexOf(val) !== -1) { input.value = ''; return; }
+
+  var result = await _validateUserFetch(val, type + '-validate-result');
+  if (!result.valid) return; // error already shown in validate-result div
 
   var list = document.getElementById(type + '-list');
   var isRdp = type === 'rdp';
@@ -264,8 +287,8 @@ function addUser(type) {
   var chip = document.createElement('div');
   chip.className = 'flex items-center gap-2 ' + bg + ' border ' + bdr + ' rounded-full px-3 py-1 text-sm';
   chip.innerHTML =
-    '<span class="' + txt + '">' + val + '</span>'
-    + '<input type="hidden" name="' + type + '_users" value="' + val + '">'
+    '<span class="' + txt + '">' + (result.email || val) + '</span>'
+    + '<input type="hidden" name="' + type + '_users" value="' + (result.email || val) + '">'
     + '<button type="button" onclick="this.closest(\'div\').remove()"'
     + ' class="' + btn + ' hover:text-red-500 font-bold leading-none">\xd7</button>';
   list.appendChild(chip);
@@ -275,15 +298,16 @@ function addUser(type) {
 
 // ── User list visibility per asset type ────────────────────────────────────────
 
-var _allowUserLists = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.allow_user_lists else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
+var _allowRdpUsers   = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.allow_rdp_users else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
+var _allowAdminUsers = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.allow_admin_users else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
 
 function updateUserListsSection() {
   var checked = document.querySelector('[name="asset_type_id"]:checked');
   var typeId = checked ? parseInt(checked.value) : null;
-  var section = document.getElementById('user-lists-section');
-  if (section) {
-    section.classList.toggle('hidden', !typeId || !_allowUserLists[typeId]);
-  }
+  var rdpSection   = document.getElementById('rdp-section');
+  var adminSection = document.getElementById('admin-section');
+  if (rdpSection)   { rdpSection.classList.toggle('hidden',   !typeId || !_allowRdpUsers[typeId]); }
+  if (adminSection) { adminSection.classList.toggle('hidden', !typeId || !_allowAdminUsers[typeId]); }
 }
 
 // ── Attribute section per asset type ─────────────────────────────────────────────
@@ -340,18 +364,40 @@ document.addEventListener('DOMContentLoaded', function() {
     sec.addEventListener('change', function() { applyVisibleWhen(sec); });
   });
 
-  // On submit: disable inputs in hidden sections
-  // + auto-add unconfirmed user inputs as chips
+  // Deputy field: when HTMX swaps validation result, update hidden owner inputs
+  document.getElementById('deputy-validate-result').addEventListener('htmx:afterSwap', function() {
+    var span = this.querySelector('span[data-valid]');
+    document.getElementById('owner-name-hidden').value = (span && span.dataset.valid === 'true') ? span.dataset.name : '';
+    document.getElementById('owner-email-hidden').value = (span && span.dataset.valid === 'true') ? span.dataset.email : '';
+  });
+  // Also clear hidden values when the deputy input is cleared
+  document.getElementById('deputy-input').addEventListener('input', function() {
+    if (!this.value.trim()) {
+      document.getElementById('owner-name-hidden').value = '';
+      document.getElementById('owner-email-hidden').value = '';
+      document.getElementById('deputy-validate-result').innerHTML = '';
+    }
+  });
+
   var form = document.querySelector('form');
   if (form) {
     form.addEventListener('submit', function(e) {
-      // Warn if text is in input but not yet confirmed as chip
+      // Block if an RDP/Admin input has text not yet confirmed
       var pending = [];
-      if (document.getElementById('rdp-input')?.value.trim())   pending.push('RDP-User');
-      if (document.getElementById('admin-input')?.value.trim()) pending.push('Admin-User');
+      if (document.getElementById('rdp-input')?.value.trim())   pending.push('RDP User');
+      if (document.getElementById('admin-input')?.value.trim()) pending.push('Admin User');
       if (pending.length) {
         e.preventDefault();
         alert('Please first confirm ' + pending.join(' and ') + ' with "+ Add" (or clear the field).');
+        return;
+      }
+      // Block if deputy has text but failed validation
+      var deputyInput = document.getElementById('deputy-input');
+      var ownerEmail  = document.getElementById('owner-email-hidden');
+      if (deputyInput && deputyInput.value.trim() && !ownerEmail.value) {
+        e.preventDefault();
+        alert('The deputy could not be found in the directory. Please enter a valid username or clear the field.');
+        deputyInput.focus();
         return;
       }
       document.querySelectorAll('.attr-section.hidden input, .attr-section.hidden select').forEach(function(el) {
@@ -360,11 +406,6 @@ document.addEventListener('DOMContentLoaded', function() {
       document.querySelectorAll('.attr-field.hidden input, .attr-field.hidden select').forEach(function(el) {
         el.disabled = true;
       });
-      // Disable user-list inputs when section is hidden (so they don't submit)
-      var userListsSection = document.getElementById('user-lists-section');
-      if (userListsSection && userListsSection.classList.contains('hidden')) {
-        userListsSection.querySelectorAll('input').forEach(function(el) { el.disabled = true; });
-      }
     });
   }
 

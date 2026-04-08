@@ -1,118 +1,153 @@
-# XenPool IT Selfservice – Projektkontext für Claude Code
+# XenPool IT Selfservice – Claude Code Context
 
-## Task-Backlog
-Offene und abgeschlossene Tasks: siehe [`TASKS.md`](TASKS.md)
-Bitte zu Sessionbeginn lesen und bei Abschluss eines Tasks aktualisieren.
+## Task Backlog
+Open and completed tasks: see [`TASKS.md`](TASKS.md)
+Read at the start of each session and update when a task is completed.
 
-## Projektziel
+## Project Goal
 
-Eigenständiger, produktreifer Ersatz für **Ivanti Automation** zur Orchestrierung
-von IT-Asset-Lifecycle-Prozessen (VDIs heute, beliebige Assets morgen).
-Bringt eigenes Self-Service-Portal mit, kann aber auch ServiceNow-Webhooks empfangen.
+Production-ready platform for orchestrating IT asset lifecycle workflows — VDIs today, any asset type tomorrow.
+Includes a self-service portal for end users and a webhook receiver for ServiceNow integration.
 
 ## Stack
 
-| Schicht | Technologie |
+| Layer | Technology |
 |---|---|
 | API / Dispatcher | FastAPI (Python 3.12) |
 | Workflow Engine | Celery + Redis |
 | Scheduling | Celery Beat |
-| Datenbank | PostgreSQL (via SQLAlchemy + Alembic) |
-| Externe Systeme | vSphere (PowerCLI), Active Roles (WinRM/pypsrp), SCCM, SMTP |
+| Database | PostgreSQL (SQLAlchemy + Alembic) |
+| Auth | Entra ID SSO (MSAL) |
+| External Systems | XenServer/XCP-ng + vSphere (PowerCLI), Active Roles (WinRM/pypsrp), SCCM, SMTP |
 | Container | Docker / Docker Compose |
-| Frontend | HTMX + Tailwind CSS |
+| Frontend | HTMX + Jinja2 + Tailwind CSS |
 
-## Branch-Strategie
+## Branch Strategy
 
-- `main` – stabiler Stand / Produktion
-- `dev` – aktive Entwicklung (alle PRs hierhin)
-- Feature-Branches nach Bedarf: `feature/<name>`
-- Merges nach `main` nur bei stabilem, getesteten Stand
+- `main` – stable / production
+- `pre` – pre-live / testing
+- `dev` – active development (all PRs target this branch)
+- Feature branches as needed: `feature/<name>`
+- Merges to `main` only when stable and tested
 
-## Lokal starten
+## Local Setup
 
 ```bash
 cp .env.example .env
-# .env anpassen (Passwörter, Secrets etc.)
+# Edit .env (passwords, secrets, etc.)
 docker compose up --build
 ```
 
-API läuft auf http://localhost:8000 · Celery Flower auf http://localhost:5555
+- API + Admin UI: http://localhost:8000
+- Swagger Docs: http://localhost:8000/docs
+- Self-Service Portal: http://localhost:8000/portal
+- Celery Flower: http://localhost:5555
 
-## Entwicklungshinweise
+## Development Notes
 
-### Mock-Modus
-Alle externen Aufrufe (vSphere, Active Roles, SCCM, SMTP) sind gemockt wenn
-`ENVIRONMENT=development` in der `.env` gesetzt ist. Mocks simulieren realistisches
-Verhalten inkl. Laufzeiten und Logging.
+### Mock Mode
+All external calls (vSphere, XenServer, Active Roles, SCCM, SMTP) are mocked when
+`ENVIRONMENT=development` is set in `.env`. Mocks simulate realistic behavior
+including execution delays and logging. No external infrastructure required.
 
 ### PowerShell Scripts
-**Die Scripts in `scripts/ivanti/` werden NICHT verändert.** Sie sind die originalen
-Ivanti-Module und dienen als Vorlage/Referenz für neue Scripts in `scripts/vsphere/`
-und `scripts/active_roles/`.
+Scripts in `scripts/ivanti/` are **read-only reference material** and must not be modified.
+New scripts belong in:
+- `scripts/xenserver/` — XCP-ng / XenServer VM operations
+- `scripts/vsphere/` — VMware vSphere operations
+- `scripts/active_roles/` — Active Roles / AD group management
+- `scripts/sccm/` — SCCM task sequence helpers
 
-### Datenbankmigrationen
+All scripts must return JSON on stdout and use pure ASCII (no Unicode characters).
+
+### Database Migrations
+
 ```bash
-# Neue Migration erstellen
-docker compose exec api alembic revision --autogenerate -m "beschreibung"
+# Create a new migration
+docker compose exec api alembic revision --autogenerate -m "description"
 
-# Migrationen anwenden
+# Apply migrations
 docker compose exec api alembic upgrade head
 ```
 
-**Hinweis:** Alembic-Migrationsdateien werden beim Image-Build eingebettet.
-Bei laufendem Container: `docker cp` + `alembic upgrade head` direkt im Container.
-Enum-Typen (z.B. `order_action`) bereits vorhanden → `op.execute(raw SQL)` statt
-`op.create_table()` mit `sa.Enum`, um `DuplicateObject`-Fehler zu vermeiden.
+**Important:** Migration files are embedded at image build time.
+For a running container: `docker cp` the file in, then run `alembic upgrade head` directly.
+Enum types (e.g. `order_action`) already exist in the DB — use `op.execute(raw SQL)` instead of
+`op.create_table()` with `sa.Enum` to avoid `DuplicateObject` errors.
 
-### Jinja2 in Templates
-JS-Template-Literals mit `{{` / `}}` kollidieren mit Jinja2-Syntax.
-Statt `` `{{${p}}}` `` immer `'{{' + p + '}}'` (String-Konkatenation) verwenden.
+### Jinja2 + JavaScript Templates
+JS template literals using `{{` / `}}` conflict with Jinja2 syntax.
+Instead of `` `{{${p}}}` ``, always use `'{{' + p + '}}'` (string concatenation).
 
-## Wichtige Dateipfade
+### Router Registration Order
+`admin.router` is registered **before** `admin_runbooks.router` in `main.py`.
+`POST /admin/asset-types` is handled by `admin.py` (ORM), not the runbooks router.
 
-| Pfad | Beschreibung |
+### ORM Type Mapping
+`lifecycle_renewable` must be declared as `Boolean` (not `Integer`) in the ORM model — required for asyncpg compatibility.
+
+## Key File Paths
+
+| Path | Description |
 |------|-------------|
-| `api/app/main.py` | FastAPI-Einstiegspunkt, Router-Registrierung |
-| `api/app/config.py` | Pydantic Settings (Env-Variablen) |
-| `api/app/database.py` | SQLAlchemy Engine + Session |
-| `api/app/models/` | ORM-Models |
-| `api/app/routes/` | API-Routen |
-| `api/app/templates/` | Jinja2-Templates (HTMX-UI + Portal) |
-| `api/app/utils/module_registry.py` | Modul-Metadaten-Spiegel für Admin-UI |
-| `worker/tasks/__init__.py` | Celery App-Instanz |
-| `worker/tasks/workflows/` | Runbook-Workflows (Celery Tasks) |
-| `worker/tasks/modules/` | Atomare Module (pool, active_roles, vsphere, …) |
-| `scripts/ivanti/` | Referenz-Scripts (read-only) |
-| `scripts/vsphere/` | Editierbare vSphere-Scripts |
-| `scripts/active_roles/` | Editierbare Active-Roles-Scripts |
+| `api/app/main.py` | FastAPI entry point, router registration |
+| `api/app/config.py` | Pydantic Settings (env vars) |
+| `api/app/database.py` | SQLAlchemy engine + session |
+| `api/app/models/` | ORM models |
+| `api/app/routes/` | API routers (admin, portal, auth, webhook, …) |
+| `api/app/schemas/` | Pydantic request/response schemas |
+| `api/app/templates/` | Jinja2 templates (Admin UI + Portal) |
+| `api/app/utils/module_registry.py` | Module metadata mirror for Admin UI |
+| `api/app/utils/capacity.py` | Pool capacity enforcement |
+| `api/app/utils/entra.py` | MSAL helper (auth URL, token exchange, domain check) |
+| `worker/tasks/__init__.py` | Celery app instance + task includes |
+| `worker/tasks/workflows/dynamic_runner.py` | Main runbook workflow + Beat scheduler |
+| `worker/tasks/modules/` | Atomic modules (pool, active_roles, vsphere, …) |
+| `worker/tasks/modules/step_helper.py` | Shared step tracking |
+| `scripts/xenserver/` | XCP-ng / XenServer PowerShell scripts |
+| `scripts/vsphere/` | vSphere PowerShell scripts |
+| `scripts/active_roles/` | Active Roles PowerShell scripts |
+| `scripts/sccm/` | SCCM PowerShell scripts |
+| `scripts/ivanti/` | Legacy reference scripts (read-only) |
 
-## Konzeptionelle Entsprechungen Ivanti → XenPool
+## Architecture Concepts
 
-| Ivanti | XenPool IT Selfservice |
+| Concept | Implementation |
 |---|---|
-| Modul | `worker/tasks/modules/*.py` |
-| Runbook | DB-Tabelle `runbook_definitions` + `runbook_steps` (dynamic_runner) |
-| Variablenverwaltung | `app_config`-Tabelle + `.env` |
-| Dispatcher | FastAPI `/webhook` oder `/orders` |
-| Audit-Log | `audit_log`-Tabelle (unveränderlich) |
+| Atomic Module | `worker/tasks/modules/*.py` |
+| Runbook | `runbook_definitions` + `runbook_steps` tables, executed by `dynamic_runner` |
+| Configuration | `app_config` table + `.env` |
+| Inbound Dispatch | FastAPI `/webhook` (ServiceNow) or `/orders` (portal/API) |
+| Audit Log | `audit_log` table (append-only) |
+| Step Log | `order_steps` table with structured JSON per step |
 
-## Externe Systemanbindungen
+## External System Integrations
 
-- **vSphere**: PowerCLI-Scripts via `subprocess` (pwsh in Worker-Container)
-- **Active Roles**: pypsrp / WinRM → Windows-Host mit Active Roles Console
-- **SCCM**: WinRM-Aufruf für Unattended Reinstall-Tasksequenz
-- **SMTP**: Python `smtplib` für Benachrichtigungen
+- **XenServer/XCP-ng**: PowerCLI scripts via `subprocess` (pwsh in worker container); SSL cert bypass injected globally for self-signed certs
+- **vSphere**: same mechanism as XenServer
+- **Active Roles**: pypsrp / WinRM → Windows host running Active Roles Console
+- **SCCM**: WinRM call to trigger unattended reinstall task sequence
+- **SMTP**: Python `smtplib` for notifications
+- **Entra ID**: MSAL for portal SSO; `POST /admin/config/entra/test` verifies credentials via client-credentials token flow
 
-## Datenbankschema (Überblick)
+## Database Schema Overview
 
-| Tabelle | Beschreibung |
+| Table | Description |
 |---------|-------------|
-| `asset_types` | Typdefinitionen inkl. `asset_model` (named/pooled), `pool_capacity` |
-| `asset_pool` | Alle verwalteten VMs/Assets |
-| `orders` | Bestellungen und Änderungsaufträge |
-| `order_steps` | Einzelne Modul-Schritte je Bestellung (mit structured JSON log) |
-| `runbook_definitions` | Ein Runbook pro Asset-Typ + Action |
-| `runbook_steps` | Geordnete Modul-Aufrufe je Runbook |
-| `audit_log` | Unveränderliches Protokoll |
-| `app_config` | Zentrale Konfigurationsvariablen |
+| `asset_types` | Type definitions incl. `asset_model` (named/pooled), `pool_capacity`, targets |
+| `asset_pool` | All managed VMs/assets |
+| `orders` | Orders and change requests |
+| `order_steps` | Individual module steps per order (structured JSON log) |
+| `runbook_definitions` | One runbook per asset type + action |
+| `runbook_steps` | Ordered module calls per runbook |
+| `audit_log` | Append-only audit trail |
+| `app_config` | Central configuration key/value store |
+| `ps_modules` | PowerShell modules (Gallery or manual upload) |
+
+## Conventions
+
+- **Audit logging**: `aaudit()` (async, API) · `waudit()` (sync, Worker)
+- **Step tracking**: `worker/tasks/modules/step_helper.py`
+- **Admin auth**: dev bypass active; production requires `ADMIN_API_KEY` in `.env`
+- **Portal auth**: dev bypass active; production requires Entra ID config (`entra.mode = enabled`)
+- **`dynamic_runner`** must be listed in `include=[]` in `worker/tasks/__init__.py` or Beat tasks won't register

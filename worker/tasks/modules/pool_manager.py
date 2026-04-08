@@ -25,31 +25,12 @@ def reserve_asset(
 
     Strategien:
         assign_existing_free      – erste freie Instanz aus Pool (Standardverhalten)
-        reuse_existing_by_owner   – bereits zugewiesene Instanz des Users wiederverwenden
         create_new                – neue Instanz anlegen (Stub; echte Provision per Runbook)
 
     Returns:
         {"success": True, "asset_id": int, "asset_name": str}
         {"success": False, "error": str}
     """
-    # REUSE_EXISTING_BY_OWNER: user already has an assigned instance
-    if personal_provisioning_strategy == "reuse_existing_by_owner" and user_email:
-        row = db.execute(
-            sql_text("""
-                SELECT id, name FROM asset_pool
-                WHERE asset_type_id = :at
-                  AND status IN ('busy', 'reserved')
-                  AND metadata->>'owner_email' = :email
-                LIMIT 1
-            """),
-            {"at": asset_type_id, "email": user_email},
-        ).fetchone()
-        if row:
-            logger.info("Reusing existing asset id=%s for user=%s", row[0], user_email)
-            return {"success": True, "asset_id": row[0], "asset_name": row[1], "reused": True}
-        # No existing asset → fall back to assign_existing_free
-        logger.info("No existing asset found for user=%s – falling back to assign_existing_free", user_email)
-
     # CREATE_NEW: stub – actual instance creation via runbook step
     if personal_provisioning_strategy == "create_new":
         logger.info(

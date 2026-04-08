@@ -1,18 +1,28 @@
 {% extends "base.html" %}
 
-{% block title %}Asset Pool – XenPool Admin{% endblock %}
+{% block title %}Asset Pool – {{ app_title }}{% endblock %}
 
 {% block content %}
 <div class="mb-4 flex items-center justify-between">
   <h1 class="text-lg font-semibold text-gray-900">Asset Pool</h1>
-  <button onclick="toggleAddForm()"
-          class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
-    + Add Host
-  </button>
+  <div class="flex gap-2">
+    <button onclick="togglePanel('add')"
+            class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+      + Add Host
+    </button>
+    <button onclick="togglePanel('bulk')"
+            class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded hover:bg-indigo-700">
+      Bulk Create
+    </button>
+    <button onclick="togglePanel('import')"
+            class="px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded hover:bg-teal-700">
+      Import
+    </button>
+  </div>
 </div>
 
-<!-- Add Form (hidden by default) -->
-<div id="add-form-wrap" class="hidden mb-4 bg-white rounded-lg border border-blue-200 p-4">
+<!-- Single Add Form -->
+<div id="panel-add" class="hidden mb-4 bg-white rounded-lg border border-blue-200 p-4">
   <h2 class="text-sm font-semibold text-gray-700 mb-3">New Host</h2>
   <div class="grid grid-cols-12 gap-3 items-end">
     <div class="col-span-3">
@@ -40,14 +50,132 @@
       <input type="text" id="add-notes" placeholder="Optional notes"
              class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
     </div>
-    <div class="col-span-1 flex gap-2">
+    <div class="col-span-1">
       <button onclick="addAsset()"
-              class="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 whitespace-nowrap">
+              class="w-full px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700">
         Add
       </button>
     </div>
   </div>
   <div id="add-error" class="hidden mt-2 text-xs text-red-600"></div>
+</div>
+
+<!-- Bulk Create Form -->
+<div id="panel-bulk" class="hidden mb-4 bg-white rounded-lg border border-indigo-200 p-4">
+  <h2 class="text-sm font-semibold text-gray-700 mb-3">Bulk Create – Pattern + Number Range</h2>
+  <div class="grid grid-cols-12 gap-3 items-end">
+    <div class="col-span-3">
+      <label class="block text-xs font-medium text-gray-600 mb-1">Prefix <span class="text-red-500">*</span></label>
+      <input type="text" id="bulk-prefix" placeholder="e.g. VDI-PC" oninput="bulkPreview()"
+             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+    </div>
+    <div class="col-span-1">
+      <label class="block text-xs font-medium text-gray-600 mb-1">Start #</label>
+      <input type="number" id="bulk-start" value="1" min="0" oninput="bulkPreview()"
+             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+    </div>
+    <div class="col-span-1">
+      <label class="block text-xs font-medium text-gray-600 mb-1">Count</label>
+      <input type="number" id="bulk-count" value="10" min="1" max="200" oninput="bulkPreview()"
+             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+    </div>
+    <div class="col-span-1">
+      <label class="block text-xs font-medium text-gray-600 mb-1">Pad digits</label>
+      <input type="number" id="bulk-pad" value="2" min="1" max="5" oninput="bulkPreview()"
+             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+    </div>
+    <div class="col-span-3">
+      <label class="block text-xs font-medium text-gray-600 mb-1">Asset Type <span class="text-red-500">*</span></label>
+      <select id="bulk-type"
+              class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+        <option value="">– Select type –</option>
+        {% for t in asset_types %}
+        <option value="{{ t.id }}">{{ t.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-span-2">
+      <label class="block text-xs font-medium text-gray-600 mb-1">Notes (all)</label>
+      <input type="text" id="bulk-notes" placeholder="Optional"
+             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+    </div>
+    <div class="col-span-1">
+      <button id="bulk-submit-btn" onclick="bulkCreate()"
+              class="w-full px-3 py-2 bg-indigo-600 text-white text-sm font-medium rounded hover:bg-indigo-700 whitespace-nowrap">
+        Create
+      </button>
+    </div>
+  </div>
+  <div id="bulk-preview" class="mt-3 text-xs text-gray-500"></div>
+  <div id="bulk-error" class="hidden mt-2 text-xs text-red-600"></div>
+  <div id="bulk-result" class="hidden mt-2 text-xs"></div>
+</div>
+
+<!-- Import from File Form -->
+<div id="panel-import" class="hidden mb-4 bg-white rounded-lg border border-teal-200 p-4">
+  <div class="flex items-start justify-between mb-3">
+    <h2 class="text-sm font-semibold text-gray-700">Import from File</h2>
+    <button onclick="downloadExample()"
+            class="text-xs text-teal-600 hover:text-teal-800 underline">
+      Download example .csv
+    </button>
+  </div>
+  <p class="text-xs text-gray-500 mb-3">
+    Columns: <code class="bg-gray-100 px-1 rounded">hostname, asset_type, ip_address, notes</code>
+    — comma or tab separated. First line may be a header (auto-detected).
+    <code>asset_type</code> must match a type name exactly, or leave blank and use the override below.
+  </p>
+  <div class="grid grid-cols-12 gap-3 items-start">
+    <div class="col-span-8">
+      <div class="flex gap-2 items-center mb-1">
+        <label class="text-xs font-medium text-gray-600">Paste content or choose file</label>
+        <input type="file" id="import-file" accept=".csv,.txt,.tsv"
+               onchange="importFileSelected()"
+               class="text-xs text-gray-600">
+      </div>
+      <textarea id="import-text" rows="6" placeholder="hostname,asset_type,ip_address,notes&#10;VDI-PC01,Developer VDI,10.0.1.1,Floor 2&#10;VDI-PC02,Developer VDI,10.0.1.2,"
+                oninput="importPreview()"
+                class="w-full rounded border border-gray-300 text-xs px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-teal-400 resize-y"></textarea>
+    </div>
+    <div class="col-span-4 flex flex-col gap-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Asset Type override</label>
+        <select id="import-type-override"
+                onchange="importPreview()"
+                class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal-400">
+          <option value="">— use from file —</option>
+          {% for t in asset_types %}
+          <option value="{{ t.id }}">{{ t.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button onclick="importAssets()"
+              class="px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded hover:bg-teal-700 disabled:opacity-40"
+              id="import-submit-btn">
+        Import
+      </button>
+      <div id="import-error" class="hidden text-xs text-red-600"></div>
+      <div id="import-result" class="hidden text-xs"></div>
+    </div>
+  </div>
+  <!-- Preview table -->
+  <div id="import-preview-wrap" class="hidden mt-3">
+    <div class="text-xs font-medium text-gray-600 mb-1">Preview (<span id="import-preview-count">0</span> rows)</div>
+    <div class="overflow-x-auto max-h-48 overflow-y-auto rounded border border-gray-200">
+      <table class="min-w-full text-xs divide-y divide-gray-100">
+        <thead class="bg-gray-50 sticky top-0">
+          <tr>
+            <th class="px-3 py-2 text-left text-gray-500 font-medium">Hostname</th>
+            <th class="px-3 py-2 text-left text-gray-500 font-medium">Asset Type</th>
+            <th class="px-3 py-2 text-left text-gray-500 font-medium">IP Address</th>
+            <th class="px-3 py-2 text-left text-gray-500 font-medium">Notes</th>
+            <th class="px-3 py-2 text-left text-gray-500 font-medium">Status</th>
+          </tr>
+        </thead>
+        <tbody id="import-preview-tbody" class="divide-y divide-gray-50"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <!-- Filter bar -->
@@ -94,9 +222,125 @@
   </table>
 </div>
 
+<!-- ── Force-Delete Modal ───────────────────────────────────────────────────── -->
+<div id="force-delete-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  <div class="bg-white rounded-lg border border-gray-200 shadow-xl w-full max-w-md mx-4 p-6">
+    <h2 class="text-sm font-semibold text-gray-900 mb-1">Force Delete Asset</h2>
+    <p class="text-xs text-gray-500 mb-4">
+      This asset will be permanently removed regardless of its current status.
+      Any active order will be cancelled.
+    </p>
+
+    <!-- Asset info -->
+    <div class="mb-4 rounded bg-gray-50 border border-gray-200 px-4 py-3 text-sm">
+      <div class="flex items-center justify-between">
+        <span class="font-mono font-medium text-gray-900" id="fdm-name"></span>
+        <span id="fdm-badge"></span>
+      </div>
+      <div id="fdm-user-row" class="hidden mt-1 text-xs text-gray-500">
+        Currently assigned to <span id="fdm-user" class="font-medium text-gray-700"></span>
+      </div>
+    </div>
+
+    <!-- Revoke checkbox (only shown when asset is in use) -->
+    <div id="fdm-revoke-row" class="hidden mb-5">
+      <label class="flex items-start gap-3 cursor-pointer select-none">
+        <input type="checkbox" id="fdm-revoke" checked
+               class="mt-0.5 rounded border-gray-300 text-red-600 focus:ring-red-400 cursor-pointer">
+        <span class="text-sm text-gray-700">
+          Revoke permissions
+          <span class="block text-xs text-gray-400 mt-0.5">
+            Remove the user's group memberships for this asset type via Active Roles / AD.
+          </span>
+        </span>
+      </label>
+    </div>
+
+    <!-- Error banner -->
+    <div id="fdm-error" class="hidden mb-4 px-3 py-2 rounded bg-red-50 border border-red-200 text-xs text-red-700"></div>
+
+    <div class="flex gap-2 justify-end">
+      <button onclick="closeForceDeleteModal()"
+              class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50">
+        Cancel
+      </button>
+      <button onclick="confirmForceDelete()"
+              id="fdm-confirm-btn"
+              class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded hover:bg-red-700">
+        Delete
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Revoke Modal ─────────────────────────────────────────────────────────── -->
+<div id="revoke-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  <div class="bg-white rounded-lg border border-gray-200 shadow-xl w-full max-w-md mx-4 p-6">
+    <h2 class="text-sm font-semibold text-gray-900 mb-1">Revoke &amp; Release Asset</h2>
+    <p class="text-xs text-gray-500 mb-4">
+      The asset will be returned to the free pool. The active order will be cancelled.
+      The asset itself is <strong>not</strong> deleted.
+    </p>
+
+    <!-- Asset info -->
+    <div class="mb-4 rounded bg-gray-50 border border-gray-200 px-4 py-3 text-sm">
+      <div class="flex items-center justify-between">
+        <span class="font-mono font-medium text-gray-900" id="rvm-name"></span>
+        <span id="rvm-badge"></span>
+      </div>
+      <div class="mt-1 text-xs text-gray-500">
+        Currently assigned to <span id="rvm-user" class="font-medium text-gray-700"></span>
+      </div>
+    </div>
+
+    <!-- Revoke checkbox -->
+    <div class="mb-5">
+      <label class="flex items-start gap-3 cursor-pointer select-none">
+        <input type="checkbox" id="rvm-revoke" checked
+               class="mt-0.5 rounded border-gray-300 text-orange-600 focus:ring-orange-400 cursor-pointer">
+        <span class="text-sm text-gray-700">
+          Revoke AD group permissions
+          <span class="block text-xs text-gray-400 mt-0.5">Removes the user from all AD groups that were granted for this asset.</span>
+        </span>
+      </label>
+    </div>
+
+    <!-- Error banner -->
+    <div id="rvm-error" class="hidden mb-4 px-3 py-2 rounded bg-red-50 border border-red-200 text-xs text-red-700"></div>
+
+    <div class="flex gap-2 justify-end">
+      <button onclick="closeRevokeModal()"
+              class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50">
+        Cancel
+      </button>
+      <button onclick="confirmRevoke()"
+              id="rvm-confirm-btn"
+              class="px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded hover:bg-orange-700">
+        Revoke &amp; Release
+      </button>
+    </div>
+  </div>
+</div>
+
 <script>
 var _allAssets = [];
 var _editingId = null;
+var _forceDeleteId = null;
+var _revokeId = null;
+
+// Asset type name → id lookup (for import)
+var _typeByName = { {% for t in asset_types %}"{{ t.name|lower }}": {{ t.id }}{% if not loop.last %}, {% endif %}{% endfor %} };
+var _typeNameById = { {% for t in asset_types %}{{ t.id }}: "{{ t.name }}"{% if not loop.last %}, {% endif %}{% endfor %} };
+
+// Pre-select status filter from URL param (?status=free etc.)
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var s = params.get('status');
+  if (s) {
+    var sel = document.getElementById('filter-status');
+    if (sel) sel.value = s;
+  }
+})();
 
 var _STATUS_LABELS = {
   free:        'Free',
@@ -113,13 +357,31 @@ var _STATUS_CLASSES = {
   reclaiming:  'bg-orange-100 text-orange-700',
 };
 
+// ── Panel toggle ──────────────────────────────────────────────────
+var _panels = ['add', 'bulk', 'import'];
+function togglePanel(name) {
+  var target = document.getElementById('panel-' + name);
+  var wasHidden = target.classList.contains('hidden');
+  _panels.forEach(function(p) { document.getElementById('panel-' + p).classList.add('hidden'); });
+  if (wasHidden) {
+    target.classList.remove('hidden');
+    if (name === 'bulk') bulkPreview();
+  }
+}
+
 // ── Load ──────────────────────────────────────────────────────────
 async function loadAssets() {
   var typeId = document.getElementById('filter-type').value;
   var url = '/admin/assets' + (typeId ? '?asset_type_id=' + typeId : '');
   try {
     var resp = await fetch(url);
+    if (!resp.ok) {
+      var err = {};
+      try { err = await resp.json(); } catch(e) {}
+      throw new Error(err.detail || ('HTTP ' + resp.status));
+    }
     _allAssets = await resp.json();
+    if (!Array.isArray(_allAssets)) throw new Error('Unexpected response from server');
     renderTable();
   } catch(e) {
     document.getElementById('pool-tbody').innerHTML =
@@ -128,32 +390,21 @@ async function loadAssets() {
 }
 
 // ── Render ────────────────────────────────────────────────────────
-function applyFilters() {
-  // When type filter changes, reload from server for accuracy
-  var newTypeId = document.getElementById('filter-type').value;
-  var currentTypeId = '';
-  // Compare to current data
-  loadAssets();
-}
+function applyFilters() { loadAssets(); }
 
 function renderTable() {
   var statusFilter = document.getElementById('filter-status').value;
   var filtered = _allAssets.filter(function(a) {
     return !statusFilter || a.status === statusFilter;
   });
-
   document.getElementById('count-label').textContent = filtered.length + ' entries';
-
   var tbody = document.getElementById('pool-tbody');
   if (!filtered.length) {
     tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-10 text-center text-gray-400 text-sm">No assets found.</td></tr>';
     return;
   }
-
   tbody.innerHTML = '';
-  filtered.forEach(function(a) {
-    tbody.appendChild(buildRow(a));
-  });
+  filtered.forEach(function(a) { tbody.appendChild(buildRow(a)); });
 }
 
 function _statusBadge(status) {
@@ -175,18 +426,16 @@ function buildRow(a) {
   var orderCell = a.current_order_id
     ? '<a href="/ui/orders/' + a.current_order_id + '" class="text-blue-600 hover:underline">#' + a.current_order_id + '</a>'
     : '<span class="text-gray-400">–</span>';
-
-  var actionsHtml = '';
-  if (canEdit) {
-    actionsHtml =
-      '<button onclick="startEdit(' + a.id + ')" title="Edit"'
-      + ' class="text-gray-400 hover:text-blue-600 mr-2">✏</button>'
-      + '<button onclick="deleteAsset(' + a.id + ', \'' + _esc(a.name) + '\')" title="Delete"'
-      + ' class="text-gray-400 hover:text-red-600">×</button>';
-  } else {
-    actionsHtml = '<span class="text-gray-300 text-xs">–</span>';
-  }
-
+  var inUse = (a.status === 'reserved' || a.status === 'busy' || a.status === 'reclaiming');
+  var forceBtn = '<button onclick="openForceDeleteModal(' + a.id + ')" title="Force Delete"'
+    + ' class="text-gray-300 hover:text-red-500 ml-1" style="font-size:15px;line-height:1">⊗</button>';
+  var revokeBtn = '<button onclick="openRevokeModal(' + a.id + ')" title="Revoke &amp; Release"'
+    + ' class="text-gray-300 hover:text-orange-500 ml-1" style="font-size:15px;line-height:1">↩</button>';
+  var actionsHtml = canEdit
+    ? '<button onclick="startEdit(' + a.id + ')" title="Edit" class="text-gray-400 hover:text-blue-600 mr-2">✏</button>'
+      + '<button onclick="deleteAsset(' + a.id + ', \'' + _esc(a.name) + '\')" title="Delete" class="text-gray-400 hover:text-red-600">×</button>'
+      + forceBtn
+    : (inUse ? revokeBtn : '') + forceBtn;
   var tr = document.createElement('tr');
   tr.id = 'row-' + a.id;
   tr.className = 'hover:bg-gray-50';
@@ -210,7 +459,6 @@ function startEdit(id) {
   if (!a) return;
   var ip = (a.asset_metadata && a.asset_metadata.ip_address) ? a.asset_metadata.ip_address : '';
   var notes = (a.asset_metadata && a.asset_metadata.notes) ? a.asset_metadata.notes : '';
-
   var tr = document.getElementById('row-' + id);
   tr.innerHTML =
     '<td class="px-4 py-2"><input id="edit-name-' + id + '" value="' + _esc(a.name) + '"'
@@ -220,8 +468,7 @@ function startEdit(id) {
     + '<select id="edit-status-' + id + '" class="rounded border border-gray-300 text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400">'
     + '<option value="free"' + (a.status === 'free' ? ' selected' : '') + '>Free</option>'
     + '<option value="maintenance"' + (a.status === 'maintenance' ? ' selected' : '') + '>Maintenance</option>'
-    + '</select>'
-    + '</td>'
+    + '</select></td>'
     + '<td class="px-4 py-2 text-xs text-gray-400">–</td>'
     + '<td class="px-4 py-2 text-xs text-gray-400">–</td>'
     + '<td class="px-4 py-2"><input id="edit-ip-' + id + '" value="' + _esc(ip) + '" placeholder="10.0.1.x"'
@@ -234,55 +481,31 @@ function startEdit(id) {
     + '</td>';
 }
 
-function cancelEdit() {
-  _editingId = null;
-  renderTable();
-}
+function cancelEdit() { _editingId = null; renderTable(); }
 
 async function saveEdit(id) {
-  var newName = document.getElementById('edit-name-' + id).value.trim();
+  var newName   = document.getElementById('edit-name-' + id).value.trim();
   var newStatus = document.getElementById('edit-status-' + id).value;
-  var newIp = document.getElementById('edit-ip-' + id).value.trim();
-  var newNotes = document.getElementById('edit-notes-' + id).value.trim();
-
+  var newIp     = document.getElementById('edit-ip-' + id).value.trim();
+  var newNotes  = document.getElementById('edit-notes-' + id).value.trim();
   if (!newName) { alert('Hostname must not be empty.'); return; }
-
   var a = _allAssets.find(function(x) { return x.id === id; });
   var meta = Object.assign({}, a.asset_metadata || {});
   meta.ip_address = newIp || undefined;
   meta.notes = newNotes || undefined;
-
-  // Name change requires delete + recreate (name is immutable on the model)
-  // Instead we just update status + metadata via PUT
-  var payload = {
-    status: newStatus,
-    asset_metadata: meta,
-  };
-
   try {
     var resp = await fetch('/admin/assets/' + id, {
       method: 'PUT',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ status: newStatus, asset_metadata: meta }),
     });
-    if (!resp.ok) {
-      var err = {};
-      try { err = await resp.json(); } catch(e) {}
-      alert('Error: ' + (err.detail || resp.status));
-      return;
-    }
+    if (!resp.ok) { var err = {}; try { err = await resp.json(); } catch(e) {} alert('Error: ' + (err.detail || resp.status)); return; }
     var updated = await resp.json();
-    // Update local cache
     var idx = _allAssets.findIndex(function(x) { return x.id === id; });
-    if (idx >= 0) {
-      _allAssets[idx].status = updated.status;
-      _allAssets[idx].asset_metadata = meta;
-    }
+    if (idx >= 0) { _allAssets[idx].status = updated.status; _allAssets[idx].asset_metadata = meta; }
     _editingId = null;
     renderTable();
-  } catch(e) {
-    alert('Network error: ' + e.message);
-  }
+  } catch(e) { alert('Network error: ' + e.message); }
 }
 
 // ── Delete ────────────────────────────────────────────────────────
@@ -294,77 +517,355 @@ async function deleteAsset(id, name) {
       _allAssets = _allAssets.filter(function(a) { return a.id !== id; });
       renderTable();
     } else {
-      var err = {};
-      try { err = await resp.json(); } catch(e) {}
+      var err = {}; try { err = await resp.json(); } catch(e) {}
       alert('Error: ' + (err.detail || resp.status));
     }
-  } catch(e) {
-    alert('Network error: ' + e.message);
-  }
+  } catch(e) { alert('Network error: ' + e.message); }
 }
 
-// ── Add ───────────────────────────────────────────────────────────
-function toggleAddForm() {
-  var wrap = document.getElementById('add-form-wrap');
-  wrap.classList.toggle('hidden');
-  if (!wrap.classList.contains('hidden')) {
-    document.getElementById('add-name').focus();
+// ── Force Delete ──────────────────────────────────────────────────
+function openForceDeleteModal(id) {
+  var a = _allAssets.find(function(x) { return x.id === id; });
+  if (!a) return;
+  _forceDeleteId = id;
+
+  document.getElementById('fdm-name').textContent = a.name;
+  document.getElementById('fdm-badge').innerHTML = _statusBadge(a.status);
+  document.getElementById('fdm-error').classList.add('hidden');
+  document.getElementById('fdm-confirm-btn').disabled = false;
+  document.getElementById('fdm-confirm-btn').textContent = 'Delete';
+
+  // Show user info + revoke checkbox only when asset is in active use
+  var inUse = (a.status === 'reserved' || a.status === 'busy' || a.status === 'reclaiming');
+  var userRow = document.getElementById('fdm-user-row');
+  var revokeRow = document.getElementById('fdm-revoke-row');
+  if (inUse && a.current_order_id) {
+    document.getElementById('fdm-user').textContent = a.user_email || ('order #' + a.current_order_id);
+    userRow.classList.remove('hidden');
+    revokeRow.classList.remove('hidden');
+  } else {
+    userRow.classList.add('hidden');
+    revokeRow.classList.add('hidden');
   }
+  document.getElementById('fdm-revoke').checked = true;
+  document.getElementById('force-delete-modal').classList.remove('hidden');
 }
 
-async function addAsset() {
-  var name = document.getElementById('add-name').value.trim();
-  var typeId = document.getElementById('add-type').value;
-  var ip = document.getElementById('add-ip').value.trim();
-  var notes = document.getElementById('add-notes').value.trim();
-  var errEl = document.getElementById('add-error');
+function closeForceDeleteModal() {
+  document.getElementById('force-delete-modal').classList.add('hidden');
+  _forceDeleteId = null;
+}
 
-  if (!name) { errEl.textContent = 'Hostname is required.'; errEl.classList.remove('hidden'); return; }
-  if (!typeId) { errEl.textContent = 'Please select an asset type.'; errEl.classList.remove('hidden'); return; }
+async function confirmForceDelete() {
+  if (!_forceDeleteId) return;
+  var revokePermissions = document.getElementById('fdm-revoke').checked;
+  var btn = document.getElementById('fdm-confirm-btn');
+  var errEl = document.getElementById('fdm-error');
+  btn.disabled = true;
+  btn.textContent = 'Deleting…';
   errEl.classList.add('hidden');
+  try {
+    var resp = await fetch('/admin/assets/' + _forceDeleteId + '/force-delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({revoke_permissions: revokePermissions}),
+    });
+    if (resp.status === 204) {
+      _allAssets = _allAssets.filter(function(a) { return a.id !== _forceDeleteId; });
+      closeForceDeleteModal();
+      renderTable();
+    } else {
+      var err = {}; try { err = await resp.json(); } catch(e) {}
+      errEl.textContent = 'Error: ' + (err.detail || resp.status);
+      errEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Delete';
+    }
+  } catch(e) {
+    errEl.textContent = 'Network error: ' + e.message;
+    errEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Delete';
+  }
+}
 
+// Close modal on backdrop click
+document.getElementById('force-delete-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeForceDeleteModal();
+});
+
+// ── Revoke & Release ──────────────────────────────────────────────
+function openRevokeModal(id) {
+  var a = _allAssets.find(function(x) { return x.id === id; });
+  if (!a) return;
+  _revokeId = id;
+  document.getElementById('rvm-name').textContent = a.name;
+  document.getElementById('rvm-badge').innerHTML = _statusBadge(a.status);
+  document.getElementById('rvm-user').textContent = a.user_email || ('order #' + a.current_order_id);
+  document.getElementById('rvm-revoke').checked = true;
+  document.getElementById('rvm-error').classList.add('hidden');
+  document.getElementById('rvm-confirm-btn').disabled = false;
+  document.getElementById('rvm-confirm-btn').textContent = 'Revoke & Release';
+  document.getElementById('revoke-modal').classList.remove('hidden');
+}
+
+function closeRevokeModal() {
+  document.getElementById('revoke-modal').classList.add('hidden');
+  _revokeId = null;
+}
+
+async function confirmRevoke() {
+  if (!_revokeId) return;
+  var revokePermissions = document.getElementById('rvm-revoke').checked;
+  var btn = document.getElementById('rvm-confirm-btn');
+  var errEl = document.getElementById('rvm-error');
+  btn.disabled = true;
+  btn.textContent = 'Releasing…';
+  errEl.classList.add('hidden');
+  try {
+    var resp = await fetch('/admin/assets/' + _revokeId + '/revoke', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({revoke_permissions: revokePermissions}),
+    });
+    if (resp.status === 204) {
+      var idx = _allAssets.findIndex(function(a) { return a.id === _revokeId; });
+      if (idx >= 0) {
+        _allAssets[idx].status = 'free';
+        _allAssets[idx].current_order_id = null;
+        _allAssets[idx].user_email = null;
+        _allAssets[idx].expires_at = null;
+      }
+      closeRevokeModal();
+      renderTable();
+    } else {
+      var err = {}; try { err = await resp.json(); } catch(e) {}
+      errEl.textContent = 'Error: ' + (err.detail || resp.status);
+      errEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Revoke & Release';
+    }
+  } catch(e) {
+    errEl.textContent = 'Network error: ' + e.message;
+    errEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Revoke & Release';
+  }
+}
+
+document.getElementById('revoke-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeRevokeModal();
+});
+
+// ── Single Add ───────────────────────────────────────────────────
+async function addAsset() {
+  var name   = document.getElementById('add-name').value.trim();
+  var typeId = document.getElementById('add-type').value;
+  var ip     = document.getElementById('add-ip').value.trim();
+  var notes  = document.getElementById('add-notes').value.trim();
+  var errEl  = document.getElementById('add-error');
+  if (!name)   { errEl.textContent = 'Hostname is required.';         errEl.classList.remove('hidden'); return; }
+  if (!typeId) { errEl.textContent = 'Please select an asset type.';  errEl.classList.remove('hidden'); return; }
+  errEl.classList.add('hidden');
   var meta = {};
-  if (ip) meta.ip_address = ip;
-  if (notes) meta.notes = notes;
-
+  if (ip)    meta.ip_address = ip;
+  if (notes) meta.notes      = notes;
   try {
     var resp = await fetch('/admin/assets', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        name: name,
-        asset_type_id: parseInt(typeId),
-        asset_metadata: Object.keys(meta).length ? meta : null,
-      }),
+      body: JSON.stringify({ name: name, asset_type_id: parseInt(typeId), asset_metadata: Object.keys(meta).length ? meta : null }),
     });
-    if (!resp.ok) {
-      var err = {};
-      try { err = await resp.json(); } catch(e) {}
-      errEl.textContent = 'Error: ' + (err.detail || resp.status);
-      errEl.classList.remove('hidden');
-      return;
-    }
-    // Clear form
-    document.getElementById('add-name').value = '';
-    document.getElementById('add-ip').value = '';
+    if (!resp.ok) { var err = {}; try { err = await resp.json(); } catch(e) {} errEl.textContent = 'Error: ' + (err.detail || resp.status); errEl.classList.remove('hidden'); return; }
+    document.getElementById('add-name').value  = '';
+    document.getElementById('add-ip').value    = '';
     document.getElementById('add-notes').value = '';
-    // Reload
     await loadAssets();
-    document.getElementById('add-form-wrap').classList.add('hidden');
-  } catch(e) {
-    errEl.textContent = 'Network error: ' + e.message;
-    errEl.classList.remove('hidden');
-  }
+    document.getElementById('panel-add').classList.add('hidden');
+  } catch(e) { errEl.textContent = 'Network error: ' + e.message; errEl.classList.remove('hidden'); }
 }
 
-// Enter key in add form
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Enter' && !document.getElementById('add-form-wrap').classList.contains('hidden')) {
-    if (document.activeElement && document.activeElement.closest('#add-form-wrap')) {
-      addAsset();
-    }
+  if (e.key === 'Enter' && !document.getElementById('panel-add').classList.contains('hidden')) {
+    if (document.activeElement && document.activeElement.closest('#panel-add')) addAsset();
   }
 });
+
+// ── Bulk Create ──────────────────────────────────────────────────
+function _padNum(n, pad) {
+  return String(n).padStart(pad, '0');
+}
+
+function _bulkNames() {
+  var prefix = document.getElementById('bulk-prefix').value;
+  var start  = parseInt(document.getElementById('bulk-start').value) || 1;
+  var count  = Math.min(parseInt(document.getElementById('bulk-count').value) || 1, 200);
+  var pad    = parseInt(document.getElementById('bulk-pad').value) || 2;
+  var names = [];
+  for (var i = 0; i < count; i++) { names.push(prefix + _padNum(start + i, pad)); }
+  return names;
+}
+
+function bulkPreview() {
+  var names = _bulkNames();
+  var count = names.length;
+  var previewEl = document.getElementById('bulk-preview');
+  if (!count || !document.getElementById('bulk-prefix').value) {
+    previewEl.textContent = '';
+    document.getElementById('bulk-submit-btn').textContent = 'Create';
+    return;
+  }
+  var first = names[0], last = names[names.length - 1];
+  previewEl.innerHTML =
+    'Preview: <span class="font-mono text-gray-800">' + _esc(first) + '</span>'
+    + (count > 1 ? ' … <span class="font-mono text-gray-800">' + _esc(last) + '</span>' : '')
+    + ' <span class="text-gray-400">(' + count + ' hosts)</span>';
+  document.getElementById('bulk-submit-btn').textContent = 'Create ' + count;
+}
+
+async function bulkCreate() {
+  var names  = _bulkNames();
+  var typeId = document.getElementById('bulk-type').value;
+  var notes  = document.getElementById('bulk-notes').value.trim();
+  var errEl  = document.getElementById('bulk-error');
+  var resEl  = document.getElementById('bulk-result');
+  errEl.classList.add('hidden');
+  resEl.classList.add('hidden');
+  if (!names.length || !document.getElementById('bulk-prefix').value.trim()) {
+    errEl.textContent = 'Prefix is required.'; errEl.classList.remove('hidden'); return;
+  }
+  if (!typeId) { errEl.textContent = 'Please select an asset type.'; errEl.classList.remove('hidden'); return; }
+  var items = names.map(function(n) {
+    var item = { name: n, asset_type_id: parseInt(typeId) };
+    if (notes) item.notes = notes;
+    return item;
+  });
+  try {
+    var resp = await fetch('/admin/assets/bulk', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ items: items }),
+    });
+    if (!resp.ok) { var err = {}; try { err = await resp.json(); } catch(e) {} errEl.textContent = 'Error: ' + (err.detail || resp.status); errEl.classList.remove('hidden'); return; }
+    var result = await resp.json();
+    var parts = [];
+    if (result.created.length) parts.push('<span class="text-green-700">' + result.created.length + ' created</span>');
+    if (result.skipped.length) parts.push('<span class="text-yellow-600">' + result.skipped.length + ' skipped (already exist)</span>');
+    if (result.errors.length)  parts.push('<span class="text-red-600">' + result.errors.length + ' errors</span>');
+    resEl.innerHTML = parts.join(' · ');
+    resEl.classList.remove('hidden');
+    await loadAssets();
+  } catch(e) { errEl.textContent = 'Network error: ' + e.message; errEl.classList.remove('hidden'); }
+}
+
+// ── Import from File ─────────────────────────────────────────────
+var _importRows = [];
+
+function importFileSelected() {
+  var file = document.getElementById('import-file').files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById('import-text').value = e.target.result;
+    importPreview();
+  };
+  reader.readAsText(file);
+}
+
+function _parseCsvLine(line) {
+  // Simple CSV: handles comma and tab delimiters
+  var sep = line.indexOf('\t') >= 0 ? '\t' : ',';
+  return line.split(sep).map(function(c) { return c.trim().replace(/^["']|["']$/g, ''); });
+}
+
+function importPreview() {
+  var raw = document.getElementById('import-text').value.trim();
+  var overrideTypeId = document.getElementById('import-type-override').value;
+  _importRows = [];
+  if (!raw) {
+    document.getElementById('import-preview-wrap').classList.add('hidden');
+    return;
+  }
+  var lines = raw.split(/\r?\n/).filter(function(l) { return l.trim(); });
+  // Auto-detect header: first line contains 'hostname' or 'name' (case-insensitive)
+  var startIdx = 0;
+  if (lines.length > 0) {
+    var firstCols = _parseCsvLine(lines[0]);
+    if (firstCols[0].toLowerCase() === 'hostname' || firstCols[0].toLowerCase() === 'name') startIdx = 1;
+  }
+  var tbody = document.getElementById('import-preview-tbody');
+  tbody.innerHTML = '';
+  for (var i = startIdx; i < lines.length; i++) {
+    var cols = _parseCsvLine(lines[i]);
+    var hostname = cols[0] || '';
+    var typeName = cols[1] || '';
+    var ip       = cols[2] || '';
+    var rowNotes = cols[3] || '';
+    if (!hostname) continue;
+    // Resolve type
+    var typeId = overrideTypeId ? parseInt(overrideTypeId) : (_typeByName[typeName.toLowerCase()] || null);
+    var typeLabelResolved = typeId ? (_typeNameById[typeId] || typeName) : typeName;
+    var valid = hostname && typeId;
+    _importRows.push({ name: hostname, asset_type_id: typeId, ip_address: ip || null, notes: rowNotes || null, _valid: valid });
+    var statusHtml = valid
+      ? '<span class="text-green-600">OK</span>'
+      : '<span class="text-red-500">' + (!hostname ? 'missing hostname' : 'unknown type') + '</span>';
+    var tr = document.createElement('tr');
+    tr.className = valid ? '' : 'bg-red-50';
+    tr.innerHTML =
+      '<td class="px-3 py-1 font-mono">' + _esc(hostname) + '</td>'
+      + '<td class="px-3 py-1">' + _esc(typeLabelResolved) + '</td>'
+      + '<td class="px-3 py-1 font-mono text-gray-500">' + _esc(ip) + '</td>'
+      + '<td class="px-3 py-1 text-gray-500">' + _esc(rowNotes) + '</td>'
+      + '<td class="px-3 py-1">' + statusHtml + '</td>';
+    tbody.appendChild(tr);
+  }
+  document.getElementById('import-preview-count').textContent = _importRows.length;
+  document.getElementById('import-preview-wrap').classList.toggle('hidden', _importRows.length === 0);
+}
+
+async function importAssets() {
+  var errEl = document.getElementById('import-error');
+  var resEl = document.getElementById('import-result');
+  errEl.classList.add('hidden');
+  resEl.classList.add('hidden');
+  var validRows = _importRows.filter(function(r) { return r._valid; });
+  if (!validRows.length) { errEl.textContent = 'No valid rows to import. Check asset type names.'; errEl.classList.remove('hidden'); return; }
+  var items = validRows.map(function(r) {
+    return { name: r.name, asset_type_id: r.asset_type_id, ip_address: r.ip_address || undefined, notes: r.notes || undefined };
+  });
+  try {
+    var resp = await fetch('/admin/assets/bulk', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ items: items }),
+    });
+    if (!resp.ok) { var err = {}; try { err = await resp.json(); } catch(e) {} errEl.textContent = 'Error: ' + (err.detail || resp.status); errEl.classList.remove('hidden'); return; }
+    var result = await resp.json();
+    var parts = [];
+    if (result.created.length) parts.push('<span class="text-green-700">' + result.created.length + ' created</span>');
+    if (result.skipped.length) parts.push('<span class="text-yellow-600">' + result.skipped.length + ' skipped (already exist)</span>');
+    if (result.errors.length)  parts.push('<span class="text-red-600">' + result.errors.length + ' errors</span>');
+    resEl.innerHTML = parts.join(' · ');
+    resEl.classList.remove('hidden');
+    await loadAssets();
+  } catch(e) { errEl.textContent = 'Network error: ' + e.message; errEl.classList.remove('hidden'); }
+}
+
+function downloadExample() {
+  var lines = [
+    'hostname,asset_type,ip_address,notes',
+    'VDI-PC01,Developer VDI,10.0.1.1,Floor 2',
+    'VDI-PC02,Developer VDI,10.0.1.2,Floor 2',
+    'SRV-APP01,App Server,10.0.2.1,',
+    'SRV-APP02,App Server,10.0.2.2,Rack B',
+  ];
+  var blob = new Blob([lines.join('\n')], {type: 'text/csv'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = 'asset_pool_import_example.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
 
 // ── Init ──────────────────────────────────────────────────────────
 loadAssets();

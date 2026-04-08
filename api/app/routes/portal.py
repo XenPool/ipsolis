@@ -7,15 +7,17 @@ injected so the portal works without Entra credentials.
 import logging
 from datetime import date, datetime, timezone
 
+import base64
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
+from app.templates_instance import templates, get_app_logo
 from app.models.asset import AssetPool, AssetType
 from app.models.config import AppConfig
 from app.models.order import Order, OrderAction, OrderStatus
@@ -23,9 +25,37 @@ from app.utils.ad_lookup import lookup_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/portal", tags=["portal"])
-templates = Jinja2Templates(directory="/app/app/templates")
-
 _DEV_USER = {"email": "dev@xenpool.local", "name": "Dev User (bypass)", "oid": "", "upn": "dev@xenpool.local"}
+
+
+@router.get("/logo", include_in_schema=False)
+async def portal_logo() -> Response:
+    """Serves the portal logo image from the in-memory cache (set at startup / config save).
+    Returns 404 when no logo is configured. Browser-cacheable for 1 hour.
+    """
+    data_url = get_app_logo()
+    if not data_url:
+        raise HTTPException(status_code=404, detail="No logo configured")
+    try:
+        # data URL format: data:<mime>;base64,<b64data>
+        header, b64_data = data_url.split(",", 1)
+        mime = header.split(":")[1].split(";")[0]
+        raw = base64.b64decode(b64_data)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid logo data")
+    return Response(content=raw, media_type=mime, headers={"Cache-Control": "max-age=3600"})
+
+
+def _user_order_filter(email: str):
+    """Returns a SQLAlchemy filter that matches orders belonging to the given user
+    (either as requester or as the asset owner)."""
+    return or_(Order.user_email == email, Order.owner_email == email)
+
+
+def _assert_owns_order(order: Order, email: str) -> None:
+    """Raises HTTP 403 if the current user is not the requester or owner of the order."""
+    if order.user_email != email and order.owner_email != email:
+        raise HTTPException(status_code=403, detail="Access denied")
 
 
 async def require_portal_auth(
@@ -95,6 +125,7 @@ async def portal_index(
     result = await db.execute(
         select(Order)
         .options(selectinload(Order.steps))
+        .where(_user_order_filter(current_user["email"]))
         .order_by(Order.created_at.desc())
         .limit(100)
     )
@@ -327,6 +358,7 @@ async def portal_order_detail(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    _assert_owns_order(order, current_user["email"])
 
     asset_type_name = None
     asset_type = None
@@ -377,6 +409,7 @@ async def portal_extend_order(
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Order not found")
+    _assert_owns_order(original, current_user["email"])
 
     try:
         until_dt = datetime.fromisoformat(new_until).replace(tzinfo=timezone.utc)
@@ -423,6 +456,7 @@ async def portal_modify_order(
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Order not found")
+    _assert_owns_order(original, current_user["email"])
 
     rdp_clean = [u.strip() for u in rdp_users if u.strip()]
     admin_clean = [u.strip() for u in admin_users if u.strip()]
@@ -468,6 +502,7 @@ async def portal_change_order(
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Order not found")
+    _assert_owns_order(original, current_user["email"])
 
     is_active = original.status in (OrderStatus.DELIVERED, OrderStatus.PROVISIONED)
     is_failed_change = (
@@ -537,6 +572,7 @@ async def portal_cancel_order(
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Order not found")
+    _assert_owns_order(original, current_user["email"])
 
     if original.status not in (OrderStatus.DELIVERED, OrderStatus.PROVISIONED):
         raise HTTPException(
@@ -583,13 +619,14 @@ async def portal_my_it(
     result = await db.execute(
         select(Order)
         .options(selectinload(Order.steps))
+        .where(_user_order_filter(current_user["email"]))
         .where(Order.action == OrderAction.PROVISION)
         .where(Order.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED]))
         .order_by(Order.created_at.desc())
     )
-    orders = list(result.scalars().all())
+    raw_orders = list(result.scalars().all())
 
-    type_ids = {o.asset_type_id for o in orders}
+    type_ids = {o.asset_type_id for o in raw_orders}
     asset_type_names: dict[int, str] = {}
     asset_type_categories: dict[int, str] = {}
     asset_types_by_id: dict[int, AssetType] = {}
@@ -600,13 +637,23 @@ async def portal_my_it(
             asset_type_categories[t.id] = t.category.value
             asset_types_by_id[t.id] = t
 
-    asset_ids = [o.assigned_asset_id for o in orders if o.assigned_asset_id]
+    asset_ids = [o.assigned_asset_id for o in raw_orders if o.assigned_asset_id]
     asset_names: dict[int, str] = {}
     if asset_ids:
         asset_rows = await db.execute(
             select(AssetPool.id, AssetPool.name).where(AssetPool.id.in_(asset_ids))
         )
         asset_names = {row.id: row.name for row in asset_rows}
+
+    # Drop orders whose asset was deleted (assigned_personal requires a live asset)
+    orders = [
+        o for o in raw_orders
+        if not (
+            asset_types_by_id.get(o.asset_type_id) is not None
+            and asset_types_by_id[o.asset_type_id].assignment_model == "assigned_personal"
+            and o.assigned_asset_id is None
+        )
+    ]
 
     return templates.TemplateResponse("portal/my_it.html", {
         "request": request,
@@ -632,6 +679,7 @@ async def portal_my_it_detail(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    _assert_owns_order(order, current_user["email"])
 
     if order.status not in (OrderStatus.DELIVERED, OrderStatus.PROVISIONED):
         raise HTTPException(status_code=422, detail="Only active assets can be managed here")
@@ -649,6 +697,26 @@ async def portal_my_it_detail(
         )
         asset_name = asset_row.scalar_one_or_none()
 
+    # Determine effective current user lists: use the most recent completed MODIFY
+    # order (if any), otherwise fall back to the provision order's lists.
+    effective_rdp_users = list(order.rdp_users or [])
+    effective_admin_users = list(order.admin_users or [])
+    if order.asset_type_id and order.assigned_asset_id:
+        latest_modify_result = await db.execute(
+            select(Order)
+            .where(
+                Order.assigned_asset_id == order.assigned_asset_id,
+                Order.action == OrderAction.MODIFY,
+                Order.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED]),
+            )
+            .order_by(Order.id.desc())
+            .limit(1)
+        )
+        latest_modify = latest_modify_result.scalar_one_or_none()
+        if latest_modify:
+            effective_rdp_users = list(latest_modify.rdp_users or [])
+            effective_admin_users = list(latest_modify.admin_users or [])
+
     return templates.TemplateResponse("portal/my_it_detail.html", {
         "request": request,
         "active_page": "my-it",
@@ -659,6 +727,8 @@ async def portal_my_it_detail(
         "asset_name": asset_name,
         "today": date.today().isoformat(),
         "status_colors": _STATUS_COLORS,
+        "effective_rdp_users": effective_rdp_users,
+        "effective_admin_users": effective_admin_users,
     })
 
 

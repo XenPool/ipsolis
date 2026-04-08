@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}XenPool IT Selfservice{% endblock %}</title>
+  <title>{% block title %}{{ app_title }}{% endblock %}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous"></script>
 </head>
@@ -14,7 +14,7 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between h-14">
         <div class="flex items-center gap-6">
-          <span class="font-semibold text-gray-900 text-sm tracking-wide">XenPool IT Selfservice</span>
+          <span class="font-semibold text-gray-900 text-sm tracking-wide">{{ app_title }}</span>
           <div class="flex gap-1">
             <a href="/ui/"
                class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'dashboard' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
@@ -54,6 +54,10 @@
           <a href="/docs" target="_blank" class="hover:text-gray-700">Swagger UI</a>
           <span>·</span>
           <a href="http://localhost:5555" target="_blank" class="hover:text-gray-700">Flower</a>
+          <span>·</span>
+          <form method="post" action="/ui/logout" class="inline">
+            <button type="submit" class="hover:text-gray-700 cursor-pointer">Sign out</button>
+          </form>
         </div>
       </div>
     </div>

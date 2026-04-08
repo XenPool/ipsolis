@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -18,16 +17,16 @@ from app.models.ps_module import PsModule
 from app.models.order import Order, OrderAction, OrderStatus
 from app.models.runbook import RunbookDefinition, RunbookStep
 from app.models.script_module import ScriptModule
-from app.utils.auth import require_admin_key
+from app.utils.auth import require_admin_session
+from app.templates_instance import templates
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/ui",
     tags=["ui"],
-    dependencies=[Depends(require_admin_key)],
+    dependencies=[Depends(require_admin_session)],
 )
-templates = Jinja2Templates(directory="/app/app/templates")
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

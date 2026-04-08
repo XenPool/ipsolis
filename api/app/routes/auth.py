@@ -10,15 +10,14 @@ import logging
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.templates_instance import templates
 from app.utils import entra as entra_utils
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/portal", tags=["auth"])
-templates = Jinja2Templates(directory="/app/app/templates")
 
 
 @router.get("/login", response_class=RedirectResponse)
@@ -124,9 +123,10 @@ async def portal_logout(request: Request, db: AsyncSession = Depends(get_db)):
     request.session.clear()
 
     if tenant_id:
+        post_logout_uri = str(request.base_url).rstrip("/") + "/portal/login"
         entra_logout_url = (
             f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/logout"
-            "?post_logout_redirect_uri=/portal/login"
+            f"?post_logout_redirect_uri={post_logout_uri}"
         )
         return RedirectResponse(url=entra_logout_url, status_code=302)
 

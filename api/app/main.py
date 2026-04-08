@@ -8,8 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
+from sqlalchemy import select
+
 from app.config import settings
-from app.routes import admin, admin_modules, admin_runbooks, assets, auth, health, orders, portal, ui, webhook
+from app.database import AsyncSessionLocal
+from app.models.config import AppConfig
+from app.routes import admin, admin_auth, admin_modules, admin_runbooks, assets, auth, health, orders, portal, ui, webhook
+from app.templates_instance import set_app_title, set_app_logo_config
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -29,21 +34,37 @@ logger = structlog.get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(
-        "XenPool IT Selfservice API starting",
+        "IT Selfservice API starting",
         environment=settings.ENVIRONMENT,
         version="0.1.0",
     )
     if settings.is_development:
         logger.info("Mock mode ACTIVE – no real external calls will be made")
+
+    # Load configurable app globals from DB into Jinja2 environment
+    _APP_KEYS = ("app.title", "app.logo", "app.logo_position", "app.logo_size", "app.logo_show_title", "app.logo_title_size")
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = await db.execute(
+                select(AppConfig).where(AppConfig.key.in_(_APP_KEYS))
+            )
+            for cfg in rows.scalars().all():
+                if cfg.key == "app.title":
+                    set_app_title(cfg.value)
+                else:
+                    set_app_logo_config(cfg.key, cfg.value)
+    except Exception as exc:
+        logger.warning("Could not load app config globals from DB at startup: %s", exc)
+
     yield
-    logger.info("XenPool IT Selfservice API shutting down")
+    logger.info("IT Selfservice API shutting down")
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="XenPool IT Selfservice API",
+    title="IT Selfservice API",
     description=(
-        "Dispatcher and REST API for the standalone Ivanti Automation replacement. "
+        "Dispatcher and REST API for IT asset lifecycle orchestration. "
         "Receives webhooks from ServiceNow and self-service portal requests, "
         "creates orders and dispatches Celery runbooks."
     ),
@@ -83,6 +104,7 @@ app.include_router(assets.router)
 app.include_router(admin.router)
 app.include_router(admin_modules.router)
 app.include_router(admin_runbooks.router)
+app.include_router(admin_auth.router)  # admin login/logout — no auth, before ui.router
 app.include_router(ui.router)
 app.include_router(auth.router)   # login / callback / logout — before portal
 app.include_router(portal.router)

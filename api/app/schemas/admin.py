@@ -73,7 +73,8 @@ class AssetTypeCreate(BaseModel):
     targets: list[dict[str, Any]] | None = None
     lifecycle_ttl_days: int | None = None
     lifecycle_renewable: bool = True
-    allow_user_lists: bool = False
+    allow_rdp_users: bool = False
+    allow_admin_users: bool = False
     deprovision_policy: str = "access_only"
     personal_provisioning_strategy: str | None = None
     naming_pattern: str | None = None
@@ -96,7 +97,8 @@ class AssetTypeUpdate(BaseModel):
     targets: list[dict[str, Any]] | None = None
     lifecycle_ttl_days: int | None = None
     lifecycle_renewable: bool | None = None
-    allow_user_lists: bool | None = None
+    allow_rdp_users: bool | None = None
+    allow_admin_users: bool | None = None
     deprovision_policy: str | None = None
     personal_provisioning_strategy: str | None = None
     naming_pattern: str | None = None
@@ -117,10 +119,25 @@ class AssetPoolCreate(BaseModel):
     asset_metadata: dict[str, Any] | None = None
 
 
+class AssetBulkItem(BaseModel):
+    name: str
+    asset_type_id: int
+    ip_address: str | None = None
+    notes: str | None = None
+
+
+class AssetBulkCreate(BaseModel):
+    items: list[AssetBulkItem]
+
+
 class AssetPoolUpdate(BaseModel):
     status: AssetStatus | None = None
     asset_metadata: dict[str, Any] | None = None
     expires_at: datetime | None = None
+
+
+class ForceDeleteAsset(BaseModel):
+    revoke_permissions: bool = True
 
 
 # ── Audit-Log ──────────────────────────────────────────────────────────────────

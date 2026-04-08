@@ -58,7 +58,13 @@ def _run_step_inline(
         log_json = make_log_json(step_name, {}, result, duration_ms)
 
         if not result.get("success", True):
-            raise RuntimeError(result.get("error", f"Step {step_name!r} returned success=False"))
+            # Prefer explicit error message; fall back to joining errors list (target_executor style)
+            error_msg = (
+                result.get("error")
+                or "; ".join(result.get("errors", []))
+                or f"Step {step_name!r} returned success=False"
+            )
+            raise RuntimeError(error_msg)
 
         update_order_step(
             db, order_id, step_name, "success",
@@ -213,31 +219,8 @@ def _run_targets_mode(
             critical=False,
         )
 
-        # Step 2: Grant access (critical)
-        result = _run_step_inline(
-            db, order_id, "Grant access",
-            lambda: target_executor.grant(
-                db=db,
-                order_id=order_id,
-                asset_type_id=order["asset_type_id"],
-                user_email=order.get("user_email") or "",
-                rdp_users=order.get("rdp_users") or [],
-                admin_users=order.get("admin_users") or [],
-            ),
-            critical=True,
-        )
-        if result is None:
-            audit_helper.waudit(
-                db, "order", order_id, "status_changed",
-                old={"status": "processing"},
-                new={"status": "failed", "step": "Grant access"},
-                by="celery:dynamic_runner[targets_only]",
-                ctx=str(celery_task.request.id),
-            )
-            db.commit()
-            return {"success": False, "order_id": order_id, "failed_step": "Grant access"}
-
-        # Step 3: Asset reservieren (critical, nur bei assigned_personal/dedicated_shared)
+        # Step 2: Reserve asset first (critical, nur bei assigned_personal/dedicated_shared)
+        # Must happen before Grant access so {asset_name} can be substituted in target identifiers.
         reserved_asset_id = None
         reserved_asset_name = None
         if needs_asset:
@@ -264,6 +247,32 @@ def _run_targets_mode(
                 return {"success": False, "order_id": order_id, "failed_step": "Reserve asset"}
             reserved_asset_id = result.get("asset_id")
             reserved_asset_name = result.get("asset_name")
+
+        # Step 3: Grant access (critical)
+        _grant_asset_name = reserved_asset_name or ""
+        result = _run_step_inline(
+            db, order_id, "Grant access",
+            lambda: target_executor.grant(
+                db=db,
+                order_id=order_id,
+                asset_type_id=order["asset_type_id"],
+                user_email=order.get("user_email") or "",
+                rdp_users=order.get("rdp_users") or [],
+                admin_users=order.get("admin_users") or [],
+                asset_name=_grant_asset_name,
+            ),
+            critical=True,
+        )
+        if result is None:
+            audit_helper.waudit(
+                db, "order", order_id, "status_changed",
+                old={"status": "processing"},
+                new={"status": "failed", "step": "Grant access"},
+                by="celery:dynamic_runner[targets_only]",
+                ctx=str(celery_task.request.id),
+            )
+            db.commit()
+            return {"success": False, "order_id": order_id, "failed_step": "Grant access"}
 
         # Set asset to BUSY (pure DB op, no mock)
         if reserved_asset_id:
@@ -391,26 +400,61 @@ def _run_targets_mode(
             )
 
     elif action == "modify":
-        # Access change — re-notify personal VDI user with updated details + RDP attachment
-        if assignment_model == "assigned_personal":
-            _mod_asset_name = _lookup_asset_name(db, order)
-            if _mod_asset_name:
-                _mname = _mod_asset_name
-                _run_step_inline(
-                    db, order_id, "Modify confirmation email",
-                    lambda: notif.send_modify_confirmation(
-                        db=db,
-                        user_email=order.get("user_email") or "",
-                        user_name=order.get("user_name") or "",
-                        asset_name=_mname,
-                        rdp_users=order.get("rdp_users") or [],
-                        expires_at=expires_at,
-                        rdp_hostname=_mname,
-                    ),
-                    critical=False,
-                )
-        else:
-            logger.info("[targets_only] modify order_id=%s – no group changes needed", order_id)
+        _mod_asset_name = _lookup_asset_name(db, order)
+
+        # Step 1: Revoke existing grants, then re-grant with the updated user lists.
+        # This handles add/remove of rdp_users and admin_users atomically.
+        _run_step_inline(
+            db, order_id, "Revoke old memberships",
+            lambda: target_executor.revoke(
+                db=db,
+                user_email=order.get("user_email") or "",
+                asset_type_id=order["asset_type_id"],
+            ),
+            critical=False,  # Non-critical: if nothing was granted before, revoke is a no-op
+        )
+
+        _upd_asset_name = _mod_asset_name or ""
+        result = _run_step_inline(
+            db, order_id, "Update group memberships",
+            lambda: target_executor.grant(
+                db=db,
+                order_id=order_id,
+                asset_type_id=order["asset_type_id"],
+                user_email=order.get("user_email") or "",
+                rdp_users=order.get("rdp_users") or [],
+                admin_users=order.get("admin_users") or [],
+                asset_name=_upd_asset_name,
+            ),
+            critical=True,
+        )
+        if result is None:
+            audit_helper.waudit(
+                db, "order", order_id, "status_changed",
+                old={"status": "processing"},
+                new={"status": "failed", "step": "Update group memberships"},
+                by="celery:dynamic_runner[targets_only]",
+                ctx=str(celery_task.request.id),
+            )
+            db.commit()
+            return None
+
+        # Re-notify personal VDI user with updated details + RDP attachment
+        if assignment_model == "assigned_personal" and _mod_asset_name:
+            _mname = _mod_asset_name
+            _run_step_inline(
+                db, order_id, "Modify confirmation email",
+                lambda: notif.send_modify_confirmation(
+                    db=db,
+                    user_email=order.get("user_email") or "",
+                    user_name=order.get("user_name") or "",
+                    asset_name=_mname,
+                    rdp_users=order.get("rdp_users") or [],
+                    expires_at=expires_at,
+                    rdp_hostname=_mname,
+                ),
+                critical=False,
+            )
 
     elif action == "extend":
         # TTL update only – no group change required
@@ -571,6 +615,7 @@ def _run_runbook_path(
     deprovision_policy: str = "access_only",
     automation_strategy: str = "runbook_only",
     personal_provisioning_strategy: str = "assign_existing_free",
+    naming_pattern: str | None = None,
     _set_delivered: bool = True,
 ) -> dict:
     """Executes the configured runbook for the asset type and action.
@@ -680,6 +725,7 @@ def _run_runbook_path(
         "asset_type_id": order["asset_type_id"],
         "asset_type_name": asset_type_name,
         "asset_type_description": asset_type_description,
+        "asset_type.naming_pattern": naming_pattern or "",
         "user_email": order["user_email"],
         "user_name": order["user_name"],
         "owner_email": order.get("owner_email"),
@@ -832,6 +878,7 @@ def _run_composite_mode(
     assignment_model: str,
     deprovision_policy: str = "access_only",
     composite_steps: list | None = None,
+    naming_pattern: str | None = None,
 ) -> dict:
     """Executes an order in COMPOSITE mode.
 
@@ -875,6 +922,7 @@ def _run_composite_mode(
                 assignment_model=assignment_model,
                 deprovision_policy=deprovision_policy,
                 automation_strategy="composite",
+                naming_pattern=naming_pattern,
                 _set_delivered=False,
             )
             if not result.get("success"):
@@ -947,7 +995,7 @@ def run(self: Task, order_id: int) -> dict:
             text("""
                 SELECT name, description, automation_mode, assignment_model,
                        deprovision_policy, automation_strategy, composite_steps,
-                       personal_provisioning_strategy
+                       personal_provisioning_strategy, naming_pattern
                 FROM asset_types WHERE id = :id
             """),
             {"id": order["asset_type_id"]},
@@ -960,6 +1008,7 @@ def run(self: Task, order_id: int) -> dict:
         automation_strategy = at_row[5] if at_row else None
         composite_steps = at_row[6] if at_row else None
         personal_provisioning_strategy = at_row[7] if at_row else "assign_existing_free"
+        naming_pattern = at_row[8] if at_row else None
 
         # Fallback: derive automation_strategy from automation_mode (legacy records)
         if not automation_strategy:
@@ -1002,6 +1051,7 @@ def run(self: Task, order_id: int) -> dict:
                 asset_type_name, asset_type_description, assignment_model,
                 deprovision_policy=deprovision_policy,
                 composite_steps=composite_steps,
+                naming_pattern=naming_pattern,
             )
         else:
             # runbook_only: execute runbook
@@ -1012,6 +1062,7 @@ def run(self: Task, order_id: int) -> dict:
                 deprovision_policy=deprovision_policy,
                 automation_strategy=automation_strategy,
                 personal_provisioning_strategy=personal_provisioning_strategy,
+                naming_pattern=naming_pattern,
             )
 
         # Post-DELETE: return asset to pool + revoke original PROVISION order
@@ -1233,6 +1284,7 @@ def check_expiring_assets() -> dict:
                 row.asset_name, row.user_email, hours_remaining,
             )
             send_expiry_reminder(
+                db=db,
                 user_email=row.user_email,
                 user_name=row.user_name,
                 asset_name=row.asset_name,

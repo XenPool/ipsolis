@@ -1,9 +1,13 @@
+import asyncio
+import functools
 import logging
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.asset import AssetPool, AssetStatus, AssetType
@@ -14,16 +18,19 @@ from app.schemas.admin import (
     AppConfigCreate,
     AppConfigRead,
     AppConfigUpdate,
+    AssetBulkCreate,
     AssetPoolCreate,
     AssetPoolUpdate,
     AssetTypeCreate,
     AssetTypeUpdate,
     AuditLogRead,
+    ForceDeleteAsset,
 )
 from app.schemas.asset import AssetPoolRead, AssetTypeRead
 from app.utils.asset_type_constraints import validate_asset_type
 from app.utils.audit import _asset_snap, _config_snap, _type_snap, aaudit
 from app.utils.auth import require_admin_key
+from app.templates_instance import set_app_title, set_app_logo_config
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +114,10 @@ async def update_config(
     await db.commit()
     await db.refresh(cfg)
     logger.info("admin: updated config key=%s", key)
+    if key == "app.title":
+        set_app_title(cfg.value)
+    elif key in ("app.logo", "app.logo_position", "app.logo_size", "app.logo_show_title", "app.logo_title_size"):
+        set_app_logo_config(key, cfg.value)
     return _mask(cfg)
 
 
@@ -205,6 +216,7 @@ async def create_asset_type(
             detail=f"Asset type {payload.name!r} already exists",
         )
     violations = validate_asset_type(
+        category=payload.category.value,
         assignment_model=payload.assignment_model,
         automation_strategy=payload.automation_strategy,
         deprovision_policy=payload.deprovision_policy,
@@ -229,7 +241,8 @@ async def create_asset_type(
         targets=payload.targets,
         lifecycle_ttl_days=payload.lifecycle_ttl_days,
         lifecycle_renewable=payload.lifecycle_renewable,
-        allow_user_lists=payload.allow_user_lists,
+        allow_rdp_users=payload.allow_rdp_users,
+        allow_admin_users=payload.allow_admin_users,
         deprovision_policy=payload.deprovision_policy,
         personal_provisioning_strategy=payload.personal_provisioning_strategy,
         naming_pattern=payload.naming_pattern,
@@ -256,6 +269,7 @@ async def update_asset_type(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Asset type {type_id} not found")
 
     # Merge payload with current DB values to get effective configuration for validation.
+    eff_category               = (payload.category.value if payload.category else None) or asset_type.category
     eff_assignment_model       = payload.assignment_model or asset_type.assignment_model
     eff_automation_strategy    = payload.automation_strategy or asset_type.automation_strategy
     eff_deprovision_policy     = payload.deprovision_policy or asset_type.deprovision_policy
@@ -279,6 +293,7 @@ async def update_asset_type(
         eff_revoke_id = rb[0] if rb else None
 
     violations = validate_asset_type(
+        category=eff_category,
         assignment_model=eff_assignment_model,
         automation_strategy=eff_automation_strategy,
         deprovision_policy=eff_deprovision_policy,
@@ -313,8 +328,10 @@ async def update_asset_type(
         asset_type.lifecycle_ttl_days = payload.lifecycle_ttl_days
     if payload.lifecycle_renewable is not None:
         asset_type.lifecycle_renewable = payload.lifecycle_renewable
-    if payload.allow_user_lists is not None:
-        asset_type.allow_user_lists = payload.allow_user_lists
+    if payload.allow_rdp_users is not None:
+        asset_type.allow_rdp_users = payload.allow_rdp_users
+    if payload.allow_admin_users is not None:
+        asset_type.allow_admin_users = payload.allow_admin_users
     if payload.deprovision_policy is not None:
         asset_type.deprovision_policy = payload.deprovision_policy
     if payload.personal_provisioning_strategy is not None:
@@ -406,6 +423,53 @@ async def create_asset(
     return asset
 
 
+@router.post("/assets/bulk")
+async def bulk_create_assets(payload: AssetBulkCreate, db: AsyncSession = Depends(get_db)) -> dict:
+    """Create multiple assets at once. Skips duplicates, collects errors per item."""
+    # Validate all referenced type IDs exist (batch lookup)
+    type_ids = {item.asset_type_id for item in payload.items}
+    rows = (await db.execute(select(AssetType.id).where(AssetType.id.in_(type_ids)))).scalars().all()
+    valid_type_ids = set(rows)
+
+    # Fetch existing names to detect duplicates efficiently
+    names = [item.name for item in payload.items]
+    existing_names = set(
+        (await db.execute(select(AssetPool.name).where(AssetPool.name.in_(names)))).scalars().all()
+    )
+
+    created: list[str] = []
+    skipped: list[str] = []
+    errors: list[dict] = []
+
+    for item in payload.items:
+        if item.asset_type_id not in valid_type_ids:
+            errors.append({"name": item.name, "error": f"Asset type {item.asset_type_id} not found"})
+            continue
+        if item.name in existing_names:
+            skipped.append(item.name)
+            continue
+        meta: dict = {}
+        if item.ip_address:
+            meta["ip_address"] = item.ip_address
+        if item.notes:
+            meta["notes"] = item.notes
+        asset = AssetPool(
+            name=item.name,
+            asset_type_id=item.asset_type_id,
+            status=AssetStatus.FREE,
+            asset_metadata=meta if meta else None,
+        )
+        db.add(asset)
+        created.append(item.name)
+        existing_names.add(item.name)  # prevent intra-batch duplicates
+
+    if created:
+        await db.flush()
+        await db.commit()
+    logger.info("admin: bulk created %d assets, skipped %d", len(created), len(skipped))
+    return {"created": created, "skipped": skipped, "errors": errors}
+
+
 @router.put("/assets/{asset_id}", response_model=AssetPoolRead)
 async def update_asset(
     asset_id: int, payload: AssetPoolUpdate, db: AsyncSession = Depends(get_db)
@@ -451,6 +515,173 @@ async def delete_asset(asset_id: int, db: AsyncSession = Depends(get_db)) -> Non
     logger.info("admin: deleted asset id=%s", asset_id)
 
 
+# ── Force-delete (works for any status, optional permission revoke) ────────────
+
+_SYNC_DB_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+psycopg2://xpuser:changeme@db:5432/itselfservice",
+).replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+
+
+def _sync_revoke(user_email: str, asset_type_id: int) -> dict:
+    """Run target_executor.revoke() synchronously in its own DB session.
+    Called via run_in_executor so it doesn't block the event loop.
+    """
+    import sys, pathlib
+    # Ensure worker package is importable from the API container
+    worker_path = str(pathlib.Path("/app/worker"))
+    if worker_path not in sys.path:
+        sys.path.insert(0, worker_path)
+    from tasks.modules import target_executor  # noqa: PLC0415
+
+    engine = create_engine(_SYNC_DB_URL, pool_pre_ping=True)
+    with Session(engine) as db_sync:
+        return target_executor.revoke(db_sync, user_email, asset_type_id)
+
+
+@router.post("/assets/{asset_id}/force-delete", status_code=status.HTTP_204_NO_CONTENT)
+async def force_delete_asset(
+    asset_id: int,
+    payload: ForceDeleteAsset,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Force-delete an asset regardless of its current status.
+
+    If revoke_permissions=True and the asset has an active order, the
+    user's group memberships are revoked via target_executor before deletion.
+    All orders referencing this asset are cancelled and unlinked.
+    """
+    result = await db.execute(
+        select(AssetPool).where(AssetPool.id == asset_id)
+    )
+    asset = result.scalar_one_or_none()
+    if not asset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Asset {asset_id} not found")
+
+    snap = _asset_snap(asset)
+
+    # Resolve the active order (if any) so we can revoke and cancel it
+    active_order: Order | None = None
+    if asset.current_order_id:
+        ord_result = await db.execute(
+            select(Order).where(Order.id == asset.current_order_id)
+        )
+        active_order = ord_result.scalar_one_or_none()
+
+    # Optionally revoke group permissions
+    revoke_result: dict | None = None
+    if payload.revoke_permissions and active_order:
+        try:
+            revoke_result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                functools.partial(
+                    _sync_revoke,
+                    active_order.user_email,
+                    asset.asset_type_id,
+                ),
+            )
+            logger.info(
+                "admin force-delete: revoke result for asset %s user %s: %s",
+                asset_id, active_order.user_email, revoke_result,
+            )
+        except Exception as exc:
+            # Log but don't abort — admin explicitly wants the asset gone
+            logger.error("admin force-delete: revoke failed for asset %s: %s", asset_id, exc)
+            revoke_result = {"success": False, "error": str(exc)}
+
+    # Cancel all non-final orders for this asset, including active delivered/provisioned ones
+    # so the user no longer sees the asset under My IT.
+    keep = {"revoked", "failed", "expired", "cancelled"}
+    all_orders_result = await db.execute(
+        select(Order).where(Order.assigned_asset_id == asset_id)
+    )
+    for order in all_orders_result.scalars().all():
+        if order.status.value not in keep:
+            order.status = "cancelled"  # type: ignore[assignment]
+            order.error_message = "Cancelled by admin via force-delete"
+
+    # Unlink asset from all orders
+    await db.execute(
+        Order.__table__.update()
+        .where(Order.__table__.c.assigned_asset_id == asset_id)
+        .values(assigned_asset_id=None)
+    )
+
+    audit_extra = {"force": True, "revoke_permissions": payload.revoke_permissions}
+    if revoke_result is not None:
+        audit_extra["revoke_result"] = revoke_result
+    await aaudit(db, "asset", asset.id, "force_deleted", old=snap, new=audit_extra, by="api:force_delete_asset")
+    await db.delete(asset)
+    await db.commit()
+    logger.info("admin: force-deleted asset id=%s (revoke=%s)", asset_id, payload.revoke_permissions)
+
+
+@router.post("/assets/{asset_id}/revoke", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_asset(
+    asset_id: int,
+    payload: ForceDeleteAsset,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Revoke permissions for an active asset and return it to FREE status.
+
+    The asset is NOT deleted. The active order is cancelled and unlinked so the
+    user no longer sees it under My IT. If revoke_permissions=True, AD group
+    memberships are removed via target_executor.
+    """
+    result = await db.execute(select(AssetPool).where(AssetPool.id == asset_id))
+    asset = result.scalar_one_or_none()
+    if not asset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Asset {asset_id} not found")
+
+    snap = _asset_snap(asset)
+
+    # Resolve the active order so we can revoke and cancel it
+    active_order: Order | None = None
+    if asset.current_order_id:
+        ord_result = await db.execute(select(Order).where(Order.id == asset.current_order_id))
+        active_order = ord_result.scalar_one_or_none()
+
+    # Optionally revoke group permissions
+    revoke_result: dict | None = None
+    if payload.revoke_permissions and active_order:
+        try:
+            revoke_result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                functools.partial(_sync_revoke, active_order.user_email, asset.asset_type_id),
+            )
+            logger.info("admin revoke-asset: revoke result for asset %s user %s: %s",
+                        asset_id, active_order.user_email, revoke_result)
+        except Exception as exc:
+            logger.error("admin revoke-asset: revoke failed for asset %s: %s", asset_id, exc)
+            revoke_result = {"success": False, "error": str(exc)}
+
+    # Cancel all non-final orders and unlink them from the asset
+    keep = {"revoked", "failed", "expired", "cancelled"}
+    all_orders_result = await db.execute(select(Order).where(Order.assigned_asset_id == asset_id))
+    for order in all_orders_result.scalars().all():
+        if order.status.value not in keep:
+            order.status = "cancelled"  # type: ignore[assignment]
+            order.error_message = "Released by admin"
+
+    await db.execute(
+        Order.__table__.update()
+        .where(Order.__table__.c.assigned_asset_id == asset_id)
+        .values(assigned_asset_id=None)
+    )
+
+    # Return asset to free pool
+    asset.status = AssetStatus.FREE  # type: ignore[assignment]
+    asset.current_order_id = None
+    asset.expires_at = None
+
+    audit_extra = {"revoke_permissions": payload.revoke_permissions}
+    if revoke_result is not None:
+        audit_extra["revoke_result"] = revoke_result
+    await aaudit(db, "asset", asset.id, "revoked", old=snap, new=audit_extra, by="api:revoke_asset")
+    await db.commit()
+    logger.info("admin: revoked asset id=%s back to free (revoke_permissions=%s)", asset_id, payload.revoke_permissions)
+
+
 @router.get("/assets")
 async def list_assets(
     asset_type_id: int | None = None,
@@ -464,12 +695,23 @@ async def list_assets(
     if asset_type_id:
         q = q.where(AssetPool.asset_type_id == asset_type_id)
     rows = (await db.execute(q)).all()
+
+    # Fetch user_email for assets that have an active order (for force-delete display)
+    order_ids = [a.current_order_id for a, _ in rows if a.current_order_id]
+    user_by_order: dict[int, str] = {}
+    if order_ids:
+        ord_rows = (await db.execute(
+            select(Order.id, Order.user_email).where(Order.id.in_(order_ids))
+        )).all()
+        user_by_order = {r[0]: r[1] for r in ord_rows}
+
     result = []
     for asset, type_name in rows:
         d = _asset_snap(asset)
         d["type_name"] = type_name
         d["last_reclaim_at"] = asset.last_reclaim_at.isoformat() if asset.last_reclaim_at else None
         d["asset_metadata"] = asset.asset_metadata or {}
+        d["user_email"] = user_by_order.get(asset.current_order_id) if asset.current_order_id else None
         result.append(d)
     return result
 
