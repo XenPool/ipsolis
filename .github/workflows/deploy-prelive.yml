@@ -26,5 +26,26 @@ jobs:
 
       - name: Health check
         run: |
-          sleep 10
-          curl -fk https://it-selfservice-pre.xenpool.local/health || exit 1
+          cd ${{ secrets.PRELIVE_PATH }}
+          # Wait for API container to become healthy (up to 90s)
+          echo "Waiting for API container health..."
+          for i in $(seq 1 18); do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' xp_api 2>/dev/null || echo "missing")
+            echo "  Attempt $i: container=$STATUS"
+            if [ "$STATUS" = "healthy" ]; then break; fi
+            sleep 5
+          done
+          # Then verify through nginx
+          echo "Checking HTTPS endpoint..."
+          for i in $(seq 1 6); do
+            if curl -fsk https://it-selfservice-pre.xenpool.local/health; then
+              echo ""
+              echo "Health check passed."
+              exit 0
+            fi
+            echo "  Retry $i..."
+            sleep 5
+          done
+          echo "Health check failed after retries."
+          docker compose logs api --tail=30
+          exit 1
