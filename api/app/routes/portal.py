@@ -15,10 +15,12 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from sqlalchemy import func as sa_func
+
 from app.config import settings
 from app.database import get_db
 from app.templates_instance import templates, get_app_logo
-from app.models.asset import AssetPool, AssetType
+from app.models.asset import AssetPool, AssetStatus, AssetType
 from app.models.config import AppConfig
 from app.models.order import Order, OrderAction, OrderStatus
 from app.utils.ad_lookup import lookup_user
@@ -163,6 +165,74 @@ async def portal_index(
     })
 
 
+# ── Pool availability helper ──────────────────────────────────────────────────
+
+_ACTIVE_ORDER_STATUSES = (
+    OrderStatus.PENDING,
+    OrderStatus.PROCESSING,
+    OrderStatus.PROVISIONING,
+    OrderStatus.PROVISIONED,
+    OrderStatus.DELIVERED,
+)
+
+
+async def _get_unavailable_type_ids(db: AsyncSession, asset_types: list) -> set[int]:
+    """Return set of asset_type IDs that have no free assets available.
+
+    Checks two things:
+    - capacity_pooled types: active orders >= pool_capacity
+    - All types with pool assets: 0 free assets in asset_pool
+    """
+    unavailable: set[int] = set()
+    type_ids = [t.id for t in asset_types]
+    if not type_ids:
+        return unavailable
+
+    # 1) Check actual pool: any type with pool assets but 0 free ones
+    free_result = await db.execute(
+        select(AssetPool.asset_type_id, sa_func.count())
+        .where(
+            AssetPool.asset_type_id.in_(type_ids),
+            AssetPool.status == AssetStatus.FREE,
+        )
+        .group_by(AssetPool.asset_type_id)
+    )
+    free_counts = {row[0]: row[1] for row in free_result.all()}
+
+    # Count total pool assets per type (to distinguish "no pool" from "empty pool")
+    total_result = await db.execute(
+        select(AssetPool.asset_type_id, sa_func.count())
+        .where(AssetPool.asset_type_id.in_(type_ids))
+        .group_by(AssetPool.asset_type_id)
+    )
+    total_counts = {row[0]: row[1] for row in total_result.all()}
+
+    for t in asset_types:
+        has_pool = total_counts.get(t.id, 0) > 0
+        free = free_counts.get(t.id, 0)
+        if has_pool and free == 0:
+            unavailable.add(t.id)
+
+    # 2) Additional check for capacity_pooled: active orders >= pool_capacity
+    pooled = [t for t in asset_types if t.assignment_model == "capacity_pooled" and t.pool_capacity]
+    if pooled:
+        pooled_ids = [t.id for t in pooled]
+        order_result = await db.execute(
+            select(Order.asset_type_id, sa_func.count())
+            .where(
+                Order.asset_type_id.in_(pooled_ids),
+                Order.status.in_(_ACTIVE_ORDER_STATUSES),
+            )
+            .group_by(Order.asset_type_id)
+        )
+        order_counts = {row[0]: row[1] for row in order_result.all()}
+        for t in pooled:
+            if order_counts.get(t.id, 0) >= t.pool_capacity:
+                unavailable.add(t.id)
+
+    return unavailable
+
+
 # ── New Order ──────────────────────────────────────────────────────────────────
 
 @router.get("/orders/new", response_class=HTMLResponse)
@@ -173,11 +243,13 @@ async def portal_new_order_form(
 ):
     types_result = await db.execute(select(AssetType).order_by(AssetType.name))
     asset_types = list(types_result.scalars().all())
+    unavailable_ids = await _get_unavailable_type_ids(db, asset_types)
     return templates.TemplateResponse("portal/order_new.html", {
         "request": request,
         "active_page": "new",
         "user": current_user,
         "asset_types": asset_types,
+        "unavailable_ids": unavailable_ids,
         "today": date.today().isoformat(),
         "error": None,
     })
@@ -276,11 +348,13 @@ async def portal_create_order(
 
     async def _render_error(msg: str):
         types_result = await db.execute(select(AssetType).order_by(AssetType.name))
+        all_types = list(types_result.scalars().all())
         return templates.TemplateResponse("portal/order_new.html", {
             "request": request,
             "active_page": "new",
             "user": current_user,
-            "asset_types": list(types_result.scalars().all()),
+            "asset_types": all_types,
+            "unavailable_ids": await _get_unavailable_type_ids(db, all_types),
             "today": date.today().isoformat(),
             "error": msg,
             # Return form values
@@ -308,6 +382,13 @@ async def portal_create_order(
     asset_type = at_result.scalar_one_or_none()
     if not asset_type:
         return await _render_error("Unknown asset type.")
+
+    # Pool availability check
+    unavail = await _get_unavailable_type_ids(db, [asset_type])
+    if asset_type.id in unavail:
+        return await _render_error(
+            f"No free assets available for \"{asset_type.name}\". Please try again later."
+        )
 
     order_config, attr_error = _validate_order_attrs(form_data, asset_type.config or [])
     if attr_error:

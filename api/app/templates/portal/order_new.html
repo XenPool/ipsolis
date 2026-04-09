@@ -22,16 +22,30 @@
     <h2 class="text-sm font-semibold text-gray-700 mb-4">Asset Type</h2>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       {% for t in asset_types %}
-      <label class="relative flex cursor-pointer rounded-lg border border-gray-200 p-4 hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
+      {% set sold_out = t.id in unavailable_ids %}
+      <label class="relative flex rounded-lg border p-4
+        {% if sold_out %}border-gray-200 bg-gray-50 cursor-not-allowed opacity-60
+        {% else %}cursor-pointer border-gray-200 hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50{% endif %}">
         <input type="radio" name="asset_type_id" value="{{ t.id }}"
-               {% if form and form.asset_type_id == t.id %}checked{% elif loop.first %}checked{% endif %}
+               {% if sold_out %}disabled{% endif %}
+               {% if not sold_out and form and form.asset_type_id == t.id %}checked{% endif %}
                class="sr-only">
-        <div>
-          <p class="text-sm font-medium text-gray-900">{{ t.name }}</p>
+        <div class="w-full">
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-sm font-medium {% if sold_out %}text-gray-400{% else %}text-gray-900{% endif %}">{{ t.name }}</p>
+            {% if sold_out %}
+            <span class="shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-200 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3a9 9 0 100 18 9 9 0 000-18z"/></svg>
+              Unavailable
+            </span>
+            {% endif %}
+          </div>
           {% if t.description %}
-          <p class="text-xs text-gray-500 mt-0.5">{{ t.description }}</p>
+          <p class="text-xs {% if sold_out %}text-gray-400{% else %}text-gray-500{% endif %} mt-0.5">{{ t.description }}</p>
           {% endif %}
-          {% if t.config and t.config | length > 0 %}
+          {% if sold_out %}
+          <p class="text-xs text-amber-600 mt-1">Currently no free assets available. Please try again later.</p>
+          {% elif t.config and t.config | length > 0 %}
           <p class="text-xs text-gray-400 mt-1">
             {% for attr in t.config %}
               <span class="font-medium">{{ attr.label }}:</span> {{ attr.options | join(' / ') }}{% if not loop.last %} &middot; {% endif %}
@@ -352,7 +366,15 @@ function updateAttrSection() {
   }
 }
 
+var _unavailableIds = new Set([{% for tid in unavailable_ids %}{{ tid }}{% if not loop.last %}, {% endif %}{% endfor %}]);
+
 document.addEventListener('DOMContentLoaded', function() {
+  // Auto-select first available type if none checked
+  if (!document.querySelector('[name="asset_type_id"]:checked')) {
+    var firstAvail = Array.from(document.querySelectorAll('[name="asset_type_id"]')).find(function(r) { return !r.disabled; });
+    if (firstAvail) firstAvail.checked = true;
+  }
+
   // Asset type change
   document.querySelectorAll('[name="asset_type_id"]').forEach(function(r) {
     r.addEventListener('change', updateAttrSection);

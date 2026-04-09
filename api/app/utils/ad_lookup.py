@@ -1,33 +1,20 @@
 """AD lookup helper for the API.
 
-Lightweight version of the worker module active_directory.py.
-Uses the same mock (all identifiers accepted) in dev mode.
-In production: ldap3 (must be added to requirements.txt).
+Uses msldap to validate user identifiers (sAMAccountName or email) against
+on-premises Active Directory.  msldap supports NTLM with message signing,
+which modern Windows Server AD requires (LDAPServerIntegrity = Require signing).
 
 AD config is read from env vars first; if AD_SERVER is not set, falls back
-to the app_config table (configured via Admin → Settings → Active Directory).
+to the app_config table (configured via Admin -> Settings -> Active Directory).
+
+When AD is not configured, all identifiers are accepted with a warning log
+so the portal remains usable during initial setup.
 """
+import asyncio
 import logging
 import os
 
 logger = logging.getLogger(__name__)
-
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-
-_MOCK_USERS: dict[str, dict] = {
-    "s.muster": {
-        "success": True,
-        "email": "stefan.muster@xenpool.de",
-        "display_name": "Stefan Muster",
-        "sam_account": "s.muster",
-    },
-    "p.nutzer": {
-        "success": True,
-        "email": "peter.nutzer@xenpool.de",
-        "display_name": "Peter Nutzer",
-        "sam_account": "p.nutzer",
-    },
-}
 
 
 def _load_ad_config_from_db() -> dict:
@@ -35,7 +22,6 @@ def _load_ad_config_from_db() -> dict:
     database_url = os.getenv("DATABASE_URL", "")
     if not database_url:
         return {}
-    # Convert asyncpg URL to psycopg2-compatible URL
     sync_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
     try:
         import psycopg2
@@ -53,7 +39,7 @@ def _load_ad_config_from_db() -> dict:
 
 def _get_ad_config() -> dict:
     """
-    Returns AD config dict with keys: server, port, base_dn, domain, username, password.
+    Returns AD config dict with keys: server, port, base_dn, domain, username, password, use_ssl.
     Reads from env vars first; falls back to app_config table.
     Returns empty dict if neither source has AD_SERVER / ad.server.
     """
@@ -66,9 +52,9 @@ def _get_ad_config() -> dict:
             "domain": os.getenv("AD_DOMAIN", ""),
             "username": os.getenv("AD_USERNAME", ""),
             "password": os.getenv("AD_PASSWORD", ""),
+            "use_ssl": os.getenv("AD_USE_SSL", "false").lower() == "true",
         }
 
-    # Fall back to app_config table
     cfg = _load_ad_config_from_db()
     if not cfg.get("ad.server"):
         return {}
@@ -79,6 +65,7 @@ def _get_ad_config() -> dict:
         "domain": cfg.get("ad.domain", ""),
         "username": cfg.get("ad.username", ""),
         "password": cfg.get("ad.password", ""),
+        "use_ssl": cfg.get("ad.use_ssl", "false") == "true",
     }
 
 
@@ -93,56 +80,60 @@ def lookup_user(identifier: str) -> dict:
         {"success": True, "display_name": str, "email": str, "sam_account": str}
         {"success": False, "error": str}
 
-    Falls back to mock mode in development. In production reads AD config from
-    env vars or app_config table.
+    When AD is not configured, accepts the identifier as-is so the portal
+    remains functional during initial setup (logs a warning).
     """
     if not identifier.strip():
         return {"success": False, "error": "Empty input"}
 
-    if ENVIRONMENT == "development":
-        return _mock_lookup(identifier)
-
-    try:
-        import ldap3  # noqa: F401
-    except ImportError:
-        logger.error("[ad_lookup] ldap3 not installed — cannot validate users in production")
-        return {"success": False, "error": "AD lookup not available (ldap3 not installed)"}
-
     ad_config = _get_ad_config()
     if not ad_config:
-        logger.error("[ad_lookup] AD not configured — set AD_SERVER env var or configure via Admin → Settings → Active Directory")
-        return {"success": False, "error": "AD lookup not configured"}
+        logger.warning("[ad_lookup] AD not configured — accepting '%s' without validation. "
+                       "Configure AD via Admin -> Settings -> Active Directory.", identifier)
+        return _accept_without_validation(identifier)
 
-    return _ldap_lookup(identifier, ad_config)
+    return _msldap_lookup_sync(identifier, ad_config)
 
 
-def _mock_lookup(identifier: str) -> dict:
+def _accept_without_validation(identifier: str) -> dict:
+    """Accept an identifier when AD is not available. Derive display values from the input."""
     sam = identifier.split("\\")[-1] if "\\" in identifier else identifier
     sam = sam.split("@")[0].lower().strip()
-
-    if sam in _MOCK_USERS:
-        result = _MOCK_USERS[sam].copy()
-        logger.info("[MOCK] AD found: %s (%s)", result["display_name"], result["email"])
-        return result
-
-    # Generic fallback: accept identifier as valid user
-    display = identifier.replace("\\", " ").replace(".", " ").replace("@", " ").title().strip()
-    email = identifier if "@" in identifier else f"{sam}@xenpool.de"
-    logger.info("[MOCK] AD fallback for '%s'", identifier)
+    email = identifier if "@" in identifier else ""
+    display = identifier.replace("\\", " ").replace(".", " ").replace("@", " at ").strip().title()
     return {
         "success": True,
-        "email": email,
+        "email": email or identifier,
         "display_name": display or identifier,
         "sam_account": sam,
     }
 
 
-def _ldap_lookup(identifier: str, ad_config: dict) -> dict:
+def _msldap_lookup_sync(identifier: str, ad_config: dict) -> dict:
+    """Synchronous wrapper around the async msldap lookup."""
     try:
-        import ldap3
-        import ldap3.utils.conv
-    except ImportError:
-        return {"success": False, "error": "ldap3 not installed (add to requirements.txt)"}
+        # Get or create an event loop — handles both threaded and main-thread contexts
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            # We're inside an async context (e.g. FastAPI) — run in a new thread
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(asyncio.run, _msldap_lookup(identifier, ad_config))
+                return future.result(timeout=15)
+        else:
+            return asyncio.run(_msldap_lookup(identifier, ad_config))
+    except Exception as e:
+        logger.error("AD lookup failed for '%s': %s", identifier, e)
+        return {"success": False, "error": f"AD connection error: {e}"}
+
+
+async def _msldap_lookup(identifier: str, ad_config: dict) -> dict:
+    from msldap.commons.factory import LDAPConnectionFactory
+    from urllib.parse import quote
 
     server_host = ad_config["server"]
     server_port = ad_config["port"]
@@ -150,36 +141,48 @@ def _ldap_lookup(identifier: str, ad_config: dict) -> dict:
     bind_user = ad_config["username"]
     bind_password = ad_config["password"]
     domain = ad_config["domain"]
+    use_ssl = ad_config.get("use_ssl", False)
 
+    # Build LDAP filter
     if "@" in identifier:
-        esc = ldap3.utils.conv.escape_filter_chars(identifier)
-        # Search mail OR userPrincipalName — AD often has UPN set but mail attribute empty
-        ldap_filter = f"(|(mail={esc})(userPrincipalName={esc}))"
+        ldap_filter = f"(|(mail={identifier})(userPrincipalName={identifier}))"
     else:
         sam = identifier.split("\\")[-1] if "\\" in identifier else identifier
-        ldap_filter = f"(sAMAccountName={ldap3.utils.conv.escape_filter_chars(sam)})"
+        ldap_filter = f"(sAMAccountName={sam})"
 
-    bind_dn = f"{domain}\\{bind_user}" if domain else bind_user
+    # Build msldap connection URL
+    scheme = "ldaps+ntlm-password" if use_ssl else "ldap+ntlm-password"
+    user_escaped = quote(f"{domain}\\{bind_user}" if domain else bind_user, safe="")
+    pass_escaped = quote(bind_password, safe="")
+    url = f"{scheme}://{user_escaped}:{pass_escaped}@{server_host}:{server_port}"
+
+    factory = LDAPConnectionFactory.from_url(url)
+    client = factory.get_client()
+    await client.connect()
 
     try:
-        server = ldap3.Server(server_host, port=server_port, get_info=ldap3.NONE)
-        conn = ldap3.Connection(server, user=bind_dn, password=bind_password, auto_bind=True)
-        conn.search(
-            search_base=base_dn,
-            search_filter=ldap_filter,
-            search_scope=ldap3.SUBTREE,
-            attributes=["mail", "displayName", "sAMAccountName"],
-        )
-        if not conn.entries:
-            return {"success": False, "error": f"Benutzer '{identifier}' nicht im AD gefunden"}
+        attrs = ["mail", "displayName", "sAMAccountName", "userPrincipalName"]
+        found = None
+        async for entry, err in client.pagedsearch(ldap_filter, attrs, tree=base_dn):
+            if err:
+                return {"success": False, "error": str(err)}
+            found = entry["attributes"]
+            break
 
-        entry = conn.entries[0]
+        if not found:
+            return {"success": False, "error": f"User '{identifier}' not found in AD"}
+
+        def _attr(key):
+            v = found.get(key)
+            if isinstance(v, list):
+                return v[0] if v else None
+            return str(v) if v else None
+
         return {
             "success": True,
-            "email": str(entry.mail) if entry.mail else identifier,
-            "display_name": str(entry.displayName) if entry.displayName else identifier,
-            "sam_account": str(entry.sAMAccountName) if entry.sAMAccountName else identifier,
+            "email": _attr("mail") or _attr("userPrincipalName") or identifier,
+            "display_name": _attr("displayName") or identifier,
+            "sam_account": _attr("sAMAccountName") or identifier,
         }
-    except Exception as e:
-        logger.error("LDAP lookup failed for '%s': %s", identifier, e)
-        return {"success": False, "error": str(e)}
+    finally:
+        await client.disconnect()

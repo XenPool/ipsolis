@@ -18,7 +18,7 @@ Includes a self-service portal for end users and a webhook receiver for ServiceN
 | Scheduling | Celery Beat |
 | Database | PostgreSQL (SQLAlchemy + Alembic) |
 | Auth | Entra ID SSO (MSAL) |
-| External Systems | XenServer/XCP-ng + vSphere (PowerCLI), Active Roles (WinRM/pypsrp), SCCM, SMTP |
+| External Systems | XenServer/XCP-ng + vSphere (PowerCLI), Active Directory (LDAP), SCCM, SMTP |
 | Container | Docker / Docker Compose |
 | Frontend | HTMX + Jinja2 + Tailwind CSS |
 
@@ -46,7 +46,7 @@ docker compose up --build
 ## Development Notes
 
 ### Mock Mode
-All external calls (vSphere, XenServer, Active Roles, SCCM, SMTP) are mocked when
+All external calls (vSphere, XenServer, SCCM, SMTP) are mocked when
 `ENVIRONMENT=development` is set in `.env`. Mocks simulate realistic behavior
 including execution delays and logging. No external infrastructure required.
 
@@ -55,7 +55,6 @@ Scripts in `scripts/ivanti/` are **read-only reference material** and must not b
 New scripts belong in:
 - `scripts/xenserver/` — XCP-ng / XenServer VM operations
 - `scripts/vsphere/` — VMware vSphere operations
-- `scripts/active_roles/` — Active Roles / AD group management
 - `scripts/sccm/` — SCCM task sequence helpers
 
 All scripts must return JSON on stdout and use pure ASCII (no Unicode characters).
@@ -102,11 +101,10 @@ Instead of `` `{{${p}}}` ``, always use `'{{' + p + '}}'` (string concatenation)
 | `api/app/utils/entra.py` | MSAL helper (auth URL, token exchange, domain check) |
 | `worker/tasks/__init__.py` | Celery app instance + task includes |
 | `worker/tasks/workflows/dynamic_runner.py` | Main runbook workflow + Beat scheduler |
-| `worker/tasks/modules/` | Atomic modules (pool, active_roles, vsphere, …) |
+| `worker/tasks/modules/` | Atomic modules (pool, vsphere, sccm, …) |
 | `worker/tasks/modules/step_helper.py` | Shared step tracking |
 | `scripts/xenserver/` | XCP-ng / XenServer PowerShell scripts |
 | `scripts/vsphere/` | vSphere PowerShell scripts |
-| `scripts/active_roles/` | Active Roles PowerShell scripts |
 | `scripts/sccm/` | SCCM PowerShell scripts |
 | `scripts/ivanti/` | Legacy reference scripts (read-only) |
 
@@ -125,7 +123,7 @@ Instead of `` `{{${p}}}` ``, always use `'{{' + p + '}}'` (string concatenation)
 
 - **XenServer/XCP-ng**: PowerCLI scripts via `subprocess` (pwsh in worker container); SSL cert bypass injected globally for self-signed certs
 - **vSphere**: same mechanism as XenServer
-- **Active Roles**: pypsrp / WinRM → Windows host running Active Roles Console
+- **Active Directory**: LDAP (ldap3) for user validation; deeper AD integration (e.g. Quest Active Roles) via PS modules + runbooks
 - **SCCM**: WinRM call to trigger unattended reinstall task sequence
 - **SMTP**: Python `smtplib` for notifications
 - **Entra ID**: MSAL for portal SSO; `POST /admin/config/entra/test` verifies credentials via client-credentials token flow

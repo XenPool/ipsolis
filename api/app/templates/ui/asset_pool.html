@@ -207,6 +207,7 @@
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Hostname</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Asset Type</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Assigned To</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Order</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Expires</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">IP Address</th>
@@ -216,7 +217,7 @@
     </thead>
     <tbody id="pool-tbody" class="divide-y divide-gray-100">
       <tr id="loading-row">
-        <td colspan="8" class="px-4 py-10 text-center text-gray-400 text-sm">Loading assets…</td>
+        <td colspan="9" class="px-4 py-10 text-center text-gray-400 text-sm">Loading assets…</td>
       </tr>
     </tbody>
   </table>
@@ -250,7 +251,7 @@
         <span class="text-sm text-gray-700">
           Revoke permissions
           <span class="block text-xs text-gray-400 mt-0.5">
-            Remove the user's group memberships for this asset type via Active Roles / AD.
+            Remove the user's group memberships for this asset type.
           </span>
         </span>
       </label>
@@ -385,7 +386,7 @@ async function loadAssets() {
     renderTable();
   } catch(e) {
     document.getElementById('pool-tbody').innerHTML =
-      '<tr><td colspan="8" class="px-4 py-10 text-center text-red-400 text-sm">Error loading: ' + e.message + '</td></tr>';
+      '<tr><td colspan="9" class="px-4 py-10 text-center text-red-400 text-sm">Error loading: ' + e.message + '</td></tr>';
   }
 }
 
@@ -400,7 +401,7 @@ function renderTable() {
   document.getElementById('count-label').textContent = filtered.length + ' entries';
   var tbody = document.getElementById('pool-tbody');
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-10 text-center text-gray-400 text-sm">No assets found.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="px-4 py-10 text-center text-gray-400 text-sm">No assets found.</td></tr>';
     return;
   }
   tbody.innerHTML = '';
@@ -439,10 +440,15 @@ function buildRow(a) {
   var tr = document.createElement('tr');
   tr.id = 'row-' + a.id;
   tr.className = 'hover:bg-gray-50';
+  var assignedCell = a.user_name
+    ? '<span class="text-gray-900">' + _esc(a.user_name) + '</span>'
+      + (a.user_email ? '<br><span class="text-gray-400">' + _esc(a.user_email) + '</span>' : '')
+    : '<span class="text-gray-400">–</span>';
   tr.innerHTML =
     '<td class="px-4 py-3 font-mono text-sm font-medium text-gray-900">' + _esc(a.name) + '</td>'
     + '<td class="px-4 py-3 text-xs text-gray-600">' + _esc(a.type_name) + '</td>'
     + '<td class="px-4 py-3">' + _statusBadge(a.status) + '</td>'
+    + '<td class="px-4 py-3 text-xs">' + assignedCell + '</td>'
     + '<td class="px-4 py-3 text-xs">' + orderCell + '</td>'
     + '<td class="px-4 py-3 text-xs text-gray-500">' + _esc(expiresStr) + '</td>'
     + '<td class="px-4 py-3 text-xs text-gray-500 font-mono">' + _esc(ip) + '</td>'
@@ -469,6 +475,7 @@ function startEdit(id) {
     + '<option value="free"' + (a.status === 'free' ? ' selected' : '') + '>Free</option>'
     + '<option value="maintenance"' + (a.status === 'maintenance' ? ' selected' : '') + '>Maintenance</option>'
     + '</select></td>'
+    + '<td class="px-4 py-2 text-xs text-gray-400">–</td>'
     + '<td class="px-4 py-2 text-xs text-gray-400">–</td>'
     + '<td class="px-4 py-2 text-xs text-gray-400">–</td>'
     + '<td class="px-4 py-2"><input id="edit-ip-' + id + '" value="' + _esc(ip) + '" placeholder="10.0.1.x"'

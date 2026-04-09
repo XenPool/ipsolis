@@ -7,11 +7,10 @@ A production-ready platform for orchestrating IT asset lifecycle workflows — V
 - **Self-Service Portal** — Entra ID SSO (MSAL), users can order, extend, and cancel assets
 - **Admin UI** — manage asset types, runbooks, PS modules, app config, and audit logs
 - **Dynamic Runbook Engine** — configurable per asset type and action (`provision`, `delete`, `modify`, `extend`)
-- **Flexible Target Execution** — manage AD / Active Roles group memberships as part of any workflow
+- **Flexible Target Execution** — manage AD group memberships as part of any workflow
 - **Pool Capacity Enforcement** — pre-flight checks with HTTP 409 on overcommit
 - **Celery Beat Scheduler** — automated expiry checks and lifecycle management
 - **XCP-ng / XenServer + vSphere** — PowerShell/PowerCLI scripts for VM operations
-- **Active Roles / WinRM** — group and account management via pypsrp
 - **SCCM** — unattended reinstall task sequence integration
 - **ServiceNow Webhook** — inbound order dispatch via `/webhook`
 
@@ -26,7 +25,7 @@ A production-ready platform for orchestrating IT asset lifecycle workflows — V
 | Frontend | HTMX + Jinja2 + Tailwind CSS |
 | Auth | Entra ID SSO (MSAL) |
 | VM Operations | PowerShell + PowerCLI (XenServer/XCP-ng, vSphere) |
-| Directory | Active Roles via WinRM (pypsrp) |
+| Directory | Active Directory (LDAP) |
 | Deployment | Docker Compose |
 
 ## Quickstart
@@ -46,7 +45,7 @@ docker compose up --build
 
 ## Development
 
-**Mock mode** — set `ENVIRONMENT=development` in `.env` to mock all external calls (vSphere, Active Roles, SCCM, SMTP) with realistic delays and logging. No external infrastructure required.
+**Mock mode** — set `ENVIRONMENT=development` in `.env` to mock all external calls (vSphere, SCCM, SMTP) with realistic delays and logging. No external infrastructure required.
 
 **Run tests:**
 ```bash
@@ -78,12 +77,11 @@ api/
   tests/            Pytest suite (happy-path coverage)
 worker/
   tasks/
-    modules/        Atomic workflow modules (pool, active_roles, vsphere, …)
+    modules/        Atomic workflow modules (pool, vsphere, sccm, …)
     workflows/      Celery workflow tasks (dynamic_runner)
 scripts/
   xenserver/        XCP-ng / XenServer PowerShell scripts
   vsphere/          vSphere PowerShell scripts
-  active_roles/     Active Roles PowerShell scripts
   sccm/             SCCM task sequence scripts
 ```
 
