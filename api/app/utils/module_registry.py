@@ -35,28 +35,6 @@ MODULE_METADATA: list[dict] = [
         "params": ["asset_id"],
         "output_keys": [],
     },
-    # ── Active Roles ──────────────────────────────────────────────────────────
-    {
-        "key": "active_roles.set_rdp_group",
-        "group": "active_roles",
-        "description": "Populates the RDP AD group of the VM with the specified users",
-        "params": ["asset_name", "rdp_users"],
-        "output_keys": [],
-    },
-    {
-        "key": "active_roles.set_admin_group",
-        "group": "active_roles",
-        "description": "Populates the admin AD group of the VM with the specified users",
-        "params": ["asset_name", "admin_users"],
-        "output_keys": [],
-    },
-    {
-        "key": "active_roles.remove_all_groups",
-        "group": "active_roles",
-        "description": "Removes all AD groups from the VM (on return)",
-        "params": ["asset_name"],
-        "output_keys": [],
-    },
     # ── vSphere ───────────────────────────────────────────────────────────────
     {
         "key": "vsphere.update_vmware_tools",
@@ -127,4 +105,4 @@ MODULE_METADATA: list[dict] = [
 MODULE_MAP: dict[str, dict] = {m["key"]: m for m in MODULE_METADATA}
 
 # Group order for UI
-MODULE_GROUPS = ["pool", "active_roles", "vsphere", "sccm", "notifications", "target_executor"]
+MODULE_GROUPS = ["pool", "vsphere", "sccm", "notifications", "target_executor"]

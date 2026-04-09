@@ -6,7 +6,7 @@ Returns user information (name, email, department).
 Uses msldap instead of ldap3 because msldap supports NTLM with message signing,
 which is required by modern Windows Server AD (LDAPServerIntegrity = Require signing).
 
-Corresponds to the Ivanti module 'QAD Lookup' (standard LDAP instead of Quest AD).
+Used for user validation and directory lookups.
 """
 
 import logging

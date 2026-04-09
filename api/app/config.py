@@ -33,14 +33,6 @@ class Settings(BaseSettings):
     VSPHERE_DATACENTER: str = "DC01"
     VSPHERE_CLUSTER: str = "CL-VDI"
 
-    # ── Active Roles ──────────────────────────────────────────────
-    AR_WINRM_HOST: str = "ar-server.example.com"
-    AR_WINRM_PORT: int = 5985
-    AR_WINRM_USER: str = ""
-    AR_WINRM_PASSWORD: str = ""
-    AR_GROUP_PREFIX_RDP: str = "VDI-RDP-"
-    AR_GROUP_PREFIX_ADMIN: str = "VDI-ADM-"
-
     # ── SCCM ─────────────────────────────────────────────────────
     SCCM_WINRM_HOST: str = "sccm-server.example.com"
     SCCM_WINRM_USER: str = ""

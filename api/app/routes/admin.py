@@ -696,14 +696,14 @@ async def list_assets(
         q = q.where(AssetPool.asset_type_id == asset_type_id)
     rows = (await db.execute(q)).all()
 
-    # Fetch user_email for assets that have an active order (for force-delete display)
+    # Fetch user info for assets that have an active order
     order_ids = [a.current_order_id for a, _ in rows if a.current_order_id]
-    user_by_order: dict[int, str] = {}
+    user_by_order: dict[int, dict] = {}
     if order_ids:
         ord_rows = (await db.execute(
-            select(Order.id, Order.user_email).where(Order.id.in_(order_ids))
+            select(Order.id, Order.user_email, Order.user_name).where(Order.id.in_(order_ids))
         )).all()
-        user_by_order = {r[0]: r[1] for r in ord_rows}
+        user_by_order = {r[0]: {"email": r[1], "name": r[2]} for r in ord_rows}
 
     result = []
     for asset, type_name in rows:
@@ -711,7 +711,9 @@ async def list_assets(
         d["type_name"] = type_name
         d["last_reclaim_at"] = asset.last_reclaim_at.isoformat() if asset.last_reclaim_at else None
         d["asset_metadata"] = asset.asset_metadata or {}
-        d["user_email"] = user_by_order.get(asset.current_order_id) if asset.current_order_id else None
+        order_user = user_by_order.get(asset.current_order_id, {}) if asset.current_order_id else {}
+        d["user_email"] = order_user.get("email")
+        d["user_name"] = order_user.get("name")
         result.append(d)
     return result
 

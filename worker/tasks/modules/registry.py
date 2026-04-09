@@ -9,7 +9,7 @@ Jedes Modul hat:
 - group:       grouping for admin UI dropdowns
 """
 
-from tasks.modules import active_roles, notifications, pool_manager, sccm, target_executor, vsphere
+from tasks.modules import notifications, pool_manager, sccm, target_executor, vsphere
 
 
 # ── Notification adapter functions ───────────────────────────────────────────
@@ -120,32 +120,6 @@ MODULE_REGISTRY: dict[str, dict] = {
         "params": ["asset_id"],
         "output_keys": [],
         "group": "pool",
-    },
-
-    # ── Active Roles ──────────────────────────────────────────────────────────
-    "active_roles.set_rdp_group": {
-        "fn": active_roles.set_rdp_group,
-        "needs_db": False,
-        "description": "Populates the RDP AD group of the VM with the specified users",
-        "params": ["asset_name", "rdp_users"],
-        "output_keys": [],
-        "group": "active_roles",
-    },
-    "active_roles.set_admin_group": {
-        "fn": active_roles.set_admin_group,
-        "needs_db": False,
-        "description": "Populates the admin AD group of the VM with the specified users",
-        "params": ["asset_name", "admin_users"],
-        "output_keys": [],
-        "group": "active_roles",
-    },
-    "active_roles.remove_all_groups": {
-        "fn": active_roles.remove_all_groups,
-        "needs_db": False,
-        "description": "Removes all AD groups of the VM (on return)",
-        "params": ["asset_name"],
-        "output_keys": [],
-        "group": "active_roles",
     },
 
     # ── vSphere ───────────────────────────────────────────────────────────────
