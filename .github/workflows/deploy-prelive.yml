@@ -24,6 +24,11 @@ jobs:
           cd ${{ secrets.PRELIVE_PATH }}
           docker compose exec -T api alembic upgrade head
 
+      - name: Reload nginx (pick up new upstream IPs)
+        run: |
+          cd ${{ secrets.PRELIVE_PATH }}
+          docker compose exec -T nginx nginx -s reload
+
       - name: Health check
         run: |
           cd ${{ secrets.PRELIVE_PATH }}
