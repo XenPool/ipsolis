@@ -81,6 +81,12 @@ class AssetTypeCreate(BaseModel):
     max_per_user: int = 1
     automation_strategy: str = "runbook_only"
     composite_steps: list[dict[str, Any]] | None = None
+    rds_gateway_url: str | None = None
+    requires_manager_approval: bool = False
+    requires_owner_approval: bool = False
+    approval_owners: list[dict[str, Any]] | None = None
+    requires_approval_on_modify: bool = False
+    eligible_requestors_dn: str | None = None
     # Constraint validation: IDs of existing runbooks (not persisted, validation-time only)
     runbook_provision_id: int | None = None
     runbook_revoke_id: int | None = None
@@ -105,6 +111,12 @@ class AssetTypeUpdate(BaseModel):
     max_per_user: int | None = None
     automation_strategy: str | None = None
     composite_steps: list[dict[str, Any]] | None = None
+    rds_gateway_url: str | None = None
+    requires_manager_approval: bool | None = None
+    requires_owner_approval: bool | None = None
+    approval_owners: list[dict[str, Any]] | None = None
+    requires_approval_on_modify: bool | None = None
+    eligible_requestors_dn: str | None = None
     # Constraint validation: IDs of existing runbooks (not persisted, validation-time only)
     runbook_provision_id: int | None = None
     runbook_revoke_id: int | None = None

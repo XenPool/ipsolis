@@ -4,7 +4,8 @@ import logging
 import os
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -243,12 +244,18 @@ async def create_asset_type(
         lifecycle_renewable=payload.lifecycle_renewable,
         allow_rdp_users=payload.allow_rdp_users,
         allow_admin_users=payload.allow_admin_users,
+        rds_gateway_url=payload.rds_gateway_url,
         deprovision_policy=payload.deprovision_policy,
         personal_provisioning_strategy=payload.personal_provisioning_strategy,
         naming_pattern=payload.naming_pattern,
         max_per_user=payload.max_per_user,
         automation_strategy=payload.automation_strategy,
         composite_steps=payload.composite_steps,
+        requires_manager_approval=payload.requires_manager_approval,
+        requires_owner_approval=payload.requires_owner_approval,
+        approval_owners=payload.approval_owners,
+        requires_approval_on_modify=payload.requires_approval_on_modify,
+        eligible_requestors_dn=payload.eligible_requestors_dn or None,
     )
     db.add(asset_type)
     await db.flush()
@@ -332,6 +339,8 @@ async def update_asset_type(
         asset_type.allow_rdp_users = payload.allow_rdp_users
     if payload.allow_admin_users is not None:
         asset_type.allow_admin_users = payload.allow_admin_users
+    if payload.rds_gateway_url is not None:
+        asset_type.rds_gateway_url = payload.rds_gateway_url or None
     if payload.deprovision_policy is not None:
         asset_type.deprovision_policy = payload.deprovision_policy
     if payload.personal_provisioning_strategy is not None:
@@ -344,6 +353,16 @@ async def update_asset_type(
         asset_type.automation_strategy = payload.automation_strategy
     if payload.composite_steps is not None:
         asset_type.composite_steps = payload.composite_steps
+    if payload.requires_manager_approval is not None:
+        asset_type.requires_manager_approval = payload.requires_manager_approval
+    if payload.requires_owner_approval is not None:
+        asset_type.requires_owner_approval = payload.requires_owner_approval
+    if payload.approval_owners is not None:
+        asset_type.approval_owners = payload.approval_owners or None
+    if payload.requires_approval_on_modify is not None:
+        asset_type.requires_approval_on_modify = payload.requires_approval_on_modify
+    if payload.eligible_requestors_dn is not None:
+        asset_type.eligible_requestors_dn = payload.eligible_requestors_dn or None
     await aaudit(db, "asset_type", asset_type.id, "updated", old=old_snap, new=_type_snap(asset_type), by="api:update_asset_type")
     await db.commit()
     await db.refresh(asset_type)
@@ -895,3 +914,26 @@ async def test_email(payload: dict = None, db: AsyncSession = Depends(get_db)) -
         return {"ok": True, "message": f"Test email sent to {to_address}"}
     except Exception as exc:
         return {"ok": False, "message": str(exc)}
+
+
+@router.get("/_validate-user", response_class=HTMLResponse)
+async def admin_validate_user(request: Request, q: str = ""):
+    """AD user validation endpoint for admin forms (same as portal's _validate-user)."""
+    from app.utils.ad_lookup import lookup_user
+
+    if not q.strip():
+        return HTMLResponse("")
+    result = lookup_user(q.strip())
+    if result.get("success"):
+        name = result.get("display_name", q)
+        email = result.get("email", q)
+        return HTMLResponse(
+            f'<span class="text-xs text-green-700" data-valid="true" data-email="{email}" data-name="{name}">'
+            f'&#10003; {name} ({email})</span>'
+        )
+    error = result.get("error", "Not found")
+    return HTMLResponse(
+        f'<span class="text-xs text-red-600" data-valid="false">&#10007; {error}</span>'
+    )
+
+

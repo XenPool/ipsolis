@@ -135,16 +135,35 @@
           Deputy
           <span class="text-gray-400 font-normal ml-1">sAMAccountName or email · must be a valid domain user</span>
         </label>
-        <input type="text" id="deputy-input" name="q"
-               value="{{ form.owner_email if form and form.owner_email else '' }}"
-               placeholder="j.doe or j.doe@company.com"
-               autocomplete="off"
-               hx-get="/portal/_validate-user"
-               hx-trigger="blur changed delay:400ms"
-               hx-target="#deputy-validate-result"
-               hx-include="this"
-               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
-        <div id="deputy-validate-result" class="mt-1 min-h-[1.25rem]"></div>
+
+        <div id="deputy-chip" class="mb-2 {% if not (form and form.owner_email) %}hidden{% endif %}">
+          {% if form and form.owner_email %}
+          <div class="inline-flex items-center gap-2 bg-green-50 border border-green-200 rounded-full px-3 py-1 text-sm">
+            <span class="text-green-800">{{ form.owner_email }}</span>
+            <button type="button" onclick="removeDeputy()" class="text-green-400 hover:text-red-500 font-bold leading-none">&times;</button>
+          </div>
+          {% endif %}
+        </div>
+
+        <div id="deputy-input-row" class="flex gap-2 items-start {% if form and form.owner_email %}hidden{% endif %}">
+          <div class="flex-1">
+            <input type="text" id="deputy-input" name="q"
+                   placeholder="j.doe or j.doe@company.com"
+                   autocomplete="off"
+                   hx-get="/portal/_validate-user"
+                   hx-trigger="blur changed delay:400ms"
+                   hx-target="#deputy-validate-result"
+                   hx-include="this"
+                   class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();addDeputy()}">
+            <div id="deputy-validate-result" class="mt-1 min-h-[1.25rem]"></div>
+          </div>
+          <button type="button" onclick="addDeputy()"
+                  class="px-3 py-2 bg-gray-100 text-gray-700 text-sm rounded border border-gray-300 hover:bg-gray-200 whitespace-nowrap">
+            + Add
+          </button>
+        </div>
+
         <!-- Resolved values written by JS after successful validation -->
         <input type="hidden" id="owner-name-hidden" name="owner_name" value="{{ form.owner_name if form and form.owner_name else '' }}">
         <input type="hidden" id="owner-email-hidden" name="owner_email" value="{{ form.owner_email if form and form.owner_email else '' }}">
@@ -319,6 +338,37 @@ async function addUser(type) {
   document.getElementById(type + '-validate-result').innerHTML = '';
 }
 
+async function addDeputy() {
+  var input = document.getElementById('deputy-input');
+  var val = input.value.trim();
+  if (!val) return;
+
+  var result = await _validateUserFetch(val, 'deputy-validate-result');
+  if (!result.valid) return;
+
+  document.getElementById('owner-name-hidden').value = result.name || '';
+  document.getElementById('owner-email-hidden').value = result.email || val;
+
+  var chip = document.getElementById('deputy-chip');
+  chip.innerHTML =
+    '<div class="inline-flex items-center gap-2 bg-green-50 border border-green-200 rounded-full px-3 py-1 text-sm">'
+    + '<span class="text-green-800">' + (result.email || val) + '</span>'
+    + '<button type="button" onclick="removeDeputy()" class="text-green-400 hover:text-red-500 font-bold leading-none">\xd7</button>'
+    + '</div>';
+  chip.classList.remove('hidden');
+  document.getElementById('deputy-input-row').classList.add('hidden');
+  input.value = '';
+  document.getElementById('deputy-validate-result').innerHTML = '';
+}
+
+function removeDeputy() {
+  document.getElementById('owner-name-hidden').value = '';
+  document.getElementById('owner-email-hidden').value = '';
+  document.getElementById('deputy-chip').innerHTML = '';
+  document.getElementById('deputy-chip').classList.add('hidden');
+  document.getElementById('deputy-input-row').classList.remove('hidden');
+}
+
 // ── User list visibility per asset type ────────────────────────────────────────
 
 var _allowRdpUsers   = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.allow_rdp_users else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
@@ -395,20 +445,8 @@ document.addEventListener('DOMContentLoaded', function() {
     sec.addEventListener('change', function() { applyVisibleWhen(sec); });
   });
 
-  // Deputy field: when HTMX swaps validation result, update hidden owner inputs
-  document.getElementById('deputy-validate-result').addEventListener('htmx:afterSwap', function() {
-    var span = this.querySelector('span[data-valid]');
-    document.getElementById('owner-name-hidden').value = (span && span.dataset.valid === 'true') ? span.dataset.name : '';
-    document.getElementById('owner-email-hidden').value = (span && span.dataset.valid === 'true') ? span.dataset.email : '';
-  });
-  // Also clear hidden values when the deputy input is cleared
-  document.getElementById('deputy-input').addEventListener('input', function() {
-    if (!this.value.trim()) {
-      document.getElementById('owner-name-hidden').value = '';
-      document.getElementById('owner-email-hidden').value = '';
-      document.getElementById('deputy-validate-result').innerHTML = '';
-    }
-  });
+  // Deputy field: HTMX afterSwap is only needed to show inline validation hints
+  // The actual add is triggered by the "+ Add" button / Enter key
 
   var form = document.querySelector('form');
   if (form) {
@@ -422,12 +460,11 @@ document.addEventListener('DOMContentLoaded', function() {
         alert('Please first confirm ' + pending.join(' and ') + ' with "+ Add" (or clear the field).');
         return;
       }
-      // Block if deputy has text but failed validation
+      // Block if deputy input has text but was not confirmed with "+ Add"
       var deputyInput = document.getElementById('deputy-input');
-      var ownerEmail  = document.getElementById('owner-email-hidden');
-      if (deputyInput && deputyInput.value.trim() && !ownerEmail.value) {
+      if (deputyInput && deputyInput.value.trim()) {
         e.preventDefault();
-        alert('The deputy could not be found in the directory. Please enter a valid username or clear the field.');
+        alert('Please confirm the deputy with "+ Add" or clear the field.');
         deputyInput.focus();
         return;
       }

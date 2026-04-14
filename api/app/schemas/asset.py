@@ -26,6 +26,12 @@ class AssetTypeRead(BaseModel):
     max_per_user: int
     automation_strategy: str
     composite_steps: list[dict[str, Any]] | None
+    rds_gateway_url: str | None
+    requires_manager_approval: bool
+    requires_owner_approval: bool
+    approval_owners: list[dict[str, Any]] | None
+    requires_approval_on_modify: bool
+    eligible_requestors_dn: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

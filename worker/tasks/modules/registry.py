@@ -58,6 +58,7 @@ def _notify_send_provision(
     asset_name: str,
     rdp_users: list | None = None,
     expires_at=None,
+    asset_type_name: str | None = None,
 ) -> dict:
     from datetime import datetime, timezone
     if expires_at is None:
@@ -69,6 +70,7 @@ def _notify_send_provision(
         asset_name=asset_name or "",
         rdp_users=rdp_users or [],
         expires_at=expires_at,
+        asset_type_name=asset_type_name,
     )
 
 
@@ -77,12 +79,14 @@ def _notify_send_reclaim(
     user_email: str,
     user_name: str,
     asset_name: str,
+    asset_type_name: str | None = None,
 ) -> dict:
     return notifications.send_reclaim_notification(
         db=db,
         user_email=user_email or "",
         user_name=user_name or "",
         asset_name=asset_name or "",
+        asset_type_name=asset_type_name,
     )
 
 

@@ -11,7 +11,7 @@ import base64
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -105,7 +105,9 @@ _STATUS_COLORS = {
     "revoked":      "bg-gray-100 text-gray-500",
     "failed":       "bg-red-100 text-red-700",
     "expired":      "bg-orange-100 text-orange-700",
-    "cancelled":    "bg-gray-100 text-gray-500",
+    "cancelled":        "bg-gray-100 text-gray-500",
+    "pending_approval": "bg-amber-100 text-amber-700",
+    "rejected":         "bg-red-100 text-red-700",
 }
 
 _STEP_COLORS = {
@@ -235,6 +237,32 @@ async def _get_unavailable_type_ids(db: AsyncSession, asset_types: list) -> set[
     return unavailable
 
 
+def _filter_eligible_asset_types(asset_types: list, user_email: str) -> list:
+    """Filter asset types to only those the user is eligible to request.
+
+    Asset types with an ``eligible_requestors_dn`` are restricted to members
+    of that AD group.  Types without a DN are open to all domain users.
+    """
+    from app.utils.ad_lookup import check_group_membership
+
+    # Collect unique group DNs to avoid duplicate LDAP calls
+    unique_dns: dict[str, bool] = {}
+    for t in asset_types:
+        dn = getattr(t, "eligible_requestors_dn", None)
+        if dn and dn not in unique_dns:
+            result = check_group_membership(user_email, dn)
+            unique_dns[dn] = result.get("is_member", False) if result.get("success") else True
+
+    eligible = []
+    for t in asset_types:
+        dn = getattr(t, "eligible_requestors_dn", None)
+        if not dn:
+            eligible.append(t)
+        elif unique_dns.get(dn, True):
+            eligible.append(t)
+    return eligible
+
+
 # ── New Order ──────────────────────────────────────────────────────────────────
 
 @router.get("/orders/new", response_class=HTMLResponse)
@@ -244,7 +272,8 @@ async def portal_new_order_form(
     current_user: dict = Depends(require_portal_auth),
 ):
     types_result = await db.execute(select(AssetType).order_by(AssetType.name))
-    asset_types = list(types_result.scalars().all())
+    all_types = list(types_result.scalars().all())
+    asset_types = _filter_eligible_asset_types(all_types, current_user["email"])
     unavailable_ids = await _get_unavailable_type_ids(db, asset_types)
 
     # Load max advance days setting
@@ -360,7 +389,8 @@ async def portal_create_order(
 
     async def _render_error(msg: str):
         types_result = await db.execute(select(AssetType).order_by(AssetType.name))
-        all_types = list(types_result.scalars().all())
+        all_types_raw = list(types_result.scalars().all())
+        all_types = _filter_eligible_asset_types(all_types_raw, current_user["email"])
         max_adv_row = await db.execute(
             select(AppConfig.value).where(AppConfig.key == "portal.max_advance_days")
         )
@@ -414,6 +444,13 @@ async def portal_create_order(
     if not asset_type:
         return await _render_error("Unknown asset type.")
 
+    # Eligibility check — ensure user is member of the required group
+    if asset_type.eligible_requestors_dn:
+        from app.utils.ad_lookup import check_group_membership
+        membership = check_group_membership(user_email, asset_type.eligible_requestors_dn)
+        if membership.get("success") and not membership.get("is_member"):
+            return await _render_error("You are not eligible to request this asset type.")
+
     # Pool availability check
     unavail = await _get_unavailable_type_ids(db, [asset_type])
     if asset_type.id in unavail:
@@ -431,6 +468,35 @@ async def portal_create_order(
     # Determine if this is a future-dated order
     is_future = from_dt.date() > date.today()
 
+    # ── Approval gate ────────────────────────────────────────────────────────
+    needs_manager_approval = asset_type.requires_manager_approval
+    needs_owner_approval = asset_type.requires_owner_approval
+    needs_any_approval = needs_manager_approval or needs_owner_approval
+
+    manager_info = None
+    if needs_manager_approval:
+        from app.utils.ad_lookup import lookup_manager
+        mgr_result = lookup_manager(user_email)
+        if not mgr_result.get("success"):
+            return await _render_error(
+                "Could not look up your manager information in Active Directory. Please contact support."
+            )
+        manager_info = mgr_result.get("manager")
+        if manager_info is None:
+            return await _render_error(
+                "This asset can only be ordered through management approval but there is "
+                "currently no manager configured in Active Directory for your account. "
+                "Please contact support."
+            )
+
+    # Determine initial status
+    if needs_any_approval:
+        initial_status = OrderStatus.PENDING_APPROVAL
+    elif is_future:
+        initial_status = OrderStatus.SCHEDULED
+    else:
+        initial_status = OrderStatus.PENDING
+
     order = Order(
         user_email=user_email,
         user_name=user_name,
@@ -442,14 +508,72 @@ async def portal_create_order(
         requested_from=from_dt,
         requested_until=until_dt,
         action=OrderAction.PROVISION,
-        status=OrderStatus.SCHEDULED if is_future else OrderStatus.PENDING,
+        status=initial_status,
         config=order_config,
     )
     db.add(order)
     await db.flush()
 
-    if is_future:
-        # Future-dated: don't dispatch the runbook yet; Beat task will dispatch on start date
+    if needs_any_approval:
+        # Create approval records
+        from app.models.approval import OrderApproval
+
+        if needs_manager_approval and manager_info:
+            db.add(OrderApproval(
+                order_id=order.id,
+                approver_type="manager",
+                approver_email=manager_info["email"],
+                approver_name=manager_info["display_name"],
+            ))
+
+        if needs_owner_approval and asset_type.approval_owners:
+            for owner in asset_type.approval_owners:
+                db.add(OrderApproval(
+                    order_id=order.id,
+                    approver_type="application_owner",
+                    approver_email=owner["email"],
+                    approver_name=owner.get("name", owner["email"]),
+                ))
+
+        await db.flush()
+
+        # Send approval request emails via Celery
+        from celery import Celery
+        celery_app = Celery(broker=settings.CELERY_BROKER_URL)
+        celery_app.send_task(
+            "tasks.workflows.dynamic_runner.send_approval_requests",
+            args=[order.id],
+            queue="provision",
+        )
+        logger.info("Portal: Order %s created with pending approval, user=%s", order.id, order.user_email)
+
+    elif is_future:
+        # Future-dated: reserve asset now, dispatch runbook later on start date
+        needs_asset = asset_type.assignment_model in ("assigned_personal", "dedicated_shared")
+        if needs_asset:
+            # Reserve a free asset immediately so it's guaranteed on start day
+            reserve_row = await db.execute(sql_text("""
+                SELECT id, name FROM asset_pool
+                WHERE asset_type_id = :at AND status = 'free'
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            """), {"at": asset_type_id})
+            free_asset = reserve_row.fetchone()
+            if not free_asset:
+                return await _render_error(
+                    f"No free assets available for \"{asset_type.name}\". Please try again later."
+                )
+            await db.execute(sql_text("""
+                UPDATE asset_pool
+                SET status = 'reserved', current_order_id = :oid, expires_at = :exp
+                WHERE id = :aid
+            """), {"aid": free_asset.id, "oid": order.id, "exp": until_dt})
+            order.assigned_asset_id = free_asset.id
+            logger.info(
+                "Portal: Reserved asset %s (%s) for scheduled order %s",
+                free_asset.id, free_asset.name, order.id,
+            )
+
         # Send confirmation email immediately so user knows the order is received
         from celery import Celery
         celery_app = Celery(broker=settings.CELERY_BROKER_URL)
@@ -512,6 +636,15 @@ async def portal_order_detail(
             duration = f"{secs:.1f}s"
         steps_with_duration.append({"step": step, "duration": duration})
 
+    # Load approval records (if any)
+    approvals = []
+    if order.status in (OrderStatus.PENDING_APPROVAL, OrderStatus.REJECTED):
+        from app.models.approval import OrderApproval
+        appr_result = await db.execute(
+            select(OrderApproval).where(OrderApproval.order_id == order.id)
+        )
+        approvals = list(appr_result.scalars().all())
+
     return templates.TemplateResponse("portal/order_detail.html", {
         "request": request,
         "active_page": "overview",
@@ -521,6 +654,7 @@ async def portal_order_detail(
         "asset_type_name": asset_type_name,
         "asset_name": asset_name,
         "steps_with_duration": steps_with_duration,
+        "approvals": approvals,
         "status_colors": _STATUS_COLORS,
         "step_colors": _STEP_COLORS,
         "today": date.today().isoformat(),
@@ -665,6 +799,21 @@ async def portal_change_order(
         if asset:
             asset.expires_at = requested_until
 
+    # ── Check if re-approval is needed on user-list changes ────────────────────
+    asset_type = await db.get(AssetType, original.asset_type_id)
+    users_changed = (
+        sorted(rdp_clean) != sorted(original.rdp_users or [])
+        or sorted(admin_clean) != sorted(original.admin_users or [])
+    )
+    needs_reapproval = (
+        asset_type
+        and asset_type.requires_approval_on_modify
+        and users_changed
+        and (asset_type.requires_manager_approval or asset_type.requires_owner_approval)
+    )
+
+    initial_status = OrderStatus.PENDING_APPROVAL if needs_reapproval else OrderStatus.PENDING
+
     new_order = Order(
         user_email=original.user_email,
         user_name=original.user_name,
@@ -677,14 +826,52 @@ async def portal_change_order(
         requested_from=original.requested_from,
         requested_until=requested_until,
         action=OrderAction.MODIFY,
-        status=OrderStatus.PENDING,
+        status=initial_status,
     )
     db.add(new_order)
     await db.flush()
 
-    from app.routes.webhook import _dispatch_runbook
-    new_order.celery_task_id = _dispatch_runbook(new_order)
-    new_order.status = OrderStatus.PROCESSING
+    if needs_reapproval:
+        # Create approval records (same logic as new-order approval gate)
+        from app.models.approval import OrderApproval
+
+        if asset_type.requires_manager_approval:
+            from app.utils.ad_lookup import lookup_manager
+            mgr_result = lookup_manager(original.user_email)
+            manager_info = mgr_result.get("manager") if mgr_result.get("success") else None
+            if manager_info:
+                db.add(OrderApproval(
+                    order_id=new_order.id,
+                    approver_type="manager",
+                    approver_email=manager_info["email"],
+                    approver_name=manager_info["display_name"],
+                ))
+
+        if asset_type.requires_owner_approval and asset_type.approval_owners:
+            for owner in asset_type.approval_owners:
+                db.add(OrderApproval(
+                    order_id=new_order.id,
+                    approver_type="application_owner",
+                    approver_email=owner["email"],
+                    approver_name=owner.get("name", owner["email"]),
+                ))
+
+        await db.flush()
+
+        # Send approval request emails
+        from celery import Celery
+        celery_app = Celery(broker=settings.CELERY_BROKER_URL)
+        celery_app.send_task(
+            "tasks.workflows.dynamic_runner.send_approval_requests",
+            args=[new_order.id],
+            queue="provision",
+        )
+        logger.info("Portal: Modify order %s requires re-approval, user=%s", new_order.id, original.user_email)
+    else:
+        from app.routes.webhook import _dispatch_runbook
+        new_order.celery_task_id = _dispatch_runbook(new_order)
+        new_order.status = OrderStatus.PROCESSING
+
     await db.commit()
 
     logger.info("Portal: Change order id=%s from order=%s", new_order.id, order_id)
@@ -711,8 +898,16 @@ async def portal_cancel_order(
             detail="Only active or scheduled orders can be cancelled",
         )
 
-    # Scheduled orders: simply cancel (nothing provisioned yet)
+    # Scheduled orders: cancel + release reserved asset (nothing provisioned yet)
     if original.status == OrderStatus.SCHEDULED:
+        if original.assigned_asset_id:
+            await db.execute(sql_text("""
+                UPDATE asset_pool
+                SET status = 'free', current_order_id = NULL, expires_at = NULL
+                WHERE id = :aid AND status = 'reserved'
+            """), {"aid": original.assigned_asset_id})
+            logger.info("Portal: Released reserved asset %s for cancelled order %s",
+                        original.assigned_asset_id, order_id)
         original.status = OrderStatus.CANCELLED
         await db.commit()
         logger.info("Portal: Scheduled order cancelled id=%s", order_id)
@@ -740,6 +935,9 @@ async def portal_cancel_order(
     from app.routes.webhook import _dispatch_runbook
     cancel_order.celery_task_id = _dispatch_runbook(cancel_order)
     cancel_order.status = OrderStatus.PROCESSING
+
+    # Mark original provision order as cancelled so it disappears from My IT
+    original.status = OrderStatus.CANCELLED
     await db.commit()
 
     logger.info("Portal: Cancel order id=%s from order=%s", cancel_order.id, order_id)
@@ -754,6 +952,8 @@ async def portal_my_it(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_portal_auth),
 ):
+
+
     result = await db.execute(
         select(Order)
         .options(selectinload(Order.steps))
@@ -869,6 +1069,177 @@ async def portal_my_it_detail(
         "effective_rdp_users": effective_rdp_users,
         "effective_admin_users": effective_admin_users,
     })
+
+
+# ── Approvals ─────────────────────────────────────────────────────────────────
+
+@router.get("/approvals", response_class=HTMLResponse)
+async def portal_approvals(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
+    show_recent: bool = False,
+):
+    from app.models.approval import OrderApproval
+
+    # Pending approvals for the current user
+    pending_result = await db.execute(
+        select(OrderApproval)
+        .where(OrderApproval.approver_email == current_user["email"])
+        .where(OrderApproval.status == "pending")
+        .order_by(OrderApproval.created_at.desc())
+    )
+    pending_rows = list(pending_result.scalars().all())
+
+    # Load associated orders and asset type names
+    pending_approvals = []
+    for a in pending_rows:
+        order = await db.get(Order, a.order_id)
+        if not order:
+            continue
+        at = await db.get(AssetType, order.asset_type_id)
+        pending_approvals.append({
+            "approval": a,
+            "order": order,
+            "asset_type_name": at.name if at else f"Type {order.asset_type_id}",
+        })
+
+    # Recent decisions (optional)
+    recent_approvals = []
+    if show_recent:
+        recent_result = await db.execute(
+            select(OrderApproval)
+            .where(OrderApproval.approver_email == current_user["email"])
+            .where(OrderApproval.status.in_(["approved", "declined"]))
+            .order_by(OrderApproval.decided_at.desc())
+            .limit(20)
+        )
+        for a in recent_result.scalars().all():
+            order = await db.get(Order, a.order_id)
+            if not order:
+                continue
+            at = await db.get(AssetType, order.asset_type_id)
+            recent_approvals.append({
+                "approval": a,
+                "order": order,
+                "asset_type_name": at.name if at else f"Type {order.asset_type_id}",
+            })
+
+    return templates.TemplateResponse("portal/approvals.html", {
+        "request": request,
+        "active_page": "approvals",
+        "user": current_user,
+        "pending_approvals": pending_approvals,
+        "pending_count": len(pending_approvals),
+        "recent_approvals": recent_approvals,
+        "show_recent": show_recent,
+    })
+
+
+@router.post("/approvals/{approval_id}/decide")
+async def portal_decide_approval(
+    request: Request,
+    approval_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
+    decision: str = Form(...),
+    comment: str = Form(default=""),
+):
+    from app.models.approval import OrderApproval
+
+    result = await db.execute(select(OrderApproval).where(OrderApproval.id == approval_id))
+    approval = result.scalar_one_or_none()
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval not found")
+
+    if approval.approver_email != current_user["email"]:
+        raise HTTPException(status_code=403, detail="You are not the designated approver")
+
+    if approval.status != "pending":
+        return RedirectResponse(url="/portal/approvals", status_code=303)
+
+    # Record decision
+    approval.status = "approved" if decision == "approve" else "declined"
+    approval.decided_at = datetime.now(timezone.utc)
+    approval.comment = comment.strip() or None
+
+    order = await db.get(Order, approval.order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    from celery import Celery
+    celery_app = Celery(broker=settings.CELERY_BROKER_URL)
+
+    if decision != "approve":
+        # Decline: reject the order immediately
+        order.status = OrderStatus.REJECTED
+        order.error_message = f"Declined by {approval.approver_name}: {comment.strip() or 'no reason given'}"
+        celery_app.send_task(
+            "tasks.workflows.dynamic_runner.send_approval_result_email",
+            args=[order.id, False, approval.approver_name, comment.strip() or None],
+            queue="provision",
+        )
+        logger.info("Approval %s declined by %s for order %s", approval_id, current_user["email"], order.id)
+    else:
+        # Approve: check if all approvals are now granted
+        all_result = await db.execute(
+            select(OrderApproval).where(OrderApproval.order_id == order.id)
+        )
+        all_approvals = list(all_result.scalars().all())
+        all_approved = all(a.status == "approved" for a in all_approvals)
+
+        if all_approved:
+            # All approved — proceed with order
+            await _post_approval_dispatch(order, db, celery_app)
+            celery_app.send_task(
+                "tasks.workflows.dynamic_runner.send_approval_result_email",
+                args=[order.id, True],
+                queue="provision",
+            )
+            logger.info("All approvals granted for order %s — dispatching", order.id)
+        else:
+            logger.info("Approval %s approved by %s for order %s (still pending others)",
+                        approval_id, current_user["email"], order.id)
+
+    await db.commit()
+    return RedirectResponse(url="/portal/approvals", status_code=303)
+
+
+async def _post_approval_dispatch(order: Order, db: AsyncSession, celery_app) -> None:
+    """After all approvals granted, transition order to normal flow."""
+    asset_type = await db.get(AssetType, order.asset_type_id)
+    is_future = order.requested_from and order.requested_from.date() > date.today()
+
+    if is_future:
+        order.status = OrderStatus.SCHEDULED
+        # Reserve asset for future-dated orders
+        if asset_type and asset_type.assignment_model in ("assigned_personal", "dedicated_shared"):
+            reserve_row = await db.execute(sql_text("""
+                SELECT id, name FROM asset_pool
+                WHERE asset_type_id = :at AND status = 'free'
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            """), {"at": order.asset_type_id})
+            free_asset = reserve_row.fetchone()
+            if free_asset:
+                await db.execute(sql_text("""
+                    UPDATE asset_pool
+                    SET status = 'reserved', current_order_id = :oid, expires_at = :exp
+                    WHERE id = :aid
+                """), {"aid": free_asset.id, "oid": order.id, "exp": order.requested_until})
+                order.assigned_asset_id = free_asset.id
+
+        celery_app.send_task(
+            "tasks.workflows.dynamic_runner.send_scheduled_confirmation",
+            args=[order.id],
+            queue="provision",
+        )
+    else:
+        order.status = OrderStatus.PENDING
+        from app.routes.webhook import _dispatch_runbook
+        task_id = _dispatch_runbook(order)
+        order.celery_task_id = task_id
+        order.status = OrderStatus.PROCESSING
 
 
 # ── HTMX: User Validation ──────────────────────────────────────────────────────

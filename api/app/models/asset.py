@@ -117,6 +117,24 @@ class AssetType(Base):
     allow_admin_users: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # RDS Gateway URL (included in provisioning email so users know how to connect)
+    rds_gateway_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Approval workflow
+    requires_manager_approval: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    requires_owner_approval: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    approval_owners: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    requires_approval_on_modify: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Optional AD group DN restricting who can request this asset type.
+    # NULL = any domain user can request.
+    eligible_requestors_dn: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

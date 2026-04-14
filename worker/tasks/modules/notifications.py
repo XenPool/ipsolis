@@ -168,11 +168,15 @@ def send_provision_confirmation(
     rdp_users: list[str],
     expires_at: datetime,
     rdp_hostname: str | None = None,
+    rds_gateway_url: str | None = None,
+    asset_type_name: str | None = None,
 ) -> dict:
     """Sends provisioning confirmation to the user.
 
     If rdp_hostname is provided (personal VDI assignment), a .rdp file is
     attached so the user can connect directly by opening the attachment.
+    If rds_gateway_url is provided, it is included in the email template
+    variables so the user knows where to connect.
     """
     from tasks.modules.config_reader import get_config
 
@@ -180,13 +184,24 @@ def send_provision_confirmation(
     mail_from = get_config(db, "email.from", MAIL_FROM)
     bcc = get_config(db, "email.bcc")
 
+    # Build RDS gateway info block (HTML) for the template
+    rds_gateway_info = ""
+    if rds_gateway_url:
+        rds_gateway_info = (
+            f'<p>Connect via the RDS Gateway: '
+            f'<a href="{rds_gateway_url}" style="color:#BB0A30;font-weight:bold;">{rds_gateway_url}</a></p>'
+        )
+
     variables = {
         "company_name": company_name,
         "requester_name": user_name,
         "requester_email": user_email,
-        "asset_name": asset_name,
-        "rdp_users": ", ".join(rdp_users) if rdp_users else "(none)",
+        "asset_name": asset_name or "",
+        "asset_type_name": asset_type_name or "",
+        "rdp_users": ", ".join(rdp_users) if rdp_users else "",
         "expires_at": expires_at.strftime("%d.%m.%Y %H:%M"),
+        "rds_gateway_url": rds_gateway_url or "",
+        "rds_gateway_info": rds_gateway_info,
     }
 
     subject, body = _render_template(db, "provision_confirmation", variables)
@@ -277,8 +292,9 @@ def send_reclaim_notification(
     user_email: str,
     user_name: str,
     asset_name: str,
+    asset_type_name: str | None = None,
 ) -> dict:
-    """Notifies user about resource being returned to the pool."""
+    """Notifies user about resource being revoked / returned to the pool."""
     from tasks.modules.config_reader import get_config
 
     company_name = get_config(db, "company.name", "XenPool")
@@ -289,10 +305,86 @@ def send_reclaim_notification(
         "company_name": company_name,
         "requester_name": user_name,
         "requester_email": user_email,
-        "asset_name": asset_name,
+        "asset_name": asset_name or "",
+        "asset_type_name": asset_type_name or "",
     }
 
     subject, body = _render_template(db, "reclaim_notification", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+
+    html = _build_branded_html(body, company_name, subject)
+    return _send_html_email_multi(db, [user_email], bcc, mail_from, subject, html)
+
+
+def send_approval_request(
+    db: "Session",
+    approver_email: str,
+    approver_name: str,
+    requester_name: str,
+    requester_email: str,
+    asset_type_name: str,
+    from_date: str = "",
+    until_date: str = "",
+    approval_url: str = "",
+) -> dict:
+    """Sends an approval request email to a manager or application owner."""
+    from tasks.modules.config_reader import get_config
+
+    company_name = get_config(db, "company.name", "XenPool")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    variables = {
+        "company_name": company_name,
+        "approver_name": approver_name,
+        "requester_name": requester_name,
+        "requester_email": requester_email,
+        "asset_type_name": asset_type_name,
+        "from_date": from_date,
+        "until_date": until_date,
+        "approval_url": approval_url or "",
+    }
+
+    subject, body = _render_template(db, "approval_request", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+
+    html = _build_branded_html(body, company_name, subject)
+    return _send_html_email_multi(db, [approver_email], bcc, mail_from, subject, html)
+
+
+def send_approval_result(
+    db: "Session",
+    user_email: str,
+    user_name: str,
+    asset_type_name: str,
+    approved: bool,
+    approver_name: str = "",
+    decline_reason: str | None = None,
+) -> dict:
+    """Sends approval granted or declined notification to the requester."""
+    from tasks.modules.config_reader import get_config
+
+    company_name = get_config(db, "company.name", "XenPool")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    decline_reason_block = ""
+    if not approved and decline_reason:
+        decline_reason_block = f'<p><strong>Reason:</strong> {decline_reason}</p>'
+
+    variables = {
+        "company_name": company_name,
+        "requester_name": user_name,
+        "requester_email": user_email,
+        "asset_type_name": asset_type_name,
+        "approver_name": approver_name,
+        "decline_reason_block": decline_reason_block,
+    }
+
+    event_key = "approval_granted" if approved else "approval_declined"
+    subject, body = _render_template(db, event_key, variables)
     if subject is None:
         return {"success": True, "skipped": True, "reason": "template inactive"}
 

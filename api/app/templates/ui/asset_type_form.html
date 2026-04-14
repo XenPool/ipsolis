@@ -192,6 +192,96 @@
       </div>
     </div>
 
+    <!-- RDS Gateway URL -->
+    <div class="border-t border-gray-100 pt-5">
+      <label class="block text-xs font-medium text-gray-600 mb-1">RDS Gateway URL</label>
+      <p class="text-xs text-gray-400 mb-2">
+        Included in the provisioning confirmation email so users know how to connect.
+        Leave blank if not applicable.
+      </p>
+      <input type="text" id="rds-gateway-url"
+             value="{{ asset_type.rds_gateway_url if asset_type and asset_type.rds_gateway_url else '' }}"
+             placeholder="https://rdgateway.example.com/RDWeb"
+             class="w-full max-w-lg rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+    </div>
+
+    <!-- Eligible Requestors -->
+    <div class="border-t border-gray-100 pt-5">
+      <label class="block text-xs font-medium text-gray-600 mb-2">Eligible Requestors</label>
+      <p class="text-xs text-gray-400 mb-2">
+        Optional AD group (as Distinguished Name) whose members may request this asset type.
+        Leave empty to allow all domain users.
+      </p>
+      <input type="text" id="eligible-requestors-dn"
+             value="{{ asset_type.eligible_requestors_dn or '' if asset_type else '' }}"
+             placeholder="CN=VDI-Users,OU=Groups,DC=example,DC=com"
+             class="w-full max-w-lg rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+    </div>
+
+    <!-- Approval Workflow -->
+    <div class="border-t border-gray-100 pt-5">
+      <label class="block text-xs font-medium text-gray-600 mb-2">Approval Workflow</label>
+      <p class="text-xs text-gray-400 mb-3">
+        When enabled, new orders require approval before provisioning begins.
+      </p>
+      <div class="flex flex-col gap-3">
+        <!-- Manager Approval Toggle -->
+        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="checkbox" id="requires-manager-approval-cb"
+                 {% if asset_type and asset_type.requires_manager_approval %}checked{% endif %}
+                 class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+          Requires Manager Approval
+          <span class="text-xs text-gray-400">(looked up from the user's AD manager attribute)</span>
+        </label>
+
+        <!-- Application Owner Approval Toggle + Owner List -->
+        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="checkbox" id="requires-owner-approval-cb"
+                 {% if asset_type and asset_type.requires_owner_approval %}checked{% endif %}
+                 onchange="toggleOwnerSection()"
+                 class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+          Requires Application Owner Approval
+        </label>
+
+        <!-- Owner input section (shown when toggle is checked) -->
+        <div id="owner-approval-section"
+             class="{% if not asset_type or not asset_type.requires_owner_approval %}hidden{% endif %} ml-6 border-l-2 border-blue-200 pl-4">
+          <label class="block text-xs text-gray-500 mb-1">Application Owners</label>
+          <div id="approval-owner-list" class="flex flex-wrap gap-2 mb-2">
+            {% if asset_type and asset_type.approval_owners %}
+              {% for owner in asset_type.approval_owners %}
+              <div class="inline-flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-full px-3 py-1 text-sm">
+                <span class="text-amber-800">{{ owner.email }}</span>
+                <button type="button" onclick="this.closest('div').remove()" class="text-amber-400 hover:text-red-500 font-bold leading-none">&times;</button>
+              </div>
+              {% endfor %}
+            {% endif %}
+          </div>
+          <div class="flex items-start gap-2">
+            <div class="flex-1">
+              <input type="text" id="approval-owner-input" placeholder="Email or sAMAccountName"
+                     class="w-full max-w-md rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                     onkeydown="if(event.key==='Enter'){event.preventDefault();addApprovalOwner()}">
+              <div id="approval-owner-validate-result" class="mt-1 min-h-[1.25rem]"></div>
+            </div>
+            <button type="button" onclick="addApprovalOwner()"
+                    class="px-3 py-2 bg-gray-100 text-gray-700 text-sm rounded border border-gray-300 hover:bg-gray-200 whitespace-nowrap">
+              + Add
+            </button>
+          </div>
+        </div>
+
+        <!-- Re-approval on Modify Toggle -->
+        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer mt-2 pt-2 border-t border-gray-100">
+          <input type="checkbox" id="requires-approval-on-modify-cb"
+                 {% if asset_type and asset_type.requires_approval_on_modify %}checked{% endif %}
+                 class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+          Require Re-Approval on Asset Modification
+          <span class="text-xs text-gray-400">(RDP/Admin user changes need new approval)</span>
+        </label>
+      </div>
+    </div>
+
     <!-- Automation Strategy -->
     {% set strat = asset_type.automation_strategy if asset_type and asset_type.automation_strategy else ('group_only' if asset_type and asset_type.automation_mode == 'targets_only' else 'runbook_only') %}
     <div class="border-t border-gray-100 pt-5">
@@ -884,6 +974,12 @@ async function submitForm() {
     naming_pattern: form.querySelector('[name="naming_pattern"]').value.trim() || null,
     max_per_user: form.querySelector('[name="max_per_user"]').value
       ? parseInt(form.querySelector('[name="max_per_user"]').value) : 1,
+    rds_gateway_url: document.getElementById('rds-gateway-url').value.trim() || null,
+    requires_manager_approval: document.getElementById('requires-manager-approval-cb').checked,
+    requires_owner_approval: document.getElementById('requires-owner-approval-cb').checked,
+    approval_owners: collectApprovalOwners(),
+    requires_approval_on_modify: document.getElementById('requires-approval-on-modify-cb').checked,
+    eligible_requestors_dn: document.getElementById('eligible-requestors-dn').value.trim() || null,
   };
 
   {% if asset_type %}
@@ -903,6 +999,58 @@ async function submitForm() {
     document.getElementById('form-result').innerHTML =
       '<div class="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">' + JSON.stringify(err) + '</div>';
   }
+}
+
+// ── Approval Workflow ─────────────────────────────────────────────────────────
+function toggleOwnerSection() {
+  var checked = document.getElementById('requires-owner-approval-cb').checked;
+  document.getElementById('owner-approval-section').classList.toggle('hidden', !checked);
+}
+
+async function addApprovalOwner() {
+  var input = document.getElementById('approval-owner-input');
+  var val = input.value.trim();
+  if (!val) return;
+
+  var resultDiv = document.getElementById('approval-owner-validate-result');
+  resultDiv.innerHTML = '<span class="text-xs text-gray-500">Validating...</span>';
+
+  try {
+    var r = await fetch('/admin/_validate-user?q=' + encodeURIComponent(val));
+    var html = await r.text();
+    resultDiv.innerHTML = html;
+    var span = resultDiv.querySelector('span[data-valid]');
+    if (!span || span.dataset.valid !== 'true') return;
+
+    var email = span.dataset.email;
+    var name = span.dataset.name;
+
+    // Prevent duplicates
+    var existing = Array.from(document.querySelectorAll('#approval-owner-list div')).map(function(d) {
+      return d.querySelector('span').textContent.trim();
+    });
+    if (existing.indexOf(email) !== -1) { input.value = ''; resultDiv.innerHTML = ''; return; }
+
+    var chip = document.createElement('div');
+    chip.className = 'inline-flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-full px-3 py-1 text-sm';
+    chip.innerHTML =
+      '<span class="text-amber-800">' + email + '</span>'
+      + '<input type="hidden" data-owner-email="' + email + '" data-owner-name="' + name + '">'
+      + '<button type="button" onclick="this.closest(\'div\').remove()" class="text-amber-400 hover:text-red-500 font-bold leading-none">\xd7</button>';
+    document.getElementById('approval-owner-list').appendChild(chip);
+    input.value = '';
+    resultDiv.innerHTML = '';
+  } catch(e) {
+    resultDiv.innerHTML = '<span class="text-xs text-red-600">Validation error</span>';
+  }
+}
+
+function collectApprovalOwners() {
+  var owners = [];
+  document.querySelectorAll('#approval-owner-list input[data-owner-email]').forEach(function(inp) {
+    owners.push({ email: inp.dataset.ownerEmail, name: inp.dataset.ownerName });
+  });
+  return owners.length > 0 ? owners : null;
 }
 </script>
 {% endblock %}

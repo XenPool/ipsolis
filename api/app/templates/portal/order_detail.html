@@ -46,6 +46,52 @@
 </div>
 {% endif %}
 
+<!-- Pending approval banner -->
+{% if order.status.value == "pending_approval" %}
+<div class="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+  <div class="flex items-center gap-2 mb-2">
+    <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <p class="text-sm font-medium text-amber-800">Awaiting Approval</p>
+  </div>
+  {% if approvals %}
+  <div class="ml-6 space-y-1">
+    {% for a in approvals %}
+    <div class="flex items-center gap-2 text-xs">
+      <span class="inline-block w-2 h-2 rounded-full {% if a.status == 'approved' %}bg-green-500{% elif a.status == 'declined' %}bg-red-500{% else %}bg-amber-400{% endif %}"></span>
+      <span class="text-gray-700">{{ a.approver_name }} ({{ 'Manager' if a.approver_type == 'manager' else 'App Owner' }})</span>
+      <span class="text-gray-400">– {{ a.status }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Rejected banner -->
+{% if order.status.value == "rejected" %}
+<div class="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+  <div class="flex items-center gap-2 mb-2">
+    <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <p class="text-sm font-medium text-red-800">Order Rejected</p>
+  </div>
+  {% if approvals %}
+  <div class="ml-6 space-y-1">
+    {% for a in approvals %}
+    <div class="flex items-center gap-2 text-xs">
+      <span class="inline-block w-2 h-2 rounded-full {% if a.status == 'approved' %}bg-green-500{% elif a.status == 'declined' %}bg-red-500{% else %}bg-gray-400{% endif %}"></span>
+      <span class="text-gray-700">{{ a.approver_name }} ({{ 'Manager' if a.approver_type == 'manager' else 'App Owner' }})</span>
+      <span class="text-gray-400">– {{ a.status }}{% if a.comment %}: {{ a.comment }}{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <!-- Error banner -->
 {% if order.error_message %}
 <div class="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3">

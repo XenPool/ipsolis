@@ -173,6 +173,7 @@ def _run_targets_mode(
     assignment_model: str,
     deprovision_policy: str = "access_only",
     automation_strategy: str = "group_only",
+    rds_gateway_url: str | None = None,
     _set_delivered: bool = True,
 ) -> dict:
     """Executes an order in group_only/targets_only automation mode.
@@ -231,9 +232,21 @@ def _run_targets_mode(
 
         # Step 2: Reserve asset first (critical, nur bei assigned_personal/dedicated_shared)
         # Must happen before Grant access so {asset_name} can be substituted in target identifiers.
-        reserved_asset_id = None
+        # If the order already has an assigned_asset_id (e.g. scheduled orders), skip reservation.
+        reserved_asset_id = order.get("assigned_asset_id")
         reserved_asset_name = None
-        if needs_asset:
+        if reserved_asset_id:
+            # Asset already reserved (scheduled order) – just look up the name
+            _row = db.execute(
+                text("SELECT name FROM asset_pool WHERE id = :id"),
+                {"id": reserved_asset_id},
+            ).fetchone()
+            reserved_asset_name = _row[0] if _row else None
+            logger.info(
+                "[targets_only] Asset already reserved: id=%s name=%s (scheduled order)",
+                reserved_asset_id, reserved_asset_name,
+            )
+        elif needs_asset:
             result = _run_step_inline(
                 db, order_id, "Reserve asset",
                 lambda: pool_manager.reserve_asset(
@@ -288,22 +301,26 @@ def _run_targets_mode(
         if reserved_asset_id:
             pool_manager.set_asset_busy(db, reserved_asset_id, order_id, expires_at)
 
-        # Grant confirmation email — personal VDI only (asset name + RDP attachment)
-        if assignment_model == "assigned_personal" and reserved_asset_name:
-            _hostname = reserved_asset_name
-            _run_step_inline(
-                db, order_id, "Grant confirmation email",
-                lambda: notif.send_provision_confirmation(
-                    db=db,
-                    user_email=order.get("user_email") or "",
-                    user_name=order.get("user_name") or "",
-                    asset_name=_hostname,
-                    rdp_users=order.get("rdp_users") or [],
-                    expires_at=expires_at,
-                    rdp_hostname=_hostname,
-                ),
-                critical=False,
-            )
+        # Grant confirmation email — sent for all assignment models
+        # Personal VDI: includes hostname + RDP file attachment
+        # Pooled/shared: includes RDS gateway URL (if configured) + asset type name
+        _hostname = reserved_asset_name if (assignment_model == "assigned_personal" and reserved_asset_name) else None
+        _conf_asset_name = reserved_asset_name or asset_type_name
+        _run_step_inline(
+            db, order_id, "Grant confirmation email",
+            lambda: notif.send_provision_confirmation(
+                db=db,
+                user_email=order.get("user_email") or "",
+                user_name=order.get("user_name") or "",
+                asset_name=_conf_asset_name or "",
+                rdp_users=order.get("rdp_users") or [],
+                expires_at=expires_at,
+                rdp_hostname=_hostname,
+                rds_gateway_url=rds_gateway_url,
+                asset_type_name=asset_type_name,
+            ),
+            critical=False,
+        )
 
         # Write provisioned_state after successful provision
         _write_provisioned_state(
@@ -337,21 +354,20 @@ def _run_targets_mode(
             db.commit()
             return {"success": False, "order_id": order_id, "failed_step": "Revoke access"}
 
-        # Revoke confirmation email — personal VDI only
-        if assignment_model == "assigned_personal":
-            _revoke_asset_name = _lookup_asset_name(db, order)
-            if _revoke_asset_name:
-                _rname = _revoke_asset_name
-                _run_step_inline(
-                    db, order_id, "Revoke confirmation email",
-                    lambda: notif.send_reclaim_notification(
-                        db=db,
-                        user_email=order.get("user_email") or "",
-                        user_name=order.get("user_name") or "",
-                        asset_name=_rname,
-                    ),
-                    critical=False,
-                )
+        # Revoke confirmation email — all assignment models
+        _revoke_asset_name = _lookup_asset_name(db, order) or ""
+        _revoke_display = _revoke_asset_name or asset_type_name
+        _run_step_inline(
+            db, order_id, "Revoke confirmation email",
+            lambda: notif.send_reclaim_notification(
+                db=db,
+                user_email=order.get("user_email") or "",
+                user_name=order.get("user_name") or "",
+                asset_name=_revoke_display,
+                asset_type_name=asset_type_name,
+            ),
+            critical=False,
+        )
 
         # Step 2+: Policy-Routing
         asset_id = order.get("assigned_asset_id")
@@ -889,6 +905,7 @@ def _run_composite_mode(
     deprovision_policy: str = "access_only",
     composite_steps: list | None = None,
     naming_pattern: str | None = None,
+    rds_gateway_url: str | None = None,
 ) -> dict:
     """Executes an order in COMPOSITE mode.
 
@@ -920,6 +937,7 @@ def _run_composite_mode(
                 asset_type_name, asset_type_description, assignment_model,
                 deprovision_policy=deprovision_policy,
                 automation_strategy="composite",
+                rds_gateway_url=rds_gateway_url,
                 _set_delivered=False,
             )
             if not result.get("success"):
@@ -1005,7 +1023,7 @@ def run(self: Task, order_id: int) -> dict:
             text("""
                 SELECT name, description, automation_mode, assignment_model,
                        deprovision_policy, automation_strategy, composite_steps,
-                       personal_provisioning_strategy, naming_pattern
+                       personal_provisioning_strategy, naming_pattern, rds_gateway_url
                 FROM asset_types WHERE id = :id
             """),
             {"id": order["asset_type_id"]},
@@ -1019,6 +1037,7 @@ def run(self: Task, order_id: int) -> dict:
         composite_steps = at_row[6] if at_row else None
         personal_provisioning_strategy = at_row[7] if at_row else "assign_existing_free"
         naming_pattern = at_row[8] if at_row else None
+        rds_gateway_url = at_row[9] if at_row else None
 
         # Fallback: derive automation_strategy from automation_mode (legacy records)
         if not automation_strategy:
@@ -1054,6 +1073,7 @@ def run(self: Task, order_id: int) -> dict:
                 asset_type_name, asset_type_description, assignment_model,
                 deprovision_policy=deprovision_policy,
                 automation_strategy=automation_strategy,
+                rds_gateway_url=rds_gateway_url,
             )
         elif automation_strategy == "composite":
             result = _run_composite_mode(
@@ -1062,6 +1082,7 @@ def run(self: Task, order_id: int) -> dict:
                 deprovision_policy=deprovision_policy,
                 composite_steps=composite_steps,
                 naming_pattern=naming_pattern,
+                rds_gateway_url=rds_gateway_url,
             )
         else:
             # runbook_only: execute runbook
@@ -1233,6 +1254,104 @@ def send_scheduled_confirmation(order_id: int) -> dict:
             "Sent scheduled order confirmation for order_id=%s (execution: %s)",
             order_id, scheduled_date,
         )
+        return result
+    finally:
+        db.close()
+
+
+@app.task(name="tasks.workflows.dynamic_runner.send_approval_requests")
+def send_approval_requests(order_id: int) -> dict:
+    """Sends approval request emails to all pending approvers for an order."""
+    from tasks.modules import notifications as notif
+    from tasks.modules.config_reader import get_config
+
+    db = _get_db_session()
+    try:
+        row = db.execute(
+            text("""
+                SELECT o.user_email, o.user_name,
+                       o.requested_from, o.requested_until,
+                       at.name as asset_type_name
+                FROM orders o
+                JOIN asset_types at ON at.id = o.asset_type_id
+                WHERE o.id = :id
+            """),
+            {"id": order_id},
+        ).fetchone()
+        if not row:
+            return {"success": False, "error": f"Order {order_id} not found"}
+
+        portal_base = get_config(db, "portal.base_url", "http://localhost:8000")
+        approval_url = f"{portal_base}/portal/approvals"
+
+        from_date = ""
+        until_date = ""
+        if row.requested_from:
+            rf = row.requested_from
+            if isinstance(rf, str):
+                rf = datetime.fromisoformat(rf)
+            from_date = rf.strftime("%d.%m.%Y")
+        if row.requested_until:
+            ru = row.requested_until
+            if isinstance(ru, str):
+                ru = datetime.fromisoformat(ru)
+            until_date = ru.strftime("%d.%m.%Y")
+
+        approvals = db.execute(
+            text("SELECT approver_email, approver_name FROM order_approvals WHERE order_id = :oid AND status = 'pending'"),
+            {"oid": order_id},
+        ).fetchall()
+
+        sent = 0
+        for a in approvals:
+            notif.send_approval_request(
+                db=db,
+                approver_email=a.approver_email,
+                approver_name=a.approver_name,
+                requester_name=row.user_name or "",
+                requester_email=row.user_email or "",
+                asset_type_name=row.asset_type_name or "",
+                from_date=from_date,
+                until_date=until_date,
+                approval_url=approval_url,
+            )
+            sent += 1
+
+        logger.info("Sent %d approval request emails for order_id=%s", sent, order_id)
+        return {"success": True, "sent": sent}
+    finally:
+        db.close()
+
+
+@app.task(name="tasks.workflows.dynamic_runner.send_approval_result_email")
+def send_approval_result_email(order_id: int, approved: bool, approver_name: str = "", decline_reason: str | None = None) -> dict:
+    """Sends approval granted or declined email to the requester."""
+    from tasks.modules import notifications as notif
+
+    db = _get_db_session()
+    try:
+        row = db.execute(
+            text("""
+                SELECT o.user_email, o.user_name, at.name as asset_type_name
+                FROM orders o
+                JOIN asset_types at ON at.id = o.asset_type_id
+                WHERE o.id = :id
+            """),
+            {"id": order_id},
+        ).fetchone()
+        if not row:
+            return {"success": False, "error": f"Order {order_id} not found"}
+
+        result = notif.send_approval_result(
+            db=db,
+            user_email=row.user_email or "",
+            user_name=row.user_name or "",
+            asset_type_name=row.asset_type_name or "",
+            approved=approved,
+            approver_name=approver_name,
+            decline_reason=decline_reason,
+        )
+        logger.info("Sent approval %s email for order_id=%s", "granted" if approved else "declined", order_id)
         return result
     finally:
         db.close()

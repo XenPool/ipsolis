@@ -25,17 +25,19 @@ class OrderAction(str, enum.Enum):
 
 
 class OrderStatus(str, enum.Enum):
-    PENDING      = "pending"
-    SCHEDULED    = "scheduled"      # Future-dated: asset reserved, execution delayed
-    PROCESSING   = "processing"
-    PROVISIONING = "provisioning"   # Worker started provision
-    PROVISIONED  = "provisioned"    # Provision completed (active)
-    DELIVERED    = "delivered"      # Legacy alias for PROVISIONED
-    REVOKING     = "revoking"       # Worker started revoke
-    REVOKED      = "revoked"        # Revoke completed
-    FAILED       = "failed"
-    EXPIRED      = "expired"
-    CANCELLED    = "cancelled"
+    PENDING          = "pending"
+    PENDING_APPROVAL = "pending_approval"  # Awaiting manager/owner approval
+    SCHEDULED        = "scheduled"         # Future-dated: asset reserved, execution delayed
+    PROCESSING       = "processing"
+    PROVISIONING     = "provisioning"      # Worker started provision
+    PROVISIONED      = "provisioned"       # Provision completed (active)
+    DELIVERED        = "delivered"          # Legacy alias for PROVISIONED
+    REVOKING         = "revoking"          # Worker started revoke
+    REVOKED          = "revoked"           # Revoke completed
+    FAILED           = "failed"
+    EXPIRED          = "expired"
+    CANCELLED        = "cancelled"
+    REJECTED         = "rejected"          # Approval declined
 
 
 class StepStatus(str, enum.Enum):
@@ -138,6 +140,9 @@ class Order(Base):
     )
     steps: Mapped[list["OrderStep"]] = relationship(
         "OrderStep", back_populates="order", cascade="all, delete-orphan"
+    )
+    approvals: Mapped[list["OrderApproval"]] = relationship(  # noqa: F821
+        "OrderApproval", back_populates="order", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
