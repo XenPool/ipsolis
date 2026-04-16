@@ -34,14 +34,16 @@ _PERSONAL = "assigned_personal"
 _SHARED   = "dedicated_shared"
 _POOLED   = "capacity_pooled"
 
-_RETURN_TO_POOL     = "return_to_pool"
-_DEALLOCATE         = "deallocate_instance"   # spec: STOP_INSTANCE
-_DELETE_INSTANCE    = "delete_instance"
-_CUSTOM_RUNBOOK     = "custom_runbook"        # spec: RUNBOOK policy
+_RETURN_TO_POOL            = "return_to_pool"
+_RETURN_TO_POOL_REINSTALL  = "return_to_pool_reinstall"
+_DEALLOCATE                = "deallocate_instance"   # spec: STOP_INSTANCE
+_DELETE_INSTANCE           = "delete_instance"
+_CUSTOM_RUNBOOK            = "custom_runbook"        # spec: RUNBOOK policy
 
 _ASSIGN_EXISTING_FREE = "assign_existing_free"
 
 _INSTANCE_LIFECYCLE_POLICIES = {_DEALLOCATE, _DELETE_INSTANCE}
+_POOL_RELEASE_POLICIES       = {_RETURN_TO_POOL, _RETURN_TO_POOL_REINSTALL}
 
 # Categories that represent pure access grants with no per-user VM instance.
 # These must use capacity_pooled and cannot use instance lifecycle deprovision actions.
@@ -85,17 +87,17 @@ def validate_asset_type(
                     f"deprovision_policy='{deprovision_policy}' requires instance lifecycle, "
                     f"which is not supported by automation_strategy='{automation_strategy}'. "
                     f"Allowed policies for group_only: "
-                    f"'access_only', 'return_to_pool', 'custom_runbook'."
+                    f"'access_only', 'return_to_pool', 'return_to_pool_reinstall', 'custom_runbook'."
                 ),
             ))
 
-    # ── Rule 2 – RETURN_TO_POOL requires PERSONAL + ASSIGN_EXISTING_FREE ──────
-    if deprovision_policy == _RETURN_TO_POOL:
+    # ── Rule 2 – RETURN_TO_POOL[_REINSTALL] requires PERSONAL + ASSIGN_EXISTING_FREE ──
+    if deprovision_policy in _POOL_RELEASE_POLICIES:
         if assignment_model != _PERSONAL:
             errors.append(ConstraintViolation(
                 code="RETURN_TO_POOL_REQUIRES_PERSONAL_ASSIGN_EXISTING_FREE",
                 message=(
-                    f"deprovision_policy='return_to_pool' requires "
+                    f"deprovision_policy='{deprovision_policy}' requires "
                     f"assignment_model='assigned_personal', got '{assignment_model}'."
                 ),
             ))
@@ -103,7 +105,7 @@ def validate_asset_type(
             errors.append(ConstraintViolation(
                 code="RETURN_TO_POOL_REQUIRES_PERSONAL_ASSIGN_EXISTING_FREE",
                 message=(
-                    f"deprovision_policy='return_to_pool' requires "
+                    f"deprovision_policy='{deprovision_policy}' requires "
                     f"personal_provisioning_strategy='assign_existing_free', "
                     f"got '{personal_provisioning_strategy}'."
                 ),

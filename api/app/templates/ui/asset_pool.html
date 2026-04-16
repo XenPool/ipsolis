@@ -504,12 +504,12 @@ async function saveEdit(id) {
     var resp = await fetch('/admin/assets/' + id, {
       method: 'PUT',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ status: newStatus, asset_metadata: meta }),
+      body: JSON.stringify({ name: newName, status: newStatus, asset_metadata: meta }),
     });
     if (!resp.ok) { var err = {}; try { err = await resp.json(); } catch(e) {} alert('Error: ' + (err.detail || resp.status)); return; }
     var updated = await resp.json();
     var idx = _allAssets.findIndex(function(x) { return x.id === id; });
-    if (idx >= 0) { _allAssets[idx].status = updated.status; _allAssets[idx].asset_metadata = meta; }
+    if (idx >= 0) { _allAssets[idx].name = updated.name; _allAssets[idx].status = updated.status; _allAssets[idx].asset_metadata = meta; }
     _editingId = null;
     renderTable();
   } catch(e) { alert('Network error: ' + e.message); }

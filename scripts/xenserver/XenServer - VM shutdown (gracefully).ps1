@@ -2,6 +2,11 @@
 # Performs a graceful shutdown of a VM with timeout and forced-shutdown fallback
 # XCP-ng / XenServer equivalent of: VMWare - VM shutdown (gracefully).ps1
 
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$VMName
+)
+
 #region Logging Function
 function Write-Log {
     param(
@@ -27,12 +32,12 @@ Write-Log "=== Starting XenServer Graceful Shutdown Script ===" 'INFO'
 
 $ErrorActionPreference = "Stop"
 
-# Centralized configuration - values injected via $PARAMS (XenPool module system)
+# Centralized configuration - hosting from $VARS (global), VM name from param()
 $config = @{
     XenServer = @{
-        ServerHost = $PARAMS.XenServerHost
-        AdminUser  = $PARAMS.XenServerAdminUser
-        AdminPW    = $PARAMS.XenServerAdminPW
+        ServerHost = $VARS.'xenserver.host'
+        AdminUser  = $VARS.'xenserver.username'
+        AdminPW    = $VARS.'xenserver.password'
     }
 
     Shutdown = @{
@@ -41,9 +46,6 @@ $config = @{
         ForcedShutdownDelay  = 30   # Seconds to wait before attempting forced shutdown
     }
 }
-
-# VM name from input parameter
-$VMName = $PARAMS.VMName
 
 Write-Log "Configuration loaded successfully" 'SUCCESS'
 Write-Log "Target VM: ${VMName}" 'INFO'

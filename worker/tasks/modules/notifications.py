@@ -392,13 +392,6 @@ def send_approval_result(
     return _send_html_email_multi(db, [user_email], bcc, mail_from, subject, html)
 
 
-def send_expiry_reminders() -> dict:
-    """Celery Beat task: sends reminder emails for expiring assets.
-    Production DB query and dispatch to be implemented in a future sprint.
-    """
-    return {"sent": 0}
-
-
 # ── RDP attachment helper ──────────────────────────────────────────────────────
 
 def _make_rdp_content(hostname: str) -> bytes:

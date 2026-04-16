@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-gray-50">
+<html lang="en" class="h-full">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,68 +7,126 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous"></script>
 </head>
-<body class="h-full">
+<body class="h-full flex bg-gray-50">
 
-  <!-- Navigation -->
-  <nav class="bg-white border-b border-gray-200 shadow-sm">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex items-center justify-between h-14">
-        <div class="flex items-center gap-6">
-          <span class="font-semibold text-gray-900 text-sm tracking-wide">{{ app_title }}</span>
-          <div class="flex gap-1">
-            <a href="/ui/"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'dashboard' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Dashboard
-            </a>
-            <a href="/ui/orders"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'orders' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Orders
-            </a>
-            <a href="/ui/asset-types"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'asset-types' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Asset Types
-            </a>
-            <a href="/ui/asset-pool"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'asset-pool' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Asset Pool
-            </a>
-            <a href="/ui/runbooks"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'runbooks' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Runbooks
-            </a>
-            <a href="/ui/modules"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'modules' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Modules
-            </a>
-            <a href="/ui/settings"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'settings' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Settings
-            </a>
-            <a href="/ui/ps-modules"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'ps-modules' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              PS Modules
-            </a>
-          </div>
-        </div>
-        <div class="flex items-center gap-3 text-xs text-gray-400">
-          <span class="text-gray-300">v{{ app_version }}</span>
-          <span>·</span>
-          <a href="/docs" target="_blank" class="hover:text-gray-700">Swagger UI</a>
-          <span>·</span>
-          <a href="http://localhost:5555" target="_blank" class="hover:text-gray-700">Flower</a>
-          <span>·</span>
-          <form method="post" action="/ui/logout" class="inline">
-            <button type="submit" class="hover:text-gray-700 cursor-pointer">Sign out</button>
-          </form>
-        </div>
-      </div>
+  <!-- ── Left Sidebar ──────────────────────────────────────────────────────── -->
+  <aside class="w-56 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 min-h-screen">
+
+    <!-- Brand -->
+    <div class="px-4 py-5 border-b border-gray-100">
+      <a href="/ui/" class="font-semibold text-gray-900 text-sm tracking-wide leading-snug">
+        {{ app_title }}
+      </a>
+      <div class="text-[10px] text-gray-300 mt-0.5">Admin</div>
     </div>
-  </nav>
 
-  <!-- Page Content -->
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    {% block content %}{% endblock %}
-  </main>
+    <!-- Navigation -->
+    <nav class="flex-1 px-3 py-4 space-y-0.5">
+      <a href="/ui/"
+         class="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
+                {% if active_page == 'dashboard' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+        </svg>
+        Dashboard
+      </a>
+      <a href="/ui/orders"
+         class="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
+                {% if active_page == 'orders' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+        </svg>
+        Orders
+      </a>
+      <a href="/ui/asset-types"
+         class="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
+                {% if active_page == 'asset-types' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+        </svg>
+        Asset Types
+      </a>
+      <a href="/ui/asset-pool"
+         class="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
+                {% if active_page == 'asset-pool' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
+        </svg>
+        Asset Pool
+      </a>
+      <a href="/ui/modules"
+         class="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
+                {% if active_page == 'modules' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+        </svg>
+        Modules
+      </a>
+      <a href="/ui/ps-modules"
+         class="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
+                {% if active_page == 'ps-modules' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+        </svg>
+        PS Modules
+      </a>
+      <a href="/ui/settings"
+         class="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
+                {% if active_page == 'settings' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        Settings
+      </a>
+    </nav>
+
+    <!-- Footer links + sign out -->
+    <div class="px-4 py-4 border-t border-gray-100 space-y-1.5">
+      <a href="/docs" target="_blank"
+         class="flex items-center gap-2.5 text-xs text-gray-400 hover:text-gray-600">
+        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+        </svg>
+        Swagger UI
+      </a>
+      <a href="http://localhost:5555" target="_blank"
+         class="flex items-center gap-2.5 text-xs text-gray-400 hover:text-gray-600">
+        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+        </svg>
+        Flower
+      </a>
+      <form method="post" action="/ui/logout" class="mt-2">
+        <button type="submit"
+                class="flex items-center gap-2.5 text-xs text-gray-400 hover:text-gray-600 cursor-pointer">
+          <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          Sign out
+        </button>
+      </form>
+      <div class="mt-2 text-[10px] text-gray-300">v{{ app_version }}</div>
+    </div>
+
+  </aside>
+
+  <!-- ── Main content ───────────────────────────────────────────────────────── -->
+  <div class="flex-1 overflow-auto">
+    <main class="max-w-7xl mx-auto px-6 sm:px-8 py-8">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 
 </body>
 </html>

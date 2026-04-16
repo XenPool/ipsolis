@@ -20,7 +20,6 @@ from app.database import Base
 class OrderAction(str, enum.Enum):
     PROVISION = "provision"
     MODIFY = "modify"
-    EXTEND = "extend"
     DELETE = "delete"
 
 
@@ -119,6 +118,11 @@ class Order(Base):
 
     # Fehlermeldung bei Status FAILED
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Timestamp when the expiry reminder was sent (idempotency flag)
+    expiry_reminder_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

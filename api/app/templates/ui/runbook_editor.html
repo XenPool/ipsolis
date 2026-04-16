@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="mb-6">
-  <a href="/ui/runbooks" class="text-sm text-gray-500 hover:text-gray-800">← Runbooks</a>
+  <a href="/ui/asset-types/{{ runbook.asset_type_id }}/edit#runbook-slots" class="text-sm text-gray-500 hover:text-gray-800">← Back to Asset Type</a>
 </div>
 
 <div class="mb-6 flex items-start justify-between">
@@ -144,19 +144,27 @@
     </div>
   </div>
 
-  <!-- Params Template (JSON) -->
+  <!-- Parameter bindings (auto-built from script's param_schema) -->
   <div class="mb-4">
-    <label class="block text-xs font-medium text-gray-600 mb-1">
-      Params Template (JSON)
-      <span class="font-normal text-gray-400 ml-1">– Use {{key}} for context variables</span>
-    </label>
-    <textarea id="new-step-params" rows="4"
-              placeholder='{"asset_name": "{{asset_name}}", "rdp_users": "{{rdp_users}}"}'
-              class="w-full rounded border border-gray-300 text-xs font-mono px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"></textarea>
-    <p class="text-xs text-gray-400 mt-1">
-      Available context variables: order_id, asset_type_id, asset_name, asset_id,
-      rdp_users, admin_users, user_email, user_name, expires_at, requested_from, and more.
-    </p>
+    <div class="flex items-center justify-between mb-2">
+      <label class="block text-xs font-medium text-gray-600">
+        Parameter bindings
+        <span class="font-normal text-gray-400 ml-1">– bind each script parameter to a context variable or literal value</span>
+      </label>
+      <button type="button" onclick="toggleAdvancedJson()"
+              class="text-xs text-blue-600 hover:underline">⚙ Advanced (JSON)</button>
+    </div>
+    <div id="param-bindings" class="border border-gray-200 rounded divide-y divide-gray-100 bg-gray-50">
+      <div class="px-3 py-4 text-xs text-gray-400 italic">Select a module to see its parameters.</div>
+    </div>
+    <div id="advanced-json-wrap" class="hidden mt-2">
+      <textarea id="new-step-params" rows="4"
+                placeholder='{"VMName": "&#123;&#123;asset_name&#125;&#125;"}'
+                class="w-full rounded border border-gray-300 text-xs font-mono px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"></textarea>
+      <p class="text-xs text-gray-400 mt-1">
+        Edits here override the bindings above. Use <code>&#123;&#123;key&#125;&#125;</code> for context variables.
+      </p>
+    </div>
   </div>
 
   <div class="flex items-center justify-between">
@@ -172,8 +180,10 @@
   <div id="step-result" class="mt-2"></div>
 </div>
 
+<script>window.RUNBOOK_ID = {{ runbook.id }};</script>
 <script>
-const RUNBOOK_ID = {{ runbook.id }};
+{% raw %}
+const RUNBOOK_ID = window.RUNBOOK_ID;
 var _editingStepId = null;
 
 async function toggleActive() {
@@ -185,39 +195,207 @@ async function toggleActive() {
   });
 }
 
+// Available context variables (must mirror dynamic_runner._run_runbook_path ctx)
+var CONTEXT_VARS = [
+  {group: 'Asset',    key: 'asset_name',          label: 'Asset name (pool-picked)'},
+  {group: 'Asset',    key: 'asset_id',            label: 'Asset id'},
+  {group: 'Asset',    key: 'asset_type_name',     label: 'Asset type name'},
+  {group: 'Asset',    key: 'asset_type_id',       label: 'Asset type id'},
+  {group: 'Order',    key: 'order_id',            label: 'Order id'},
+  {group: 'Order',    key: 'requested_from',      label: 'Start date'},
+  {group: 'Order',    key: 'expires_at',          label: 'Expiry date'},
+  {group: 'Order',    key: 'snow_req',            label: 'ServiceNow REQ'},
+  {group: 'Order',    key: 'snow_ritm',           label: 'ServiceNow RITM'},
+  {group: 'Users',    key: 'user_email',          label: 'Requesting user email'},
+  {group: 'Users',    key: 'user_name',           label: 'Requesting user name'},
+  {group: 'Users',    key: 'owner_email',         label: 'Owner email'},
+  {group: 'Users',    key: 'owner_name',          label: 'Owner name'},
+  {group: 'Users',    key: 'rdp_users',           label: 'RDP users (list)'},
+  {group: 'Users',    key: 'admin_users',         label: 'Admin users (list)'},
+  {group: 'XenServer', key: 'config.xenserver.host',     label: 'XenServer host'},
+  {group: 'XenServer', key: 'config.xenserver.username', label: 'XenServer username'},
+  {group: 'XenServer', key: 'config.xenserver.password', label: 'XenServer password'},
+  {group: 'vSphere',  key: 'config.vsphere.host',       label: 'vSphere host'},
+  {group: 'vSphere',  key: 'config.vsphere.username',   label: 'vSphere username'},
+  {group: 'vSphere',  key: 'config.vsphere.password',   label: 'vSphere password'},
+];
+
+// Sensible default mapping: param-name → context var
+var DEFAULT_BINDINGS = {
+  vmname: 'asset_name', asset_name: 'asset_name', assetname: 'asset_name',
+  hostname: 'asset_name', computername: 'asset_name',
+  asset_id: 'asset_id', vmid: 'asset_id',
+  user_email: 'user_email', useremail: 'user_email', email: 'user_email',
+  user_name: 'user_name', username: 'user_name',
+  rdp_users: 'rdp_users', rdpusers: 'rdp_users',
+  admin_users: 'admin_users', adminusers: 'admin_users',
+  expires_at: 'expires_at', expiresat: 'expires_at',
+  order_id: 'order_id', orderid: 'order_id',
+  xenserverhost: 'config.xenserver.host',
+  xenserveradminuser: 'config.xenserver.username',
+  xenserveradminpw: 'config.xenserver.password',
+  vsphereserverhost: 'config.vsphere.host',
+  vsphereserveradminuser: 'config.vsphere.username',
+  vsphereserveradminpw: 'config.vsphere.password',
+};
+
+function _guessBinding(paramName) {
+  var k = (paramName || '').toLowerCase();
+  return DEFAULT_BINDINGS[k] || null;
+}
+
+function _ctxOptions(selected) {
+  var groups = {};
+  CONTEXT_VARS.forEach(function(v) {
+    (groups[v.group] = groups[v.group] || []).push(v);
+  });
+  var html = '<option value="">– pick –</option>';
+  Object.keys(groups).forEach(function(g) {
+    html += '<optgroup label="' + g + '">';
+    groups[g].forEach(function(v) {
+      var sel = (v.key === selected) ? ' selected' : '';
+      html += '<option value="' + v.key + '"' + sel + '>' + v.label + '</option>';
+    });
+    html += '</optgroup>';
+  });
+  return html;
+}
+
+function _bindingRow(p, mode, value) {
+  var ctxSel = mode === 'context' ? value : _guessBinding(p.name);
+  var litVal = mode === 'literal' ? value : '';
+  var effectiveMode = mode || (ctxSel ? 'context' : 'literal');
+  var required = p.required
+    ? '<span class="text-red-500" title="required">*</span> '
+    : '';
+  var typeBadge = '<span class="text-gray-400 font-normal">(' + (p.type || 'string') + ')</span>';
+  return ''
+    + '<div class="binding-row grid grid-cols-12 gap-2 items-center px-3 py-2" data-param-name="' + p.name + '">'
+    + '  <div class="col-span-3 text-xs font-mono text-gray-700">' + required + p.name + ' ' + typeBadge + '</div>'
+    + '  <select class="binding-mode col-span-2 rounded border border-gray-300 text-xs px-2 py-1 bg-white" onchange="onBindingModeChange(this)">'
+    + '    <option value="context"' + (effectiveMode === 'context' ? ' selected' : '') + '>Context var</option>'
+    + '    <option value="literal"' + (effectiveMode === 'literal' ? ' selected' : '') + '>Literal value</option>'
+    + '  </select>'
+    + '  <select class="binding-ctx col-span-7 rounded border border-gray-300 text-xs px-2 py-1 bg-white' + (effectiveMode === 'context' ? '' : ' hidden') + '">' + _ctxOptions(ctxSel) + '</select>'
+    + '  <input  class="binding-lit col-span-7 rounded border border-gray-300 text-xs px-2 py-1' + (effectiveMode === 'literal' ? '' : ' hidden') + '" type="text" placeholder="Literal value" value="' + (litVal || '').replace(/"/g, '&quot;') + '">'
+    + '</div>';
+}
+
+function onBindingModeChange(sel) {
+  var row = sel.closest('.binding-row');
+  var mode = sel.value;
+  row.querySelector('.binding-ctx').classList.toggle('hidden', mode !== 'context');
+  row.querySelector('.binding-lit').classList.toggle('hidden', mode !== 'literal');
+}
+
+function _currentModuleParams() {
+  var sel = document.getElementById('new-step-module');
+  if (!sel.value) return [];
+  var opt = sel.options[sel.selectedIndex];
+  try { return JSON.parse(opt.getAttribute('data-params') || '[]'); }
+  catch(e) { return []; }
+}
+
+function renderBindings(existingTemplate) {
+  var container = document.getElementById('param-bindings');
+  var params = _currentModuleParams();
+  if (!params.length) {
+    container.innerHTML = '<div class="px-3 py-4 text-xs text-gray-400 italic">Selected module has no declared parameters. Use Advanced (JSON) to set values manually.</div>';
+    return;
+  }
+  var tpl = existingTemplate || {};
+  var html = params.map(function(p) {
+    var raw = tpl[p.name];
+    if (raw === undefined || raw === null) {
+      return _bindingRow(p, null, null);
+    }
+    if (typeof raw === 'string' && /^\{\{.+\}\}$/.test(raw.trim())) {
+      var key = raw.trim().slice(2, -2).trim();
+      return _bindingRow(p, 'context', key);
+    }
+    return _bindingRow(p, 'literal', String(raw));
+  }).join('');
+  container.innerHTML = html;
+}
+
+function collectBindings() {
+  var rows = document.querySelectorAll('#param-bindings .binding-row');
+  if (!rows.length) return null;
+  var out = {};
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var name = row.dataset.paramName;
+    var mode = row.querySelector('.binding-mode').value;
+    if (mode === 'context') {
+      var key = row.querySelector('.binding-ctx').value;
+      if (key) out[name] = '{{' + key + '}}';
+    } else {
+      var lit = row.querySelector('.binding-lit').value;
+      if (lit !== '') out[name] = lit;
+    }
+  }
+  return out;
+}
+
+function toggleAdvancedJson() {
+  var wrap = document.getElementById('advanced-json-wrap');
+  var hidden = wrap.classList.toggle('hidden');
+  if (!hidden) {
+    // Showing advanced — populate textarea from current bindings
+    var ta = document.getElementById('new-step-params');
+    var current = collectBindings();
+    if (current && Object.keys(current).length) {
+      ta.value = JSON.stringify(current, null, 2);
+    }
+  }
+}
+
 function updateModuleInfo() {
   var sel = document.getElementById('new-step-module');
   var opt = sel.options[sel.selectedIndex];
   var infoEl = document.getElementById('module-info');
   var listEl = document.getElementById('module-param-list');
-  if (!sel.value) { infoEl.classList.add('hidden'); return; }
+  if (!sel.value) {
+    infoEl.classList.add('hidden');
+    renderBindings(null);
+    return;
+  }
   try {
     var params = JSON.parse(opt.getAttribute('data-params') || '[]');
-    if (!params.length) { infoEl.classList.add('hidden'); return; }
-    listEl.innerHTML = params.map(function(p) {
-      return '<span class="inline-block mr-4">'
-        + (p.required ? '<span class="text-red-400">*</span> ' : '')
-        + p.name
-        + ' <span class="text-gray-400">(' + p.type + ')</span>'
-        + (p.default ? ' = ' + p.default : '')
-        + '</span>';
-    }).join('');
-    infoEl.classList.remove('hidden');
+    if (!params.length) {
+      infoEl.classList.add('hidden');
+    } else {
+      listEl.innerHTML = params.map(function(p) {
+        return '<span class="inline-block mr-4">'
+          + (p.required ? '<span class="text-red-400">*</span> ' : '')
+          + p.name
+          + ' <span class="text-gray-400">(' + p.type + ')</span>'
+          + (p.default ? ' = ' + p.default : '')
+          + '</span>';
+      }).join('');
+      infoEl.classList.remove('hidden');
+    }
   } catch(e) { infoEl.classList.add('hidden'); }
+  renderBindings(null);
 }
 
 function _getFormData() {
   var name = document.getElementById('new-step-name').value.trim();
   var script_module_id = parseInt(document.getElementById('new-step-module').value);
-  var paramsRaw = document.getElementById('new-step-params').value.trim();
   if (!name || !script_module_id) {
     alert('Step-Name und Modul sind erforderlich');
     return null;
   }
   var params_template = null;
-  if (paramsRaw) {
+  var advancedVisible = !document.getElementById('advanced-json-wrap').classList.contains('hidden');
+  var paramsRaw = document.getElementById('new-step-params').value.trim();
+  if (advancedVisible && paramsRaw) {
+    // Advanced JSON wins when visible and non-empty.
     try { params_template = JSON.parse(paramsRaw); }
     catch(e) { alert('Params template is not valid JSON'); return null; }
+  } else {
+    params_template = collectBindings();
+    if (params_template && !Object.keys(params_template).length) params_template = null;
   }
   return {
     step_name: name,
@@ -303,12 +481,14 @@ function editStep(stepId, step) {
   if (step.script_module_id) {
     document.getElementById('new-step-module').value = step.script_module_id;
     updateModuleInfo();
+    renderBindings(step.params_template || {});
   }
   document.getElementById('new-step-critical').checked = step.is_critical;
   document.getElementById('new-step-retry').value = step.retry_count;
   document.getElementById('new-step-timeout').value = step.timeout_seconds;
   document.getElementById('new-step-params').value =
     step.params_template ? JSON.stringify(step.params_template, null, 2) : '';
+  document.getElementById('advanced-json-wrap').classList.add('hidden');
   document.getElementById('step-form-title').textContent = 'Edit step';
   document.getElementById('submit-step-btn').textContent = 'Save changes';
   document.getElementById('cancel-edit-btn').classList.remove('hidden');
@@ -325,11 +505,15 @@ function cancelEdit() {
   document.getElementById('new-step-retry').value = '3';
   document.getElementById('new-step-timeout').value = '120';
   document.getElementById('new-step-params').value = '';
+  document.getElementById('advanced-json-wrap').classList.add('hidden');
+  document.getElementById('param-bindings').innerHTML =
+    '<div class="px-3 py-4 text-xs text-gray-400 italic">Select a module to see its parameters.</div>';
   document.getElementById('module-info').classList.add('hidden');
   document.getElementById('step-form-title').textContent = '+ Add step';
   document.getElementById('submit-step-btn').textContent = 'Add step';
   document.getElementById('cancel-edit-btn').classList.add('hidden');
   document.getElementById('step-result').innerHTML = '';
 }
+{% endraw %}
 </script>
 {% endblock %}

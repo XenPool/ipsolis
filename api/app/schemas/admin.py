@@ -73,6 +73,7 @@ class AssetTypeCreate(BaseModel):
     targets: list[dict[str, Any]] | None = None
     lifecycle_ttl_days: int | None = None
     lifecycle_renewable: bool = True
+    lifecycle_reminder_days: int | None = None
     allow_rdp_users: bool = False
     allow_admin_users: bool = False
     deprovision_policy: str = "access_only"
@@ -103,6 +104,7 @@ class AssetTypeUpdate(BaseModel):
     targets: list[dict[str, Any]] | None = None
     lifecycle_ttl_days: int | None = None
     lifecycle_renewable: bool | None = None
+    lifecycle_reminder_days: int | None = None
     allow_rdp_users: bool | None = None
     allow_admin_users: bool | None = None
     deprovision_policy: str | None = None
@@ -143,6 +145,7 @@ class AssetBulkCreate(BaseModel):
 
 
 class AssetPoolUpdate(BaseModel):
+    name: str | None = None
     status: AssetStatus | None = None
     asset_metadata: dict[str, Any] | None = None
     expires_at: datetime | None = None

@@ -156,6 +156,18 @@ async def update_script_module(
     return {"id": module_id, "updated": True}
 
 
+class ParseParamsPayload(BaseModel):
+    script_content: str
+
+
+@router.post("/script-modules/parse-params")
+async def parse_script_params(payload: ParseParamsPayload) -> dict:
+    """Parse a PowerShell `param()` block into a param_schema list."""
+    from app.utils.ps_param_parser import parse_powershell_params
+    schema = parse_powershell_params(payload.script_content)
+    return {"param_schema": schema}
+
+
 class ScriptModuleTestPayload(BaseModel):
     params: dict[str, Any] = {}
 

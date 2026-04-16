@@ -657,97 +657,6 @@ async def portal_order_detail(
     })
 
 
-# ── Extend ─────────────────────────────────────────────────────────────────────
-
-@router.post("/orders/{order_id}/extend")
-async def portal_extend_order(
-    order_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_portal_auth),
-    new_until: str = Form(...),
-):
-    result = await db.execute(select(Order).where(Order.id == order_id))
-    original = result.scalar_one_or_none()
-    if not original:
-        raise HTTPException(status_code=404, detail="Order not found")
-    _assert_owns_order(original, current_user["email"])
-
-    try:
-        until_dt = datetime.fromisoformat(new_until).replace(tzinfo=timezone.utc)
-    except ValueError:
-        raise HTTPException(status_code=422, detail="Invalid date format")
-
-    new_order = Order(
-        user_email=original.user_email,
-        user_name=original.user_name,
-        owner_email=original.owner_email,
-        owner_name=original.owner_name,
-        asset_type_id=original.asset_type_id,
-        assigned_asset_id=original.assigned_asset_id,
-        rdp_users=original.rdp_users,
-        admin_users=original.admin_users,
-        requested_from=original.requested_from,
-        requested_until=until_dt,
-        action=OrderAction.EXTEND,
-        status=OrderStatus.PENDING,
-    )
-    db.add(new_order)
-    await db.flush()
-
-    from app.routes.webhook import _dispatch_runbook
-    new_order.celery_task_id = _dispatch_runbook(new_order)
-    new_order.status = OrderStatus.PROCESSING
-    await db.commit()
-
-    logger.info("Portal: Extend order id=%s from order=%s", new_order.id, order_id)
-    return RedirectResponse(url=f"/portal/orders/{new_order.id}", status_code=303)
-
-
-# ── Modify Access ──────────────────────────────────────────────────────────────
-
-@router.post("/orders/{order_id}/modify")
-async def portal_modify_order(
-    order_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_portal_auth),
-    rdp_users: list[str] = Form(default=[]),
-    admin_users: list[str] = Form(default=[]),
-):
-    result = await db.execute(select(Order).where(Order.id == order_id))
-    original = result.scalar_one_or_none()
-    if not original:
-        raise HTTPException(status_code=404, detail="Order not found")
-    _assert_owns_order(original, current_user["email"])
-
-    rdp_clean = [u.strip() for u in rdp_users if u.strip()]
-    admin_clean = [u.strip() for u in admin_users if u.strip()]
-
-    new_order = Order(
-        user_email=original.user_email,
-        user_name=original.user_name,
-        owner_email=original.owner_email,
-        owner_name=original.owner_name,
-        asset_type_id=original.asset_type_id,
-        assigned_asset_id=original.assigned_asset_id,
-        rdp_users=rdp_clean,
-        admin_users=admin_clean,
-        requested_from=original.requested_from,
-        requested_until=original.requested_until,
-        action=OrderAction.MODIFY,
-        status=OrderStatus.PENDING,
-    )
-    db.add(new_order)
-    await db.flush()
-
-    from app.routes.webhook import _dispatch_runbook
-    new_order.celery_task_id = _dispatch_runbook(new_order)
-    new_order.status = OrderStatus.PROCESSING
-    await db.commit()
-
-    logger.info("Portal: Modify order id=%s from order=%s", new_order.id, order_id)
-    return RedirectResponse(url=f"/portal/orders/{new_order.id}", status_code=303)
-
-
 # ── Modify Asset (combined: duration + user lists) ─────────────────────────────
 
 @router.post("/orders/{order_id}/change")
@@ -768,7 +677,7 @@ async def portal_change_order(
     is_active = original.status in (OrderStatus.DELIVERED, OrderStatus.PROVISIONED)
     is_failed_change = (
         original.status == OrderStatus.FAILED
-        and original.action in (OrderAction.MODIFY, OrderAction.EXTEND)
+        and original.action == OrderAction.MODIFY
     )
     if not (is_active or is_failed_change):
         raise HTTPException(

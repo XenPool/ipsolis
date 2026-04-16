@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -242,6 +242,7 @@ async def create_asset_type(
         targets=payload.targets,
         lifecycle_ttl_days=payload.lifecycle_ttl_days,
         lifecycle_renewable=payload.lifecycle_renewable,
+        lifecycle_reminder_days=payload.lifecycle_reminder_days,
         allow_rdp_users=payload.allow_rdp_users,
         allow_admin_users=payload.allow_admin_users,
         rds_gateway_url=payload.rds_gateway_url,
@@ -282,31 +283,15 @@ async def update_asset_type(
     eff_deprovision_policy     = payload.deprovision_policy or asset_type.deprovision_policy
     eff_pps                    = payload.personal_provisioning_strategy or asset_type.personal_provisioning_strategy
 
-    # Runbook IDs: use payload value if supplied, otherwise look up existing runbooks in DB.
-    eff_provision_id = payload.runbook_provision_id
-    if eff_provision_id is None:
-        rb = (await db.execute(
-            text("SELECT id FROM runbook_definitions WHERE asset_type_id = :at AND action = 'provision' AND is_active = true LIMIT 1"),
-            {"at": type_id},
-        )).fetchone()
-        eff_provision_id = rb[0] if rb else None
-
-    eff_revoke_id = payload.runbook_revoke_id
-    if eff_revoke_id is None:
-        rb = (await db.execute(
-            text("SELECT id FROM runbook_definitions WHERE asset_type_id = :at AND action = 'delete' AND is_active = true LIMIT 1"),
-            {"at": type_id},
-        )).fetchone()
-        eff_revoke_id = rb[0] if rb else None
-
     violations = validate_asset_type(
         category=eff_category,
         assignment_model=eff_assignment_model,
         automation_strategy=eff_automation_strategy,
         deprovision_policy=eff_deprovision_policy,
         personal_provisioning_strategy=eff_pps,
-        runbook_provision_id=eff_provision_id,
-        runbook_revoke_id=eff_revoke_id,
+        runbook_provision_id=payload.runbook_provision_id,
+        runbook_revoke_id=payload.runbook_revoke_id,
+        skip_runbook_rules=True,  # runbooks are attached after the asset type exists; missing runbooks fail at order dispatch
     )
     if violations:
         raise HTTPException(
@@ -335,6 +320,8 @@ async def update_asset_type(
         asset_type.lifecycle_ttl_days = payload.lifecycle_ttl_days
     if payload.lifecycle_renewable is not None:
         asset_type.lifecycle_renewable = payload.lifecycle_renewable
+    if payload.lifecycle_reminder_days is not None:
+        asset_type.lifecycle_reminder_days = payload.lifecycle_reminder_days
     if payload.allow_rdp_users is not None:
         asset_type.allow_rdp_users = payload.allow_rdp_users
     if payload.allow_admin_users is not None:
@@ -498,6 +485,20 @@ async def update_asset(
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Asset {asset_id} not found")
     old_snap = _asset_snap(asset)
+    if payload.name is not None:
+        new_name = payload.name.strip()
+        if not new_name:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="name must not be empty")
+        if new_name != asset.name:
+            clash = await db.execute(
+                select(AssetPool.id).where(AssetPool.name == new_name, AssetPool.id != asset_id)
+            )
+            if clash.scalar_one_or_none() is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Asset with name {new_name!r} already exists",
+                )
+            asset.name = new_name
     if payload.status is not None:
         asset.status = payload.status
     if payload.asset_metadata is not None:

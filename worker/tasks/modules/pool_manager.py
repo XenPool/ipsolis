@@ -110,6 +110,26 @@ def release_asset(db: Session, asset_id: int) -> dict:
     return {"success": True, "asset_id": asset_id}
 
 
+def mark_reinstall(db: Session, asset_id: int) -> dict:
+    """Flag a pool asset for reinstall. Assumes current_order_id is already cleared
+    by a prior release_asset() call. A separate reinstall runbook is expected to
+    pick the asset up and flip it back to FREE when done.
+    """
+    result = db.execute(
+        sql_text("""
+            UPDATE asset_pool
+            SET status = 'Reinstall'
+            WHERE id = :id
+        """),
+        {"id": asset_id},
+    )
+    if result.rowcount == 0:
+        return {"success": False, "error": f"Asset {asset_id} not found"}
+    db.commit()
+    logger.info("Asset marked reinstall: asset_id=%s", asset_id)
+    return {"success": True, "asset_id": asset_id}
+
+
 def set_asset_busy(db: Session, asset_id: int, order_id: int, expires_at: datetime) -> dict:
     """Setzt VM auf BUSY nach erfolgreicher Bereitstellung."""
     result = db.execute(

@@ -53,9 +53,14 @@
     <div class="bg-white rounded-lg border border-gray-200 p-4">
       <div class="flex items-center justify-between mb-3">
         <label class="text-xs font-semibold text-gray-700">Parameter</label>
-        <button type="button" onclick="addParamRow()"
-                class="text-xs text-blue-600 hover:underline">+ Add</button>
+        <div class="flex items-center gap-3">
+          <button type="button" onclick="parseParamsFromScript()"
+                  class="text-xs text-blue-600 hover:underline" title="Parse param() block from script">↻ Parse from script</button>
+          <button type="button" onclick="addParamRow()"
+                  class="text-xs text-blue-600 hover:underline">+ Add</button>
+        </div>
       </div>
+      <div id="parse-result" class="text-xs mb-2"></div>
       <div class="space-y-1 text-xs text-gray-400 grid grid-cols-12 gap-1 mb-1 px-0.5">
         <span class="col-span-4">Name</span>
         <span class="col-span-3">Typ</span>
@@ -89,8 +94,8 @@
         {% endif %}
       </div>
       <p class="mt-2 text-xs text-gray-400">
-        Parameters are available as <code class="font-mono bg-gray-100 px-1 rounded">$PARAMS.name</code> in the script.
-        Global variables are accessible as <code class="font-mono bg-gray-100 px-1 rounded">$VARS.key</code>.
+        Parameters are available as <code class="font-mono bg-gray-100 px-1 rounded">$PARAMS.name</code> or via <code class="font-mono bg-gray-100 px-1 rounded">param()</code> block.
+        Global variables and hosting config are accessible as <code class="font-mono bg-gray-100 px-1 rounded">$VARS.'key'</code>.
       </p>
     </div>
 
@@ -137,15 +142,11 @@
           </div>
           <div id="var-picker-vars" class="border-b border-gray-100">
             <div class="px-3 py-1.5 bg-gray-50 text-xs text-gray-500 uppercase tracking-wide font-medium">VARS (global)</div>
-            <div id="var-picker-vars-list" class="py-1 max-h-32 overflow-y-auto"></div>
+            <div id="var-picker-vars-list" class="py-1 max-h-48 overflow-y-auto"></div>
           </div>
           <div id="var-picker-ctx">
             <div class="px-3 py-1.5 bg-gray-50 text-xs text-gray-500 uppercase tracking-wide font-medium">CTX (Runbook-Kontext)</div>
             <div id="var-picker-ctx-list" class="py-1 max-h-48 overflow-y-auto"></div>
-          </div>
-          <div id="var-picker-hosting" class="border-t border-gray-100">
-            <div class="px-3 py-1.5 bg-gray-50 text-xs text-gray-500 uppercase tracking-wide font-medium">Hosting Infra</div>
-            <div id="var-picker-hosting-list" class="py-1"></div>
           </div>
         </div>
         <span class="text-xs text-gray-400">Script-Inhalt</span>
@@ -244,6 +245,59 @@ document.getElementById('mod-type').addEventListener('change', function() {
   document.getElementById('editor-lang-label').textContent = lang.charAt(0).toUpperCase() + lang.slice(1);
   if (editor) monaco.editor.setModelLanguage(editor.getModel(), monacoLang);
 });
+
+function _setParamRow(row, p) {
+  row.querySelector('[name="param_name[]"]').value = p.name || '';
+  row.querySelector('[name="param_type[]"]').value = p.type || 'string';
+  row.querySelector('[name="param_required[]"]').checked = !!p.required;
+  row.querySelector('[name="param_default[]"]').value = p.default || '';
+}
+
+async function parseParamsFromScript() {
+  var resultEl = document.getElementById('parse-result');
+  var script = editor ? editor.getValue() : '';
+  if (!script.trim()) {
+    resultEl.innerHTML = '<span class="text-amber-600">Editor is empty.</span>';
+    return;
+  }
+  resultEl.innerHTML = '<span class="text-gray-400">Parsing…</span>';
+  try {
+    var resp = await fetch('/admin/script-modules/parse-params', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({script_content: script}),
+    });
+    var data = await resp.json();
+    var schema = (data && data.param_schema) || [];
+    if (!schema.length) {
+      resultEl.innerHTML = '<span class="text-amber-600">No <code>param()</code> block found.</span>';
+      return;
+    }
+    // Merge: keep existing rows that match by name, append new ones.
+    var existing = {};
+    document.querySelectorAll('.param-row').forEach(function(row) {
+      var name = row.querySelector('[name="param_name[]"]').value.trim();
+      if (name) existing[name] = row;
+    });
+    var added = 0, updated = 0;
+    schema.forEach(function(p) {
+      if (existing[p.name]) {
+        _setParamRow(existing[p.name], p);
+        updated++;
+      } else {
+        addParamRow();
+        var rows = document.querySelectorAll('.param-row');
+        _setParamRow(rows[rows.length - 1], p);
+        added++;
+      }
+    });
+    resultEl.innerHTML = '<span class="text-green-700">Parsed ' + schema.length
+      + ' parameter(s): ' + added + ' added, ' + updated + ' updated.</span>';
+    setTimeout(function() { resultEl.innerHTML = ''; }, 4000);
+  } catch (ex) {
+    resultEl.innerHTML = '<span class="text-red-600">Parse failed: ' + ex.message + '</span>';
+  }
+}
 
 function addParamRow() {
   var row = document.createElement('div');
@@ -398,12 +452,25 @@ function buildVarPicker() {
   });
   paramsList.innerHTML = html || '<div class="px-3 py-1.5 text-gray-400 italic">Keine Parameter definiert</div>';
 
+  // VARS (global) — user-defined global_vars + hosting infrastructure from app_config
+  var hostingVars = [
+    {label: 'XenServer Host',     key: 'xenserver.host'},
+    {label: 'XenServer User',     key: 'xenserver.username'},
+    {label: 'XenServer Password', key: 'xenserver.password'},
+    {label: 'vSphere Host',       key: 'vsphere.host'},
+    {label: 'vSphere User',       key: 'vsphere.username'},
+    {label: 'vSphere Password',   key: 'vsphere.password'},
+  ];
   var varsList = document.getElementById('var-picker-vars-list');
   html = '';
   _globalVars.forEach(function(v) {
     var key = v.key || v.name || String(v);
-    var snippet = isPs ? ('$VARS.' + key) : ("VARS['" + key + "']");
+    var snippet = isPs ? ("$VARS.'" + key + "'") : ("VARS['" + key + "']");
     html += _varRow(key, snippet, 'global');
+  });
+  hostingVars.forEach(function(v) {
+    var snippet = isPs ? ("$VARS.'" + v.key + "'") : ("VARS['" + v.key + "']");
+    html += _varRow(v.label, snippet, 'global');
   });
   varsList.innerHTML = html || '<div class="px-3 py-1.5 text-gray-400 italic">Keine globalen Variablen</div>';
 
@@ -421,23 +488,6 @@ function buildVarPicker() {
     return _varRow(key, snippet, 'ctx');
   }).join('');
   ctxList.innerHTML = html;
-
-  // HOSTING — vSphere and XenServer connection params
-  // Map via config.vsphere.host / config.xenserver.host in the runbook step params template
-  var hostingVars = [
-    {label: 'vSphere Host',       key: 'vSphereServerHost'},
-    {label: 'vSphere User',       key: 'vSphereServerAdminUser'},
-    {label: 'vSphere Password',   key: 'vSphereServerAdminPW'},
-    {label: 'XenServer Host',     key: 'XenServerHost'},
-    {label: 'XenServer User',     key: 'XenServerAdminUser'},
-    {label: 'XenServer Password', key: 'XenServerAdminPW'},
-  ];
-  var hostingList = document.getElementById('var-picker-hosting-list');
-  html = hostingVars.map(function(v) {
-    var snippet = isPs ? ('$PARAMS.' + v.key) : ("PARAMS['" + v.key + "']");
-    return _varRow(v.label, snippet, 'hosting');
-  }).join('');
-  hostingList.innerHTML = html;
 }
 
 function toggleVarPicker(evt) {

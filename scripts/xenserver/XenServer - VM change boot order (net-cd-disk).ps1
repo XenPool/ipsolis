@@ -6,6 +6,11 @@
 #   c = Hard Disk   d = CD-ROM / DVD   n = Network (PXE)
 # This script sets order = "ndc" (Network -> CD-ROM -> Disk)
 
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$VMName
+)
+
 #region Logging Function
 function Write-Log {
     param(
@@ -31,12 +36,12 @@ Write-Log "=== Starting XenServer Boot Order Change Script (Net-CD-Disk) ===" 'I
 
 $ErrorActionPreference = "Stop"
 
-# Centralized configuration  - values injected via $PARAMS (XenPool module system)
+# Centralized configuration  - hosting from $VARS (global), VM name from param()
 $config = @{
     XenServer = @{
-        ServerHost = $PARAMS.XenServerHost
-        AdminUser  = $PARAMS.XenServerAdminUser
-        AdminPW    = $PARAMS.XenServerAdminPW
+        ServerHost = $VARS.'xenserver.host'
+        AdminUser  = $VARS.'xenserver.username'
+        AdminPW    = $VARS.'xenserver.password'
     }
 
     BootOrder = @{
@@ -45,9 +50,6 @@ $config = @{
         Description = 'Network (PXE) -> CD-ROM -> Hard Disk'
     }
 }
-
-# VM name from input parameter
-$VMName = $PARAMS.VMName
 
 Write-Log "Configuration loaded successfully" 'SUCCESS'
 Write-Log "Target VM: ${VMName}" 'INFO'

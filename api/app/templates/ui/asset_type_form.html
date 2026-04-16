@@ -165,6 +165,15 @@
                  placeholder="e.g. 90"
                  class="w-28 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
         </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1" title="Days before expiry to email the user. Empty = no reminder.">
+            Reminder (days before expiry)
+          </label>
+          <input type="number" name="lifecycle_reminder_days" min="1"
+                 value="{{ asset_type.lifecycle_reminder_days if asset_type and asset_type.lifecycle_reminder_days else '' }}"
+                 placeholder="e.g. 7"
+                 class="w-28 rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        </div>
         <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer pb-1">
           <input type="checkbox" name="lifecycle_renewable"
                  {% if not asset_type or asset_type.lifecycle_renewable %}checked{% endif %}
@@ -407,13 +416,52 @@
       </p>
     </div>
 
-    <!-- Runbook hint (for runbook_only and composite) -->
-    <div id="runbook-hint" class="{% if strat == 'group_only' %}hidden{% endif %} rounded-lg bg-purple-50 border border-purple-100 px-4 py-3">
-      <p class="text-xs text-purple-700">
-        Runbook mode: After saving, configure the runbook in the
-        <a href="/ui/runbooks" class="underline hover:text-purple-900">Runbook Editor</a>
-        (Provision, Modify, Delete).
-      </p>
+    <!-- Runbook slots (Provision / Modify / Deprovision) -->
+    <div id="runbook-slots" class="{% if strat == 'group_only' %}hidden{% endif %} border-t border-gray-100 pt-5">
+      <label class="block text-xs font-medium text-gray-600 mb-2">
+        Runbooks
+        <span class="text-gray-400 font-normal ml-1">– one runbook per lifecycle action</span>
+      </label>
+      {% if not asset_type %}
+      <p class="text-xs text-gray-400 mb-2">Save the asset type first, then configure its runbooks here.</p>
+      {% endif %}
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {% for slot in runbook_slots %}
+        <div class="rounded-lg border border-gray-200 bg-white px-4 py-3 runbook-slot" data-slot-action="{{ slot.action }}">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-sm font-medium text-gray-800">{{ slot.label }}</span>
+            {% if slot.runbook %}
+              {% if slot.runbook.is_active %}
+              <span class="inline-block px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">Active</span>
+              {% else %}
+              <span class="inline-block px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-500">Inactive</span>
+              {% endif %}
+            {% else %}
+              <span class="inline-block px-2 py-0.5 rounded text-xs bg-orange-100 text-orange-600">Not configured</span>
+            {% endif %}
+          </div>
+          <p class="text-xs text-gray-500 mb-3">
+            {% if slot.runbook %}
+              {{ slot.runbook.steps | length }} step{{ '' if slot.runbook.steps | length == 1 else 's' }}
+            {% else %}
+              No steps defined yet
+            {% endif %}
+          </p>
+          {% if asset_type %}
+            {% if slot.runbook %}
+            <a href="/ui/runbooks/{{ slot.runbook.id }}/edit"
+               class="inline-block text-xs text-blue-600 hover:underline">Edit steps →</a>
+            {% else %}
+            <button type="button"
+                    onclick="createRunbookForSlot({{ asset_type.id }}, '{{ slot.action }}', '{{ asset_type.name | replace("'", "\\'") }}', '{{ slot.label }}')"
+                    class="text-xs text-blue-600 hover:underline">+ Configure runbook</button>
+            {% endif %}
+          {% else %}
+            <span class="text-xs text-gray-300">Available after save</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
     </div>
 
     <!-- Attributes -->
@@ -512,11 +560,12 @@
         <span class="text-gray-400 font-normal ml-1">– what happens on revoke/cancel?</span>
       </label>
       {% set dp_opts = [
-        ("access_only",          "Revoke access only",    "Remove group membership – instance remains untouched"),
-        ("return_to_pool",       "Return to pool",            "Release assignment, resource available for others"),
-        ("deallocate_instance",  "Pause instance",          "Stop / deallocate VM, but do not delete"),
-        ("delete_instance",      "Delete instance",           "Permanently delete VM including cleanup"),
-        ("custom_runbook",       "Runbook",                   "Define revoke logic via separate runbook"),
+        ("access_only",               "Revoke access only",     "Remove group membership – instance remains untouched"),
+        ("return_to_pool",            "Return to pool",         "Release assignment, resource available for others"),
+        ("return_to_pool_reinstall",  "Return to pool + reinstall", "Release and flag host for reinstall via separate runbook"),
+        ("deallocate_instance",       "Pause instance",         "Stop / deallocate VM, but do not delete"),
+        ("delete_instance",           "Delete instance",        "Permanently delete VM including cleanup"),
+        ("custom_runbook",            "Revoke Runbook",         "Run a dedicated revoke runbook on cancel"),
       ] %}
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
         {% for dp_val, dp_short, dp_desc in dp_opts %}
@@ -592,10 +641,15 @@ function toggleAssignmentDependents() {
     updatePrincipalSourceOptions();
   }
 
-  // Set default deprovision policy
-  var dp = _dpDefaults[val] || 'access_only';
-  var dpRadio = document.querySelector('[name="deprovision_policy"][value="' + dp + '"]');
-  if (dpRadio) dpRadio.checked = true;
+  // Set default deprovision policy only if nothing is currently selected
+  // (avoid overriding server-rendered value on page load in edit mode).
+  // enforceConstraints() will clear the selection later if it becomes forbidden.
+  var currentDp = document.querySelector('[name="deprovision_policy"]:checked');
+  if (!currentDp) {
+    var dp = _dpDefaults[val] || 'access_only';
+    var dpRadio = document.querySelector('[name="deprovision_policy"][value="' + dp + '"]');
+    if (dpRadio) dpRadio.checked = true;
+  }
   enforceConstraints();
 }
 
@@ -677,7 +731,7 @@ function enforceConstraints() {
   var forbidden = new Set();
   if (isGroupOnly) { forbidden.add('deallocate_instance'); forbidden.add('delete_instance'); }
   if (isShared)    { forbidden.add('delete_instance'); }
-  if (!isPersonal) { forbidden.add('return_to_pool'); }
+  if (!isPersonal) { forbidden.add('return_to_pool'); forbidden.add('return_to_pool_reinstall'); }
   if (isPooled)    { forbidden.add('deallocate_instance'); forbidden.add('delete_instance'); }
 
   // Apply disabled state; auto-fallback to access_only if selected option becomes forbidden
@@ -698,30 +752,26 @@ function enforceConstraints() {
     if (fb && !fb.disabled) fb.checked = true;
   }
 
-  // Rule 2: if return_to_pool selected, lock personal_provisioning_strategy to assign_existing_free
+  // Rule 2: if return_to_pool[_reinstall] selected, lock personal_provisioning_strategy to assign_existing_free
   var currentDp = (document.querySelector('[name="deprovision_policy"]:checked') || {}).value || 'access_only';
-  if (currentDp === 'return_to_pool') {
+  if (currentDp === 'return_to_pool' || currentDp === 'return_to_pool_reinstall') {
     var aeRadio = document.querySelector('[name="personal_provisioning_strategy"][value="assign_existing_free"]');
     if (aeRadio && !aeRadio.checked) aeRadio.checked = true;
   }
 
-  // Rule 4: runbook hint – visibility + content
-  var hasRunbookPolicy = currentDp === 'custom_runbook';
-  var showHint = isRunbookMode || hasRunbookPolicy;
-  var hintEl = document.getElementById('runbook-hint');
-  if (hintEl) {
-    hintEl.classList.toggle('hidden', !showHint);
-    if (showHint) {
-      var msgs = [];
-      if (isRunbookMode)    msgs.push('Configure provision runbook (Automation Mode: Runbook).');
-      if (hasRunbookPolicy) msgs.push('Configure revoke runbook (Deprovision Strategy: Runbook).');
-      hintEl.innerHTML =
-        '<p class="text-xs text-purple-700">Runbook dependencies \u2013 please configure after saving in the '
-        + '<a href="/ui/runbooks" class="underline hover:text-purple-900">Runbook Editor</a>:</p>'
-        + '<ul class="mt-1 list-disc list-inside text-xs text-purple-600">'
-        + msgs.map(function(m) { return '<li>' + m + '</li>'; }).join('')
-        + '</ul>';
-    }
+  // Runbook slots visibility:
+  //  - runbook_only / composite: show the whole section (all slots)
+  //  - group_only + custom_runbook deprovision: show section, but only the Deprovision slot
+  //  - group_only + any other deprovision: hide section entirely
+  var slotsEl = document.getElementById('runbook-slots');
+  if (slotsEl) {
+    var dpNow = (document.querySelector('[name="deprovision_policy"]:checked') || {}).value || '';
+    var revokeOnly = isGroupOnly && dpNow === 'custom_runbook';
+    slotsEl.classList.toggle('hidden', isGroupOnly && !revokeOnly);
+    slotsEl.querySelectorAll('.runbook-slot').forEach(function(el) {
+      var isDeprov = el.getAttribute('data-slot-action') === 'delete';
+      el.classList.toggle('hidden', revokeOnly && !isDeprov);
+    });
   }
 
   // Constraint banner below deprovision policy grid
@@ -759,6 +809,7 @@ document.addEventListener('DOMContentLoaded', function() {
   onCategoryChange();            // apply category constraints on initial load (handles edit mode)
   onProvisioningStrategyChange(); // apply provisioning strategy constraints on initial load
   updatePrincipalSourceOptions(); // filter principal_source dropdowns based on checked user list flags
+  enforceConstraints();          // reconcile runbook-slot visibility with deprovision_policy
 });
 
 function _buildPrincipalOptions(selected) {
@@ -919,10 +970,11 @@ async function submitForm() {
       (dpPolicy === 'deallocate_instance' || dpPolicy === 'delete_instance')) {
     constraintErrors.push('Group access does not support instance actions (pause/delete). Choose a different deprovision strategy.');
   }
-  if (dpPolicy === 'return_to_pool' && assignmentModel !== 'assigned_personal') {
+  var isReturnToPoolLike = (dpPolicy === 'return_to_pool' || dpPolicy === 'return_to_pool_reinstall');
+  if (isReturnToPoolLike && assignmentModel !== 'assigned_personal') {
     constraintErrors.push('"Return to pool" requires assignment model "Personal".');
   }
-  if (dpPolicy === 'return_to_pool' && assignmentModel === 'assigned_personal' &&
+  if (isReturnToPoolLike && assignmentModel === 'assigned_personal' &&
       psStrategy && psStrategy !== 'assign_existing_free') {
     constraintErrors.push('"Return to pool" requires provisioning strategy "Assign free instance".');
   }
@@ -960,6 +1012,8 @@ async function submitForm() {
       ? parseInt(form.querySelector('[name="pool_capacity"]').value) : null,
     lifecycle_ttl_days: form.querySelector('[name="lifecycle_ttl_days"]').value
       ? parseInt(form.querySelector('[name="lifecycle_ttl_days"]').value) : null,
+    lifecycle_reminder_days: form.querySelector('[name="lifecycle_reminder_days"]').value
+      ? parseInt(form.querySelector('[name="lifecycle_reminder_days"]').value) : null,
     lifecycle_renewable: form.querySelector('[name="lifecycle_renewable"]').checked,
     allow_rdp_users: document.getElementById('allow-rdp-users-cb') ? document.getElementById('allow-rdp-users-cb').checked : false,
     allow_admin_users: document.getElementById('allow-admin-users-cb') ? document.getElementById('allow-admin-users-cb').checked : false,
@@ -1051,6 +1105,25 @@ function collectApprovalOwners() {
     owners.push({ email: inp.dataset.ownerEmail, name: inp.dataset.ownerName });
   });
   return owners.length > 0 ? owners : null;
+}
+
+async function createRunbookForSlot(assetTypeId, action, typeName, slotLabel) {
+  const resp = await fetch('/admin/runbooks', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      name: typeName + ' – ' + slotLabel,
+      asset_type_id: assetTypeId,
+      action: action,
+      is_active: true,
+    }),
+  });
+  if (resp.ok) {
+    const data = await resp.json();
+    window.location.href = '/ui/runbooks/' + data.id + '/edit';
+  } else {
+    alert('Error creating runbook');
+  }
 }
 </script>
 {% endblock %}

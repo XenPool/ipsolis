@@ -2,6 +2,11 @@
 # Performs graceful reboot for running VMs or startup for halted VMs
 # XCP-ng / XenServer equivalent of: VMWare - VM reboot or startup (gracefully).ps1
 
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$VMName
+)
+
 #region Logging Function
 function Write-Log {
     param(
@@ -27,12 +32,12 @@ Write-Log "=== Starting XenServer Reboot/Startup Script ===" 'INFO'
 
 $ErrorActionPreference = "Stop"
 
-# Centralized configuration  - values injected via $PARAMS (XenPool module system)
+# Centralized configuration  - hosting from $VARS (global), VM name from param()
 $config = @{
     XenServer = @{
-        ServerHost = $PARAMS.XenServerHost
-        AdminUser  = $PARAMS.XenServerAdminUser
-        AdminPW    = $PARAMS.XenServerAdminPW
+        ServerHost = $VARS.'xenserver.host'
+        AdminUser  = $VARS.'xenserver.username'
+        AdminPW    = $VARS.'xenserver.password'
     }
 
     Timeouts = @{
@@ -42,9 +47,6 @@ $config = @{
         PostShutdownWaitSeconds = 5     # Wait 5 seconds after shutdown before starting
     }
 }
-
-# VM name from input parameter
-$VMName = $PARAMS.VMName
 
 Write-Log "Configuration loaded successfully" 'SUCCESS'
 Write-Log "Target VM: ${VMName}" 'INFO'

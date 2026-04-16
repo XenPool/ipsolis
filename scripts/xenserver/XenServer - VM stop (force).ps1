@@ -2,6 +2,11 @@
 # Performs a forced (hard) shutdown of a XenServer VM with retry logic
 # XCP-ng / XenServer equivalent of: VMWare - VM stop (force).ps1
 
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$VMName
+)
+
 #region Logging Function
 function Write-Log {
     param(
@@ -27,12 +32,12 @@ Write-Log "=== Starting XenServer Forced Stop Script ===" 'INFO'
 
 $ErrorActionPreference = "Stop"
 
-# Centralized configuration - values injected via $PARAMS (XenPool module system)
+# Centralized configuration - hosting from $VARS (global), VM name from param()
 $config = @{
     XenServer = @{
-        ServerHost = $PARAMS.XenServerHost
-        AdminUser  = $PARAMS.XenServerAdminUser
-        AdminPW    = $PARAMS.XenServerAdminPW
+        ServerHost = $VARS.'xenserver.host'
+        AdminUser  = $VARS.'xenserver.username'
+        AdminPW    = $VARS.'xenserver.password'
     }
 
     Stop = @{
@@ -41,9 +46,6 @@ $config = @{
         MaxRetries           = 3    # Maximum number of stop attempts
     }
 }
-
-# VM name from input parameter
-$VMName = $PARAMS.VMName
 
 Write-Log "Configuration loaded successfully" 'SUCCESS'
 Write-Log "Target VM: ${VMName}" 'INFO'

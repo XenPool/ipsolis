@@ -459,11 +459,40 @@ async def asset_pool_page(
     )
 
 
+_RUNBOOK_SLOTS = [
+    ("provision", "Provision"),
+    ("modify",    "Modify"),
+    ("delete",    "Deprovision"),
+]
+
+
+async def _load_runbook_slots(db: AsyncSession, asset_type_id: int) -> list[dict]:
+    """Return three {action, label, runbook} slots for the asset type lifecycle."""
+    rb_result = await db.execute(
+        select(RunbookDefinition)
+        .options(selectinload(RunbookDefinition.steps))
+        .where(RunbookDefinition.asset_type_id == asset_type_id)
+    )
+    existing = {rb.action: rb for rb in rb_result.scalars().all()}
+    return [
+        {"action": action, "label": label, "runbook": existing.get(action)}
+        for action, label in _RUNBOOK_SLOTS
+    ]
+
+
+def _empty_runbook_slots() -> list[dict]:
+    return [{"action": a, "label": l, "runbook": None} for a, l in _RUNBOOK_SLOTS]
+
+
 @router.get("/asset-types/new", response_class=HTMLResponse)
 async def asset_type_new_form(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request, "ui/asset_type_form.html",
-        {"asset_type": None, "active_page": "asset-types"},
+        {
+            "asset_type": None,
+            "runbook_slots": _empty_runbook_slots(),
+            "active_page": "asset-types",
+        },
     )
 
 
@@ -478,45 +507,15 @@ async def asset_type_edit_form(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     return templates.TemplateResponse(
         request, "ui/asset_type_form.html",
-        {"asset_type": t, "active_page": "asset-types"},
-    )
-
-
-# ── Runbooks UI ────────────────────────────────────────────────────────────────
-
-_ACTIONS = ["provision", "modify", "extend", "delete"]
-
-
-@router.get("/runbooks", response_class=HTMLResponse)
-async def runbooks_list(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
-    at_result = await db.execute(select(AssetType).order_by(AssetType.name))
-    asset_types = at_result.scalars().all()
-
-    rb_result = await db.execute(
-        select(RunbookDefinition)
-        .options(selectinload(RunbookDefinition.steps))
-        .order_by(RunbookDefinition.asset_type_id, RunbookDefinition.action)
-    )
-    runbooks = rb_result.scalars().all()
-
-    # Grouped: {asset_type_id: {action: runbook}}
-    rb_by_type: dict[int, dict] = {t.id: {} for t in asset_types}
-    for rb in runbooks:
-        rb_by_type.setdefault(rb.asset_type_id, {})[rb.action] = rb
-
-    return templates.TemplateResponse(
-        request, "ui/runbooks.html",
         {
-            "asset_types": asset_types,
-            "rb_by_type": rb_by_type,
-            "actions": _ACTIONS,
-            "active_page": "runbooks",
+            "asset_type": t,
+            "runbook_slots": await _load_runbook_slots(db, type_id),
+            "active_page": "asset-types",
         },
     )
 
+
+# ── Runbook step editor ────────────────────────────────────────────────────────
 
 @router.get("/runbooks/{runbook_id}/edit", response_class=HTMLResponse)
 async def runbook_editor(

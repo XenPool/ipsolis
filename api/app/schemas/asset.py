@@ -18,6 +18,7 @@ class AssetTypeRead(BaseModel):
     targets: list[dict[str, Any]] | None
     lifecycle_ttl_days: int | None
     lifecycle_renewable: bool
+    lifecycle_reminder_days: int | None
     allow_rdp_users: bool
     allow_admin_users: bool
     deprovision_policy: str

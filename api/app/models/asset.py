@@ -36,6 +36,7 @@ class AssignmentModel(str, enum.Enum):
 class DeprovisionPolicy(str, enum.Enum):
     ACCESS_ONLY = "access_only"                   # Remove group membership only
     RETURN_TO_POOL = "return_to_pool"             # Release pool reservation, instance remains free
+    RETURN_TO_POOL_REINSTALL = "return_to_pool_reinstall"  # Release + mark for reinstall
     DEALLOCATE_INSTANCE = "deallocate_instance"   # Stop / deallocate VM
     DELETE_INSTANCE = "delete_instance"           # Delete VM including cleanup
     CUSTOM_RUNBOOK = "custom_runbook"             # Revoke via separate runbook
@@ -58,6 +59,7 @@ class AssetStatus(str, enum.Enum):
     BUSY = "busy"
     MAINTENANCE = "maintenance"
     RECLAIMING = "reclaiming"
+    REINSTALL = "Reinstall"  # Awaiting reinstall runbook; not assignable
 
 
 class AssetType(Base):
@@ -111,6 +113,8 @@ class AssetType(Base):
     lifecycle_renewable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
+    # Days before expiry to send a reminder email to the user (NULL = disabled)
+    lifecycle_reminder_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     allow_rdp_users: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
