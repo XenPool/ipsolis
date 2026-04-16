@@ -76,7 +76,7 @@
          {% if not app_logo %}hidden{% endif %}
          {% if app_logo_position == 'center' %}justify-center{% elif app_logo_position == 'right' %}justify-end{% else %}justify-start{% endif %}">
       <img id="logo-preview-img"
-           src="{% if app_logo %}/portal/logo{% endif %}"
+           src="{% if app_logo %}/portal/logo?v={{ range(1, 999999) | random }}{% endif %}"
            style="max-height: 64px; max-width: 100%;"
            alt="Logo preview">
     </div>
@@ -806,7 +806,16 @@ async function _cfgPut(key, value) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({value: String(value)}),
   });
-  return r.ok;
+  if (r.ok) return true;
+  if (r.status === 404) {
+    var r2 = await fetch('/admin/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key: key, value: String(value)}),
+    });
+    return r2.ok;
+  }
+  return false;
 }
 
 async function saveLogo() {

@@ -33,6 +33,7 @@ class AssetTypeRead(BaseModel):
     approval_owners: list[dict[str, Any]] | None
     requires_approval_on_modify: bool
     eligible_requestors_dn: str | None
+    logo: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

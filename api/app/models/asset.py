@@ -139,6 +139,8 @@ class AssetType(Base):
     eligible_requestors_dn: Mapped[str | None] = mapped_column(
         String(500), nullable=True
     )
+    # Logo image stored as data URL (base64-encoded)
+    logo: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

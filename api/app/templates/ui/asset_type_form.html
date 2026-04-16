@@ -32,6 +32,25 @@
       </div>
     </div>
 
+    <!-- Logo -->
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Tile Logo</label>
+      <p class="text-xs text-gray-400 mb-2">
+        Shown on the portal "Request Access" tile. Optimal size: 160 x 40 px (landscape). PNG or SVG with transparent background, max 500 KB.
+      </p>
+      <div id="at-logo-preview" class="mb-2 p-2 rounded border border-gray-200 bg-gray-50 min-h-[48px] flex items-center {% if not (asset_type and asset_type.logo) %}hidden{% endif %}">
+        <img id="at-logo-img"
+             src="{% if asset_type and asset_type.logo %}/admin/asset-types/{{ asset_type.id }}/logo?v={{ range(1, 999999) | random }}{% endif %}"
+             style="max-height: 40px; max-width: 200px;" alt="Logo">
+        <button type="button" onclick="removeAtLogo()" class="ml-3 text-xs text-red-500 hover:text-red-700">Remove</button>
+      </div>
+      <input type="file" id="at-logo-file" accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp"
+             class="block text-sm text-gray-600
+                    file:mr-3 file:py-1 file:px-3 file:rounded file:border file:border-gray-300
+                    file:text-xs file:font-medium file:bg-white file:text-gray-700 hover:file:bg-gray-50 file:cursor-pointer">
+      <input type="hidden" id="at-logo-data" name="logo" value="">
+    </div>
+
     <!-- Category -->
     <div>
       <label class="block text-xs font-medium text-gray-600 mb-2">Category</label>
@@ -599,6 +618,60 @@
 </div>
 
 <script>
+// ── Asset Type Logo ──────────────────────────────────────────────────────────
+var AT_LOGO_MAX_W = 160;
+var AT_LOGO_MAX_H = 40;
+
+function resizeImageToDataUrl(file, maxW, maxH) {
+  return new Promise(function(resolve) {
+    // SVG: no resize needed, just read as data URL
+    if (file.type === 'image/svg+xml') {
+      var r = new FileReader();
+      r.onload = function(e) { resolve(e.target.result); };
+      r.readAsDataURL(file);
+      return;
+    }
+    var img = new Image();
+    img.onload = function() {
+      var w = img.width, h = img.height;
+      // Scale down to fit within maxW x maxH, keeping aspect ratio
+      if (w > maxW || h > maxH) {
+        var ratio = Math.min(maxW / w, maxH / h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+      var canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL(file.type || 'image/png'));
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+document.getElementById('at-logo-file').addEventListener('change', async function() {
+  var file = this.files[0];
+  if (!file) return;
+  if (file.size > 512000) {
+    alert('Logo file is too large (max 500 KB).');
+    this.value = '';
+    return;
+  }
+  var dataUrl = await resizeImageToDataUrl(file, AT_LOGO_MAX_W, AT_LOGO_MAX_H);
+  document.getElementById('at-logo-data').value = dataUrl;
+  var img = document.getElementById('at-logo-img');
+  img.src = dataUrl;
+  document.getElementById('at-logo-preview').classList.remove('hidden');
+});
+
+function removeAtLogo() {
+  document.getElementById('at-logo-data').value = '__remove__';
+  document.getElementById('at-logo-preview').classList.add('hidden');
+  document.getElementById('at-logo-file').value = '';
+}
+
 function updateAutomationUI() {
   var sel = document.querySelector('[name="automation_strategy"]:checked');
   var val = sel ? sel.value : 'runbook_only';
@@ -1035,6 +1108,14 @@ async function submitForm() {
     requires_approval_on_modify: document.getElementById('requires-approval-on-modify-cb').checked,
     eligible_requestors_dn: document.getElementById('eligible-requestors-dn').value.trim() || null,
   };
+
+  // Logo: include only if changed
+  var logoVal = document.getElementById('at-logo-data').value;
+  if (logoVal === '__remove__') {
+    payload.logo = '';
+  } else if (logoVal) {
+    payload.logo = logoVal;
+  }
 
   {% if asset_type %}
   var resp = await fetch('/admin/asset-types/{{ asset_type.id }}', {

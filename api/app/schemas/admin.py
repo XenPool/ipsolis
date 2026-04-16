@@ -88,6 +88,7 @@ class AssetTypeCreate(BaseModel):
     approval_owners: list[dict[str, Any]] | None = None
     requires_approval_on_modify: bool = False
     eligible_requestors_dn: str | None = None
+    logo: str | None = None
     # Constraint validation: IDs of existing runbooks (not persisted, validation-time only)
     runbook_provision_id: int | None = None
     runbook_revoke_id: int | None = None
@@ -119,6 +120,7 @@ class AssetTypeUpdate(BaseModel):
     approval_owners: list[dict[str, Any]] | None = None
     requires_approval_on_modify: bool | None = None
     eligible_requestors_dn: str | None = None
+    logo: str | None = None
     # Constraint validation: IDs of existing runbooks (not persisted, validation-time only)
     runbook_provision_id: int | None = None
     runbook_revoke_id: int | None = None

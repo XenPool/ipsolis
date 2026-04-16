@@ -206,6 +206,24 @@ async def test_entra_connection(db: AsyncSession = Depends(get_db)) -> dict:
 
 # ── Asset-Typen ────────────────────────────────────────────────────────────────
 
+@router.get("/asset-types/{type_id}/logo", include_in_schema=False)
+async def asset_type_logo(type_id: int, db: AsyncSession = Depends(get_db)):
+    """Serves an asset type logo image from the DB (for admin preview)."""
+    import base64
+    from fastapi.responses import Response
+    result = await db.execute(select(AssetType).where(AssetType.id == type_id))
+    at = result.scalar_one_or_none()
+    if not at or not at.logo:
+        raise HTTPException(status_code=404, detail="No logo")
+    try:
+        header, b64_data = at.logo.split(",", 1)
+        mime = header.split(":")[1].split(";")[0]
+        raw = base64.b64decode(b64_data)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid logo data")
+    return Response(content=raw, media_type=mime, headers={"Cache-Control": "no-cache"})
+
+
 @router.post("/asset-types", response_model=AssetTypeRead, status_code=status.HTTP_201_CREATED)
 async def create_asset_type(
     payload: AssetTypeCreate, db: AsyncSession = Depends(get_db)
@@ -257,6 +275,7 @@ async def create_asset_type(
         approval_owners=payload.approval_owners,
         requires_approval_on_modify=payload.requires_approval_on_modify,
         eligible_requestors_dn=payload.eligible_requestors_dn or None,
+        logo=payload.logo or None,
     )
     db.add(asset_type)
     await db.flush()
@@ -350,6 +369,8 @@ async def update_asset_type(
         asset_type.requires_approval_on_modify = payload.requires_approval_on_modify
     if payload.eligible_requestors_dn is not None:
         asset_type.eligible_requestors_dn = payload.eligible_requestors_dn or None
+    if payload.logo is not None:
+        asset_type.logo = payload.logo or None
     await aaudit(db, "asset_type", asset_type.id, "updated", old=old_snap, new=_type_snap(asset_type), by="api:update_asset_type")
     await db.commit()
     await db.refresh(asset_type)

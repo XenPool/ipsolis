@@ -30,7 +30,11 @@
                {% if sold_out %}disabled{% endif %}
                {% if not sold_out and form and form.asset_type_id == t.id %}checked{% endif %}
                class="sr-only">
-        <div class="w-full">
+        <div class="flex items-center gap-3 w-full">
+          {% if t.logo %}
+          <img src="/portal/asset-type-logo/{{ t.id }}" alt="" class="shrink-0" style="max-height: 32px; max-width: 48px;">
+          {% endif %}
+          <div class="flex-1 min-w-0">
           <div class="flex items-center justify-between gap-2">
             <p class="text-sm font-medium {% if sold_out %}text-gray-400{% else %}text-gray-900{% endif %}">{{ t.name }}</p>
             {% if sold_out %}
@@ -52,6 +56,7 @@
             {% endfor %}
           </p>
           {% endif %}
+          </div>
         </div>
       </label>
       {% endfor %}

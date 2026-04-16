@@ -42,7 +42,23 @@ async def portal_logo() -> Response:
         raw = base64.b64decode(b64_data)
     except Exception:
         raise HTTPException(status_code=422, detail="Invalid logo data")
-    return Response(content=raw, media_type=mime, headers={"Cache-Control": "max-age=3600"})
+    return Response(content=raw, media_type=mime, headers={"Cache-Control": "no-cache"})
+
+
+@router.get("/asset-type-logo/{type_id}", include_in_schema=False)
+async def asset_type_logo(type_id: int, db: AsyncSession = Depends(get_db)) -> Response:
+    """Serves an asset type logo image from the DB. Returns 404 when none is set."""
+    result = await db.execute(select(AssetType.logo).where(AssetType.id == type_id))
+    data_url = result.scalar_one_or_none()
+    if not data_url:
+        raise HTTPException(status_code=404, detail="No logo configured")
+    try:
+        header, b64_data = data_url.split(",", 1)
+        mime = header.split(":")[1].split(";")[0]
+        raw = base64.b64decode(b64_data)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid logo data")
+    return Response(content=raw, media_type=mime, headers={"Cache-Control": "no-cache"})
 
 
 def _user_order_filter(email: str):
