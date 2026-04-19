@@ -54,6 +54,9 @@ def _get_sync_session() -> Session:
     return SyncSession(engine)
 
 
+_TEMPLATE_RE = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
+
+
 def _render_params(
     params_template: dict | None,
     global_vars: dict,
@@ -66,17 +69,24 @@ def _render_params(
     through without having to persist it to the global_vars table. A leading
     `$global:` in the key is stripped to tolerate users copy-pasting PS syntax.
     Scalar dotted paths like `RecycleVM.name` are also resolved.
+
+    Both whole-value (`"{{VMName}}"`) and inline (`"CN=VDI-{{VMName}},DC=..."`)
+    bindings are supported. Missing keys resolve to an empty string.
     """
     if not params_template:
         return {}
     sv = step_vars or {}
+
+    def _lookup(raw_key: str) -> str:
+        key = raw_key.strip()
+        if key.lower().startswith("$global:"):
+            key = key[len("$global:"):]
+        return _resolve_key(key, sv, global_vars)
+
     rendered = {}
     for k, v in params_template.items():
-        if isinstance(v, str) and v.startswith("{{") and v.endswith("}}"):
-            key = v[2:-2].strip()
-            if key.lower().startswith("$global:"):
-                key = key[len("$global:"):]
-            rendered[k] = _resolve_key(key, sv, global_vars)
+        if isinstance(v, str) and "{{" in v and "}}" in v:
+            rendered[k] = _TEMPLATE_RE.sub(lambda m: _lookup(m.group(1)), v)
         else:
             rendered[k] = v
     return rendered
