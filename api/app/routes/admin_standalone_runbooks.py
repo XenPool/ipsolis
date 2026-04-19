@@ -7,7 +7,6 @@ import json as _json
 import logging
 from typing import Any
 
-from celery import Celery
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import func as sa_func, select, text
@@ -32,16 +31,11 @@ router = APIRouter(
     dependencies=[Depends(require_admin_key)],
 )
 
-# Celery app (lazy import for trigger)
-_celery_app: Celery | None = None
-
-
 def _get_celery():
-    global _celery_app
-    if _celery_app is None:
-        from tasks import app as celery_app
-        _celery_app = celery_app
-    return _celery_app
+    """Create a lightweight Celery client (broker-only, no worker import needed)."""
+    from celery import Celery
+    from app.config import settings
+    return Celery(broker=settings.CELERY_BROKER_URL)
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────

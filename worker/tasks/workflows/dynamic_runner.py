@@ -394,7 +394,7 @@ def _run_targets_mode(
                 )
                 _run_step_inline(
                     db, order_id, "Mark asset reinstall",
-                    lambda: pool_manager.mark_pending_reinstall(db=db, asset_id=asset_id),
+                    lambda: pool_manager.mark_reinstall(db=db, asset_id=asset_id),
                     critical=False,
                 )
 

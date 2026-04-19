@@ -3,9 +3,20 @@
 Provides:
 - run(run_id)              : Execute a standalone runbook run
 - check_cron_schedules()   : Beat task (every minute) to dispatch cron-scheduled runbooks
+
+Step variable sharing:
+  PowerShell steps can set $global:varname = "value" (strings, arrays, hashtables).
+  All $global: variables created during a step are automatically forwarded to
+  subsequent steps.  This allows step 1 to export data that step 2+ can consume
+  without any extra configuration.
 """
 
+import json
 import logging
+import os
+import re
+import subprocess
+import tempfile
 from datetime import datetime, timezone
 
 from celery import Task
@@ -13,9 +24,21 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from tasks import app
-from tasks.workflows.dynamic_runner import _load_global_vars, _run_db_script
+from tasks.workflows.dynamic_runner import (
+    _load_global_vars,
+    _has_param_block,
+    _split_param_block,
+    _build_ps_preamble,
+    _build_ps_preamble_for_param_script,
+    _build_ps_cli_args,
+    _ANSI_ESCAPE,
+)
 
 logger = logging.getLogger(__name__)
+
+# Markers for step variable export (must not collide with script output)
+_EXPORT_START = "::__XP_STEP_EXPORTS_START__::"
+_EXPORT_END = "::__XP_STEP_EXPORTS_END__::"
 
 
 def _get_sync_session() -> Session:
@@ -43,6 +66,189 @@ def _render_params(params_template: dict | None, global_vars: dict) -> dict:
         else:
             rendered[k] = v
     return rendered
+
+
+# ── Step variable helpers ────────────────────────────────────────────────────
+
+def _ps_literal(value) -> str:
+    """Convert a Python value to a PowerShell literal expression."""
+    if value is None:
+        return "$null"
+    if isinstance(value, bool):
+        return "$true" if value else "$false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        escaped = value.replace("'", "''")
+        return f"'{escaped}'"
+    if isinstance(value, list):
+        items = ", ".join(_ps_literal(v) for v in value)
+        return f"@({items})"
+    if isinstance(value, dict):
+        pairs = "; ".join(f"'{k}' = {_ps_literal(v)}" for k, v in value.items())
+        return "@{" + pairs + "}"
+    escaped = str(value).replace("'", "''")
+    return f"'{escaped}'"
+
+
+def _build_step_vars_preamble(step_vars: dict) -> str:
+    """Build PowerShell code that snapshots existing globals then injects step vars."""
+    lines = [
+        "# ── Step variable injection ──",
+        "$__xpSnap = [System.Collections.Generic.HashSet[string]]::new()",
+        "Get-Variable -Scope Global | ForEach-Object { [void]$__xpSnap.Add($_.Name) }",
+    ]
+    for k, v in step_vars.items():
+        lines.append(f"$global:{k} = {_ps_literal(v)}")
+    return "\n".join(lines) + "\n"
+
+
+def _build_step_vars_epilogue() -> str:
+    """Build PowerShell code that exports new/changed $global: vars as JSON."""
+    return f"""
+# ── Step variable export ──
+$__xpExport = @{{}}
+Get-Variable -Scope Global | Where-Object {{
+    -not $__xpSnap.Contains($_.Name) -and $_.Name -notlike '__xp*'
+}} | ForEach-Object {{
+    try {{ $__xpExport[$_.Name] = $_.Value }} catch {{}}
+}}
+if ($__xpExport.Count -gt 0) {{
+    Write-Output ""
+    Write-Output "{_EXPORT_START}"
+    Write-Output ($__xpExport | ConvertTo-Json -Depth 10 -Compress)
+    Write-Output "{_EXPORT_END}"
+}}
+"""
+
+
+def _parse_step_exports(stdout: str) -> tuple[str, dict]:
+    """Extract step variable exports from stdout, return (clean_stdout, exports_dict)."""
+    start_idx = stdout.find(_EXPORT_START)
+    if start_idx == -1:
+        return stdout, {}
+
+    end_idx = stdout.find(_EXPORT_END, start_idx)
+    if end_idx == -1:
+        return stdout, {}
+
+    json_str = stdout[start_idx + len(_EXPORT_START):end_idx].strip()
+    clean = stdout[:start_idx].rstrip()
+
+    try:
+        exports = json.loads(json_str)
+        if not isinstance(exports, dict):
+            return clean, {}
+        return clean, exports
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("standalone_runner: failed to parse step exports JSON")
+        return clean, {}
+
+
+def _run_script_with_step_vars(
+    db: Session,
+    script_module_id: int,
+    rendered_params: dict,
+    step_vars: dict,
+    timeout: int = 120,
+) -> tuple[dict, dict]:
+    """Execute a script module with step variable injection and extraction.
+
+    Returns (result_dict, updated_step_vars).
+    """
+    row = db.execute(
+        text("SELECT name, script_content, script_type FROM script_modules WHERE id = :id"),
+        {"id": script_module_id},
+    ).fetchone()
+    if not row:
+        return {"success": False, "error": f"script_module {script_module_id} not found"}, step_vars
+
+    script_name, script_content, script_type = row[0], row[1], row[2]
+    global_vars = _load_global_vars(db)
+
+    is_ps = script_type == "powershell"
+    step_vars_preamble = _build_step_vars_preamble(step_vars) if is_ps else ""
+    step_vars_epilogue = _build_step_vars_epilogue() if is_ps else ""
+
+    uses_param_block = is_ps and _has_param_block(script_content)
+    cli_args: list[str] = []
+
+    if is_ps and uses_param_block:
+        param_block, rest = _split_param_block(script_content)
+        preamble = _build_ps_preamble_for_param_script(global_vars, rendered_params)
+        full_script = param_block + "\n" + step_vars_preamble + preamble + "\n" + rest + "\n" + step_vars_epilogue
+        cli_args = _build_ps_cli_args(rendered_params)
+    elif is_ps:
+        preamble = _build_ps_preamble(global_vars, rendered_params)
+        full_script = step_vars_preamble + preamble + "\n" + script_content + "\n" + step_vars_epilogue
+    else:
+        # Python / Bash – no step var injection (not requested)
+        preamble = ""
+        full_script = script_content
+
+    suffix = ".ps1" if script_type == "powershell" else (".py" if script_type == "python" else ".sh")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False, encoding="utf-8") as tmp:
+        tmp.write(full_script)
+        tmp_path = tmp.name
+
+    try:
+        if script_type == "powershell":
+            cmd = ["pwsh", "-NoProfile", "-InputFormat", "None", "-File", tmp_path] + cli_args
+        elif script_type == "python":
+            cmd = ["python", tmp_path]
+        else:
+            cmd = ["bash", tmp_path]
+
+        proc = subprocess.run(
+            cmd,
+            input="Y\nY\nY\nY\nY\n",
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+        stdout_raw = _ANSI_ESCAPE.sub("", proc.stdout).strip()
+        stderr_raw = _ANSI_ESCAPE.sub("", proc.stderr).strip()
+
+        # Extract step exports before processing result
+        new_step_vars = dict(step_vars)
+        if is_ps:
+            stdout_raw, exports = _parse_step_exports(stdout_raw)
+            if exports:
+                new_step_vars.update(exports)
+                logger.info("standalone_runner: step exported %d var(s): %s",
+                            len(exports), ", ".join(exports.keys()))
+
+        if proc.returncode != 0:
+            return {
+                "success": False,
+                "module": script_name,
+                "error": stderr_raw or f"Exit code {proc.returncode}",
+                "stdout": stdout_raw,
+                "stderr": stderr_raw,
+            }, new_step_vars
+
+        try:
+            result = json.loads(stdout_raw)
+            if "success" not in result:
+                result["success"] = True
+        except (json.JSONDecodeError, ValueError):
+            result = {"success": True, "output": stdout_raw}
+
+        result["module"] = script_name
+        result["stdout"] = stdout_raw
+        result["stderr"] = stderr_raw
+        return result, new_step_vars
+
+    except subprocess.TimeoutExpired:
+        return {"success": False, "module": script_name, "error": f"Script timed out after {timeout}s"}, step_vars
+    except Exception as e:
+        return {"success": False, "module": script_name, "error": str(e)}, step_vars
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 @app.task(name="tasks.workflows.standalone_runner.run", bind=True, max_retries=0)
@@ -121,6 +327,9 @@ def _execute_run(db: Session, run_id: int) -> dict:
     # Load global vars
     global_vars = _load_global_vars(db)
 
+    # Shared step variables – populated by $global:varname in PowerShell steps
+    step_vars: dict = {}
+
     all_ok = True
     for step_row in steps:
         step_id, position, step_name, script_module_id, params_template = (
@@ -168,7 +377,10 @@ def _execute_run(db: Session, run_id: int) -> dict:
         attempts = max(1, retry_count)
         for attempt in range(1, attempts + 1):
             try:
-                result = _run_db_script(db, script_module_id, rendered_params)
+                result, step_vars = _run_script_with_step_vars(
+                    db, script_module_id, rendered_params, step_vars,
+                    timeout=timeout_seconds,
+                )
                 if result.get("success"):
                     break
                 last_error = result.get("error") or result.get("stderr") or "Step returned success=False"

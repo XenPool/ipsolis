@@ -213,8 +213,8 @@
 {% endif %}
 
 <script>
-{% raw %}
 var RUNBOOK_ID = {{ runbook.id if runbook else 'null' }};
+{% raw %}
 var _editingStepId = null;
 
 async function saveSettings() {
