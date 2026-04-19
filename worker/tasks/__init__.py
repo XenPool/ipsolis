@@ -16,6 +16,7 @@ app = Celery(
         "tasks.workflows.dynamic_runner",
         "tasks.workflows.ps_module_installer",
         "tasks.workflows.standalone_runner",
+        "tasks.workflows.sccm_probe",
     ],
 )
 

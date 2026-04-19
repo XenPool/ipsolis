@@ -628,9 +628,9 @@
   <div class="bg-white rounded-lg border border-gray-200 p-6 max-w-2xl">
     <h2 class="text-sm font-semibold text-gray-700 mb-1">SCCM Administration Service</h2>
     <p class="text-xs text-gray-400 mb-4">
-      Used by the worker helper
-      <code class="font-mono bg-gray-100 px-1 rounded">tasks/utils/sccm_admin.py</code>
-      (NTLM over HTTPS, replaces the legacy ConfigurationManager PowerShell module).
+      Used by the pure-PowerShell SCCM modules via
+      <code class="font-mono bg-gray-100 px-1 rounded">Invoke-RestMethod -Authentication Negotiate</code>
+      over Kerberos (GSSAPI) — no persistent PSDrive, no legacy ConfigurationManager module required.
     </p>
     <div class="space-y-4">
       <div>
@@ -658,6 +658,22 @@
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Kerberos realm (UPPERCASE)</label>
+          <input type="text" id="cfg-sccm-realm"
+                 value="{{ hosting_sccm.get('realm', '') }}"
+                 placeholder="CORP.EXAMPLE.COM"
+                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">KDC host (domain controller)</label>
+          <input type="text" id="cfg-sccm-kdc"
+                 value="{{ hosting_sccm.get('kdc', '') }}"
+                 placeholder="dc01.corp.example.com"
+                 class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono">
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
           <label class="block text-xs font-medium text-gray-600 mb-1">Site code</label>
           <input type="text" id="cfg-sccm-site_code"
                  value="{{ hosting_sccm.get('site_code', '') }}"
@@ -675,7 +691,7 @@
       </div>
     </div>
     <div class="mt-6 flex gap-3">
-      <button onclick="saveHostingConfig('sccm', ['base_url','username','site_code','verify_tls'], 'password')"
+      <button onclick="saveHostingConfig('sccm', ['base_url','username','realm','kdc','site_code','verify_tls'], 'password')"
               class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
         Save
       </button>
@@ -1050,7 +1066,7 @@ async function saveHostingConfig(prefix, textFields, pwField) {
 
 async function testSccmConnection() {
   // Save current form values so the test uses what's on screen.
-  await saveHostingConfig('sccm', ['base_url','username','site_code','verify_tls'], 'password');
+  await saveHostingConfig('sccm', ['base_url','username','realm','kdc','site_code','verify_tls'], 'password');
 
   var banner = document.getElementById('sccm-banner');
   banner.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'border', 'border-green-200',

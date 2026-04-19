@@ -3,9 +3,14 @@ FROM python:3.12-slim-bookworm
 WORKDIR /app
 
 # System dependencies
+# krb5-user / libgssapi-krb5-2: Kerberos client for SCCM Admin Service auth
+#   (Invoke-RestMethod -Authentication Negotiate via GSSAPI on Linux pwsh)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
+    krb5-user \
+    libkrb5-3 \
+    libgssapi-krb5-2 \
     && rm -rf /var/lib/apt/lists/*
 
 # PowerShell Core – direct .deb from GitHub releases
