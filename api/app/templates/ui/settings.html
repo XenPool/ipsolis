@@ -674,10 +674,14 @@
         </div>
       </div>
     </div>
-    <div class="mt-6">
+    <div class="mt-6 flex gap-3">
       <button onclick="saveHostingConfig('sccm', ['base_url','username','site_code','verify_tls'], 'password')"
               class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
         Save
+      </button>
+      <button onclick="testSccmConnection()"
+              class="px-5 py-2 bg-gray-100 text-gray-800 text-sm font-medium rounded border border-gray-300 hover:bg-gray-200">
+        Test Connection
       </button>
     </div>
   </div>
@@ -1042,6 +1046,35 @@ async function saveHostingConfig(prefix, textFields, pwField) {
     banner.textContent = 'Failed to save: ' + errors.join(', ');
   }
   banner.classList.remove('hidden');
+}
+
+async function testSccmConnection() {
+  // Save current form values so the test uses what's on screen.
+  await saveHostingConfig('sccm', ['base_url','username','site_code','verify_tls'], 'password');
+
+  var banner = document.getElementById('sccm-banner');
+  banner.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'border', 'border-green-200',
+                           'bg-red-50', 'text-red-800', 'border-red-200',
+                           'bg-blue-50', 'text-blue-800', 'border-blue-200');
+  banner.classList.add('bg-blue-50', 'text-blue-800', 'border', 'border-blue-200');
+  banner.textContent = 'Testing SCCM Admin Service connection…';
+  banner.classList.remove('hidden');
+
+  try {
+    var resp = await fetch('/admin/config/sccm/test', {method: 'POST'});
+    var data = await resp.json();
+    banner.classList.remove('bg-blue-50', 'text-blue-800', 'border-blue-200');
+    if (data.ok === true) {
+      banner.classList.add('bg-green-50', 'text-green-800', 'border-green-200');
+    } else {
+      banner.classList.add('bg-red-50', 'text-red-800', 'border-red-200');
+    }
+    banner.textContent = data.message || (data.ok ? 'OK' : 'Test failed.');
+  } catch (e) {
+    banner.classList.remove('bg-blue-50', 'text-blue-800', 'border-blue-200');
+    banner.classList.add('bg-red-50', 'text-red-800', 'border-red-200');
+    banner.textContent = 'Request failed: ' + e;
+  }
 }
 
 // ── Script Variables ───────────────────────────────────────────────────────────

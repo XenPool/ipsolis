@@ -204,6 +204,70 @@ async def test_entra_connection(db: AsyncSession = Depends(get_db)) -> dict:
         return {"ok": False, "message": str(exc)}
 
 
+@router.post("/config/sccm/test")
+async def test_sccm_connection(db: AsyncSession = Depends(get_db)) -> dict:
+    """Authenticates against the SCCM Administration Service (NTLM) using the
+    current sccm.* config and reports a status dict."""
+    from sqlalchemy import text as sa_text
+
+    async def _get(key: str, default: str = "") -> str:
+        r = await db.execute(sa_text("SELECT value FROM app_config WHERE key = :k"), {"k": key})
+        row = r.fetchone()
+        return row[0] if row and row[0] else default
+
+    base_url   = (await _get("sccm.base_url")).strip()
+    username   = (await _get("sccm.username")).strip()
+    password   = await _get("sccm.password")
+    verify_tls = (await _get("sccm.verify_tls", "true")).strip().lower() != "false"
+
+    if not base_url or not username or not password:
+        return {"ok": False, "message": "Missing sccm.base_url, sccm.username, or sccm.password."}
+
+    root = base_url.rstrip("/")
+    if not root.lower().endswith("/adminservice"):
+        root = root + "/AdminService"
+    probe_url = f"{root}/wmi/SMS_Site"
+
+    def _probe() -> dict:
+        try:
+            import requests
+            from requests_ntlm import HttpNtlmAuth
+            resp = requests.get(
+                probe_url,
+                params={"$top": "1"},
+                auth=HttpNtlmAuth(username, password),
+                verify=verify_tls,
+                timeout=15,
+                headers={"Accept": "application/json"},
+            )
+            if resp.status_code == 401:
+                return {"ok": False, "message": "401 Unauthorized – NTLM auth rejected (check username/password/domain)."}
+            if resp.status_code == 403:
+                return {"ok": False, "message": "403 Forbidden – account lacks SMS Admin permissions."}
+            if resp.status_code == 404:
+                return {"ok": False, "message": f"404 Not Found at {probe_url} – check base URL."}
+            if not resp.ok:
+                return {"ok": False, "message": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+            try:
+                payload = resp.json()
+            except Exception:
+                return {"ok": False, "message": f"Connected but response was not JSON: {resp.text[:200]}"}
+            value = payload.get("value", payload) if isinstance(payload, dict) else payload
+            count = len(value) if isinstance(value, list) else 1
+            site_code = ""
+            if isinstance(value, list) and value and isinstance(value[0], dict):
+                site_code = value[0].get("SiteCode") or value[0].get("sitecode") or ""
+            msg = f"Admin Service reachable – SMS_Site returned {count} row(s)"
+            if site_code:
+                msg += f" (site code: {site_code})"
+            return {"ok": True, "message": msg + "."}
+        except Exception as exc:  # ConnectionError, SSLError, Timeout, etc.
+            return {"ok": False, "message": str(exc)}
+
+    import asyncio
+    return await asyncio.get_running_loop().run_in_executor(None, _probe)
+
+
 # ── Asset-Typen ────────────────────────────────────────────────────────────────
 
 @router.get("/asset-types/{type_id}/logo", include_in_schema=False)
