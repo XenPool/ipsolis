@@ -76,8 +76,9 @@ try {
     $sccmGuid = Convert-ToSCCMGuid -RawUuid $vm.uuid
     Write-Log "SCCM GUID: $sccmGuid" 'INFO'
 
-    # Persist MAC on the asset_pool row (stored inside the JSONB metadata column)
-    $sql = "UPDATE asset_pool SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{mac_address}', to_jsonb(%s::text)), updated_at = NOW() WHERE name = %s"
+    # Persist MAC on the asset_pool row. The metadata column is JSON (not JSONB),
+    # so we cast to jsonb, apply jsonb_set, then cast back to json.
+    $sql = "UPDATE asset_pool SET metadata = jsonb_set(COALESCE(metadata::jsonb, '{}'::jsonb), '{mac_address}', to_jsonb(%s::text))::json, updated_at = NOW() WHERE name = %s"
     $raw = python /app/tasks/utils/db_execute.py $sql $mac $VMName 2>&1
     $text = if ($raw -is [array]) { $raw -join "`n" } else { [string]$raw }
     try { $dbRes = $text | ConvertFrom-Json } catch {

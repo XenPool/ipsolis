@@ -264,10 +264,23 @@ def _run_script_with_step_vars(
                             len(exports), ", ".join(exports.keys()))
 
         if proc.returncode != 0:
+            err = stderr_raw
+            if not err and stdout_raw:
+                # Try to extract error from the last JSON object the script printed
+                for line in reversed(stdout_raw.splitlines()):
+                    line = line.strip()
+                    if line.startswith("{") and line.endswith("}"):
+                        try:
+                            j = json.loads(line)
+                            if isinstance(j, dict) and j.get("error"):
+                                err = str(j["error"])
+                                break
+                        except (json.JSONDecodeError, ValueError):
+                            pass
             return {
                 "success": False,
                 "module": script_name,
-                "error": stderr_raw or f"Exit code {proc.returncode}",
+                "error": err or f"Exit code {proc.returncode}",
                 "stdout": stdout_raw,
                 "stderr": stderr_raw,
             }, new_step_vars
@@ -442,7 +455,12 @@ def _execute_run(db: Session, run_id: int) -> dict:
             _update_run_step(db, run_step_id, "success", log_output=str(log_output), finished_at=step_end)
             logger.info("standalone_runner: step '%s' succeeded", step_name)
         else:
-            _update_run_step(db, run_step_id, "failed", error=last_error, finished_at=step_end)
+            fail_log = (result or {}).get("stdout") or (result or {}).get("stderr") or ""
+            _update_run_step(
+                db, run_step_id, "failed",
+                log_output=str(fail_log) if fail_log else None,
+                error=last_error, finished_at=step_end,
+            )
             logger.error("standalone_runner: step '%s' failed: %s", step_name, last_error)
             if is_critical:
                 all_ok = False

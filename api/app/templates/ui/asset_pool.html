@@ -211,13 +211,14 @@
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Order</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Expires</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">IP Address</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">MAC Address</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Notes</th>
         <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide text-right">Actions</th>
       </tr>
     </thead>
     <tbody id="pool-tbody" class="divide-y divide-gray-100">
       <tr id="loading-row">
-        <td colspan="9" class="px-4 py-10 text-center text-gray-400 text-sm">Loading assets…</td>
+        <td colspan="10" class="px-4 py-10 text-center text-gray-400 text-sm">Loading assets…</td>
       </tr>
     </tbody>
   </table>
@@ -386,7 +387,7 @@ async function loadAssets() {
     renderTable();
   } catch(e) {
     document.getElementById('pool-tbody').innerHTML =
-      '<tr><td colspan="9" class="px-4 py-10 text-center text-red-400 text-sm">Error loading: ' + e.message + '</td></tr>';
+      '<tr><td colspan="10" class="px-4 py-10 text-center text-red-400 text-sm">Error loading: ' + e.message + '</td></tr>';
   }
 }
 
@@ -401,7 +402,7 @@ function renderTable() {
   document.getElementById('count-label').textContent = filtered.length + ' entries';
   var tbody = document.getElementById('pool-tbody');
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="px-4 py-10 text-center text-gray-400 text-sm">No assets found.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-10 text-center text-gray-400 text-sm">No assets found.</td></tr>';
     return;
   }
   tbody.innerHTML = '';
@@ -422,6 +423,7 @@ function _esc(s) {
 function buildRow(a) {
   var canEdit = (a.status === 'free' || a.status === 'maintenance');
   var ip = (a.asset_metadata && a.asset_metadata.ip_address) ? a.asset_metadata.ip_address : '';
+  var mac = (a.asset_metadata && a.asset_metadata.mac_address) ? a.asset_metadata.mac_address : '';
   var notes = (a.asset_metadata && a.asset_metadata.notes) ? a.asset_metadata.notes : '';
   var expiresStr = a.expires_at ? new Date(a.expires_at).toLocaleDateString('en-GB') : '–';
   var orderCell = a.current_order_id
@@ -452,6 +454,7 @@ function buildRow(a) {
     + '<td class="px-4 py-3 text-xs">' + orderCell + '</td>'
     + '<td class="px-4 py-3 text-xs text-gray-500">' + _esc(expiresStr) + '</td>'
     + '<td class="px-4 py-3 text-xs text-gray-500 font-mono">' + _esc(ip) + '</td>'
+    + '<td class="px-4 py-3 text-xs text-gray-500 font-mono">' + _esc(mac) + '</td>'
     + '<td class="px-4 py-3 text-xs text-gray-500 max-w-xs truncate" title="' + _esc(notes) + '">' + _esc(notes) + '</td>'
     + '<td class="px-4 py-3 text-right text-sm">' + actionsHtml + '</td>';
   return tr;
@@ -464,6 +467,7 @@ function startEdit(id) {
   var a = _allAssets.find(function(x) { return x.id === id; });
   if (!a) return;
   var ip = (a.asset_metadata && a.asset_metadata.ip_address) ? a.asset_metadata.ip_address : '';
+  var mac = (a.asset_metadata && a.asset_metadata.mac_address) ? a.asset_metadata.mac_address : '';
   var notes = (a.asset_metadata && a.asset_metadata.notes) ? a.asset_metadata.notes : '';
   var tr = document.getElementById('row-' + id);
   tr.innerHTML =
@@ -480,6 +484,8 @@ function startEdit(id) {
     + '<td class="px-4 py-2 text-xs text-gray-400">–</td>'
     + '<td class="px-4 py-2"><input id="edit-ip-' + id + '" value="' + _esc(ip) + '" placeholder="10.0.1.x"'
     + ' class="w-full rounded border border-gray-300 text-xs px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"></td>'
+    + '<td class="px-4 py-2"><input id="edit-mac-' + id + '" value="' + _esc(mac) + '" placeholder="aa:bb:cc:dd:ee:ff"'
+    + ' class="w-full rounded border border-gray-300 text-xs px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"></td>'
     + '<td class="px-4 py-2"><input id="edit-notes-' + id + '" value="' + _esc(notes) + '" placeholder="Notes"'
     + ' class="w-full rounded border border-gray-300 text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"></td>'
     + '<td class="px-4 py-2 text-right">'
@@ -494,11 +500,13 @@ async function saveEdit(id) {
   var newName   = document.getElementById('edit-name-' + id).value.trim();
   var newStatus = document.getElementById('edit-status-' + id).value;
   var newIp     = document.getElementById('edit-ip-' + id).value.trim();
+  var newMac    = document.getElementById('edit-mac-' + id).value.trim();
   var newNotes  = document.getElementById('edit-notes-' + id).value.trim();
   if (!newName) { alert('Hostname must not be empty.'); return; }
   var a = _allAssets.find(function(x) { return x.id === id; });
   var meta = Object.assign({}, a.asset_metadata || {});
   meta.ip_address = newIp || undefined;
+  meta.mac_address = newMac ? newMac.toLowerCase() : undefined;
   meta.notes = newNotes || undefined;
   try {
     var resp = await fetch('/admin/assets/' + id, {
