@@ -17,6 +17,7 @@ app = Celery(
         "tasks.workflows.ps_module_installer",
         "tasks.workflows.standalone_runner",
         "tasks.workflows.sccm_probe",
+        "tasks.modules.maintenance",
     ],
 )
 
@@ -34,6 +35,7 @@ app.conf.update(
         "tasks.workflows.ps_module_installer.*": {"queue": "provision"},
         "tasks.workflows.standalone_runner.*": {"queue": "provision"},
         "tasks.modules.notifications.*": {"queue": "notifications"},
+        "tasks.modules.maintenance.*": {"queue": "default"},
     },
     beat_schedule={
         # Check hourly expiring assets + send reminder emails
@@ -53,6 +55,18 @@ app.conf.update(
             "task": "tasks.workflows.standalone_runner.check_cron_schedules",
             "schedule": crontab(minute="*"),  # Every minute
             "options": {"queue": "provision"},
+        },
+        # Scheduled database backups (cron-expression driven)
+        "maintenance-backup-scheduler": {
+            "task": "tasks.modules.maintenance.check_backup_schedule",
+            "schedule": crontab(minute="*"),  # Every minute
+            "options": {"queue": "default"},
+        },
+        # Health probe transitions → email alerts
+        "maintenance-health-alert": {
+            "task": "tasks.modules.maintenance.check_health_and_alert",
+            "schedule": crontab(minute="*/5"),  # Every 5 minutes
+            "options": {"queue": "default"},
         },
     },
 )

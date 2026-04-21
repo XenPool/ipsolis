@@ -822,3 +822,14 @@ async def settings_page(
 async def global_vars_redirect() -> RedirectResponse:
     """Backward-compat redirect for old bookmarks."""
     return RedirectResponse(url="/ui/settings#vars", status_code=301)
+
+
+# ── Maintenance UI ─────────────────────────────────────────────────────────────
+
+@router.get("/maintenance", response_class=HTMLResponse)
+async def maintenance_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ui/maintenance.html",
+        {"active_page": "maintenance"},
+    )

@@ -61,6 +61,7 @@ services:
       - "8000:8000"
     volumes:
       - ./scripts:/app/scripts      # PowerShell scripts (read/write for script editor)
+      - ./backups:/app/backups      # Local DB backups (shared with worker)
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,6 +91,7 @@ services:
       PYTHONUNBUFFERED: "1"
     volumes:
       - ./scripts:/app/scripts:ro          # PowerShell scripts (read-only)
+      - ./backups:/app/backups             # Local DB backups (shared with api)
       - ps_user_modules:/root/.local/share/powershell/Modules
     depends_on:
       postgres:

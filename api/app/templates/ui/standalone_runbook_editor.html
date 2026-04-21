@@ -28,19 +28,13 @@
     </div>
   </div>
 
-  <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-4">
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
     <div>
       <label class="block text-xs font-medium text-gray-600 mb-1">Active</label>
       <label class="flex items-center gap-2 text-sm cursor-pointer">
         <input type="checkbox" id="rb-active" {% if not runbook or runbook.is_active %}checked{% endif %} class="w-4 h-4">
         Enabled
       </label>
-    </div>
-    <div>
-      <label class="block text-xs font-medium text-gray-600 mb-1">Cron Schedule</label>
-      <input type="text" id="rb-cron" value="{{ runbook.cron_expression if runbook and runbook.cron_expression else '' }}"
-             placeholder="e.g. 0 3 * * *"
-             class="w-full rounded border border-gray-300 text-sm font-mono px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
     </div>
     <div>
       <label class="block text-xs font-medium text-gray-600 mb-1">Cron Enabled</label>
@@ -55,6 +49,74 @@
         <input type="checkbox" id="rb-skip-running" {% if not runbook or runbook.skip_if_running %}checked{% endif %} class="w-4 h-4">
         Prevent overlap
       </label>
+    </div>
+  </div>
+
+  <!-- Cron Schedule Builder -->
+  <div class="border border-gray-200 rounded p-4 mb-4 bg-gray-50">
+    <div class="text-xs font-medium text-gray-600 mb-3">Cron Schedule</div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Frequency</label>
+        <select id="rb-cron-mode" onchange="rbOnCronModeChange()"
+                class="w-full rounded border border-gray-300 text-sm px-3 py-1.5">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+          <option value="hourly">Every N hours</option>
+          <option value="custom">Custom (raw cron)</option>
+        </select>
+      </div>
+
+      <div id="rb-cron-time-wrap">
+        <label class="block text-xs text-gray-500 mb-1">Time (UTC)</label>
+        <input type="time" id="rb-cron-time" value="03:00" step="60"
+               onchange="rbRebuildCron()"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-1.5">
+      </div>
+
+      <div id="rb-cron-dow-wrap" class="hidden">
+        <label class="block text-xs text-gray-500 mb-1">Weekday</label>
+        <select id="rb-cron-dow" onchange="rbRebuildCron()"
+                class="w-full rounded border border-gray-300 text-sm px-3 py-1.5">
+          <option value="0">Sunday</option>
+          <option value="1" selected>Monday</option>
+          <option value="2">Tuesday</option>
+          <option value="3">Wednesday</option>
+          <option value="4">Thursday</option>
+          <option value="5">Friday</option>
+          <option value="6">Saturday</option>
+        </select>
+      </div>
+
+      <div id="rb-cron-dom-wrap" class="hidden">
+        <label class="block text-xs text-gray-500 mb-1">Day of month (1–28)</label>
+        <input type="number" id="rb-cron-dom" min="1" max="28" value="1"
+               onchange="rbRebuildCron()"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-1.5">
+      </div>
+
+      <div id="rb-cron-every-hours-wrap" class="hidden">
+        <label class="block text-xs text-gray-500 mb-1">Run every N hours</label>
+        <input type="number" id="rb-cron-every-hours" min="1" max="23" value="6"
+               onchange="rbRebuildCron()"
+               class="w-full rounded border border-gray-300 text-sm px-3 py-1.5">
+      </div>
+    </div>
+
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <label class="block text-xs text-gray-500">Cron expression (UTC)</label>
+        <span id="rb-cron-human" class="text-[11px] text-gray-400"></span>
+      </div>
+      <input type="text" id="rb-cron" value="{{ runbook.cron_expression if runbook and runbook.cron_expression else '' }}"
+             placeholder="e.g. 0 3 * * *"
+             oninput="rbOnCronManualEdit()"
+             class="w-full rounded border border-gray-300 text-sm font-mono px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
+      <p class="text-[11px] text-gray-400 mt-1">
+        Format: <code>min hour day-of-month month day-of-week</code>. Leave blank to disable.
+      </p>
     </div>
   </div>
 
@@ -228,6 +290,148 @@
 var RUNBOOK_ID = {{ runbook.id if runbook else 'null' }};
 {% raw %}
 var _editingStepId = null;
+
+// ── Cron editor ──────────────────────────────────────────────────────────
+var RB_WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+function rbPad2(n) { return (n < 10 ? '0' : '') + n; }
+
+function rbShowCronFields(mode) {
+  var map = {
+    daily:   ['rb-cron-time-wrap'],
+    weekly:  ['rb-cron-time-wrap', 'rb-cron-dow-wrap'],
+    monthly: ['rb-cron-time-wrap', 'rb-cron-dom-wrap'],
+    hourly:  ['rb-cron-every-hours-wrap'],
+    custom:  []
+  };
+  var visible = map[mode] || [];
+  ['rb-cron-time-wrap', 'rb-cron-dow-wrap', 'rb-cron-dom-wrap', 'rb-cron-every-hours-wrap']
+    .forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      if (visible.indexOf(id) >= 0) el.classList.remove('hidden');
+      else el.classList.add('hidden');
+    });
+  var cronInput = document.getElementById('rb-cron');
+  if (mode === 'custom') {
+    cronInput.readOnly = false;
+    cronInput.classList.remove('bg-gray-100');
+    cronInput.classList.add('bg-white');
+  } else {
+    cronInput.readOnly = true;
+    cronInput.classList.add('bg-gray-100');
+    cronInput.classList.remove('bg-white');
+  }
+}
+
+function rbOnCronModeChange() {
+  var mode = document.getElementById('rb-cron-mode').value;
+  rbShowCronFields(mode);
+  if (mode !== 'custom') rbRebuildCron();
+  else rbUpdateCronHuman();
+}
+
+function rbRebuildCron() {
+  var mode = document.getElementById('rb-cron-mode').value;
+  var timeStr = document.getElementById('rb-cron-time').value || '03:00';
+  var parts = timeStr.split(':');
+  var hh = parseInt(parts[0] || '0', 10);
+  var mm = parseInt(parts[1] || '0', 10);
+  var cron = '0 3 * * *';
+  if (mode === 'daily') {
+    cron = mm + ' ' + hh + ' * * *';
+  } else if (mode === 'weekly') {
+    var dow = document.getElementById('rb-cron-dow').value;
+    cron = mm + ' ' + hh + ' * * ' + dow;
+  } else if (mode === 'monthly') {
+    var dom = parseInt(document.getElementById('rb-cron-dom').value || '1', 10);
+    if (dom < 1) dom = 1; if (dom > 28) dom = 28;
+    cron = mm + ' ' + hh + ' ' + dom + ' * *';
+  } else if (mode === 'hourly') {
+    var every = parseInt(document.getElementById('rb-cron-every-hours').value || '6', 10);
+    if (every < 1) every = 1; if (every > 23) every = 23;
+    cron = '0 */' + every + ' * * *';
+  }
+  if (mode !== 'custom') {
+    document.getElementById('rb-cron').value = cron;
+  }
+  rbUpdateCronHuman();
+}
+
+function rbOnCronManualEdit() {
+  if (document.getElementById('rb-cron-mode').value !== 'custom') {
+    document.getElementById('rb-cron-mode').value = 'custom';
+    rbShowCronFields('custom');
+  }
+  rbUpdateCronHuman();
+}
+
+function rbHumanizeCron(expr) {
+  var p = (expr || '').trim().split(/\s+/);
+  if (p.length !== 5) return '';
+  var mm = p[0], hh = p[1], dom = p[2], mon = p[3], dow = p[4];
+  var time = (/^\d+$/.test(hh) && /^\d+$/.test(mm))
+             ? (rbPad2(parseInt(hh, 10)) + ':' + rbPad2(parseInt(mm, 10))) + ' UTC'
+             : null;
+  if (mon === '*' && dom === '*' && dow === '*' && time) return 'Daily at ' + time;
+  if (mon === '*' && dom === '*' && /^\d$/.test(dow) && time)
+    return 'Weekly on ' + RB_WEEKDAYS[parseInt(dow, 10)] + ' at ' + time;
+  if (mon === '*' && dow === '*' && /^\d+$/.test(dom) && time)
+    return 'Monthly on day ' + dom + ' at ' + time;
+  if (mon === '*' && dom === '*' && dow === '*' && mm === '0' && /^\*\/\d+$/.test(hh))
+    return 'Every ' + hh.slice(2) + ' hour(s)';
+  return '';
+}
+
+function rbUpdateCronHuman() {
+  var expr = document.getElementById('rb-cron').value;
+  var h = rbHumanizeCron(expr);
+  document.getElementById('rb-cron-human').textContent = expr.trim() ? (h ? '→ ' + h : 'custom expression') : '(none)';
+}
+
+function rbApplyCronToFields(expr) {
+  var raw = (expr || '').trim();
+  if (!raw) {
+    // No cron set — default editor to daily 03:00 but keep input empty
+    rbSetMode('daily');
+    document.getElementById('rb-cron-time').value = '03:00';
+    document.getElementById('rb-cron').value = '';
+    rbUpdateCronHuman();
+    return;
+  }
+  var p = raw.split(/\s+/);
+  if (p.length !== 5) { rbSetMode('custom'); rbUpdateCronHuman(); return; }
+  var mm = p[0], hh = p[1], dom = p[2], mon = p[3], dow = p[4];
+  var simpleMinHour = /^\d+$/.test(mm) && /^\d+$/.test(hh);
+
+  if (mon === '*' && dom === '*' && dow === '*' && simpleMinHour) {
+    rbSetMode('daily');
+    document.getElementById('rb-cron-time').value = rbPad2(parseInt(hh, 10)) + ':' + rbPad2(parseInt(mm, 10));
+  } else if (mon === '*' && dom === '*' && /^\d$/.test(dow) && simpleMinHour) {
+    rbSetMode('weekly');
+    document.getElementById('rb-cron-dow').value = dow;
+    document.getElementById('rb-cron-time').value = rbPad2(parseInt(hh, 10)) + ':' + rbPad2(parseInt(mm, 10));
+  } else if (mon === '*' && dow === '*' && /^\d+$/.test(dom) && simpleMinHour) {
+    rbSetMode('monthly');
+    document.getElementById('rb-cron-dom').value = dom;
+    document.getElementById('rb-cron-time').value = rbPad2(parseInt(hh, 10)) + ':' + rbPad2(parseInt(mm, 10));
+  } else if (mon === '*' && dom === '*' && dow === '*' && mm === '0' && /^\*\/\d+$/.test(hh)) {
+    rbSetMode('hourly');
+    document.getElementById('rb-cron-every-hours').value = hh.slice(2);
+  } else {
+    rbSetMode('custom');
+  }
+  rbUpdateCronHuman();
+}
+
+function rbSetMode(mode) {
+  document.getElementById('rb-cron-mode').value = mode;
+  rbShowCronFields(mode);
+}
+
+// Initialize from server-rendered value
+document.addEventListener('DOMContentLoaded', function() {
+  rbApplyCronToFields(document.getElementById('rb-cron').value);
+});
 
 async function saveSettings() {
   var name = document.getElementById('rb-name').value.trim();
