@@ -73,8 +73,14 @@ try {
     $mac = ($primary.MAC).ToLower()
     Write-Log "Primary MAC (device $($primary.device)): $mac" 'INFO'
 
-    $sccmGuid = Convert-ToSCCMGuid -RawUuid $vm.uuid
-    Write-Log "SCCM GUID: $sccmGuid" 'INFO'
+    # Local variable is named $guid (not $sccmGuid) on purpose: PS variable
+    # names are case-insensitive, and top-level script assignments under
+    # `pwsh -File` land in global scope. Using $sccmGuid would silently
+    # claim the canonical global name 'sccmGuid', preventing the later
+    # `$global:SCCMGuiD = ...` from creating a distinctly-named global,
+    # which breaks `{{SCCMGuiD}}` template substitution in downstream steps.
+    $guid = Convert-ToSCCMGuid -RawUuid $vm.uuid
+    Write-Log "SCCM GUID: $guid" 'INFO'
 
     # Persist MAC on the asset_pool row. The metadata column is JSON (not JSONB),
     # so we cast to jsonb, apply jsonb_set, then cast back to json.
@@ -92,17 +98,19 @@ try {
     }
 
     $global:MACAddress = $mac
-    $global:SCCMGuiD   = $sccmGuid
+    $global:SCCMGuiD   = $guid
 
     Write-Output (@{
         success     = $true
         vm_name     = $VMName
         vm_uuid     = $vm.uuid
         mac_address = $mac
-        sccm_guid   = $sccmGuid
+        sccm_guid   = $guid
         rows_updated = [int]$dbRes.rowcount
     } | ConvertTo-Json -Compress)
-    exit 0
+    # No `exit 0` – the runner appends an epilogue that exports $global:* vars
+    # for subsequent steps. `exit` inside try kills the runspace before the
+    # epilogue runs, which breaks MACAddress/SCCMGuiD forwarding.
 }
 catch {
     $msg = $_.Exception.Message

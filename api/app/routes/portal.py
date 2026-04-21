@@ -566,7 +566,7 @@ async def portal_create_order(
             # Reserve a free asset immediately so it's guaranteed on start day
             reserve_row = await db.execute(sql_text("""
                 SELECT id, name FROM asset_pool
-                WHERE asset_type_id = :at AND status = 'free'
+                WHERE asset_type_id = :at AND status = 'Free'
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             """), {"at": asset_type_id})
@@ -824,7 +824,7 @@ async def portal_cancel_order(
         if original.assigned_asset_id:
             await db.execute(sql_text("""
                 UPDATE asset_pool
-                SET status = 'free', current_order_id = NULL, expires_at = NULL
+                SET status = 'Free', current_order_id = NULL, expires_at = NULL
                 WHERE id = :aid AND status = 'reserved'
             """), {"aid": original.assigned_asset_id})
             logger.info("Portal: Released reserved asset %s for cancelled order %s",
@@ -1137,7 +1137,7 @@ async def _post_approval_dispatch(order: Order, db: AsyncSession, celery_app) ->
         if asset_type and asset_type.assignment_model in ("assigned_personal", "dedicated_shared"):
             reserve_row = await db.execute(sql_text("""
                 SELECT id, name FROM asset_pool
-                WHERE asset_type_id = :at AND status = 'free'
+                WHERE asset_type_id = :at AND status = 'Free'
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             """), {"at": order.asset_type_id})

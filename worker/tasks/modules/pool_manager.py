@@ -47,7 +47,7 @@ def reserve_asset(
     row = db.execute(
         sql_text("""
             SELECT id, name, metadata FROM asset_pool
-            WHERE asset_type_id = :at AND status = 'free'
+            WHERE asset_type_id = :at AND status = 'Free'
             LIMIT 1
             FOR UPDATE SKIP LOCKED
         """),
@@ -94,7 +94,7 @@ def release_asset(db: Session, asset_id: int) -> dict:
     result = db.execute(
         sql_text("""
             UPDATE asset_pool
-            SET status = 'free',
+            SET status = 'Free',
                 current_order_id = NULL,
                 expires_at = NULL,
                 last_reclaim_at = :now

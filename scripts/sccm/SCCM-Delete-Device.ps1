@@ -101,7 +101,7 @@ try {
     $safeName = $VMName -replace "'", "''"
     $resp = Invoke-SccmRequest $cfg 'Get' 'wmi/SMS_R_System' @{
         '$filter' = "Name eq '$safeName'"
-        '$select' = 'ResourceID,Name'
+        '$select' = 'ResourceID,Name,MACAddresses,SMBIOSGUID'
     }
     $devices = @($resp.value)
 
@@ -110,17 +110,50 @@ try {
         Write-Output (@{ success = $true; deleted = 0; message = "No device named '$VMName' in SCCM." } | ConvertTo-Json -Compress)
         exit 0
     }
-    if ($devices.Count -gt 1) {
-        Write-Output (@{ success = $false; error = "Multiple devices match '$VMName'"; count = $devices.Count } | ConvertTo-Json -Compress)
+
+    # Classify: a "ghost" record has no MAC addresses AND no SMBIOSGUID.
+    # SCCM often leaves these behind when an import is replaced. We delete all
+    # matches — ghosts unconditionally, and at most one "real" device. If more
+    # than one real device matches, we still bail out to avoid destroying
+    # an unrelated machine that happens to share the name.
+    function Test-IsGhost($d) {
+        $macs = @($d.MACAddresses) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+        $guid = [string]$d.SMBIOSGUID
+        return ($macs.Count -eq 0) -and [string]::IsNullOrWhiteSpace($guid)
+    }
+
+    $ghosts = @($devices | Where-Object { Test-IsGhost $_ })
+    $real   = @($devices | Where-Object { -not (Test-IsGhost $_) })
+
+    if ($real.Count -gt 1) {
+        $realIds = ($real | ForEach-Object { [string]$_.ResourceID }) -join ','
+        Write-Output (@{
+            success = $false
+            error   = "Multiple real devices match '$VMName' (count=$($real.Count), ResourceIDs=$realIds)"
+            count   = $real.Count
+        } | ConvertTo-Json -Compress)
         exit 1
     }
 
-    $rid = $devices[0].ResourceID
-    Invoke-SccmRequest $cfg 'Delete' "wmi/SMS_R_System($rid)" $null | Out-Null
+    $toDelete  = @($ghosts) + @($real)
+    $deleted   = @()
+    $primaryId = $null
+    foreach ($d in $toDelete) {
+        $rid = [int]$d.ResourceID
+        Invoke-SccmRequest $cfg 'Delete' "wmi/SMS_R_System($rid)" $null | Out-Null
+        $deleted += $rid
+        if ($real.Count -eq 1 -and $d.ResourceID -eq $real[0].ResourceID) { $primaryId = $rid }
+    }
 
-    $global:SCCMDeleteResourceID = $rid
-    $global:SCCMDeleteCount      = 1
-    Write-Output (@{ success = $true; deleted = 1; resource_id = $rid } | ConvertTo-Json -Compress)
+    $global:SCCMDeleteResourceID = if ($primaryId) { $primaryId } elseif ($deleted.Count -gt 0) { $deleted[0] } else { $null }
+    $global:SCCMDeleteCount      = $deleted.Count
+    Write-Output (@{
+        success       = $true
+        deleted       = $deleted.Count
+        resource_ids  = $deleted
+        ghosts        = $ghosts.Count
+        real          = $real.Count
+    } | ConvertTo-Json -Compress)
 }
 catch {
     Write-Output (@{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress)

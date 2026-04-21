@@ -4,7 +4,9 @@ param(
     [Parameter(Mandatory=$true)][string]$MACAddress,
     [Parameter(Mandatory=$true)][string]$SCCMGuiD,
     [string]$AppCollectionIDs = "",
-    [int]$ResourceIdRetries = 60
+    [int]$ResourceIdRetries = 60,
+    [int]$MembershipRetries = 20,
+    [int]$MembershipRetryDelaySec = 30
 )
 
 # SCCM - Import Device and Assign Collections (pure PS + Kerberos/GSSAPI).
@@ -68,6 +70,11 @@ function Invoke-SccmRequest([hashtable]$cfg, [string]$method, [string]$path,
         $bodyFile = "/tmp/sccm_body_$PID.json"
         [IO.File]::WriteAllText($bodyFile, $json)
         $curlArgs += @('-H', 'Content-Type: application/json', '--data-binary', "@$bodyFile")
+    } elseif ($method.ToUpper() -eq 'POST') {
+        # IIS rejects bodyless POSTs with HTTP 411 (Length Required) unless a
+        # Content-Length header is present. AdminService parameter-less actions
+        # (RequestRefresh, etc.) fall into this category.
+        $curlArgs += @('-H', 'Content-Length: 0')
     }
     $curlArgs += $url
 
@@ -126,13 +133,16 @@ try {
         $resourceId = [int]$devices[0].ResourceID
         Write-Host "Device '$VMName' already exists (ResourceID=$resourceId)."
     } else {
+        # ConfigMgr 2509 AdminService: ImportMachineEntry is an OData
+        # ActionImport on the SMS_Site entity set — URL uses a dot, not a
+        # slash, and body property names are ALL CAPS (SMBIOSGUID, MACAddress).
         $body = @{
             NetbiosName = $VMName
-            SMBiosGuid  = $guid
-            MacAddress  = $mac
+            SMBIOSGUID  = $guid
+            MACAddress  = $mac
             OverwriteExistingRecord = $false
         }
-        Invoke-SccmRequest $cfg 'Post' 'SMS_Site/ImportMachineEntry' $null $body | Out-Null
+        Invoke-SccmRequest $cfg 'Post' 'wmi/SMS_Site.ImportMachineEntry' $null $body | Out-Null
         Write-Host "Import submitted for '$VMName'. Polling for ResourceID..."
 
         for ($i = 1; $i -le $ResourceIdRetries; $i++) {
@@ -148,26 +158,69 @@ try {
         if (-not $resourceId) { throw "Timed out waiting for ResourceID for '$VMName'." }
     }
 
-    # Direct membership rules for OS collection + any app collections
+    # Direct membership rules for OS collection + any app collections.
+    # ConfigMgr 2509 AdminService: both AddMembershipRule and RequestRefresh
+    # are bound OData actions on SMS_Collection instances — URLs use the
+    # `wmi/SMS_Collection('<id>')/AdminService.<Action>` form.
     $targets = @($OSCollectionID) + $appCollections
+    $membershipStatus = @{}
     foreach ($collId in $targets) {
+        # AdminService metadata (wmi/$metadata): AddMembershipRule is a bound
+        # action on SMS_Collection taking a single `collectionRule` parameter
+        # of abstract type SMS_CollectionRule. The concrete direct-membership
+        # subtype is SMS_CollectionRuleDirect, selected via @odata.type.
         $body = @{
-            CollectionID  = $collId
-            ResourceID    = $resourceId
-            RuleName      = "$VMName-$resourceId"
+            collectionRule = @{
+                '@odata.type'     = '#AdminService.SMS_CollectionRuleDirect'
+                ResourceClassName = 'SMS_R_System'
+                ResourceID        = $resourceId
+                RuleName          = "$VMName-$resourceId"
+            }
         }
         try {
-            Invoke-SccmRequest $cfg 'Post' 'SMS_Collection/AddMembershipRule' $null $body | Out-Null
+            Invoke-SccmRequest $cfg 'Post' "wmi/SMS_Collection('$collId')/AdminService.AddMembershipRule" $null $body | Out-Null
             Write-Host "Added ResourceID $resourceId to collection $collId."
         } catch {
             # AdminService returns an error if the rule already exists — log and continue
             Write-Host "AddMembershipRule($collId) non-fatal: $($_.Exception.Message)"
         }
-        # Trigger collection refresh
+        # Trigger collection refresh. AddMembershipRule only stages the rule;
+        # membership is not materialised until the collection is evaluated.
         try {
-            Invoke-SccmRequest $cfg 'Post' "SMS_Collection('$collId')/AdminService.RequestRefresh" $null $null | Out-Null
+            Invoke-SccmRequest $cfg 'Post' "wmi/SMS_Collection('$collId')/AdminService.RequestRefresh" $null $null | Out-Null
+            Write-Host "RequestRefresh submitted for collection $collId."
         } catch {
             Write-Host "RequestRefresh($collId) non-fatal: $($_.Exception.Message)"
+        }
+
+        # Poll SMS_FullCollectionMembership until ResourceID shows up in the
+        # collection (or timeout). Collection eval is async — downstream steps
+        # (PXE boot, task-sequence deployment) assume the device is a member.
+        $isMember = $false
+        for ($j = 1; $j -le $MembershipRetries; $j++) {
+            try {
+                $mResp = Invoke-SccmRequest $cfg 'Get' 'wmi/SMS_FullCollectionMembership' @{
+                    '$filter' = "CollectionID eq '$collId' and ResourceID eq $resourceId"
+                    '$select' = 'ResourceID,CollectionID,Name'
+                }
+                $members = @($mResp.value)
+                if ($members.Count -ge 1) { $isMember = $true; break }
+            } catch {
+                Write-Host "  [membership poll $j/$MembershipRetries] query error: $($_.Exception.Message)"
+            }
+            Write-Host "  [membership poll $j/$MembershipRetries] ResourceID $resourceId not yet in $collId; re-triggering refresh."
+            try { Invoke-SccmRequest $cfg 'Post' "wmi/SMS_Collection('$collId')/AdminService.RequestRefresh" $null $null | Out-Null } catch {}
+            Start-Sleep -Seconds $MembershipRetryDelaySec
+        }
+        if ($isMember) {
+            Write-Host "Confirmed ResourceID $resourceId is a member of $collId."
+            $membershipStatus[$collId] = $true
+        } else {
+            Write-Host "WARNING: ResourceID $resourceId not confirmed in $collId within $($MembershipRetries * $MembershipRetryDelaySec)s."
+            $membershipStatus[$collId] = $false
+            if ($collId -eq $OSCollectionID) {
+                throw "Timed out waiting for ResourceID $resourceId to appear in OS collection $collId."
+            }
         }
     }
 
@@ -176,11 +229,12 @@ try {
     $global:SCCMAppCollections = $appCollections
 
     Write-Output (@{
-        success         = $true
-        resource_id     = $resourceId
-        status          = 'success'
-        os_collection   = $OSCollectionID
-        app_collections = $appCollections
+        success           = $true
+        resource_id       = $resourceId
+        status            = 'success'
+        os_collection     = $OSCollectionID
+        app_collections   = $appCollections
+        membership_status = $membershipStatus
     } | ConvertTo-Json -Compress)
 }
 catch {

@@ -49,11 +49,14 @@ _STEP_COLORS = {
 }
 
 _ASSET_STATUS_COLORS = {
-    "free":        "bg-green-100 text-green-700",
-    "reserved":    "bg-yellow-100 text-yellow-700",
-    "busy":        "bg-blue-100 text-blue-700",
-    "reclaiming":  "bg-orange-100 text-orange-700",
-    "maintenance": "bg-gray-100 text-gray-600",
+    "Free":         "bg-green-100 text-green-700",
+    "reserved":     "bg-yellow-100 text-yellow-700",
+    "busy":         "bg-blue-100 text-blue-700",
+    "reclaiming":   "bg-orange-100 text-orange-700",
+    "maintenance":  "bg-gray-100 text-gray-600",
+    "Reinstall":    "bg-orange-100 text-orange-700",
+    "Reinstalling": "bg-blue-100 text-blue-700",
+    "Failed":       "bg-red-100 text-red-700",
 }
 
 
@@ -66,7 +69,7 @@ async def _pool_summary(db: AsyncSession) -> dict:
     counts = {row.status.value: row.cnt for row in rows}
     total = sum(counts.values())
     return {
-        "free":        counts.get("free", 0),
+        "free":        counts.get("Free", 0),
         "busy":        counts.get("busy", 0),
         "reclaiming":  counts.get("reclaiming", 0),
         "maintenance": counts.get("maintenance", 0),
@@ -411,7 +414,7 @@ async def asset_types_list(
             tid = r[0]
             pool_counts.setdefault(tid, {"free": 0, "total": 0})
             pool_counts[tid]["total"] += r[2]
-            if r[1] == "free":
+            if r[1] == "Free":
                 pool_counts[tid]["free"] += r[2]
 
     # Active slot usage for capacity_pooled asset types (counted via orders)

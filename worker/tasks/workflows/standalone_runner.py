@@ -15,8 +15,10 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import tempfile
+import time
 from datetime import datetime, timezone
 
 from celery import Task
@@ -136,14 +138,26 @@ def _ps_literal(value) -> str:
 
 
 def _build_step_vars_preamble(step_vars: dict) -> str:
-    """Build PowerShell code that snapshots existing globals then injects step vars."""
+    """Build PowerShell code that snapshots existing globals then injects step vars.
+
+    Step var names are injected via Set-Variable rather than `$global:<name> =`
+    because the epilogue of a previous step can legitimately export variables
+    whose names contain characters that break dotted variable syntax — e.g.
+    `Citrix.XenServer.Sessions`, where `$global:Citrix.XenServer.Sessions = ...`
+    is parsed as property access on `$global:Citrix` and throws InvalidOperation.
+    Set-Variable treats the name as an opaque string, which is what we want.
+    """
     lines = [
         "# ── Step variable injection ──",
         "$__xpSnap = [System.Collections.Generic.HashSet[string]]::new()",
         "Get-Variable -Scope Global | ForEach-Object { [void]$__xpSnap.Add($_.Name) }",
     ]
     for k, v in step_vars.items():
-        lines.append(f"$global:{k} = {_ps_literal(v)}")
+        name_literal = "'" + k.replace("'", "''") + "'"
+        lines.append(
+            f"Set-Variable -Name {name_literal} -Value ({_ps_literal(v)}) "
+            f"-Scope Global -Force -ErrorAction SilentlyContinue"
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -189,16 +203,46 @@ def _parse_step_exports(stdout: str) -> tuple[str, dict]:
         return clean, {}
 
 
+def _append_run_step_log(db: Session, run_step_id: int | None, chunk: str) -> None:
+    """Append a chunk to standalone_runbook_run_steps.log_output and commit.
+
+    Called live from the stdout reader so the Admin UI's auto-refresh view can
+    show script output while the step is still executing (rather than only
+    after the process exits, which blocks on long-running poll loops)."""
+    if not run_step_id or not chunk:
+        return
+    try:
+        db.execute(
+            text(
+                "UPDATE standalone_runbook_run_steps "
+                "SET log_output = COALESCE(log_output, '') || :chunk "
+                "WHERE id = :id"
+            ),
+            {"id": run_step_id, "chunk": chunk},
+        )
+        db.commit()
+    except Exception:
+        logger.exception("standalone_runner: live log append failed (run_step_id=%s)", run_step_id)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
 def _run_script_with_step_vars(
     db: Session,
     script_module_id: int,
     rendered_params: dict,
     step_vars: dict,
     timeout: int = 120,
+    run_step_id: int | None = None,
 ) -> tuple[dict, dict]:
     """Execute a script module with step variable injection and extraction.
 
-    Returns (result_dict, updated_step_vars).
+    Streams stdout/stderr line-by-line, appending to
+    ``standalone_runbook_run_steps.log_output`` every 0.5 s (or every 20 lines)
+    so the live UI can tail the output while the step is running. Returns
+    ``(result_dict, updated_step_vars)``.
     """
     row = db.execute(
         text("SELECT name, script_content, script_type FROM script_modules WHERE id = :id"),
@@ -227,7 +271,6 @@ def _run_script_with_step_vars(
         full_script = step_vars_preamble + preamble + "\n" + script_content + "\n" + step_vars_epilogue
     else:
         # Python / Bash – no step var injection (not requested)
-        preamble = ""
         full_script = script_content
 
     suffix = ".ps1" if script_type == "powershell" else (".py" if script_type == "python" else ".sh")
@@ -239,20 +282,114 @@ def _run_script_with_step_vars(
         if script_type == "powershell":
             cmd = ["pwsh", "-NoProfile", "-InputFormat", "None", "-File", tmp_path] + cli_args
         elif script_type == "python":
-            cmd = ["python", tmp_path]
+            cmd = ["python", "-u", tmp_path]
         else:
             cmd = ["bash", tmp_path]
 
-        proc = subprocess.run(
-            cmd,
-            input="Y\nY\nY\nY\nY\n",
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        # Force line-buffered stdio when stdbuf is available so pwsh/Python
+        # don't block-buffer into the pipe while a long poll is running.
+        if shutil.which("stdbuf"):
+            cmd = ["stdbuf", "-oL", "-eL"] + cmd
 
-        stdout_raw = _ANSI_ESCAPE.sub("", proc.stdout).strip()
-        stderr_raw = _ANSI_ESCAPE.sub("", proc.stderr).strip()
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        try:
+            proc.stdin.write("Y\nY\nY\nY\nY\n")
+            proc.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
+
+        stdout_lines: list[str] = []
+        pending: list[str] = []
+        in_export_block = False
+        last_flush = time.monotonic()
+        FLUSH_SEC = 0.5
+        FLUSH_LINES = 20
+        deadline = time.monotonic() + timeout
+        timed_out = False
+
+        def _flush_pending() -> None:
+            nonlocal last_flush
+            if pending:
+                _append_run_step_log(db, run_step_id, "\n".join(pending) + "\n")
+                pending.clear()
+            last_flush = time.monotonic()
+
+        assert proc.stdout is not None
+        while True:
+            if time.monotonic() > deadline:
+                timed_out = True
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                break
+
+            line = proc.stdout.readline()
+            if line == "":
+                if proc.poll() is not None:
+                    break
+                # no data yet; periodic flush then keep polling
+                if pending and (time.monotonic() - last_flush) >= FLUSH_SEC:
+                    _flush_pending()
+                time.sleep(0.05)
+                continue
+
+            clean = _ANSI_ESCAPE.sub("", line.rstrip("\n"))
+            stdout_lines.append(clean)
+
+            stripped = clean.strip()
+            if stripped == _EXPORT_START:
+                in_export_block = True
+                continue
+            if stripped == _EXPORT_END:
+                in_export_block = False
+                continue
+            if in_export_block:
+                # swallow the export JSON — we'll re-parse it from the full buffer
+                continue
+
+            pending.append(clean)
+            if len(pending) >= FLUSH_LINES or (time.monotonic() - last_flush) >= FLUSH_SEC:
+                _flush_pending()
+
+        # Drain any remaining buffered output after exit/kill
+        try:
+            tail = proc.stdout.read()
+        except Exception:
+            tail = ""
+        if tail:
+            for t_line in tail.splitlines():
+                clean = _ANSI_ESCAPE.sub("", t_line)
+                stdout_lines.append(clean)
+                stripped = clean.strip()
+                if stripped == _EXPORT_START:
+                    in_export_block = True
+                    continue
+                if stripped == _EXPORT_END:
+                    in_export_block = False
+                    continue
+                if in_export_block:
+                    continue
+                pending.append(clean)
+        _flush_pending()
+
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            proc.wait()
+
+        stdout_raw = "\n".join(stdout_lines).strip()
 
         # Extract step exports before processing result
         new_step_vars = dict(step_vars)
@@ -263,9 +400,19 @@ def _run_script_with_step_vars(
                 logger.info("standalone_runner: step exported %d var(s): %s",
                             len(exports), ", ".join(exports.keys()))
 
-        if proc.returncode != 0:
-            err = stderr_raw
-            if not err and stdout_raw:
+        if timed_out:
+            return {
+                "success": False,
+                "module": script_name,
+                "error": f"Script timed out after {timeout}s",
+                "stdout": stdout_raw,
+                "stderr": "",
+            }, new_step_vars
+
+        returncode = proc.returncode or 0
+        if returncode != 0:
+            err = None
+            if stdout_raw:
                 # Try to extract error from the last JSON object the script printed
                 for line in reversed(stdout_raw.splitlines()):
                     line = line.strip()
@@ -280,9 +427,9 @@ def _run_script_with_step_vars(
             return {
                 "success": False,
                 "module": script_name,
-                "error": err or f"Exit code {proc.returncode}",
+                "error": err or f"Exit code {returncode}",
                 "stdout": stdout_raw,
-                "stderr": stderr_raw,
+                "stderr": "",
             }, new_step_vars
 
         try:
@@ -294,11 +441,9 @@ def _run_script_with_step_vars(
 
         result["module"] = script_name
         result["stdout"] = stdout_raw
-        result["stderr"] = stderr_raw
+        result["stderr"] = ""
         return result, new_step_vars
 
-    except subprocess.TimeoutExpired:
-        return {"success": False, "module": script_name, "error": f"Script timed out after {timeout}s"}, step_vars
     except Exception as e:
         return {"success": False, "module": script_name, "error": str(e)}, step_vars
     finally:
@@ -363,7 +508,7 @@ def _execute_run(db: Session, run_id: int) -> dict:
     steps = db.execute(
         text("""
             SELECT id, position, step_name, script_module_id, params_template,
-                   is_critical, retry_count, timeout_seconds
+                   is_critical, retry_count, timeout_seconds, always_run
             FROM standalone_runbook_steps
             WHERE runbook_id = :rid
             ORDER BY position
@@ -388,11 +533,34 @@ def _execute_run(db: Session, run_id: int) -> dict:
     step_vars: dict = {}
 
     all_ok = True
+    run_failed = False
+    first_failed_step: str | None = None
+
     for step_row in steps:
         step_id, position, step_name, script_module_id, params_template = (
             step_row[0], step_row[1], step_row[2], step_row[3], step_row[4],
         )
         is_critical, retry_count, timeout_seconds = step_row[5], step_row[6], step_row[7]
+        always_run = step_row[8] if len(step_row) > 8 else False
+
+        # After a critical-step failure, only `always_run` steps execute (the
+        # rest get marked 'skipped' here so the DB reflects the final state).
+        if run_failed and not always_run:
+            db.execute(
+                text("""
+                    INSERT INTO standalone_runbook_run_steps
+                        (run_id, step_name, position, status)
+                    VALUES (:run_id, :step_name, :position, 'skipped')
+                """),
+                {"run_id": run_id, "step_name": step_name, "position": position},
+            )
+            db.commit()
+            continue
+
+        # Expose run state to `always_run` finalization steps via step_vars so
+        # they can branch on whether the run is already in a failed state.
+        step_vars["RunbookFailed"] = bool(run_failed)
+        step_vars["RunbookFirstFailedStep"] = first_failed_step or ""
 
         step_start = datetime.now(timezone.utc)
 
@@ -422,7 +590,8 @@ def _execute_run(db: Session, run_id: int) -> dict:
             _update_run_step(db, run_step_id, "failed", error="No script module assigned")
             if is_critical:
                 all_ok = False
-                break
+                run_failed = True
+                first_failed_step = first_failed_step or step_name
             continue
 
         # Render params (step_vars override global_vars for the current run)
@@ -437,6 +606,7 @@ def _execute_run(db: Session, run_id: int) -> dict:
                 result, step_vars = _run_script_with_step_vars(
                     db, script_module_id, rendered_params, step_vars,
                     timeout=timeout_seconds,
+                    run_step_id=run_step_id,
                 )
                 if result.get("success"):
                     break
@@ -450,23 +620,23 @@ def _execute_run(db: Session, run_id: int) -> dict:
 
         step_end = datetime.now(timezone.utc)
 
+        # log_output is already streamed into the row by _run_script_with_step_vars;
+        # finalisation only sets status / error / finished_at so we don't clobber it.
         if result and result.get("success"):
-            log_output = result.get("output") or result.get("stdout") or ""
-            _update_run_step(db, run_step_id, "success", log_output=str(log_output), finished_at=step_end)
+            _finalize_run_step(db, run_step_id, "success", finished_at=step_end)
             logger.info("standalone_runner: step '%s' succeeded", step_name)
         else:
-            fail_log = (result or {}).get("stdout") or (result or {}).get("stderr") or ""
-            _update_run_step(
+            _finalize_run_step(
                 db, run_step_id, "failed",
-                log_output=str(fail_log) if fail_log else None,
                 error=last_error, finished_at=step_end,
             )
             logger.error("standalone_runner: step '%s' failed: %s", step_name, last_error)
             if is_critical:
                 all_ok = False
-                # Mark remaining steps as skipped
-                _skip_remaining_steps(db, run_id, steps, position)
-                break
+                run_failed = True
+                first_failed_step = first_failed_step or step_name
+                # Don't break: subsequent always_run steps still need to execute
+                # (e.g. a finalisation step that sets asset status to 'Failed').
 
     # Final status
     finished_at = datetime.now(timezone.utc)
@@ -503,6 +673,27 @@ def _update_run_step(
             WHERE id = :id
         """),
         {"id": run_step_id, "status": status, "log": log_output, "err": error, "finished": finished_at},
+    )
+    db.commit()
+
+
+def _finalize_run_step(
+    db: Session, run_step_id: int | None, status: str,
+    error: str | None = None, finished_at: datetime | None = None,
+) -> None:
+    """Close out a step without touching ``log_output`` (which was already
+    streamed in live by ``_append_run_step_log``)."""
+    if not run_step_id:
+        return
+    if finished_at is None:
+        finished_at = datetime.now(timezone.utc)
+    db.execute(
+        text("""
+            UPDATE standalone_runbook_run_steps
+            SET status = :status, error = :err, finished_at = :finished
+            WHERE id = :id
+        """),
+        {"id": run_step_id, "status": status, "err": error, "finished": finished_at},
     )
     db.commit()
 

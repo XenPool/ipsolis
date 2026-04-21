@@ -54,12 +54,14 @@ class AutomationStrategy(str, enum.Enum):
 
 
 class AssetStatus(str, enum.Enum):
-    FREE = "free"
+    FREE = "Free"
     RESERVED = "reserved"
     BUSY = "busy"
     MAINTENANCE = "maintenance"
     RECLAIMING = "reclaiming"
-    REINSTALL = "Reinstall"  # Awaiting reinstall runbook; not assignable
+    REINSTALL = "Reinstall"        # Awaiting reinstall runbook; not assignable
+    REINSTALLING = "Reinstalling"  # Reinstall runbook currently running
+    FAILED = "Failed"              # Reinstall failed; needs manual attention
 
 
 class AssetType(Base):

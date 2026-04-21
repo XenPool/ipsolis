@@ -13,12 +13,10 @@
     <p class="text-xs text-gray-500 mt-1">{{ runbook.description or 'No description' }}</p>
   </div>
   <div class="flex items-center gap-3">
-    <button onclick="loadRuns()"
-            class="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50 inline-flex items-center gap-1">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M5 19a9 9 0 0014.65-3.36M19 5a9 9 0 00-14.65 3.36"/>
-      </svg>
-      Refresh
+    <button id="list-auto-btn" onclick="toggleListAuto()"
+            class="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50 inline-flex items-center gap-2">
+      <span id="list-auto-dot" class="w-2 h-2 rounded-full bg-gray-300"></span>
+      <span id="list-auto-label" class="text-gray-600">Auto-Refresh: off</span>
     </button>
     <a href="/ui/standalone-runbooks/{{ runbook.id }}/edit"
        class="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-50">Edit</a>
@@ -54,12 +52,10 @@
     <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200">
       <h3 class="text-sm font-semibold text-gray-900" id="modal-title">Run Details</h3>
       <div class="flex items-center gap-2">
-        <button onclick="refreshRunDetail()"
-                class="inline-flex items-center gap-1 text-xs text-gray-600 border border-gray-300 rounded px-2 py-1 hover:bg-gray-50">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M5 19a9 9 0 0014.65-3.36M19 5a9 9 0 00-14.65 3.36"/>
-          </svg>
-          Refresh
+        <button id="detail-auto-btn" onclick="toggleDetailAuto()"
+                class="inline-flex items-center gap-2 text-xs border border-gray-300 rounded px-2 py-1 hover:bg-gray-50">
+          <span id="detail-auto-dot" class="w-1.5 h-1.5 rounded-full bg-gray-300"></span>
+          <span id="detail-auto-label" class="text-gray-600">Auto-Refresh: off</span>
         </button>
         <button onclick="closeModal()" class="text-gray-400 hover:text-gray-700 text-lg">&times;</button>
       </div>
@@ -74,6 +70,14 @@
 var RUNBOOK_ID = {{ runbook.id }};
 {% raw %}
 var _currentRunId = null;
+var _listTimer = null;
+var _listAutoOn = false;
+var _detailTimer = null;
+var _detailAutoOn = false;
+var LIST_INTERVAL_MS = 3000;
+var DETAIL_INTERVAL_MS = 2000;
+var TERMINAL = {success: 1, failed: 1, skipped: 1};
+
 var STATUS_COLORS = {
   success: 'bg-green-100 text-green-700',
   failed:  'bg-red-100 text-red-700',
@@ -137,10 +141,19 @@ async function showRunDetail(runId) {
   document.getElementById('modal-title').textContent = 'Run #' + runId;
   document.getElementById('modal-body').innerHTML = '<p class="text-sm text-gray-400">Loading…</p>';
   document.getElementById('run-detail-modal').classList.remove('hidden');
+  await _fetchRunDetail(runId, true);
+}
+
+async function _fetchRunDetail(runId, isInitial) {
+  var body = document.getElementById('modal-body');
+  var scroller = body.parentElement;
+  var wasAtBottom = isInitial
+    ? true
+    : (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 60);
 
   var resp = await fetch('/admin/standalone-runbooks/' + RUNBOOK_ID + '/runs/' + runId);
   if (!resp.ok) {
-    document.getElementById('modal-body').innerHTML = '<p class="text-sm text-red-500">Failed to load run details</p>';
+    body.innerHTML = '<p class="text-sm text-red-500">Failed to load run details</p>';
     return;
   }
   var run = await resp.json();
@@ -175,7 +188,7 @@ async function showRunDetail(runId) {
         html += '<pre class="text-xs text-red-600 bg-red-50 rounded px-2 py-1 mt-1 whitespace-pre-wrap">' + s.error + '</pre>';
       }
       if (s.log_output) {
-        html += '<pre class="text-xs text-gray-600 bg-gray-50 rounded px-2 py-1 mt-1 whitespace-pre-wrap max-h-40 overflow-y-auto">' + s.log_output + '</pre>';
+        html += '<pre class="xp-log text-xs text-gray-600 bg-gray-50 rounded px-2 py-1 mt-1 whitespace-pre-wrap max-h-40 overflow-y-auto">' + s.log_output + '</pre>';
       }
       html += '</div>';
     });
@@ -184,14 +197,82 @@ async function showRunDetail(runId) {
     html += '<p class="text-xs text-gray-400">No step details available.</p>';
   }
 
-  document.getElementById('modal-body').innerHTML = html;
+  body.innerHTML = html;
+
+  // Auto-scroll: pin outer modal + any long log panes to the bottom so the
+  // newest output is always in view while a run is still progressing.
+  if (wasAtBottom) {
+    scroller.scrollTop = scroller.scrollHeight;
+  }
+  Array.prototype.forEach.call(body.querySelectorAll('pre.xp-log'), function (pre) {
+    pre.scrollTop = pre.scrollHeight;
+  });
+
+  if (TERMINAL[run.status]) {
+    _stopDetailAuto();
+    loadRuns();
+  } else if (isInitial && !_detailAutoOn) {
+    _startDetailAuto();
+  }
 }
 
 function refreshRunDetail() {
-  if (_currentRunId != null) showRunDetail(_currentRunId);
+  if (_currentRunId != null) _fetchRunDetail(_currentRunId, false);
+}
+
+function _setDetailAutoUi(on) {
+  _detailAutoOn = on;
+  var dot = document.getElementById('detail-auto-dot');
+  var lbl = document.getElementById('detail-auto-label');
+  if (!dot || !lbl) return;
+  dot.className = on
+    ? 'w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse'
+    : 'w-1.5 h-1.5 rounded-full bg-gray-300';
+  lbl.textContent = on ? 'Auto-Refresh: on' : 'Auto-Refresh: off';
+}
+
+function _startDetailAuto() {
+  if (_detailTimer) return;
+  _detailTimer = setInterval(function () {
+    if (_currentRunId == null) { _stopDetailAuto(); return; }
+    _fetchRunDetail(_currentRunId, false);
+  }, DETAIL_INTERVAL_MS);
+  _setDetailAutoUi(true);
+}
+
+function _stopDetailAuto() {
+  if (_detailTimer) { clearInterval(_detailTimer); _detailTimer = null; }
+  _setDetailAutoUi(false);
+}
+
+function toggleDetailAuto() {
+  if (_detailAutoOn) _stopDetailAuto(); else _startDetailAuto();
+}
+
+function _setListAutoUi(on) {
+  _listAutoOn = on;
+  var dot = document.getElementById('list-auto-dot');
+  var lbl = document.getElementById('list-auto-label');
+  if (!dot || !lbl) return;
+  dot.className = on
+    ? 'w-2 h-2 rounded-full bg-green-500 animate-pulse'
+    : 'w-2 h-2 rounded-full bg-gray-300';
+  lbl.textContent = on ? 'Auto-Refresh: on' : 'Auto-Refresh: off';
+}
+
+function toggleListAuto() {
+  if (_listAutoOn) {
+    clearInterval(_listTimer); _listTimer = null;
+    _setListAutoUi(false);
+  } else {
+    _listTimer = setInterval(loadRuns, LIST_INTERVAL_MS);
+    _setListAutoUi(true);
+    loadRuns();
+  }
 }
 
 function closeModal() {
+  _stopDetailAuto();
   _currentRunId = null;
   document.getElementById('run-detail-modal').classList.add('hidden');
 }

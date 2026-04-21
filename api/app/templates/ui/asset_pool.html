@@ -190,11 +190,14 @@
   <select id="filter-status" onchange="applyFilters()"
           class="rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
     <option value="">All Statuses</option>
-    <option value="free">Free</option>
+    <option value="Free">Free</option>
     <option value="reserved">Reserved</option>
     <option value="busy">Assigned</option>
     <option value="maintenance">Maintenance</option>
     <option value="reclaiming">Releasing...</option>
+    <option value="Reinstall">Reinstall</option>
+    <option value="Reinstalling">Reinstalling</option>
+    <option value="Failed">Failed</option>
   </select>
   <span id="count-label" class="text-xs text-gray-400"></span>
 </div>
@@ -420,8 +423,24 @@ function _esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// Which current statuses allow inline editing in the asset pool admin view.
+var EDITABLE_STATUSES = ['Free', 'maintenance', 'Failed', 'Reinstall', 'Reinstalling'];
+// Options the edit <select> offers for each current status. Order = display order.
+// 'Reinstall' target is only offered from Failed/Free/Reinstall/Reinstalling (per spec).
+var EDIT_STATUS_OPTIONS = {
+  'Free':         ['Free', 'maintenance', 'Reinstall'],
+  'maintenance':  ['Free', 'maintenance'],
+  'Failed':       ['Failed', 'Free', 'Reinstall'],
+  'Reinstall':    ['Reinstall', 'Free'],
+  'Reinstalling': ['Reinstalling', 'Reinstall'],
+};
+var STATUS_LABELS = {
+  'Free': 'Free', 'maintenance': 'Maintenance',
+  'Failed': 'Failed', 'Reinstalling': 'Reinstalling', 'Reinstall': 'Reinstall',
+};
+
 function buildRow(a) {
-  var canEdit = (a.status === 'free' || a.status === 'maintenance');
+  var canEdit = EDITABLE_STATUSES.indexOf(a.status) !== -1;
   var ip = (a.asset_metadata && a.asset_metadata.ip_address) ? a.asset_metadata.ip_address : '';
   var mac = (a.asset_metadata && a.asset_metadata.mac_address) ? a.asset_metadata.mac_address : '';
   var notes = (a.asset_metadata && a.asset_metadata.notes) ? a.asset_metadata.notes : '';
@@ -476,8 +495,9 @@ function startEdit(id) {
     + '<td class="px-4 py-2 text-xs text-gray-500">' + _esc(a.type_name) + '</td>'
     + '<td class="px-4 py-2">'
     + '<select id="edit-status-' + id + '" class="rounded border border-gray-300 text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400">'
-    + '<option value="free"' + (a.status === 'free' ? ' selected' : '') + '>Free</option>'
-    + '<option value="maintenance"' + (a.status === 'maintenance' ? ' selected' : '') + '>Maintenance</option>'
+    + (EDIT_STATUS_OPTIONS[a.status] || [a.status]).map(function(v) {
+        return '<option value="' + v + '"' + (a.status === v ? ' selected' : '') + '>' + (STATUS_LABELS[v] || v) + '</option>';
+      }).join('')
     + '</select></td>'
     + '<td class="px-4 py-2 text-xs text-gray-400">–</td>'
     + '<td class="px-4 py-2 text-xs text-gray-400">–</td>'
@@ -646,7 +666,7 @@ async function confirmRevoke() {
     if (resp.status === 204) {
       var idx = _allAssets.findIndex(function(a) { return a.id === _revokeId; });
       if (idx >= 0) {
-        _allAssets[idx].status = 'free';
+        _allAssets[idx].status = 'Free';
         _allAssets[idx].current_order_id = null;
         _allAssets[idx].user_email = null;
         _allAssets[idx].expires_at = null;
