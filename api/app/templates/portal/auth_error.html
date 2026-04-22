@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ title }} – {{ app_title }}</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/static/js/i18n.js"></script>
 </head>
 <body class="h-full flex items-center justify-center">
   <div class="max-w-md w-full mx-4">
@@ -18,7 +19,8 @@
       <h1 class="text-lg font-semibold text-heading mb-2">{{ title }}</h1>
       <p class="text-sm text-muted mb-6">{{ message }}</p>
       <a href="/portal/login"
-         class="inline-block px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+         class="inline-block px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700"
+         data-i18n="portal.common.try_again">
         Try again
       </a>
     </div>

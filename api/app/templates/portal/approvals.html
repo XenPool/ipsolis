@@ -5,15 +5,16 @@
 {% block content %}
 <div class="mb-6 flex items-center justify-between">
   <h1 class="text-lg font-semibold text-heading">
-    My Approvals
+    <span data-i18n="portal.approvals.title">My Approvals</span>
     {% if pending_count > 0 %}
     <span class="ml-2 inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
-      {{ pending_count }} pending
+      {{ pending_count }} <span data-i18n="portal.approvals.pending_badge_suffix">pending</span>
     </span>
     {% endif %}
   </h1>
   <a href="/portal/approvals{% if not show_recent %}?show_recent=true{% endif %}"
-     class="text-xs text-muted hover:text-heading underline">
+     class="text-xs text-muted hover:text-heading underline"
+     data-i18n="{% if show_recent %}portal.approvals.hide_recent{% else %}portal.approvals.show_recent{% endif %}">
     {% if show_recent %}Hide recent decisions{% else %}Show recent decisions{% endif %}
   </a>
 </div>
@@ -23,12 +24,12 @@
   <table class="min-w-full divide-y divide-token-border text-sm">
     <thead class="bg-surface-raised">
       <tr>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Requester</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Asset Type</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Approval Type</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Requested</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Period</th>
-        <th class="px-4 py-3 text-right text-xs font-medium text-muted uppercase tracking-wide">Actions</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_requester">Requester</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_asset_type">Asset Type</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_approval_type">Approval Type</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_requested">Requested</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_period">Period</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_actions">Actions</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-token-border">
@@ -41,7 +42,8 @@
         <td class="px-4 py-3 text-body text-xs">{{ item.asset_type_name }}</td>
         <td class="px-4 py-3">
           <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold
-            {% if item.approval.approver_type == 'manager' %}bg-blue-100 text-blue-700{% else %}bg-purple-100 text-purple-700{% endif %}">
+            {% if item.approval.approver_type == 'manager' %}bg-blue-100 text-blue-700{% else %}bg-purple-100 text-purple-700{% endif %}"
+            data-i18n="{% if item.approval.approver_type == 'manager' %}portal.approvals.approver_manager{% else %}portal.approvals.approver_app_owner{% endif %}">
             {{ 'Manager' if item.approval.approver_type == 'manager' else 'App Owner' }}
           </span>
         </td>
@@ -58,12 +60,14 @@
             <form method="POST" action="/portal/approvals/{{ item.approval.id }}/decide" class="inline">
               <input type="hidden" name="decision" value="approve">
               <button type="submit"
-                      class="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700">
+                      class="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700"
+                      data-i18n="portal.approvals.approve_button">
                 Approve
               </button>
             </form>
             <button type="button" onclick="toggleDecline({{ item.approval.id }})"
-                    class="px-3 py-1.5 bg-red-50 text-red-700 text-xs font-medium rounded border border-red-200 hover:bg-red-100">
+                    class="px-3 py-1.5 bg-red-50 text-red-700 text-xs font-medium rounded border border-red-200 hover:bg-red-100"
+                    data-i18n="portal.approvals.decline_button">
               Decline
             </button>
           </div>
@@ -72,9 +76,11 @@
             <form method="POST" action="/portal/approvals/{{ item.approval.id }}/decide">
               <input type="hidden" name="decision" value="decline">
               <textarea name="comment" rows="2" placeholder="Reason for declining (optional)"
+                        data-i18n-attr-placeholder="portal.approvals.decline_placeholder"
                         class="w-full text-xs rounded border border-token-border bg-surface text-body placeholder:text-muted/60 px-2 py-1 mb-1 focus:outline-none focus:ring-1 focus:ring-red-400"></textarea>
               <button type="submit"
-                      class="px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700">
+                      class="px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700"
+                      data-i18n="portal.approvals.confirm_decline_button">
                 Confirm Decline
               </button>
             </form>
@@ -86,22 +92,22 @@
   </table>
 </div>
 {% elif not show_recent %}
-<div class="bg-surface rounded-lg border border-token-border p-12 text-center text-muted/70 text-sm">
+<div class="bg-surface rounded-lg border border-token-border p-12 text-center text-muted/70 text-sm" data-i18n="portal.approvals.empty_pending">
   No pending approvals.
 </div>
 {% endif %}
 
 {% if show_recent and recent_approvals %}
-<h2 class="text-sm font-semibold text-body mb-3 mt-6">Recent Decisions</h2>
+<h2 class="text-sm font-semibold text-body mb-3 mt-6" data-i18n="portal.approvals.recent_heading">Recent Decisions</h2>
 <div class="bg-surface rounded-lg border border-token-border overflow-hidden">
   <table class="min-w-full divide-y divide-token-border text-sm">
     <thead class="bg-surface-raised">
       <tr>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Requester</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Asset Type</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Decision</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Decided</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Comment</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_requester">Requester</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_asset_type">Asset Type</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_decision">Decision</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_decided">Decided</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_comment">Comment</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-token-border">
@@ -128,8 +134,8 @@
   </table>
 </div>
 {% elif show_recent %}
-<h2 class="text-sm font-semibold text-body mb-3 mt-6">Recent Decisions</h2>
-<div class="bg-surface rounded-lg border border-token-border p-8 text-center text-muted/70 text-sm">
+<h2 class="text-sm font-semibold text-body mb-3 mt-6" data-i18n="portal.approvals.recent_heading">Recent Decisions</h2>
+<div class="bg-surface rounded-lg border border-token-border p-8 text-center text-muted/70 text-sm" data-i18n="portal.approvals.empty_recent">
   No recent decisions.
 </div>
 {% endif %}

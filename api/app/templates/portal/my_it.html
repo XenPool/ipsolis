@@ -5,8 +5,8 @@
 {% block content %}
 <div class="mb-6 flex items-center justify-between">
   <h1 class="text-lg font-semibold text-heading">
-    My IT
-    <span class="ml-2 text-sm font-normal text-muted">({{ orders | length }} active)</span>
+    <span data-i18n="portal.my_it.title">My IT</span>
+    <span class="ml-2 text-sm font-normal text-muted">({{ orders | length }} <span data-i18n="portal.my_it.active_suffix">active</span>)</span>
   </h1>
 </div>
 
@@ -14,12 +14,12 @@
   <table class="min-w-full divide-y divide-token-border text-sm">
     <thead class="bg-surface-raised">
       <tr>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Asset Type</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Hostname</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Requester</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Deputy</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Valid Until</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Status</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.my_it.col_asset_type">Asset Type</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.my_it.col_hostname">Hostname</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.my_it.col_requester">Requester</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.my_it.col_deputy">Deputy</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.my_it.col_valid_until">Valid Until</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.my_it.col_status">Status</th>
         <th class="px-4 py-3"></th>
       </tr>
     </thead>
@@ -58,7 +58,7 @@
           </span>
         </td>
         <td class="px-4 py-3 text-right">
-          <a href="/portal/my-it/{{ order.id }}" class="text-blue-600 dark:text-blue-400 hover:underline text-xs whitespace-nowrap">
+          <a href="/portal/my-it/{{ order.id }}" class="text-blue-600 dark:text-blue-400 hover:underline text-xs whitespace-nowrap" data-i18n="portal.common.manage_arrow">
             Manage →
           </a>
         </td>
@@ -66,8 +66,8 @@
       {% else %}
       <tr>
         <td colspan="7" class="px-4 py-12 text-center text-muted text-sm">
-          No active assets.
-          <a href="/portal/orders/new" class="ml-1 text-blue-600 dark:text-blue-400 hover:underline">Request access now →</a>
+          <span data-i18n="portal.my_it.empty">No active assets.</span>
+          <a href="/portal/orders/new" class="ml-1 text-blue-600 dark:text-blue-400 hover:underline" data-i18n="portal.common.request_access_now">Request access now →</a>
         </td>
       </tr>
       {% endfor %}

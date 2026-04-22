@@ -103,6 +103,13 @@ async def sync_app_config_globals(request, call_next):
 # ── Static Files ──────────────────────────────────────────────────────────────
 app.mount("/static", StaticFiles(directory="/app/app/static"), name="static")
 
+# Portal i18n locale files (served as static JSON, fetched by /static/js/i18n.js)
+_LOCALES_DIR = "/app/locales"
+if os.path.isdir(_LOCALES_DIR):
+    app.mount("/locales", StaticFiles(directory=_LOCALES_DIR), name="locales")
+else:
+    logger.warning("Locales directory not found at %s — portal i18n will use fallback keys", _LOCALES_DIR)
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 app.include_router(health.router)
 app.include_router(webhook.router)
