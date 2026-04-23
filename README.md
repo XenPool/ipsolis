@@ -16,6 +16,7 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 - Order tracking with real-time status updates
 - "My IT" dashboard showing active assets with extend/modify/cancel options
 - Deputy support (order on behalf of another user)
+- Multi-language UI (English, German, Spanish, French, Italian)
 
 ### Approval Workflows
 - Configurable per asset type: manager approval, application owner approval, or both
@@ -26,14 +27,28 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 ### Dynamic Runbook Engine
 - Visual runbook builder in the Admin UI
 - Three automation strategies: Group Access (AD/Entra groups), Runbook (PowerShell scripts), or Composite (both)
-- PowerShell module management (install from Gallery or upload custom)
-- Step-by-step execution tracking with logs
+- PowerShell module management (install from Gallery or upload custom `.zip`)
+- In-app PowerShell script editor with parameter introspection
+- Step-by-step execution tracking with structured JSON logs
+
+### Standalone Runbooks
+- Ad-hoc or cron-scheduled runbooks that are not tied to an asset type
+- Per-run tracking (history, logs, notes)
+- Useful for housekeeping jobs, one-off operations, and scheduled reports
 
 ### Asset Lifecycle Management
-- Pool-based or dedicated asset assignment
+- Three assignment models: capacity-pooled (quotas), dedicated-shared (jump hosts), assigned-personal (1:1)
 - Automatic expiry checks and reminder emails (Celery Beat)
-- Configurable deprovision policies (access removal, deallocation, deletion)
+- Configurable deprovision policies: access removal, return-to-pool, return-to-pool-with-reinstall, deallocation, deletion, or custom runbook
+- Extended asset statuses — `Free`, `In use`, `Reclaiming`, `Reinstall`, `Reinstalling`, `Failed`, `Maintenance`
 - Scheduled orders (future-dated provisioning with asset reservation)
+
+### Maintenance & Operations
+- Scheduled PostgreSQL backups (cron-driven) with retention policy
+- Manual backup/restore/download via Admin UI
+- Health probes (DB, Redis, external system reachability) with email alerts on state transitions
+- Celery queue inspection and targeted purge
+- Append-only audit log viewer
 
 ### Access Control
 - Restrict asset types to specific AD groups (eligible requestors)
@@ -41,12 +56,16 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 - Capacity enforcement with pool availability checks
 
 ### Admin UI
-- Full asset type configuration (categories, attributes, automation, approvals)
+- Dashboard with live pool status tiles (auto-refreshing HTMX fragments)
+- Full asset type configuration (categories, attributes, automation strategy, approvals)
 - Runbook management with drag-and-drop step ordering
-- Email template editor with variable placeholders
-- Central settings for AD, SMTP, vSphere, SCCM, Entra ID
-- Audit log viewer
+- Email template editor with variable placeholders (per-action templates)
+- Central settings for AD, SMTP, vSphere, XenServer, SCCM, Entra ID
+- Configurable app branding (title, logo, logo position/size)
+- Global variables available to runbooks and scripts
+- Audit log viewer and order change log
 - Asset pool management with bulk import
+- Session-based login (plus `X-Admin-Key` header for API access)
 
 ### Integrations
 - **Active Directory / LDAP** -- user validation, manager lookup, group membership
@@ -140,19 +159,33 @@ Summary:
 api/
   app/
     models/         SQLAlchemy ORM models
-    routes/         FastAPI routers (admin, portal, auth, webhook)
+    routes/         FastAPI routers (admin, admin_auth, admin_modules,
+                    admin_runbooks, admin_standalone_runbooks,
+                    admin_maintenance, portal, auth, orders, webhook, ui)
     schemas/        Pydantic request/response schemas
-    templates/      Jinja2 templates (Admin UI + Portal)
-    utils/          AD lookup, capacity checks, auth helpers
-  alembic/          Database migrations
+    templates/      Jinja2 templates (Admin UI + Portal + admin login)
+    static/         Static JS/CSS assets served by FastAPI
+    utils/          AD (msldap), capacity, MSAL, admin auth, PS param parser
+  alembic/
+    versions/       Database migrations (0001 ... 0044+)
 worker/
   tasks/
-    modules/        Atomic workflow modules (pool, vsphere, sccm, AD groups, notifications)
-    workflows/      Celery workflow orchestration (dynamic_runner)
+    modules/        Atomic workflow modules (pool_manager, vsphere, sccm,
+                    active_directory, notifications, target_executor,
+                    maintenance, config_reader)
+    workflows/      Orchestration (dynamic_runner, standalone_runner,
+                    ps_module_installer, sccm_probe)
+    utils/          DB query helpers for worker-side code
 scripts/
-  xenserver/        XCP-ng / XenServer PowerShell scripts
-  vsphere/          vSphere PowerShell scripts
+  ad/               Active Directory PowerShell scripts
   sccm/             SCCM task sequence scripts
+  sql/              SQL helpers (legacy migration queries)
+  test/             Sandbox / smoke-test scripts
+  vmware/           VMware vSphere PowerShell scripts
+  xenserver/        XCP-ng / XenServer PowerShell scripts
+locales/            Portal i18n (de/en/es/fr/it JSON + validator)
+nginx/              Reverse-proxy + TLS config (production overlay)
+backups/            Persisted DB dumps (bind-mounted into api + worker)
 docs/
   DEPLOYMENT.md     Production deployment guide
 ```
@@ -195,11 +228,15 @@ Operators are responsible for maintaining their own records of processing activi
 
 ## Roadmap
 
-- [ ] Data retention and automatic cleanup
+- [x] Multi-language support (i18n) -- portal available in DE / EN / ES / FR / IT
+- [x] Dashboard with live pool status tiles
+- [x] Maintenance UI (backups, health probes, queue inspection)
+- [x] PowerShell module management (Gallery + manual upload)
+- [x] Standalone runbooks (ad-hoc + cron-scheduled)
+- [ ] Data retention and automatic cleanup (order history)
 - [ ] User data export and deletion
 - [ ] Sentry integration (optional error tracking)
-- [ ] Multi-language support (i18n)
-- [ ] Dashboard with usage analytics
+- [ ] Usage analytics dashboard
 - [ ] Role-based admin access (multiple admin roles)
 - [ ] API token management for external integrations
 - [ ] Terraform provider for asset type configuration

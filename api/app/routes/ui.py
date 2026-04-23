@@ -74,6 +74,7 @@ async def _pool_summary(db: AsyncSession) -> dict:
         "reclaiming":  counts.get("reclaiming", 0),
         "maintenance": counts.get("maintenance", 0),
         "reserved":    counts.get("reserved", 0),
+        "reinstall":   counts.get("Reinstall", 0),
         "total":       total,
     }
 

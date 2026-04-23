@@ -2,10 +2,11 @@
   ("Free",        summary.free,        "bg-green-50 dark:bg-green-500/10",   "text-green-700 dark:text-green-300",   "border-green-200 dark:border-green-500/30", "Free"),
   ("In use",      summary.busy,        "bg-blue-50 dark:bg-blue-500/10",     "text-blue-700 dark:text-blue-300",     "border-blue-200 dark:border-blue-500/30",  "busy"),
   ("Reclaiming",  summary.reclaiming,  "bg-orange-50 dark:bg-orange-500/10", "text-orange-700 dark:text-orange-300", "border-orange-200 dark:border-orange-500/30","reclaiming"),
+  ("Reinstall",   summary.reinstall,   "bg-purple-50 dark:bg-purple-500/10", "text-purple-700 dark:text-purple-300", "border-purple-200 dark:border-purple-500/30","Reinstall"),
   ("Maintenance", summary.maintenance, "bg-surface-raised",                  "text-body",                            "border-token-border",                       "maintenance"),
   ("Total",       summary.total,       "bg-surface",                         "text-heading",                          "border-token-border",                       ""),
 ] %}
-<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
   {% for label, count, bg, fg, border, slug in cards %}
   <div class="rounded-xl border {{ border }} {{ bg }} px-5 py-4 shadow-sm shadow-slate-900/5 dark:shadow-black/20 hover:shadow-md transition-shadow">
     <p class="text-xs font-medium text-muted uppercase tracking-wide">{{ label }}</p>
