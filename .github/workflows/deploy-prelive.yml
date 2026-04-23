@@ -43,7 +43,7 @@ jobs:
           # Then verify through nginx
           echo "Checking HTTPS endpoint..."
           for i in $(seq 1 6); do
-            if curl -fsk https://it-selfservice-pre.xenpool.local/health; then
+            if curl -fsk https://ipsolis-pre.xenpool.local/health; then
               echo ""
               echo "Health check passed."
               exit 0

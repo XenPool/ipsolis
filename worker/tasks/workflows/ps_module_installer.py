@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+psycopg2://xpuser:changeme@localhost:5432/itselfservice",
+    "postgresql+psycopg2://xpuser:changeme@localhost:5432/ipsolis",
 ).replace("postgresql+asyncpg://", "postgresql+psycopg2://")
 
 

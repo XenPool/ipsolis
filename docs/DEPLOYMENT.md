@@ -69,8 +69,8 @@ Clone the repository onto your server:
 
 ```bash
 cd /opt
-git clone <repository-url> it-selfservice
-cd it-selfservice
+git clone <repository-url> ipsolis
+cd ipsolis
 ```
 
 ---
@@ -269,7 +269,7 @@ EOF
 ## 6. Start the Stack
 
 ```bash
-cd /opt/it-selfservice
+cd /opt/ipsolis
 
 # Build and start all services
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
@@ -430,10 +430,10 @@ The PostgreSQL data is stored in a Docker volume (`postgres_data`). Back it up r
 
 ```bash
 # Dump the database
-docker compose exec -T postgres pg_dump -U xpuser itselfservice > backup_$(date +%Y%m%d).sql
+docker compose exec -T postgres pg_dump -U xpuser ipsolis > backup_$(date +%Y%m%d).sql
 
 # Restore from backup
-cat backup_20260414.sql | docker compose exec -T postgres psql -U xpuser itselfservice
+cat backup_20260414.sql | docker compose exec -T postgres psql -U xpuser ipsolis
 ```
 
 ### Logs
@@ -462,7 +462,7 @@ docker image prune -f
 ## 11. Updating to a New Version
 
 ```bash
-cd /opt/it-selfservice
+cd /opt/ipsolis
 
 # Pull the latest code
 git pull origin main
@@ -514,7 +514,7 @@ docker compose exec postgres pg_isready -U xpuser
 # Verify the connection from the API container
 docker compose exec api python -c "
 from sqlalchemy import create_engine, text
-e = create_engine('postgresql://xpuser:<password>@postgres:5432/itselfservice')
+e = create_engine('postgresql://xpuser:<password>@postgres:5432/ipsolis')
 with e.connect() as c: print(c.execute(text('SELECT 1')).scalar())
 "
 ```

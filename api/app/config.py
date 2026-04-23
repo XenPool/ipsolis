@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     )
 
     # ── Database ─────────────────────────────────────────────────
-    DATABASE_URL: str = "postgresql+asyncpg://xpuser:changeme@localhost:5432/itselfservice"
+    DATABASE_URL: str = "postgresql+asyncpg://xpuser:changeme@localhost:5432/ipsolis"
 
     # ── Celery ────────────────────────────────────────────────────
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"

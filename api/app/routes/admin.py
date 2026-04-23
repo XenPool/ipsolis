@@ -652,7 +652,7 @@ async def delete_asset(asset_id: int, db: AsyncSession = Depends(get_db)) -> Non
 
 _SYNC_DB_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+psycopg2://xpuser:changeme@db:5432/itselfservice",
+    "postgresql+psycopg2://xpuser:changeme@db:5432/ipsolis",
 ).replace("postgresql+asyncpg://", "postgresql+psycopg2://")
 
 

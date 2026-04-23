@@ -2,7 +2,7 @@
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prelive.yml up -d
 #
 # Prerequisites on the host VM (run once):
-#   mkcert -cert-file certs/cert.pem -key-file certs/key.pem it-selfservice-pre.xenpool.local
+#   mkcert -cert-file certs/cert.pem -key-file certs/key.pem ipsolis-pre.xenpool.local
 
 services:
   nginx:
