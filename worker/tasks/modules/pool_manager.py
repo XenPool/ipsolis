@@ -1,6 +1,5 @@
-"""Module: Pool Manager – select VM from pool and return it.
+"""Module: Pool Manager – select asset from pool and return it.
 
-Entspricht dem Ivanti-Modul 'Pool Management'.
 """
 
 import json

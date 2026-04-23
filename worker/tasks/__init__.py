@@ -17,6 +17,7 @@ app = Celery(
         "tasks.workflows.ps_module_installer",
         "tasks.workflows.standalone_runner",
         "tasks.workflows.sccm_probe",
+        "tasks.workflows.license_check",
         "tasks.modules.maintenance",
     ],
 )
@@ -34,6 +35,7 @@ app.conf.update(
         "tasks.workflows.dynamic_runner.*": {"queue": "provision"},
         "tasks.workflows.ps_module_installer.*": {"queue": "provision"},
         "tasks.workflows.standalone_runner.*": {"queue": "provision"},
+        "tasks.workflows.license_check.*": {"queue": "default"},
         "tasks.modules.notifications.*": {"queue": "notifications"},
         "tasks.modules.maintenance.*": {"queue": "default"},
     },
@@ -66,6 +68,12 @@ app.conf.update(
         "maintenance-health-alert": {
             "task": "tasks.modules.maintenance.check_health_and_alert",
             "schedule": crontab(minute="*/5"),  # Every 5 minutes
+            "options": {"queue": "default"},
+        },
+        # Daily license expiry check (30/14/7 day warnings + expired error)
+        "license-expiry-check": {
+            "task": "tasks.workflows.license_check.check_license_expiry",
+            "schedule": crontab(hour=8, minute=0),  # Daily at 08:00 Europe/Berlin
             "options": {"queue": "default"},
         },
     },

@@ -22,6 +22,12 @@ templates.env.globals["app_logo_size"] = "80"
 templates.env.globals["app_logo_show_title"] = "true"
 templates.env.globals["app_logo_title_size"] = "12"
 
+# License / edition globals — set at startup by main.py lifespan. Default to
+# Community so any early render before load_license() runs is safe.
+templates.env.globals["edition"] = "community"
+templates.env.globals["is_enterprise"] = False
+templates.env.globals["license_info"] = None
+
 # Module-level cache so the /portal/logo endpoint can read the raw data URL
 # without hitting the DB on every request.
 _logo_cache: dict[str, str] = {"value": ""}
@@ -67,6 +73,22 @@ def set_app_logo_config(key: str, value: str) -> None:
 def get_app_logo() -> str:
     """Return the raw logo data URL (empty string when no logo is set)."""
     return _logo_cache["value"]
+
+
+def set_license_globals(info) -> None:
+    """Publish license fields to the Jinja2 environment.
+
+    ``info`` is an ``app.utils.license.LicenseInfo``; accepting duck-typed input
+    avoids a circular import at module load time.
+    """
+    if info is None:
+        templates.env.globals["edition"] = "community"
+        templates.env.globals["is_enterprise"] = False
+        templates.env.globals["license_info"] = None
+        return
+    templates.env.globals["edition"] = info.edition
+    templates.env.globals["is_enterprise"] = (info.edition == "enterprise" and info.valid)
+    templates.env.globals["license_info"] = info
 
 
 async def refresh_app_config_if_stale(force: bool = False) -> None:

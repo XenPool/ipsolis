@@ -35,29 +35,6 @@ MODULE_METADATA: list[dict] = [
         "params": ["asset_id"],
         "output_keys": [],
     },
-    # ── vSphere ───────────────────────────────────────────────────────────────
-    {
-        "key": "vsphere.update_vmware_tools",
-        "group": "vsphere",
-        "description": "Aktualisiert VMware Tools auf der VM via PowerCLI",
-        "params": ["asset_name"],
-        "output_keys": [],
-    },
-    {
-        "key": "vsphere.restart_vm",
-        "group": "vsphere",
-        "description": "Startet die VM neu via vSphere",
-        "params": ["asset_name"],
-        "output_keys": [],
-    },
-    # ── SCCM ──────────────────────────────────────────────────────────────────
-    {
-        "key": "sccm.trigger_reinstall",
-        "group": "sccm",
-        "description": "Triggers SCCM task sequence for unattended VM reinstall",
-        "params": ["asset_name"],
-        "output_keys": [],
-    },
     # ── Notifications ─────────────────────────────────────────────────────────
     {
         "key": "notifications.send_confirmation",

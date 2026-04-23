@@ -1,3 +1,4 @@
+{% from "_partials/enterprise_teaser.html" import nav_locked, tab_locked, teaser_pane, card_teaser %}
 <!DOCTYPE html>
 <html lang="en" class="h-full">
 <head>
@@ -76,6 +77,7 @@
         </svg>
         Modules
       </a>
+      {% if is_enterprise %}
       <a href="/ui/ps-modules"
          class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'ps-modules' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -94,6 +96,10 @@
         </svg>
         Runbooks
       </a>
+      {% else %}
+      {{ nav_locked("PS Modules") }}
+      {{ nav_locked("Runbooks") }}
+      {% endif %}
       <a href="/ui/settings"
          class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'settings' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">

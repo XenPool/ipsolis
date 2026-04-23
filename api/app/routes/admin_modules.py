@@ -20,6 +20,7 @@ from app.models.ps_module import PsModule
 from app.models.runbook import RunbookStep
 from app.models.script_module import ScriptModule
 from app.utils.auth import require_admin_key
+from app.utils.features import require_enterprise
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,10 @@ router = APIRouter(
     tags=["admin-modules"],
     dependencies=[Depends(require_admin_key)],
 )
+
+# Enterprise gates (per-endpoint; script-modules stays Community)
+_GATE_PS_MODULES = require_enterprise("ps_module_management")
+_GATE_GLOBAL_VARS = require_enterprise("global_variables")
 
 _SECRET_MASK = "***"
 
@@ -244,13 +249,13 @@ def _mask_var(v: GlobalVar) -> dict:
     }
 
 
-@router.get("/global-vars")
+@router.get("/global-vars", dependencies=[_GATE_GLOBAL_VARS])
 async def list_global_vars(db: AsyncSession = Depends(get_db)) -> list[dict]:
     result = await db.execute(select(GlobalVar).order_by(GlobalVar.key))
     return [_mask_var(v) for v in result.scalars().all()]
 
 
-@router.post("/global-vars", status_code=status.HTTP_201_CREATED)
+@router.post("/global-vars", status_code=status.HTTP_201_CREATED, dependencies=[_GATE_GLOBAL_VARS])
 async def create_global_var(
     payload: GlobalVarCreate, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -273,7 +278,7 @@ async def create_global_var(
     return _mask_var(var)
 
 
-@router.put("/global-vars/{var_id}")
+@router.put("/global-vars/{var_id}", dependencies=[_GATE_GLOBAL_VARS])
 async def update_global_var(
     var_id: int, payload: GlobalVarUpdate, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -292,7 +297,7 @@ async def update_global_var(
     return _mask_var(var)
 
 
-@router.delete("/global-vars/{var_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/global-vars/{var_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[_GATE_GLOBAL_VARS])
 async def delete_global_var(var_id: int, db: AsyncSession = Depends(get_db)) -> None:
     var = await db.get(GlobalVar, var_id)
     if not var:
@@ -342,7 +347,7 @@ def _enqueue_install(ps_module_id: int) -> str:
     return task.id
 
 
-@router.get("/ps-modules/search")
+@router.get("/ps-modules/search", dependencies=[_GATE_PS_MODULES])
 async def search_psgallery(q: str = "") -> list[dict]:
     """Search PSGallery for modules matching q (min 2 chars)."""
     if len(q) < 2:
@@ -402,13 +407,13 @@ async def search_psgallery(q: str = "") -> list[dict]:
     return results
 
 
-@router.get("/ps-modules")
+@router.get("/ps-modules", dependencies=[_GATE_PS_MODULES])
 async def list_ps_modules(db: AsyncSession = Depends(get_db)) -> list[dict]:
     result = await db.execute(select(PsModule).order_by(PsModule.name))
     return [_ps_module_dict(m) for m in result.scalars().all()]
 
 
-@router.post("/ps-modules", status_code=status.HTTP_201_CREATED)
+@router.post("/ps-modules", status_code=status.HTTP_201_CREATED, dependencies=[_GATE_PS_MODULES])
 async def create_ps_module(
     payload: PsModuleCreate, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -439,7 +444,7 @@ async def create_ps_module(
     return {**_ps_module_dict(m), "task_id": task_id}
 
 
-@router.put("/ps-modules/{ps_module_id}")
+@router.put("/ps-modules/{ps_module_id}", dependencies=[_GATE_PS_MODULES])
 async def update_ps_module(
     ps_module_id: int, payload: PsModuleUpdate, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -454,7 +459,7 @@ async def update_ps_module(
     return {**_ps_module_dict(m), "task_id": task_id}
 
 
-@router.post("/ps-modules/{ps_module_id}/install")
+@router.post("/ps-modules/{ps_module_id}/install", dependencies=[_GATE_PS_MODULES])
 async def reinstall_ps_module(ps_module_id: int, db: AsyncSession = Depends(get_db)) -> dict:
     m = await db.get(PsModule, ps_module_id)
     if not m:
@@ -466,7 +471,7 @@ async def reinstall_ps_module(ps_module_id: int, db: AsyncSession = Depends(get_
     return {"task_id": task_id}
 
 
-@router.get("/ps-module-install/{task_id}")
+@router.get("/ps-module-install/{task_id}", dependencies=[_GATE_PS_MODULES])
 async def get_ps_module_install_result(task_id: str) -> dict:
     from celery import Celery as _Celery
     celery_app = _Celery()
@@ -482,7 +487,7 @@ async def get_ps_module_install_result(task_id: str) -> dict:
     }
 
 
-@router.post("/ps-modules/{ps_module_id}/upload")
+@router.post("/ps-modules/{ps_module_id}/upload", dependencies=[_GATE_PS_MODULES])
 async def upload_ps_module(
     ps_module_id: int,
     file: UploadFile = File(...),
@@ -508,7 +513,7 @@ async def upload_ps_module(
     return {"task_id": task_id}
 
 
-@router.delete("/ps-modules/{ps_module_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/ps-modules/{ps_module_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[_GATE_PS_MODULES])
 async def delete_ps_module(ps_module_id: int, db: AsyncSession = Depends(get_db)) -> None:
     m = await db.get(PsModule, ps_module_id)
     if not m:

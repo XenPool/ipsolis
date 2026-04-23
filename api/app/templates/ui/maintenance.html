@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_partials/enterprise_teaser.html" import tab_locked, teaser_pane, card_teaser %}
 
 {% block title %}Maintenance – {{ app_title }}{% endblock %}
 
@@ -17,18 +18,26 @@
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-700">
       Health
     </button>
+    {% if is_enterprise %}
     <button onclick="showTab('backups')" id="tab-btn-backups"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Backups
     </button>
+    {% else %}
+    {{ tab_locked("Backups", "backups") }}
+    {% endif %}
     <button onclick="showTab('queue')" id="tab-btn-queue"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Queue
     </button>
+    {% if is_enterprise %}
     <button onclick="showTab('retention')" id="tab-btn-retention"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Retention
     </button>
+    {% else %}
+    {{ tab_locked("Retention", "retention") }}
+    {% endif %}
   </nav>
 </div>
 
@@ -51,7 +60,8 @@
     <div class="text-sm text-muted/70">Loading…</div>
   </div>
 
-  <!-- Alert settings -->
+  {% if is_enterprise %}
+  <!-- Alert settings (Enterprise: advanced_maintenance) -->
   <div class="bg-surface rounded-lg border border-token-border p-5 mt-6 max-w-3xl">
     <div class="flex items-center justify-between mb-3">
       <h3 class="text-sm font-semibold text-body">Email alerts on probe failures</h3>
@@ -87,10 +97,17 @@
       </button>
     </div>
   </div>
+  {% else %}
+  {{ card_teaser(
+      "Health Alerts via Email",
+      "Get notified the moment a service (PostgreSQL, Redis, SMTP, Entra ID, SCCM) flips OK→FAILED — with a configurable cooldown window so you don't get spammed during outages."
+  ) }}
+  {% endif %}
 </div>
 
 <!-- ── Tab: Backups ─────────────────────────────────────────────────────── -->
 <div id="tab-backups" class="hidden">
+{% if is_enterprise %}
   <!-- Schedule panel -->
   <div class="bg-surface rounded-lg border border-token-border p-5 mb-6 max-w-3xl">
     <div class="flex items-center justify-between mb-3">
@@ -218,6 +235,12 @@
     Backups are stored on the host under <code>./backups/</code>. Restore is not yet
     available via the UI — use <code>psql</code> or <code>pg_restore</code> manually.
   </p>
+{% else %}
+{{ teaser_pane(
+    "Scheduled Database Backups",
+    "Automate nightly PostgreSQL backups with a configurable cron schedule, per-backup retention policy, and one-click manual create / download / delete from the Admin UI. Includes alerting on failure."
+) }}
+{% endif %}
 </div>
 
 <!-- ── Tab: Queue ───────────────────────────────────────────────────────── -->
@@ -247,6 +270,7 @@
 
 <!-- ── Tab: Retention ───────────────────────────────────────────────────── -->
 <div id="tab-retention" class="hidden">
+{% if is_enterprise %}
   <div class="flex items-center justify-between mb-3">
     <h2 class="text-sm font-semibold text-body">Retention &amp; Cleanup</h2>
     <div class="flex items-center gap-2">
@@ -310,6 +334,12 @@
   </div>
 
   <div id="cleanup-result" class="mt-4 max-w-3xl"></div>
+{% else %}
+{{ teaser_pane(
+    "Retention &amp; Cleanup",
+    "Keep the database lean with configurable retention windows for orders, audit log, standalone-runbook runs, and backup files. Dry-run preview before execution; scheduled cleanup built in."
+) }}
+{% endif %}
 </div>
 
 <script>
@@ -320,6 +350,7 @@
     ['health', 'backups', 'queue', 'retention'].forEach(function(n) {
       var panel = document.getElementById('tab-' + n);
       var btn = document.getElementById('tab-btn-' + n);
+      if (!panel || !btn) return;
       if (n === name) {
         panel.classList.remove('hidden');
         btn.classList.add('border-blue-600', 'text-blue-700');
@@ -368,7 +399,7 @@
       var resp = await fetch('/admin/maintenance/health');
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       var data = await resp.json();
-      var labels = {database: 'PostgreSQL', redis: 'Redis', entra: 'Entra ID', sccm: 'SCCM', smtp: 'SMTP'};
+      var labels = {database: 'PostgreSQL', redis: 'Redis', entra: 'Entra ID'{% if is_enterprise %}, sccm: 'SCCM'{% endif %}, smtp: 'SMTP'};
       var html = '';
       Object.keys(labels).forEach(function(key) {
         var p = data[key] || {};
@@ -402,6 +433,7 @@
   // ── Backups ────────────────────────────────────────────────────────────
   async function loadBackups() {
     var tbody = document.getElementById('backup-rows');
+    if (!tbody) return;  // Backups tab is a teaser under Community
     tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-8 text-center text-muted/70">Loading…</td></tr>';
     try {
       var resp = await fetch('/admin/maintenance/backups');
@@ -490,7 +522,9 @@
                 + '  <div class="text-xs text-muted font-mono">' + q + '</div>'
                 + '  <div class="flex items-center gap-2">'
                 + '    <span class="px-2 py-0.5 text-xs rounded bg-surface-raised text-body">' + n + '</span>'
+                {% if is_enterprise %}
                 + '    <button onclick="purgeQueue(\'' + q + '\')" class="text-[10px] text-red-600 hover:underline">purge</button>'
+                {% endif %}
                 + '  </div>'
                 + '</div>';
         });
@@ -543,6 +577,7 @@
 
   // ── Retention ──────────────────────────────────────────────────────────
   async function loadRetention() {
+    if (!document.getElementById('ret-orders')) return;  // teaser under Community
     try {
       var resp = await fetch('/admin/maintenance/retention');
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -758,6 +793,7 @@
   }
 
   async function loadSchedule() {
+    if (!document.getElementById('schedule-enabled')) return;  // teaser under Community
     try {
       var resp = await fetch('/admin/maintenance/schedule');
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -798,6 +834,8 @@
 
   // ── Alerts ─────────────────────────────────────────────────────────────
   async function loadAlerts() {
+    // Alert settings section is gated to Enterprise — skip when it's not in the DOM.
+    if (!document.getElementById('alert-enabled')) return;
     try {
       var resp = await fetch('/admin/maintenance/alerts');
       if (!resp.ok) throw new Error('HTTP ' + resp.status);

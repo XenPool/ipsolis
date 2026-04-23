@@ -12,6 +12,7 @@ from app.models.order import Order, OrderAction, OrderStatus
 from app.schemas.order import OrderCreate, OrderRead, OrderUpdate
 from app.utils.audit import _order_snap, aaudit
 from app.utils.capacity import enforce_pool_capacity
+from app.utils.license import is_feature_enabled
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -67,6 +68,30 @@ async def create_order(
     Erstellt eine neue Bestellung via Self-Service-Portal.
     (For ServiceNow webhooks: POST /webhook/servicenow)
     """
+    # Enterprise gates — deputy ordering and scheduled orders
+    from datetime import datetime as _dt, timezone as _tz
+    is_deputy = bool(
+        payload.owner_email
+        and str(payload.owner_email).strip().lower() != str(payload.user_email).strip().lower()
+    )
+    if is_deputy and not is_feature_enabled("deputy_support"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Deputy Support requires an Ipsolis Enterprise license. "
+                "Contact info@xenpool.com for licensing options."
+            ),
+        )
+    if payload.requested_from and payload.requested_from > _dt.now(_tz.utc):
+        if not is_feature_enabled("scheduled_orders"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Scheduled Orders require an Ipsolis Enterprise license. "
+                    "Contact info@xenpool.com for licensing options."
+                ),
+            )
+
     # Pre-flight capacity check — PROVISION only
     if payload.action == OrderAction.PROVISION:
         at_result = await db.execute(

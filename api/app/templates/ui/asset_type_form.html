@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_partials/enterprise_teaser.html" import ent_badge %}
 
 {% block title %}{% if asset_type %}Edit Asset Type{% else %}New Asset Type{% endif %} – {{ app_title }}{% endblock %}
 
@@ -200,21 +201,25 @@
           Renewable
         </label>
         <div id="allow-user-lists-row" class="flex flex-col gap-1">
-          <label class="flex items-center gap-2 text-sm text-body cursor-pointer pb-1">
+          <label class="flex items-center gap-2 text-sm {% if is_enterprise %}text-body cursor-pointer{% else %}text-muted/70 cursor-not-allowed{% endif %} pb-1">
             <input type="checkbox" id="allow-rdp-users-cb" name="allow_rdp_users"
                    {% if asset_type and asset_type.allow_rdp_users %}checked{% endif %}
+                   {% if not is_enterprise %}disabled{% endif %}
                    onchange="updatePrincipalSourceOptions()"
-                   class="rounded border-token-border">
+                   class="rounded border-token-border {% if not is_enterprise %}opacity-50{% endif %}">
             Enable RDP user list
             <span class="text-xs text-muted/70">(users added to RDP group)</span>
+            {% if not is_enterprise %}{{ ent_badge() }}{% endif %}
           </label>
-          <label class="flex items-center gap-2 text-sm text-body cursor-pointer pb-1">
+          <label class="flex items-center gap-2 text-sm {% if is_enterprise %}text-body cursor-pointer{% else %}text-muted/70 cursor-not-allowed{% endif %} pb-1">
             <input type="checkbox" id="allow-admin-users-cb" name="allow_admin_users"
                    {% if asset_type and asset_type.allow_admin_users %}checked{% endif %}
+                   {% if not is_enterprise %}disabled{% endif %}
                    onchange="updatePrincipalSourceOptions()"
-                   class="rounded border-token-border">
+                   class="rounded border-token-border {% if not is_enterprise %}opacity-50{% endif %}">
             Enable Admin user list
             <span class="text-xs text-muted/70">(users added to local admin group)</span>
+            {% if not is_enterprise %}{{ ent_badge() }}{% endif %}
           </label>
         </div>
       </div>
@@ -233,9 +238,12 @@
              class="w-full max-w-lg rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
     </div>
 
-    <!-- Eligible Requestors -->
+    <!-- Eligible Requestors (Enterprise: eligible_requestors) -->
     <div class="border-t border-token-border pt-5">
-      <label class="block text-xs font-medium text-muted mb-2">Eligible Requestors</label>
+      <label class="block text-xs font-medium text-muted mb-2">
+        Eligible Requestors
+        {% if not is_enterprise %}{{ ent_badge() }}{% endif %}
+      </label>
       <p class="text-xs text-muted/70 mb-2">
         Optional AD group (as Distinguished Name) whose members may request this asset type.
         Leave empty to allow all domain users.
@@ -243,7 +251,8 @@
       <input type="text" id="eligible-requestors-dn"
              value="{{ asset_type.eligible_requestors_dn or '' if asset_type else '' }}"
              placeholder="CN=VDI-Users,OU=Groups,DC=example,DC=com"
-             class="w-full max-w-lg rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+             {% if not is_enterprise %}disabled{% endif %}
+             class="w-full max-w-lg rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono {% if not is_enterprise %}opacity-60 cursor-not-allowed{% endif %}">
     </div>
 
     <!-- Approval Workflow -->
@@ -262,13 +271,15 @@
           <span class="text-xs text-muted/70">(looked up from the user's AD manager attribute)</span>
         </label>
 
-        <!-- Application Owner Approval Toggle + Owner List -->
-        <label class="flex items-center gap-2 text-sm text-body cursor-pointer">
+        <!-- Application Owner Approval Toggle + Owner List (Enterprise: app_owner_approval) -->
+        <label class="flex items-center gap-2 text-sm {% if is_enterprise %}text-body cursor-pointer{% else %}text-muted/70 cursor-not-allowed{% endif %}">
           <input type="checkbox" id="requires-owner-approval-cb"
                  {% if asset_type and asset_type.requires_owner_approval %}checked{% endif %}
+                 {% if not is_enterprise %}disabled{% endif %}
                  onchange="toggleOwnerSection()"
-                 class="rounded border-token-border text-blue-600 focus:ring-blue-500">
+                 class="rounded border-token-border text-blue-600 focus:ring-blue-500 {% if not is_enterprise %}opacity-50{% endif %}">
           Requires Application Owner Approval
+          {% if not is_enterprise %}{{ ent_badge() }}{% endif %}
         </label>
 
         <!-- Owner input section (shown when toggle is checked) -->
@@ -299,13 +310,15 @@
           </div>
         </div>
 
-        <!-- Re-approval on Modify Toggle -->
-        <label class="flex items-center gap-2 text-sm text-body cursor-pointer mt-2 pt-2 border-t border-token-border">
+        <!-- Re-approval on Modify Toggle (Enterprise: reapproval_on_modify) -->
+        <label class="flex items-center gap-2 text-sm {% if is_enterprise %}text-body cursor-pointer{% else %}text-muted/70 cursor-not-allowed{% endif %} mt-2 pt-2 border-t border-token-border">
           <input type="checkbox" id="requires-approval-on-modify-cb"
                  {% if asset_type and asset_type.requires_approval_on_modify %}checked{% endif %}
-                 class="rounded border-token-border text-blue-600 focus:ring-blue-500">
+                 {% if not is_enterprise %}disabled{% endif %}
+                 class="rounded border-token-border text-blue-600 focus:ring-blue-500 {% if not is_enterprise %}opacity-50{% endif %}">
           Require Re-Approval on Asset Modification
           <span class="text-xs text-muted/70">(RDP/Admin user changes need new approval)</span>
+          {% if not is_enterprise %}{{ ent_badge() }}{% endif %}
         </label>
       </div>
     </div>
@@ -578,23 +591,30 @@
       <label class="block text-xs font-medium text-muted mb-2">Deprovision Strategy
         <span class="text-muted/70 font-normal ml-1">– what happens on revoke/cancel?</span>
       </label>
+      {# 4-tuple: (value, short label, description, is_enterprise_only) #}
       {% set dp_opts = [
-        ("access_only",               "Revoke access only",     "Remove group membership – instance remains untouched"),
-        ("return_to_pool",            "Return to pool",         "Release assignment, resource available for others"),
-        ("return_to_pool_reinstall",  "Return to pool + reinstall", "Release and flag host for reinstall via separate runbook"),
-        ("deallocate_instance",       "Pause instance",         "Stop / deallocate VM, but do not delete"),
-        ("delete_instance",           "Delete instance",        "Permanently delete VM including cleanup"),
-        ("custom_runbook",            "Revoke Runbook",         "Run a dedicated revoke runbook on cancel"),
+        ("access_only",               "Revoke access only",     "Remove group membership – instance remains untouched", False),
+        ("return_to_pool",            "Return to pool",         "Release assignment, resource available for others", False),
+        ("return_to_pool_reinstall",  "Return to pool + reinstall", "Release and flag host for reinstall via separate runbook", False),
+        ("deallocate_instance",       "Pause instance",         "Stop / deallocate VM, but do not delete", False),
+        ("delete_instance",           "Delete instance",        "Permanently delete VM including cleanup", False),
+        ("custom_runbook",            "Revoke Runbook",         "Run a dedicated revoke runbook on cancel", True),
       ] %}
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-        {% for dp_val, dp_short, dp_desc in dp_opts %}
-        <label class="relative flex cursor-pointer rounded-lg border border-token-border p-3 hover:border-orange-400 has-[:checked]:border-orange-500 has-[:checked]:bg-orange-50 dark:has-[:checked]:bg-orange-500/20 has-[:checked]:[&_p]:text-orange-900 dark:has-[:checked]:[&_p]:text-orange-200">
+        {% for dp_val, dp_short, dp_desc, dp_ent in dp_opts %}
+        {% set dp_locked = dp_ent and not is_enterprise %}
+        <label class="relative flex rounded-lg border border-token-border p-3
+                      {% if dp_locked %}cursor-not-allowed opacity-60{% else %}cursor-pointer hover:border-orange-400 has-[:checked]:border-orange-500 has-[:checked]:bg-orange-50 dark:has-[:checked]:bg-orange-500/20 has-[:checked]:[&_p]:text-orange-900 dark:has-[:checked]:[&_p]:text-orange-200{% endif %}">
           <input type="radio" name="deprovision_policy" value="{{ dp_val }}"
                  {% if asset_type and (asset_type.deprovision_policy == dp_val) %}checked
                  {% elif not asset_type and dp_val == 'access_only' %}checked{% endif %}
+                 {% if dp_locked %}disabled{% endif %}
                  class="sr-only">
-          <div>
-            <p class="text-sm font-medium text-heading">{{ dp_short }}</p>
+          <div class="flex-1">
+            <p class="text-sm font-medium text-heading flex items-center gap-1.5">
+              {{ dp_short }}
+              {% if dp_locked %}{{ ent_badge() }}{% endif %}
+            </p>
             <p class="text-xs text-muted/70 mt-0.5">{{ dp_desc }}</p>
           </div>
         </label>
@@ -707,10 +727,12 @@ function toggleAssignmentDependents() {
   // RDP/admin user lists only relevant for Personal; hide + uncheck for Shared/Pooled
   var userListsRow = document.getElementById('allow-user-lists-row');
   var isPersonalModel = val === 'assigned_personal';
-  userListsRow.classList.toggle('hidden', !isPersonalModel);
+  if (userListsRow) userListsRow.classList.toggle('hidden', !isPersonalModel);
   if (!isPersonalModel) {
-    document.getElementById('allow-rdp-users-cb').checked = false;
-    document.getElementById('allow-admin-users-cb').checked = false;
+    var rdp = document.getElementById('allow-rdp-users-cb');
+    var adm = document.getElementById('allow-admin-users-cb');
+    if (rdp) rdp.checked = false;
+    if (adm) adm.checked = false;
     updatePrincipalSourceOptions();
   }
 
@@ -1103,10 +1125,13 @@ async function submitForm() {
       ? parseInt(form.querySelector('[name="max_per_user"]').value) : 1,
     rds_gateway_url: document.getElementById('rds-gateway-url').value.trim() || null,
     requires_manager_approval: document.getElementById('requires-manager-approval-cb').checked,
-    requires_owner_approval: document.getElementById('requires-owner-approval-cb').checked,
+    requires_owner_approval: document.getElementById('requires-owner-approval-cb')
+      ? document.getElementById('requires-owner-approval-cb').checked : false,
     approval_owners: collectApprovalOwners(),
-    requires_approval_on_modify: document.getElementById('requires-approval-on-modify-cb').checked,
-    eligible_requestors_dn: document.getElementById('eligible-requestors-dn').value.trim() || null,
+    requires_approval_on_modify: document.getElementById('requires-approval-on-modify-cb')
+      ? document.getElementById('requires-approval-on-modify-cb').checked : false,
+    eligible_requestors_dn: document.getElementById('eligible-requestors-dn')
+      ? (document.getElementById('eligible-requestors-dn').value.trim() || null) : null,
   };
 
   // Logo: include only if changed
@@ -1116,6 +1141,21 @@ async function submitForm() {
   } else if (logoVal) {
     payload.logo = logoVal;
   }
+
+  {% if not is_enterprise %}
+  // Community license: strip Enterprise-only fields so pre-existing DB values
+  // are preserved (disabled inputs still report their state; we'd overwrite
+  // otherwise). Backend also rejects these under Community as a safety net.
+  delete payload.allow_rdp_users;
+  delete payload.allow_admin_users;
+  delete payload.requires_owner_approval;
+  delete payload.requires_approval_on_modify;
+  delete payload.eligible_requestors_dn;
+  delete payload.approval_owners;
+  if (payload.deprovision_policy === 'custom_runbook') {
+    delete payload.deprovision_policy;
+  }
+  {% endif %}
 
   {% if asset_type %}
   var resp = await fetch('/admin/asset-types/{{ asset_type.id }}', {
@@ -1138,8 +1178,10 @@ async function submitForm() {
 
 // ── Approval Workflow ─────────────────────────────────────────────────────────
 function toggleOwnerSection() {
-  var checked = document.getElementById('requires-owner-approval-cb').checked;
-  document.getElementById('owner-approval-section').classList.toggle('hidden', !checked);
+  var cb = document.getElementById('requires-owner-approval-cb');
+  var section = document.getElementById('owner-approval-section');
+  if (!cb || !section) return;  // Hidden under Community license
+  section.classList.toggle('hidden', !cb.checked);
 }
 
 async function addApprovalOwner() {

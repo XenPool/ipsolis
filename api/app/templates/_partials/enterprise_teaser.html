@@ -1,0 +1,101 @@
+{# Enterprise-feature teasers.
+
+Shown under Community edition to signal upgrade paths without fully hiding
+Enterprise-only surface area. Callers usually gate on {% if is_enterprise %}
+to choose between the real content and the teaser variant.
+
+Usage:
+  {% from "_partials/enterprise_teaser.html" import nav_locked, tab_locked, teaser_pane, card_teaser %}
+
+  {{ nav_locked("PS Modules", icon_svg) }}
+  {{ tab_locked("SCCM", "sccm") }}
+  {{ teaser_pane("SCCM integration", "Trigger task sequences and ...", "https://xenpool.com") }}
+  {{ card_teaser("App Branding", "Customise title, logo and ...", "https://xenpool.com") }}
+#}
+
+
+{# Small grayed-out sidebar item with lock icon + ENT badge. #}
+{% macro nav_locked(label, icon_svg='') -%}
+<div class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-muted/60 cursor-not-allowed select-none"
+     title="{{ label }} – requires Ipsolis Enterprise license">
+  {% if icon_svg %}
+    {{ icon_svg|safe }}
+  {% else %}
+    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+    </svg>
+  {% endif %}
+  <span class="flex-1">{{ label }}</span>
+  <span class="text-[9px] tracking-widest uppercase bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-semibold">ENT</span>
+</div>
+{%- endmacro %}
+
+
+{# Tab button that appears muted and carries an ENT badge. The click handler
+   still calls showTab() so the existing tab machinery works; the caller is
+   responsible for rendering a matching teaser pane (#tab-<tab_id>). #}
+{% macro tab_locked(label, tab_id) -%}
+<button onclick="showTab('{{ tab_id }}')" id="tab-btn-{{ tab_id }}"
+        class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted/60 hover:text-body"
+        title="{{ label }} – requires Ipsolis Enterprise license">
+  {{ label }}
+  <span class="ml-1.5 text-[9px] tracking-widest uppercase bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-semibold align-middle">ENT</span>
+</button>
+{%- endmacro %}
+
+
+{# Centered "Enterprise feature" pane – use inside a <div id="tab-<tab_id>"> wrapper
+   (ships with class="hidden" so the existing tab switcher reveals it on click). #}
+{% macro teaser_pane(feature, description, learn_more_url='https://xenpool.com') -%}
+<div class="flex items-center justify-center py-12 px-4">
+  <div class="max-w-lg w-full text-center bg-surface rounded-xl border border-token-border p-10 shadow-sm shadow-slate-900/5 dark:shadow-black/20">
+    <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-500/20 mb-4">
+      <svg class="w-6 h-6 text-amber-600 dark:text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+      </svg>
+    </div>
+    <div class="text-[10px] tracking-widest uppercase text-amber-700 dark:text-amber-300 font-semibold mb-1">Ipsolis Enterprise</div>
+    <h3 class="text-base font-semibold text-heading mb-2">{{ feature }}</h3>
+    <p class="text-sm text-muted mb-6 leading-relaxed">{{ description }}</p>
+    <a href="{{ learn_more_url }}" target="_blank" rel="noopener"
+       class="inline-block px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+      Learn more about Enterprise &rarr;
+    </a>
+    <div class="mt-3 text-[11px] text-muted/70">
+      Or contact <a href="mailto:info@xenpool.com" class="underline">info@xenpool.com</a>
+    </div>
+  </div>
+</div>
+{%- endmacro %}
+
+
+{# Tiny inline "ENT" badge for disabled form fields / labels. #}
+{% macro ent_badge() -%}
+<span class="text-[9px] tracking-widest uppercase bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-semibold align-middle" title="Requires Ipsolis Enterprise license">ENT</span>
+{%- endmacro %}
+
+
+{# Compact in-page teaser card – replaces a hidden Enterprise card or section. #}
+{% macro card_teaser(feature, description, learn_more_url='https://xenpool.com') -%}
+<div class="bg-surface rounded-xl border border-dashed border-token-border p-5 max-w-2xl mb-4 relative overflow-hidden">
+  <div class="absolute top-3 right-3 text-[9px] tracking-widest uppercase bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-semibold">ENT</div>
+  <div class="flex items-start gap-3">
+    <div class="flex-shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full bg-amber-100 dark:bg-amber-500/20">
+      <svg class="w-4 h-4 text-amber-600 dark:text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+      </svg>
+    </div>
+    <div class="flex-1 min-w-0 pr-8">
+      <div class="text-sm font-semibold text-body">{{ feature }}</div>
+      <p class="text-xs text-muted mt-1 leading-relaxed">{{ description }}</p>
+      <a href="{{ learn_more_url }}" target="_blank" rel="noopener"
+         class="inline-block mt-3 text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium">
+        Learn more about Ipsolis Enterprise &rarr;
+      </a>
+    </div>
+  </div>
+</div>
+{%- endmacro %}

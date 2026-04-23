@@ -64,7 +64,7 @@ Scripts live in `scripts/<platform>/` and must:
 Active script directories:
 - `scripts/ad/` — Active Directory (computer accounts, permission groups)
 - `scripts/sccm/` — SCCM task sequence triggers, import/delete device, TS status
-- `scripts/sql/` — SQL helpers (e.g. recycle-VM queries against legacy Ivanti DB)
+- `scripts/sql/` — SQL helpers (e.g. recycle-VM queries)
 - `scripts/test/` — Sandbox / smoke-test scripts
 - `scripts/vmware/` — VMware vSphere operations (PowerCLI)
 - `scripts/xenserver/` — XCP-ng / XenServer VM operations

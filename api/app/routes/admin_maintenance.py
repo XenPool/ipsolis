@@ -21,6 +21,9 @@ from app.config import settings
 from app.database import get_db
 from app.models.db_backup import DbBackup
 from app.utils.auth import require_admin_key
+from app.utils.features import require_enterprise
+
+_ENT = require_enterprise("advanced_maintenance")
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +79,7 @@ async def list_backups(db: AsyncSession = Depends(get_db)) -> list[dict]:
     return out
 
 
-@router.post("/backups")
+@router.post("/backups", dependencies=[_ENT])
 async def create_backup(
     request: Request,
     payload: BackupCreate,
@@ -113,7 +116,7 @@ async def create_backup(
     }
 
 
-@router.get("/backups/{backup_id}/download")
+@router.get("/backups/{backup_id}/download", dependencies=[_ENT])
 async def download_backup(
     backup_id: int, db: AsyncSession = Depends(get_db)
 ) -> FileResponse:
@@ -140,7 +143,7 @@ async def download_backup(
     )
 
 
-@router.delete("/backups/{backup_id}")
+@router.delete("/backups/{backup_id}", dependencies=[_ENT])
 async def delete_backup(
     backup_id: int, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -206,7 +209,7 @@ async def get_retention(db: AsyncSession = Depends(get_db)) -> dict:
     return out
 
 
-@router.put("/retention")
+@router.put("/retention", dependencies=[_ENT])
 async def set_retention(
     payload: RetentionUpdate, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -421,7 +424,7 @@ class QueuePurge(BaseModel):
     queue: str
 
 
-@router.post("/queue/purge")
+@router.post("/queue/purge", dependencies=[_ENT])
 async def purge_queue(payload: QueuePurge) -> dict:
     if payload.queue not in _KNOWN_QUEUES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown queue: {payload.queue}")
@@ -464,7 +467,7 @@ async def _upsert_cfg(db: AsyncSession, key: str, value: str) -> None:
     )
 
 
-@router.get("/schedule")
+@router.get("/schedule", dependencies=[_ENT])
 async def get_schedule(db: AsyncSession = Depends(get_db)) -> dict:
     rows = await db.execute(text(
         "SELECT key, value FROM app_config "
@@ -477,7 +480,7 @@ async def get_schedule(db: AsyncSession = Depends(get_db)) -> dict:
     }
 
 
-@router.put("/schedule")
+@router.put("/schedule", dependencies=[_ENT])
 async def set_schedule(
     payload: ScheduleUpdate, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -502,7 +505,7 @@ class AlertUpdate(BaseModel):
     cooldown_minutes: int | None = None
 
 
-@router.get("/alerts")
+@router.get("/alerts", dependencies=[_ENT])
 async def get_alerts(db: AsyncSession = Depends(get_db)) -> dict:
     rows = await db.execute(text(
         "SELECT key, value FROM app_config WHERE key IN ("
@@ -520,7 +523,7 @@ async def get_alerts(db: AsyncSession = Depends(get_db)) -> dict:
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-@router.put("/alerts")
+@router.put("/alerts", dependencies=[_ENT])
 async def set_alerts(
     payload: AlertUpdate, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -539,7 +542,7 @@ async def set_alerts(
     return {"success": True}
 
 
-@router.post("/alerts/test")
+@router.post("/alerts/test", dependencies=[_ENT])
 async def test_alert(db: AsyncSession = Depends(get_db)) -> dict:
     """Sends a test email to the configured alert recipient."""
     row = await db.execute(

@@ -4,6 +4,29 @@
 {% block title %}Dashboard – {{ app_title }}{% endblock %}
 
 {% block content %}
+
+<!-- License banner -->
+{% if license_info and license_info.expires_at and not license_info.valid %}
+<div class="mb-6 rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+  <strong>License expired</strong> on {{ license_info.expires_at.strftime("%Y-%m-%d") }}.
+  The instance is running in Community mode. Contact
+  <a href="mailto:info@xenpool.com" class="underline">info@xenpool.com</a> to renew.
+</div>
+{% elif is_enterprise %}
+<div class="mb-6 rounded-lg border border-green-200 dark:border-green-500/30 bg-green-50 dark:bg-green-500/10 px-4 py-3 text-sm text-green-700 dark:text-green-300">
+  <strong>Enterprise Edition</strong> &middot; Licensed to {{ license_info.licensee }}
+  {% if license_info.expires_at %}
+    &middot; expires {{ license_info.expires_at.strftime("%Y-%m-%d") }}
+  {% endif %}
+</div>
+{% else %}
+<div class="mb-6 rounded-lg border border-token-border bg-surface px-4 py-3 text-xs text-muted">
+  <strong>Community Edition</strong> &mdash; Upgrade to Enterprise for advanced workflows,
+  integrations, and compliance features.
+  <a href="https://xenpool.com" target="_blank" rel="noopener" class="underline">Learn more &rarr;</a>
+</div>
+{% endif %}
+
 <!-- Pool Summary -->
 <div class="mb-8">
   <div class="flex items-center justify-between mb-3">

@@ -1,6 +1,6 @@
 # Ipsolis
 
-Open-source platform for IT asset lifecycle automation. Built for on-premises datacenters, replacing expensive commercial tools like Ivanti Automation or ServiceNow orchestration.
+Open-source platform for IT asset lifecycle automation. Built for on-premises datacenters, replacing expensive commercial tools.
 
 Give your users a self-service portal to request, extend, and return IT assets (VDIs, application access, infrastructure resources) while your IT team keeps full control through configurable approval workflows, runbooks, and audit trails.
 

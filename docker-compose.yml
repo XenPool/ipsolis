@@ -62,6 +62,7 @@ services:
     volumes:
       - ./scripts:/app/scripts      # PowerShell scripts (read/write for script editor)
       - ./backups:/app/backups      # Local DB backups (shared with worker)
+      - ./licenses:/app/license:ro  # Signed .lic file (read-only)
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,6 +93,7 @@ services:
     volumes:
       - ./scripts:/app/scripts:ro          # PowerShell scripts (read-only)
       - ./backups:/app/backups             # Local DB backups (shared with api)
+      - ./licenses:/app/license:ro         # Signed .lic file (read-only)
       - ps_user_modules:/root/.local/share/powershell/Modules
     depends_on:
       postgres:
@@ -126,6 +128,7 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/1
     volumes:
       - beat_schedule:/app/beat_schedule
+      - ./licenses:/app/license:ro         # Signed .lic file (read-only)
       - ps_user_modules:/root/.local/share/powershell/Modules
     depends_on:
       postgres:

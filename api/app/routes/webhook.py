@@ -14,9 +14,14 @@ from app.models.order import Order, OrderAction, OrderStatus
 from app.schemas.order import OrderRead, WebhookPayload
 from app.utils.audit import _order_snap, aaudit
 from app.utils.capacity import enforce_pool_capacity
+from app.utils.features import require_enterprise
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/webhook", tags=["webhook"])
+router = APIRouter(
+    prefix="/webhook",
+    tags=["webhook"],
+    dependencies=[require_enterprise("servicenow_webhook")],
+)
 
 
 def _verify_hmac(body: bytes, signature: str) -> bool:

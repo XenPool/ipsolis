@@ -15,7 +15,8 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.config import AppConfig
 from app.routes import admin, admin_auth, admin_maintenance, admin_modules, admin_runbooks, admin_standalone_runbooks, assets, auth, health, orders, portal, ui, webhook
-from app.templates_instance import set_app_title, set_app_logo_config, refresh_app_config_if_stale
+from app.templates_instance import set_app_title, set_app_logo_config, set_license_globals, refresh_app_config_if_stale
+from app.utils.license import load_license
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -50,6 +51,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     set_app_logo_config(cfg.key, cfg.value)
     except Exception as exc:
         logger.warning("Could not load app config globals from DB at startup: %s", exc)
+
+    # Load license and publish edition globals to Jinja2 (safe on error)
+    try:
+        license_info = load_license()
+        set_license_globals(license_info)
+        logger.info(
+            "License loaded", edition=license_info.edition,
+            valid=license_info.valid, licensee=license_info.licensee,
+        )
+    except Exception as exc:
+        logger.warning("License load failed; running Community: %s", exc)
 
     yield
     logger.info("Application shutting down")
