@@ -52,7 +52,6 @@ _ASSET_STATUS_COLORS = {
     "Free":         "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
     "reserved":     "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300",
     "busy":         "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
-    "reclaiming":   "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
     "maintenance":  "bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300",
     "Reinstall":    "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
     "Reinstalling": "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
@@ -71,7 +70,7 @@ async def _pool_summary(db: AsyncSession) -> dict:
     return {
         "free":        counts.get("Free", 0),
         "busy":        counts.get("busy", 0),
-        "reclaiming":  counts.get("reclaiming", 0),
+        "failed":      counts.get("Failed", 0),
         "maintenance": counts.get("maintenance", 0),
         "reserved":    counts.get("reserved", 0),
         "reinstall":   counts.get("Reinstall", 0),

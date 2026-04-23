@@ -58,7 +58,6 @@ class AssetStatus(str, enum.Enum):
     RESERVED = "reserved"
     BUSY = "busy"
     MAINTENANCE = "maintenance"
-    RECLAIMING = "reclaiming"
     REINSTALL = "Reinstall"        # Awaiting reinstall runbook; not assignable
     REINSTALLING = "Reinstalling"  # Reinstall runbook currently running
     FAILED = "Failed"              # Reinstall failed; needs manual attention

@@ -186,13 +186,12 @@ runtime; no build step needed.
 - `Free` — available for assignment
 - `reserved` — held by a scheduled order (not yet active)
 - `busy` — actively assigned to a user
-- `reclaiming` — revoke in progress
 - `Reinstall` — awaiting reinstall runbook after `return_to_pool_reinstall`
 - `Reinstalling` — reinstall runbook currently running
 - `Failed` — reinstall failed, manual intervention required
 - `maintenance` — taken offline by operator
 
-Dashboard tiles (Admin UI `/ui/`) count Free / In use / Reclaiming / Reinstall / Maintenance / Total.
+Dashboard tiles (Admin UI `/ui/`) count Free / In use / Failed / Reinstall / Maintenance / Total.
 
 ## External System Integrations
 

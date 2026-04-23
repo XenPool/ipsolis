@@ -30,7 +30,7 @@ This document defines the feature split between the **Community Edition** (open-
 
 ### Asset Lifecycle Management
 - All three assignment models: capacity-pooled, dedicated-shared, assigned-personal
-- Asset statuses: Free, Reserved, Busy, Reclaiming, Reinstall, Reinstalling, Failed, Maintenance
+- Asset statuses: Free, Reserved, Busy, Reinstall, Reinstalling, Failed, Maintenance
 - Standard deprovision policies: access_only, return_to_pool, return_to_pool_reinstall, deallocate, delete
 - Automatic expiry checks and reminder emails (Celery Beat)
 

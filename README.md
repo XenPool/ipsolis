@@ -40,7 +40,7 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 - Three assignment models: capacity-pooled (quotas), dedicated-shared (jump hosts), assigned-personal (1:1)
 - Automatic expiry checks and reminder emails (Celery Beat)
 - Configurable deprovision policies: access removal, return-to-pool, return-to-pool-with-reinstall, deallocation, deletion, or custom runbook
-- Extended asset statuses — `Free`, `In use`, `Reclaiming`, `Reinstall`, `Reinstalling`, `Failed`, `Maintenance`
+- Extended asset statuses — `Free`, `In use`, `Reinstall`, `Reinstalling`, `Failed`, `Maintenance`
 - Scheduled orders (future-dated provisioning with asset reservation)
 
 ### Maintenance & Operations

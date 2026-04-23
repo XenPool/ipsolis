@@ -194,7 +194,6 @@
     <option value="reserved">Reserved</option>
     <option value="busy">Assigned</option>
     <option value="maintenance">Maintenance</option>
-    <option value="reclaiming">Releasing...</option>
     <option value="Reinstall">Reinstall</option>
     <option value="Reinstalling">Reinstalling</option>
     <option value="Failed">Failed</option>
@@ -352,14 +351,12 @@ var _STATUS_LABELS = {
   reserved:    'Reserved',
   busy:        'Assigned',
   maintenance: 'Maintenance',
-  reclaiming:  'Releasing\u2026',
 };
 var _STATUS_CLASSES = {
   free:        'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300',
   reserved:    'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300',
   busy:        'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
   maintenance: 'bg-surface-raised text-muted',
-  reclaiming:  'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300',
 };
 
 // ── Panel toggle ──────────────────────────────────────────────────
@@ -448,7 +445,7 @@ function buildRow(a) {
   var orderCell = a.current_order_id
     ? '<a href="/ui/orders/' + a.current_order_id + '" class="text-blue-600 hover:underline">#' + a.current_order_id + '</a>'
     : '<span class="text-muted/70">–</span>';
-  var inUse = (a.status === 'reserved' || a.status === 'busy' || a.status === 'reclaiming');
+  var inUse = (a.status === 'reserved' || a.status === 'busy');
   var forceBtn = '<button onclick="openForceDeleteModal(' + a.id + ')" title="Force Delete"'
     + ' class="text-muted/50 hover:text-red-500 ml-1" style="font-size:15px;line-height:1">⊗</button>';
   var revokeBtn = '<button onclick="openRevokeModal(' + a.id + ')" title="Revoke &amp; Release"'
@@ -571,7 +568,7 @@ function openForceDeleteModal(id) {
   document.getElementById('fdm-confirm-btn').textContent = 'Delete';
 
   // Show user info + revoke checkbox only when asset is in active use
-  var inUse = (a.status === 'reserved' || a.status === 'busy' || a.status === 'reclaiming');
+  var inUse = (a.status === 'reserved' || a.status === 'busy');
   var userRow = document.getElementById('fdm-user-row');
   var revokeRow = document.getElementById('fdm-revoke-row');
   if (inUse && a.current_order_id) {

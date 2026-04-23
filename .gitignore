@@ -17,6 +17,7 @@ certs/
 licenses/*.lic
 scripts/license/private_key.pem
 scripts/license/*.pem
+scripts/license/*.json
 
 # ─────────────────────────────────────────
 # Python
