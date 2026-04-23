@@ -152,6 +152,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-xpuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ipsolis}
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       FLOWER_BASIC_AUTH: ${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}

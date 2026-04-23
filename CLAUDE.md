@@ -237,9 +237,9 @@ Dashboard tiles (Admin UI `/ui/`) count Free / In use / Reclaiming / Reinstall /
 
 - **Audit logging**: `aaudit()` (async, API) · `waudit()` (sync, Worker) — see `worker/tasks/modules/audit_helper.py`
 - **Step tracking**: `worker/tasks/modules/step_helper.py`
-- **Admin auth**: `require_admin_key` accepts either `X-Admin-Key: <ADMIN_API_KEY>` header or an authenticated admin session cookie (dev bypass when `ENVIRONMENT=development`)
-- **Portal auth**: requires Entra ID config (`entra.mode = enabled`); portal returns HTTP 503 when Entra is not configured. Dev bypass available via `portal_dev_bypass` flag
+- **Admin auth**: `require_admin_key` accepts either `X-Admin-Key: <ADMIN_API_KEY>` header or an authenticated admin session cookie
+- **Portal auth**: controlled by `entra.mode` (Admin → Settings). `disabled` = portal open with shared anonymous identity; `entra_only` = Entra ID login required; `entra_with_onprem` = Entra ID + on-prem LDAP check
 - **`dynamic_runner`, `standalone_runner`, `ps_module_installer`, `sccm_probe`, `maintenance`** must be listed in `include=[]` in `worker/tasks/__init__.py` or Beat tasks won't register
 - **Worker queues**: `default` (maintenance), `provision` (orders + standalone + installs), `reclaim` (expiry checks), `notifications` (email)
 - **Timezone**: Celery configured for `Europe/Berlin`; DB timestamps stored in UTC
-- **Mock mode**: `ENVIRONMENT=development` in `.env` mocks all external system calls (AD, SMTP, vSphere, SCCM) — useful for local dev without target systems
+- **No mock mode**: all external systems (AD, SMTP, vSphere, XenServer, SCCM, Entra ID) must point at real test environments — there is no built-in mocking

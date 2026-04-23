@@ -32,7 +32,7 @@ Add new tasks at the top.
 - `SessionMiddleware` added to `main.py` (signed cookie, 8h TTL)
 - `api/app/utils/entra.py` — MSAL helper (auth URL, token exchange, domain check)
 - `api/app/routes/auth.py` — `/portal/login`, `/portal/auth/callback`, `/portal/logout`
-- `api/app/routes/portal.py` — `require_portal_auth` dependency on all routes; dev bypass active
+- `api/app/routes/portal.py` — `require_portal_auth` dependency on all routes; when `entra.mode = disabled` the portal is open with a shared anonymous identity
 - `base_portal.html` — user name chip + Sign out link in nav bar
 - `portal/auth_error.html` — error page for login failures
 - `api/app/templates/ui/settings.html` — "Entra ID / Azure AD" section in Identity & Directory tab

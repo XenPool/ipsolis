@@ -395,7 +395,7 @@ Navigate to **Admin > Settings** and set:
 
 | Setting | Description |
 |---------|-------------|
-| `entra.mode` | `enabled` |
+| `entra.mode` | `entra_only` (Entra ID login required) or `entra_with_onprem` (Entra ID + on-prem LDAP check) |
 | `entra.client_id` | Application (client) ID |
 | `entra.client_secret` | Client secret value *(marked as secret)* |
 | `entra.tenant_id` | Directory (tenant) ID |
@@ -404,8 +404,11 @@ Navigate to **Admin > Settings** and set:
 
 Use the **Test Entra Connection** button to verify the configuration.
 
-> When `entra.mode` is set to `disabled`, the portal is inaccessible and
-> returns HTTP 503. Entra ID SSO must be configured for portal access.
+> When `entra.mode` is set to `disabled`, the portal is open to anyone
+> on the network with a shared anonymous identity — every visitor sees
+> and can act on the same set of orders. Only use this for demo /
+> air-gapped lab deployments. For multi-user production, set
+> `entra.mode = entra_only`.
 
 ---
 

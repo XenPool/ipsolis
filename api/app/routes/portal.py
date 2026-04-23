@@ -74,16 +74,25 @@ def _assert_owns_order(order: Order, email: str) -> None:
         raise HTTPException(status_code=403, detail="Access denied")
 
 
+ANONYMOUS_PORTAL_USER = {
+    "email": "portal@local",
+    "name": "Portal User",
+    "oid": "anonymous",
+    "upn": "portal@local",
+}
+
+
 async def require_portal_auth(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """FastAPI dependency: returns the authenticated portal user dict.
 
-    Requires Entra ID SSO to be configured (entra.mode = 'enabled').
-    If not configured, redirects to a setup hint page.
+    Behavior by entra.mode:
+    - 'disabled'          → portal open, anonymous shared identity (no login)
+    - 'entra_only'        → Entra ID login required
+    - 'entra_with_onprem' → Entra ID login + on-prem LDAP check
     """
-    # Read entra.mode from DB
     mode_row = await db.execute(
         select(AppConfig).where(AppConfig.key == "entra.mode")
     )
@@ -91,10 +100,7 @@ async def require_portal_auth(
     mode = (mode_cfg.value or "disabled") if mode_cfg else "disabled"
 
     if mode == "disabled":
-        raise HTTPException(
-            status_code=503,
-            detail="Portal authentication is not configured. An administrator must enable Entra ID SSO in Admin > Settings.",
-        )
+        return ANONYMOUS_PORTAL_USER
 
     user = request.session.get("portal_user")
     if user:
