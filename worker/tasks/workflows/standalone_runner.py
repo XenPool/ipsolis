@@ -146,6 +146,14 @@ def _build_step_vars_preamble(step_vars: dict) -> str:
     `Citrix.XenServer.Sessions`, where `$global:Citrix.XenServer.Sessions = ...`
     is parsed as property access on `$global:Citrix` and throws InvalidOperation.
     Set-Variable treats the name as an opaque string, which is what we want.
+
+    ⚠️ Script authors consuming these injected globals must NOT declare a
+    locally-named variable that matches (case-insensitively) — e.g. writing
+    `$runbookStopped = $false` at script top-level silently overwrites
+    `$global:RunbookStopped` because PS script-root scope shares its slot
+    with global scope and names are case-insensitive. Read via
+    `$global:RunbookStopped` and store into a differently-named local
+    (e.g. `$xpStopped`) to avoid the collision.
     """
     lines = [
         "# ── Step variable injection ──",

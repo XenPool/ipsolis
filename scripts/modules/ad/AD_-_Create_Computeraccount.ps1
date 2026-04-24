@@ -29,7 +29,7 @@ try {
 
     Write-Log "Creating computer account '$VMName' under '$OU_DN'..." 'INFO'
 
-    $json = python /app/scripts/ad/ad_create_computer.py $VMName $OU_DN 2>&1
+    $json = python /app/tasks/helpers/ad/ad_create_computer.py $VMName $OU_DN 2>&1
     $exit = $LASTEXITCODE
     $text = if ($json -is [array]) { $json -join "`n" } else { [string]$json }
 

@@ -24,7 +24,7 @@ try {
 
     Write-Log "Deleting computer account '$VMName' from Active Directory..." 'INFO'
 
-    $json = python /app/scripts/ad/ad_delete_computer.py $VMName 2>&1
+    $json = python /app/tasks/helpers/ad/ad_delete_computer.py $VMName 2>&1
     $exit = $LASTEXITCODE
     $text = if ($json -is [array]) { $json -join "`n" } else { [string]$json }
 

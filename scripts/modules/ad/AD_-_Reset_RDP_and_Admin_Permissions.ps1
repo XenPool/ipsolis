@@ -26,7 +26,7 @@ try {
     Write-Log "Resetting RDP group   : $RdpGroupDN" 'INFO'
     Write-Log "Resetting Admin group : $AdminGroupDN" 'INFO'
 
-    $json = python /app/scripts/ad/ad_clear_group_members.py $RdpGroupDN $AdminGroupDN 2>&1
+    $json = python /app/tasks/helpers/ad/ad_clear_group_members.py $RdpGroupDN $AdminGroupDN 2>&1
     $exit = $LASTEXITCODE
     $text = if ($json -is [array]) { $json -join "`n" } else { [string]$json }
 

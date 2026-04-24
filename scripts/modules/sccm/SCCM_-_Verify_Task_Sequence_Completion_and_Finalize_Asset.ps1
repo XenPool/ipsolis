@@ -107,24 +107,19 @@ function Invoke-SccmRequest([hashtable]$cfg, [string]$method, [string]$path, [ha
 
 # --- main -------------------------------------------------------------------
 try {
-    # Runner exposes RunbookStopped when a prior step emitted stop_run=true
-    # (e.g. "Read Recycle VMs" found zero eligible assets). There is nothing
-    # to finalize in that case — exit as a no-op success so the run ends clean.
-    $runbookStopped = $false
-    try {
-        if ($null -ne (Get-Variable -Name 'RunbookStopped' -Scope Global -ErrorAction SilentlyContinue)) {
-            $v = (Get-Variable -Name 'RunbookStopped' -Scope Global).Value
-            if ($v -is [bool]) { $runbookStopped = $v }
-            elseif ($v) { $runbookStopped = [string]$v -match '^(?i:true|1|yes)$' }
-        }
-    } catch {}
+    # NOTE on naming: PowerShell variable names are case-insensitive *and* a
+    # bare `$foo = ...` at script top-level writes to the same slot as
+    # `$global:foo`. Naming the local `$runbookStopped` here would clobber the
+    # `$global:RunbookStopped` set by the runner in the preamble. Keep the
+    # local prefixed so the collision is impossible.
+    $xpStopped = [bool]$global:RunbookStopped
 
     # No VM to finalize (either the runner signalled an early stop, or the
     # upstream "Read Recycle VMs" step found nothing eligible). In both
     # cases there is literally no asset to touch — exit cleanly as success
     # so the overall run ends green.
-    if ($runbookStopped -or [string]::IsNullOrWhiteSpace($VMName)) {
-        $reason = if ($runbookStopped) {
+    if ($xpStopped -or [string]::IsNullOrWhiteSpace($VMName)) {
+        $reason = if ($xpStopped) {
             'Runbook stopped early; no asset to finalize.'
         } else {
             'No VMName supplied; no asset to finalize.'
@@ -139,21 +134,13 @@ try {
         exit 0
     }
 
-    # Runner exposes RunbookFailed as a step_var / global when a prior
-    # critical step failed. In that case we do not touch SCCM - the new
-    # device may not even exist - we just mark the asset 'Failed'.
-    $priorFailure = $false
-    try {
-        if ($null -ne (Get-Variable -Name 'RunbookFailed' -Scope Global -ErrorAction SilentlyContinue)) {
-            $v = (Get-Variable -Name 'RunbookFailed' -Scope Global).Value
-            if ($v -is [bool]) { $priorFailure = $v }
-            elseif ($v) { $priorFailure = [string]$v -match '^(?i:true|1|yes)$' }
-        }
-    } catch {}
+    # Runner exposes RunbookFailed when a prior critical step failed. In
+    # that case we do not touch SCCM — the new device may not even exist —
+    # we just mark the asset 'Failed'.
+    $xpFailed = [bool]$global:RunbookFailed
 
-    if ($priorFailure) {
-        $failedStep = ''
-        try { $failedStep = (Get-Variable -Name 'RunbookFirstFailedStep' -Scope Global -ErrorAction SilentlyContinue).Value } catch {}
+    if ($xpFailed) {
+        $failedStep = [string]$global:RunbookFirstFailedStep
         Write-Log "Prior failure detected (first failed step: '$failedStep'). Marking asset 'Failed'." 'WARNING'
         Update-AssetStatus $VMName 'Failed' | Out-Null
         Write-Output (@{
