@@ -52,9 +52,13 @@
      class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40"
      onclick="if(event.target===this) closeModal()">
   <div class="bg-surface rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-    <div class="flex items-center justify-between px-5 py-4 border-b border-token-border">
+    <div class="sticky top-0 z-10 bg-surface flex items-center justify-between px-5 py-4 border-b border-token-border">
       <h3 class="text-sm font-semibold text-heading" id="modal-title">Run Details</h3>
       <div class="flex items-center gap-2">
+        <button id="detail-cancel-btn" onclick="cancelCurrentRun()"
+                class="hidden inline-flex items-center gap-1 text-xs border border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-300 rounded px-2 py-1 hover:bg-red-50 dark:hover:bg-red-500/10">
+          Cancel run
+        </button>
         <button id="detail-auto-btn" onclick="toggleDetailAuto()"
                 class="inline-flex items-center gap-2 text-xs border border-token-border rounded px-2 py-1 hover:bg-surface-raised">
           <span id="detail-auto-dot" class="w-1.5 h-1.5 rounded-full bg-gray-300"></span>
@@ -79,14 +83,15 @@ var _detailTimer = null;
 var _detailAutoOn = false;
 var LIST_INTERVAL_MS = 3000;
 var DETAIL_INTERVAL_MS = 2000;
-var TERMINAL = {success: 1, failed: 1, skipped: 1};
+var TERMINAL = {success: 1, failed: 1, skipped: 1, cancelled: 1};
 
 var STATUS_COLORS = {
-  success: 'bg-green-100 text-green-700',
-  failed:  'bg-red-100 text-red-700',
-  running: 'bg-blue-100 text-blue-700',
-  pending: 'bg-surface-raised text-muted',
-  skipped: 'bg-surface-raised text-muted/70',
+  success:   'bg-green-100 text-green-700',
+  failed:    'bg-red-100 text-red-700',
+  running:   'bg-blue-100 text-blue-700',
+  pending:   'bg-surface-raised text-muted',
+  skipped:   'bg-surface-raised text-muted/70',
+  cancelled: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
 };
 
 function _badge(status) {
@@ -135,8 +140,11 @@ async function loadRuns() {
       + '<td class="px-4 py-3 text-xs text-muted">' + _fmtTime(r.started_at || r.created_at) + '</td>'
       + '<td class="px-4 py-3 text-xs text-muted">' + _duration(r.started_at, r.finished_at) + '</td>'
       + '<td class="px-4 py-3">' + notesCell + '</td>'
-      + '<td class="px-4 py-3 text-right">'
+      + '<td class="px-4 py-3 text-right whitespace-nowrap">'
       + '  <button onclick="showRunDetail(' + r.id + ')" class="text-xs text-blue-600 hover:underline">View</button>'
+      + (!TERMINAL[r.status]
+          ? '  <button onclick="cancelRun(' + r.id + ')" class="ml-3 text-xs text-red-600 hover:underline">Cancel</button>'
+          : '')
       + '</td>'
       + '</tr>';
   }).join('');
@@ -206,6 +214,13 @@ async function _fetchRunDetail(runId, isInitial) {
 
   body.innerHTML = html;
 
+  // Cancel button visibility tracks run status: shown for pending/running only.
+  var cancelBtn = document.getElementById('detail-cancel-btn');
+  if (cancelBtn) {
+    if (TERMINAL[run.status]) cancelBtn.classList.add('hidden');
+    else cancelBtn.classList.remove('hidden');
+  }
+
   // Auto-scroll: pin outer modal + any long log panes to the bottom so the
   // newest output is always in view while a run is still progressing.
   if (wasAtBottom) {
@@ -221,6 +236,26 @@ async function _fetchRunDetail(runId, isInitial) {
   } else if (isInitial && !_detailAutoOn) {
     _startDetailAuto();
   }
+}
+
+async function cancelRun(runId) {
+  if (!confirm('Cancel run #' + runId + '? Running steps will be terminated and the run marked as cancelled.')) return;
+  var resp = await fetch('/admin/standalone-runbooks/' + RUNBOOK_ID + '/runs/' + runId + '/cancel', {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!resp.ok) {
+    var body = await resp.json().catch(function() { return {}; });
+    alert('Cancel failed: ' + (body.detail || ('HTTP ' + resp.status)));
+    return;
+  }
+  // Refresh either the modal (if open for this run) or the runs list.
+  if (_currentRunId === runId) _fetchRunDetail(runId, false);
+  loadRuns();
+}
+
+function cancelCurrentRun() {
+  if (_currentRunId != null) cancelRun(_currentRunId);
 }
 
 function refreshRunDetail() {

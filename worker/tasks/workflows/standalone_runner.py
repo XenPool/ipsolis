@@ -473,7 +473,11 @@ def run(self: Task, run_id: int) -> dict:
         return _execute_run(db, run_id)
     except Exception as exc:
         logger.exception("standalone_runner.run failed for run_id=%s", run_id)
-        # Mark run as failed
+        # Mark run as failed — but only if nobody else already reached a
+        # terminal state (e.g. an admin-triggered cancel via
+        # POST .../runs/{id}/cancel). Without this guard, a SIGTERM that
+        # raises inside the task would overwrite the row's 'cancelled'
+        # status with 'failed'.
         try:
             db.execute(
                 text("""
@@ -481,6 +485,7 @@ def run(self: Task, run_id: int) -> dict:
                     SET status = 'failed', error_message = :err,
                         finished_at = :now
                     WHERE id = :id
+                      AND status NOT IN ('cancelled', 'success', 'failed')
                 """),
                 {"id": run_id, "err": str(exc), "now": datetime.now(timezone.utc)},
             )
@@ -692,11 +697,14 @@ def _execute_run(db: Session, run_id: int) -> dict:
         )
         db.commit()
 
+    # Don't overwrite a terminal status that someone else (e.g. an admin
+    # cancel) already set while we were mid-run.
     db.execute(
         text("""
             UPDATE standalone_runbook_runs
             SET status = :status, finished_at = :finished_at, error_message = :err
             WHERE id = :id
+              AND status NOT IN ('cancelled', 'success', 'failed')
         """),
         {"id": run_id, "status": final_status, "finished_at": finished_at, "err": error_msg},
     )

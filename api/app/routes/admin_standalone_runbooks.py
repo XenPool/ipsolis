@@ -419,3 +419,75 @@ async def get_run(runbook_id: int, run_id: int, db: AsyncSession = Depends(get_d
             for s in r.run_steps
         ],
     }
+
+
+@router.post("/{runbook_id}/runs/{run_id}/cancel")
+async def cancel_run(
+    runbook_id: int, run_id: int, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Cancel a pending or running standalone runbook run.
+
+    Behaviour:
+    - ``pending``: Celery revokes the queued task; DB row -> 'cancelled'.
+    - ``running``: Celery revokes with ``terminate=True`` (SIGTERM to the
+      worker's task); DB row -> 'cancelled'. The runner's exception handler
+      will NOT overwrite the cancelled status (guarded by a conditional
+      UPDATE in ``standalone_runner.run``).
+    - terminal (success/failed/cancelled): 409 Conflict, no-op.
+
+    Any still-``pending``/``running`` step rows are also marked 'cancelled'
+    so the run detail view doesn't leave orphaned in-flight steps.
+    """
+    r = await db.get(StandaloneRunbookRun, run_id)
+    if not r or r.runbook_id != runbook_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Run {run_id} not found")
+
+    if r.status not in ("pending", "running"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Run {run_id} is already in terminal state '{r.status}'; cannot cancel.",
+        )
+
+    # 1. Mark DB first so a race with the worker's own UPDATE doesn't re-open the run.
+    await db.execute(
+        text(
+            "UPDATE standalone_runbook_runs "
+            "SET status = 'cancelled', "
+            "    error_message = COALESCE(NULLIF(error_message, ''), 'Cancelled by admin'), "
+            "    finished_at = NOW() "
+            "WHERE id = :id"
+        ),
+        {"id": run_id},
+    )
+    await db.execute(
+        text(
+            "UPDATE standalone_runbook_run_steps "
+            "SET status = 'cancelled', "
+            "    finished_at = COALESCE(finished_at, NOW()) "
+            "WHERE run_id = :id AND status IN ('pending', 'running')"
+        ),
+        {"id": run_id},
+    )
+    await db.commit()
+
+    # 2. Revoke the Celery task so the worker stops (or never starts).
+    task_id = r.celery_task_id
+    revoke_ok = False
+    if task_id:
+        try:
+            celery = _get_celery()
+            celery.control.revoke(task_id, terminate=True, signal="SIGTERM")
+            revoke_ok = True
+        except Exception as exc:
+            logger.warning("cancel_run: Celery revoke failed for task %s: %s", task_id, exc)
+
+    logger.info(
+        "admin: run %s cancelled (task_id=%s revoke_ok=%s)",
+        run_id, task_id, revoke_ok,
+    )
+    return {
+        "id": run_id,
+        "status": "cancelled",
+        "celery_task_id": task_id,
+        "celery_revoked": revoke_ok,
+    }
