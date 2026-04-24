@@ -19,8 +19,8 @@ After signing, the script re-loads the output file and verifies the signature
 against the derived public key as a safety check.
 
 Usage:
-    python scripts/license/sign_license.py \
-        --key scripts/license/private_key.pem \
+    python tools/license/sign_license.py \
+        --key tools/license/private_key.pem \
         --payload payload.json \
         --out license/ipsolis.lic
 """

@@ -156,6 +156,10 @@
           {% else %}
           <span class="text-xs px-1 py-0.5 rounded bg-surface-raised text-muted/70">optional</span>
           {% endif %}
+          {% if step.always_run %}
+          <span class="text-xs px-1 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+                title="Always run: this step executes even when a prior step has failed or stopped the run early">always-run</span>
+          {% endif %}
         </div>
         {% if step.params_template %}
         <div class="text-xs text-muted/70 mt-0.5 font-mono">
@@ -229,14 +233,19 @@
     </div>
   </div>
 
-  <div class="grid grid-cols-3 gap-4 mb-4">
-    <div>
-      <label class="block text-xs font-medium text-muted mb-1">Critical</label>
-      <label class="flex items-center gap-2 text-sm cursor-pointer">
-        <input type="checkbox" id="new-step-critical" checked class="w-4 h-4">
-        Abort on error
-      </label>
-    </div>
+  <div class="flex flex-wrap gap-x-6 gap-y-2 mb-4">
+    <label class="flex items-center gap-2 text-sm cursor-pointer">
+      <input type="checkbox" id="new-step-critical" checked class="w-4 h-4">
+      <span><span class="font-medium text-body">Critical</span>
+        <span class="text-muted/70">— abort the run on error</span></span>
+    </label>
+    <label class="flex items-center gap-2 text-sm cursor-pointer">
+      <input type="checkbox" id="new-step-always-run" class="w-4 h-4">
+      <span><span class="font-medium text-body">Always run</span>
+        <span class="text-muted/70">— finalizer; runs even after a prior failure or early stop</span></span>
+    </label>
+  </div>
+  <div class="grid grid-cols-2 gap-4 mb-4">
     <div>
       <label class="block text-xs font-medium text-muted mb-1">Retry count</label>
       <input type="number" id="new-step-retry" value="3" min="0" max="10"
@@ -635,6 +644,7 @@ function _getFormData() {
     is_critical: document.getElementById('new-step-critical').checked,
     retry_count: parseInt(document.getElementById('new-step-retry').value),
     timeout_seconds: parseInt(document.getElementById('new-step-timeout').value),
+    always_run: document.getElementById('new-step-always-run').checked,
   };
 }
 
@@ -713,6 +723,7 @@ function editStep(stepId, step) {
     renderBindings(step.params_template || {});
   }
   document.getElementById('new-step-critical').checked = step.is_critical;
+  document.getElementById('new-step-always-run').checked = !!step.always_run;
   document.getElementById('new-step-retry').value = step.retry_count;
   document.getElementById('new-step-timeout').value = step.timeout_seconds;
   document.getElementById('new-step-params').value =
@@ -731,6 +742,7 @@ function cancelEdit() {
   document.getElementById('new-step-name').value = '';
   document.getElementById('new-step-module').value = '';
   document.getElementById('new-step-critical').checked = true;
+  document.getElementById('new-step-always-run').checked = false;
   document.getElementById('new-step-retry').value = '3';
   document.getElementById('new-step-timeout').value = '120';
   document.getElementById('new-step-params').value = '';

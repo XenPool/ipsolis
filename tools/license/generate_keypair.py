@@ -1,6 +1,6 @@
 """Generate an Ed25519 keypair for Ipsolis license signing.
 
-Writes the private key to ``scripts/license/private_key.pem`` (gitignored) and
+Writes the private key to ``tools/license/private_key.pem`` (gitignored) and
 prints the public key as a hex literal to paste into ``PUBLIC_KEY_HEX`` in
 BOTH of these files:
 
@@ -11,7 +11,7 @@ The private key must never be committed or distributed; it is used only to
 sign ``.lic`` files for paying customers.
 
 Usage:
-    python scripts/license/generate_keypair.py [--out scripts/license/private_key.pem]
+    python tools/license/generate_keypair.py [--out tools/license/private_key.pem]
 """
 from __future__ import annotations
 

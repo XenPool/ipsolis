@@ -702,6 +702,7 @@ async def standalone_runbook_edit(
             "is_critical": s.is_critical,
             "retry_count": s.retry_count,
             "timeout_seconds": s.timeout_seconds,
+            "always_run": s.always_run,
         }
         for s in sorted(rb.steps, key=lambda x: x.position)
     ]

@@ -15,9 +15,9 @@ certs/
 # License files (signed .lic files and private keys — never commit)
 # ─────────────────────────────────────────
 licenses/*.lic
-scripts/license/private_key.pem
-scripts/license/*.pem
-scripts/license/*.json
+tools/license/private_key.pem
+tools/license/*.pem
+tools/license/*.json
 
 # ─────────────────────────────────────────
 # Python

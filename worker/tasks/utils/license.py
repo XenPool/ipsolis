@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict
 logger = logging.getLogger(__name__)
 
 # ── Embedded public key (Ed25519, 32 bytes hex-encoded) ──────────────────────
-# Generate with: python scripts/license/generate_keypair.py
+# Generate with: python tools/license/generate_keypair.py
 # Paste the hex output below. Until set, all signature verification fails and
 # the instance runs as Community edition.
 PUBLIC_KEY_HEX: str = "e2b380f0d1c5205b119c96e7802165b55398c15f5b429e60c334a0e63315f23d"

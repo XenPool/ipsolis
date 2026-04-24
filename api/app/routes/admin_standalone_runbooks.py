@@ -67,6 +67,7 @@ class StepCreate(BaseModel):
     is_critical: bool = True
     retry_count: int = 3
     timeout_seconds: int = 120
+    always_run: bool = False
 
 
 class StepUpdate(BaseModel):
@@ -76,6 +77,7 @@ class StepUpdate(BaseModel):
     is_critical: bool | None = None
     retry_count: int | None = None
     timeout_seconds: int | None = None
+    always_run: bool | None = None
 
 
 class ReorderRequest(BaseModel):
@@ -181,6 +183,7 @@ async def get_runbook(runbook_id: int, db: AsyncSession = Depends(get_db)) -> di
                 "is_critical": s.is_critical,
                 "retry_count": s.retry_count,
                 "timeout_seconds": s.timeout_seconds,
+                "always_run": s.always_run,
             }
             for s in rb.steps
         ],
@@ -236,9 +239,9 @@ async def add_step(
         text("""
             INSERT INTO standalone_runbook_steps
                 (runbook_id, position, step_name, script_module_id, params_template,
-                 is_critical, retry_count, timeout_seconds, created_at)
+                 is_critical, retry_count, timeout_seconds, always_run, created_at)
             VALUES (:rid, :pos, :sname, :smid, CAST(:ptpl AS jsonb),
-                    :critical, :retry, :timeout, NOW())
+                    :critical, :retry, :timeout, :always, NOW())
         """),
         {
             "rid": runbook_id,
@@ -249,6 +252,7 @@ async def add_step(
             "critical": body.is_critical,
             "retry": body.retry_count,
             "timeout": body.timeout_seconds,
+            "always": body.always_run,
         },
     )
     await db.commit()
@@ -280,6 +284,8 @@ async def update_step(
         s.retry_count = body.retry_count
     if body.timeout_seconds is not None:
         s.timeout_seconds = body.timeout_seconds
+    if body.always_run is not None:
+        s.always_run = body.always_run
     await db.commit()
     return {"id": step_id, "updated": True}
 

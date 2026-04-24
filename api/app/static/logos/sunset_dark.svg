@@ -7,7 +7,7 @@
       <path d="M 0 -30 A 30 30 0 0 1 30 0" fill="none" stroke="#f59e0b" stroke-width="5" stroke-linecap="round"/>
     </g>
     <circle cx="55" cy="55" r="3" fill="#e8ecf4"/>
-    <text x="105" y="65" font-family="Inter, -apple-system, sans-serif" font-size="32" font-weight="600" fill="#e8ecf4" letter-spacing="-0.5">ipSolis</text>
+    <text x="105" y="65" font-family="Inter, -apple-system, sans-serif" font-size="32" font-weight="600" fill="#e8ecf4" letter-spacing="-0.5">ip·Solis</text>
     <text x="105" y="90" font-family="Inter, -apple-system, sans-serif" font-size="10" font-weight="500" fill="#8b95a8" letter-spacing="3">IT ASSET LIFECYCLE</text>
   </g>
 </svg>

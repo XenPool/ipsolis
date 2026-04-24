@@ -72,6 +72,7 @@ class StandaloneRunbookStep(Base):
     is_critical: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=3, server_default="3")
     timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=120, server_default="120")
+    always_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -123,8 +123,8 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 ## Quick Start (Development)
 
 ```bash
-git clone https://github.com/XenPool/ipSolis.git
-cd ipSolis
+git clone https://github.com/XenPool/ip·Solis.git
+cd ip·Solis
 
 cp .env.example .env
 # Edit .env -- set database credentials and API secrets
@@ -260,7 +260,7 @@ Contributions are welcome! Please open an issue first to discuss what you'd like
 
 ## Support
 
-- **Community**: [GitHub Issues](https://github.com/XenPool/ipSolis/issues) for bug reports and feature requests
+- **Community**: [GitHub Issues](https://github.com/XenPool/ip·Solis/issues) for bug reports and feature requests
 - **Commercial support**: Contact info@xenpool.com for SLA-backed support contracts and consulting
 
 ---

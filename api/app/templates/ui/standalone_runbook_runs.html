@@ -193,7 +193,7 @@ async function _fetchRunDetail(runId, isInitial) {
         html += '<pre class="text-xs text-red-600 bg-red-50 rounded px-2 py-1 mt-1 whitespace-pre-wrap">' + s.error + '</pre>';
       }
       if (s.log_output) {
-        html += '<pre class="xp-log text-xs text-muted bg-surface-raised rounded px-2 py-1 mt-1 whitespace-pre-wrap max-h-40 overflow-y-auto">' + s.log_output + '</pre>';
+        html += '<pre class="xp-log text-xs text-muted bg-surface-raised rounded px-2 py-1 mt-1 whitespace-pre-wrap break-all max-h-40 overflow-y-auto">' + s.log_output + '</pre>';
       }
       html += '</div>';
     });
