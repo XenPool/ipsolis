@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -237,30 +237,55 @@ async def set_retention(
 
 
 @router.post("/cleanup")
-async def run_cleanup(dry_run: bool = False) -> dict:
-    """Enqueues cleanup task and returns the celery task id.
+async def run_cleanup(
+    dry_run: bool = False,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Preview or execute retention cleanup, inline.
 
-    For dry_run=True, the task is executed synchronously with a short
-    timeout so the UI can show the preview immediately.
+    Both dry-run and the actual delete run directly in the API's async
+    session. The queries are simple COUNT/DELETE statements against indexed
+    timestamp columns — fast enough that a Celery round-trip would only add
+    failure modes (tasks stuck in a backlogged queue).
     """
-    celery = _get_celery()
-    if dry_run:
-        result = celery.send_task(
-            "tasks.modules.maintenance.run_cleanup",
-            args=[True],
-            queue="default",
+    cfg_rows = (
+        await db.execute(
+            text(
+                "SELECT key, value FROM app_config WHERE key IN "
+                "('retention.orders_days', 'retention.audit_log_days', "
+                "'retention.standalone_runs_days')"
+            )
         )
-        try:
-            payload = result.get(timeout=30)
-            return {"enqueued": False, **payload}
-        except Exception as exc:
-            return {"enqueued": False, "success": False, "error": str(exc)}
-    task = celery.send_task(
-        "tasks.modules.maintenance.run_cleanup",
-        args=[False],
-        queue="default",
-    )
-    return {"enqueued": True, "task_id": task.id}
+    ).fetchall()
+    cfg = {r[0]: r[1] for r in cfg_rows}
+    summary: dict[str, dict] = {}
+    now = datetime.now(timezone.utc)
+    for table, key, col in _RETENTION_KEYS:
+        raw = (cfg.get(key) or "").strip()
+        days = int(raw) if raw.isdigit() else 0
+        if days <= 0:
+            summary[table] = {"days": days, "skipped": True}
+            continue
+        cutoff = now - timedelta(days=days)
+        count_row = (
+            await db.execute(
+                text(f"SELECT COUNT(*) FROM {table} WHERE {col} < :c"),  # noqa: S608 — table is from the fixed _RETENTION_KEYS list, not user input
+                {"c": cutoff},
+            )
+        ).first()
+        n = int(count_row[0]) if count_row else 0
+        if dry_run:
+            summary[table] = {"days": days, "would_delete": n}
+        else:
+            await db.execute(
+                text(f"DELETE FROM {table} WHERE {col} < :c"),  # noqa: S608 — table is from the fixed _RETENTION_KEYS list, not user input
+                {"c": cutoff},
+            )
+            summary[table] = {"days": days, "deleted": n}
+    if not dry_run:
+        await db.commit()
+        logger.info("admin: retention cleanup deleted rows per table: %s", summary)
+    return {"enqueued": False, "success": True, "dry_run": dry_run, "summary": summary}
 
 
 # ── Health probes ─────────────────────────────────────────────────────────────
