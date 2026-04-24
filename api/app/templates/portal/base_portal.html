@@ -5,6 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}{{ app_title }}{% endblock %}</title>
   {% include "_partials/theme_head.html" %}
+
+  <!--
+    Flash-of-untranslated-content guard.
+    The HTML is rendered with English defaults inside `data-i18n` elements;
+    i18n.js runs async and rewrites them in the user's chosen language.
+    Without this, users on de/fr/es/it see a ~fraction-of-a-second flash
+    of English on every navigation. We hide translatable text while the
+    `i18n-pending` class is present, i18n.js removes the class after apply(),
+    and a 2 s safety timer removes it even if i18n.js fails to load so the
+    sidebar can't stay blank forever.
+  -->
+  <script>document.documentElement.classList.add('i18n-pending');
+    window.setTimeout(function(){ document.documentElement.classList.remove('i18n-pending'); }, 2000);
+  </script>
+  <style>html.i18n-pending [data-i18n] { visibility: hidden; }</style>
+
   <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous"></script>
   <script src="/static/js/i18n.js"></script>
 </head>

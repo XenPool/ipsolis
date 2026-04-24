@@ -37,9 +37,7 @@ class DeprovisionPolicy(str, enum.Enum):
     ACCESS_ONLY = "access_only"                   # Remove group membership only
     RETURN_TO_POOL = "return_to_pool"             # Release pool reservation, instance remains free
     RETURN_TO_POOL_REINSTALL = "return_to_pool_reinstall"  # Release + mark for reinstall
-    DEALLOCATE_INSTANCE = "deallocate_instance"   # Stop / deallocate VM
-    DELETE_INSTANCE = "delete_instance"           # Delete VM including cleanup
-    CUSTOM_RUNBOOK = "custom_runbook"             # Revoke via separate runbook
+    CUSTOM_RUNBOOK = "custom_runbook"             # Any instance-level action (stop, delete, …) via a runbook
 
 
 class PersonalProvisioningStrategy(str, enum.Enum):

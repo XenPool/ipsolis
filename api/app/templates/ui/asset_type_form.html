@@ -69,7 +69,7 @@
           <input type="radio" name="category" value="{{ cat_val }}"
                  {% if asset_type and (asset_type.category.value == cat_val or asset_type.category == cat_val) %}checked
                  {% elif not asset_type and cat_val == 'platform_access' %}checked{% endif %}
-                 class="sr-only" onchange="onCategoryChange()">
+                 class="sr-only" onchange="onCategoryChange(true)">
           <div>
             <p class="text-sm font-medium text-heading">{{ cat_short }}</p>
             <p class="text-xs text-muted/70 mt-0.5">{{ cat_desc }}</p>
@@ -502,6 +502,17 @@
         Attributes
         <span class="text-muted/70 font-normal ml-1">– optional, e.g. CPU options, license types</span>
       </label>
+      <p class="text-xs text-muted/70 mb-3 leading-relaxed max-w-3xl">
+        Attributes let the requester pick options when placing an order (dropdowns, booleans,
+        free text). Their values are passed into runbook steps as template variables
+        <code class="px-1 py-0.5 bg-surface-raised rounded">&#123;&#123;key&#125;&#125;</code>
+        in each step's <em>params_template</em>, and arrive in PowerShell modules as
+        <code class="px-1 py-0.5 bg-surface-raised rounded">$PARAMS.key</code> or — for
+        scripts with a <code class="px-1 py-0.5 bg-surface-raised rounded">param()</code> block —
+        as named CLI arguments (<code class="px-1 py-0.5 bg-surface-raised rounded">-Key value</code>).
+        Use them to parameterise provisioning (e.g. CPU count, OS image, license SKU) without
+        needing a separate asset type per variant.
+      </p>
       <div class="grid grid-cols-12 gap-2 mb-1 text-xs text-muted/70 px-0.5">
         <span class="col-span-3">Key</span>
         <span class="col-span-3">Label</span>
@@ -596,9 +607,7 @@
         ("access_only",               "Revoke access only",     "Remove group membership – instance remains untouched", False),
         ("return_to_pool",            "Return to pool",         "Release assignment, resource available for others", False),
         ("return_to_pool_reinstall",  "Return to pool + reinstall", "Release and flag host for reinstall via separate runbook", False),
-        ("deallocate_instance",       "Pause instance",         "Stop / deallocate VM, but do not delete", False),
-        ("delete_instance",           "Delete instance",        "Permanently delete VM including cleanup", False),
-        ("custom_runbook",            "Revoke Runbook",         "Run a dedicated revoke runbook on cancel", True),
+        ("custom_runbook",            "Deprovision runbook",    "Run the Deprovision lifecycle runbook on cancel (configure it in the Runbooks section above). Use for VM stop, delete, archival, …", True),
       ] %}
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
         {% for dp_val, dp_short, dp_desc, dp_ent in dp_opts %}
@@ -711,7 +720,7 @@ function showTargetsEditor(show) { updateAutomationUI(); }
 var _dpDefaults = {
   'capacity_pooled':   'access_only',
   'dedicated_shared':  'access_only',
-  'assigned_personal': 'deallocate_instance',
+  'assigned_personal': 'return_to_pool',
 };
 
 function toggleAssignmentDependents() {
@@ -781,53 +790,47 @@ function onProvisioningStrategyChange() {
   enforceConstraints();
 }
 
-// ── Category constraint: non-instance categories force capacity_pooled ────────
-var _POOLED_ONLY_CATS = new Set(['application_access', 'data_access', 'device_access']);
+// ── Category → recommended default assignment model ──────────────────────────
+// All combinations are allowed. When the admin picks a category we only
+// auto-select the most common assignment model for that category (can be
+// overridden immediately by clicking a different one).
+var _CATEGORY_DEFAULT_MODEL = {
+  'platform_access':       'assigned_personal',   // VDI / Server / Cloud  → personal VDI most common
+  'application_access':    'capacity_pooled',     // Business & SaaS Apps  → SaaS license slots
+  'data_access':           'dedicated_shared',    // Data & Collaboration  → team shares
+  'device_access':         'assigned_personal',   // Clients / MDM / WLAN  → personal laptop
+  'infrastructure_access': 'dedicated_shared',    // Network / Firewall / Admin → shared admin access
+};
 
-function onCategoryChange() {
-  var cat = (document.querySelector('[name="category"]:checked') || {}).value || '';
-  var forcePooled = _POOLED_ONLY_CATS.has(cat);
-
-  document.querySelectorAll('[name="assignment_model"]').forEach(function(radio) {
-    var card = radio.closest('label');
-    var mustDisable = forcePooled && radio.value !== 'capacity_pooled';
-    radio.disabled = mustDisable;
-    if (mustDisable) {
-      card.classList.add('opacity-40', 'cursor-not-allowed', 'pointer-events-none');
-      if (radio.checked) radio.checked = false;
-    } else {
-      card.classList.remove('opacity-40', 'cursor-not-allowed', 'pointer-events-none');
+// Called from the category radios' onchange (user click) and once on DOMContentLoaded.
+// The page-load call passes no arg and must not alter the existing assignment_model
+// (which may be a legitimate non-default combo on an existing asset type).
+function onCategoryChange(userInitiated) {
+  if (userInitiated) {
+    var cat = (document.querySelector('[name="category"]:checked') || {}).value || '';
+    var defaultModel = _CATEGORY_DEFAULT_MODEL[cat];
+    if (defaultModel) {
+      var target = document.querySelector('[name="assignment_model"][value="' + defaultModel + '"]');
+      if (target && !target.checked) target.checked = true;
     }
-  });
-
-  if (forcePooled) {
-    var pooledRadio = document.querySelector('[name="assignment_model"][value="capacity_pooled"]');
-    if (pooledRadio && !pooledRadio.checked) pooledRadio.checked = true;
   }
-
+  // Always reconcile dependent-section visibility with the (possibly new) selection.
   toggleAssignmentDependents();
 }
 
-// ── Asset-Type Constraint Enforcement (Rules 1–4) ─────────────────────────────
-// Rule 1: GROUP_ONLY forbids deallocate_instance + delete_instance
-// Rule 2: RETURN_TO_POOL requires assigned_personal + assign_existing_free
-// Rule 3: dedicated_shared forbids delete_instance
-// Rule 4: runbook_only needs provision runbook; custom_runbook needs revoke runbook
+// ── Asset-Type Constraint Enforcement ─────────────────────────────────────────
+// Rule A: return_to_pool[_reinstall] requires assigned_personal + assign_existing_free
+// Rule B: runbook_only needs a provision runbook; custom_runbook needs a revoke runbook
 function enforceConstraints() {
   var strategy = (document.querySelector('[name="automation_strategy"]:checked') || {}).value || 'runbook_only';
   var model    = (document.querySelector('[name="assignment_model"]:checked')    || {}).value || 'assigned_personal';
   var isGroupOnly   = strategy === 'group_only';
-  var isShared      = model === 'dedicated_shared';
   var isPersonal    = model === 'assigned_personal';
-  var isPooled      = model === 'capacity_pooled';
   var isRunbookMode = strategy === 'runbook_only' || strategy === 'composite';
 
   // Build forbidden set for deprovision_policy
   var forbidden = new Set();
-  if (isGroupOnly) { forbidden.add('deallocate_instance'); forbidden.add('delete_instance'); }
-  if (isShared)    { forbidden.add('delete_instance'); }
   if (!isPersonal) { forbidden.add('return_to_pool'); forbidden.add('return_to_pool_reinstall'); }
-  if (isPooled)    { forbidden.add('deallocate_instance'); forbidden.add('delete_instance'); }
 
   // Apply disabled state; auto-fallback to access_only if selected option becomes forbidden
   var needFallback = false;
@@ -873,10 +876,7 @@ function enforceConstraints() {
   var banner = document.getElementById('dp-constraint-banner');
   if (banner) {
     var notes = [];
-    if (isGroupOnly) notes.push('Group access: instance actions (pause / delete) not available.');
-    if (isShared)    notes.push('Shared model: "delete instance" not available.');
     if (!isPersonal) notes.push('"Return to pool" only available for personal assignment.');
-    if (isPooled)    notes.push('Pooled model: instance actions (pause / delete) not available.');
     var ps = (document.querySelector('[name="personal_provisioning_strategy"]:checked') || {}).value || '';
     if (ps === 'create_new' && isGroupOnly) notes.push('"Create new instance" requires Runbook or Combined automation.');
     if (notes.length) {
@@ -1059,12 +1059,8 @@ async function submitForm() {
   var dpPolicy   = dpPolicyEl ? dpPolicyEl.value : 'access_only';
   var psStrategy = psStratEl  ? psStratEl.value  : null;
 
-  // ── Client-side constraint pre-flight (Rules 1–3) ───────────────────────────
+  // ── Client-side constraint pre-flight ───────────────────────────────────────
   var constraintErrors = [];
-  if (automationStrategy === 'group_only' &&
-      (dpPolicy === 'deallocate_instance' || dpPolicy === 'delete_instance')) {
-    constraintErrors.push('Group access does not support instance actions (pause/delete). Choose a different deprovision strategy.');
-  }
   var isReturnToPoolLike = (dpPolicy === 'return_to_pool' || dpPolicy === 'return_to_pool_reinstall');
   if (isReturnToPoolLike && assignmentModel !== 'assigned_personal') {
     constraintErrors.push('"Return to pool" requires assignment model "Personal".');
@@ -1073,19 +1069,6 @@ async function submitForm() {
       psStrategy && psStrategy !== 'assign_existing_free') {
     constraintErrors.push('"Return to pool" requires provisioning strategy "Assign free instance".');
   }
-  if (assignmentModel === 'dedicated_shared' && dpPolicy === 'delete_instance') {
-    constraintErrors.push('Shared assets cannot be automatically deleted ("delete instance" is not allowed).');
-  }
-  var category = (form.querySelector('[name="category"]:checked') || {}).value || '';
-  var pooledOnlyCats = ['application_access', 'data_access', 'device_access'];
-  if (pooledOnlyCats.indexOf(category) >= 0 && assignmentModel !== 'capacity_pooled') {
-    constraintErrors.push('This category only supports assignment model "Pooled".');
-  }
-  if (assignmentModel === 'capacity_pooled' &&
-      (dpPolicy === 'deallocate_instance' || dpPolicy === 'delete_instance')) {
-    constraintErrors.push('Pooled model does not support instance actions (pause / delete).');
-  }
-  var psStrategy = psStratEl ? psStratEl.value : null;
   if (psStrategy === 'create_new' && automationStrategy === 'group_only') {
     constraintErrors.push('"Create new instance" requires Runbook or Combined automation (Group Access cannot run scripts).');
   }

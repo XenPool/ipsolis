@@ -4,6 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ title }} – {{ app_title }}</title>
+
+  <!-- FOUT guard: hide data-i18n elements until i18n.js applies the locale. -->
+  <script>document.documentElement.classList.add('i18n-pending');
+    window.setTimeout(function(){ document.documentElement.classList.remove('i18n-pending'); }, 2000);
+  </script>
+  <style>html.i18n-pending [data-i18n] { visibility: hidden; }</style>
+
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="/static/js/i18n.js"></script>
 </head>

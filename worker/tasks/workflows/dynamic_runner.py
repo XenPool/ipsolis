@@ -129,12 +129,6 @@ def _write_provisioned_state(
     logger.info("[dynamic_runner] provisioned_state written for order_id=%s", order_id)
 
 
-def _skip_instance_action(order_id: int, action: str) -> dict:
-    """Log that an instance-level action is deferred to a separate runbook."""
-    logger.info("Instance action '%s' for order_id=%s must be handled via a configured runbook", action, order_id)
-    return {"success": True, "skipped": True, "message": f"Instance {action} must be configured via a runbook"}
-
-
 def _lookup_asset_name(db: Session, order: dict) -> str | None:
     """Returns the asset name for an order.
 
@@ -397,34 +391,6 @@ def _run_targets_mode(
                     lambda: pool_manager.mark_reinstall(db=db, asset_id=asset_id),
                     critical=False,
                 )
-
-        elif deprovision_policy == "deallocate_instance":
-            # Revoke targets (above) + release pool + halt VM
-            if needs_asset and asset_id:
-                _run_step_inline(
-                    db, order_id, "Release assignment",
-                    lambda: pool_manager.release_asset(db=db, asset_id=asset_id),
-                    critical=False,
-                )
-            _run_step_inline(
-                db, order_id, "Pause instance",
-                lambda: _skip_instance_action(order_id, "deallocate"),
-                critical=False,
-            )
-
-        elif deprovision_policy == "delete_instance":
-            # Revoke targets (above) + release pool + delete VM
-            if needs_asset and asset_id:
-                _run_step_inline(
-                    db, order_id, "Release assignment",
-                    lambda: pool_manager.release_asset(db=db, asset_id=asset_id),
-                    critical=False,
-                )
-            _run_step_inline(
-                db, order_id, "Delete instance",
-                lambda: _skip_instance_action(order_id, "delete"),
-                critical=False,
-            )
 
         elif deprovision_policy == "custom_runbook":
             # Targets revoked; VM cleanup via separate runbook

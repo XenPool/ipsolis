@@ -1,4 +1,4 @@
-"""AssetType Constraint Validation – 7 core rules.
+"""AssetType Constraint Validation.
 
 Pure function, no DB access. Called by create/update route handlers.
 
@@ -10,11 +10,17 @@ Mapping (spec → codebase string values):
     SHARED         → "dedicated_shared"
     POOLED         → "capacity_pooled"
     RETURN_TO_POOL → "return_to_pool"
-    STOP_INSTANCE  → "deallocate_instance"
-    DELETE_INSTANCE→ "delete_instance"
     RUNBOOK (policy) → "custom_runbook"
     ACCESS_ONLY    → "access_only"
     ASSIGN_EXISTING_FREE → "assign_existing_free"
+
+Historical notes:
+- "deallocate_instance" / "delete_instance" policies were removed in
+  migration 0047; they now go through custom_runbook + a dedicated
+  deprovision runbook (action='delete').
+- The category → capacity_pooled forced-mapping (former Rule C) was
+  dropped so admins can model edge-case asset types (e.g. MDM/WLAN with
+  personal 1:1 assignment) without fighting the schema.
 """
 from dataclasses import dataclass
 
@@ -31,23 +37,13 @@ _GROUP_ONLY    = "group_only"
 _RUNBOOK_ONLY  = "runbook_only"
 
 _PERSONAL = "assigned_personal"
-_SHARED   = "dedicated_shared"
-_POOLED   = "capacity_pooled"
 
 _RETURN_TO_POOL            = "return_to_pool"
 _RETURN_TO_POOL_REINSTALL  = "return_to_pool_reinstall"
-_DEALLOCATE                = "deallocate_instance"   # spec: STOP_INSTANCE
-_DELETE_INSTANCE           = "delete_instance"
-_CUSTOM_RUNBOOK            = "custom_runbook"        # spec: RUNBOOK policy
 
 _ASSIGN_EXISTING_FREE = "assign_existing_free"
 
-_INSTANCE_LIFECYCLE_POLICIES = {_DEALLOCATE, _DELETE_INSTANCE}
-_POOL_RELEASE_POLICIES       = {_RETURN_TO_POOL, _RETURN_TO_POOL_REINSTALL}
-
-# Categories that represent pure access grants with no per-user VM instance.
-# These must use capacity_pooled and cannot use instance lifecycle deprovision actions.
-_POOLED_ONLY_CATEGORIES = {"application_access", "data_access", "device_access"}
+_POOL_RELEASE_POLICIES = {_RETURN_TO_POOL, _RETURN_TO_POOL_REINSTALL}
 
 
 # ── Public validator ───────────────────────────────────────────────────────────
@@ -59,39 +55,22 @@ def validate_asset_type(
     automation_strategy: str,
     deprovision_policy: str,
     personal_provisioning_strategy: str | None,
-    runbook_provision_id: int | None,
-    runbook_revoke_id: int | None,
-    skip_runbook_rules: bool = False,
 ) -> list[ConstraintViolation]:
-    """Validate an AssetType payload against the 5 core constraint rules.
+    """Validate an AssetType payload against the core constraint rules.
 
-    Returns a (possibly empty) list of ConstraintViolation objects.
-    An empty list means the payload is valid.
+    Returns a (possibly empty) list of ConstraintViolation objects. An empty
+    list means the payload is valid.
 
-    All errors are collected before returning so callers can surface all
-    problems at once instead of one at a time.
+    Runbook-wiring constraints (e.g. "custom_runbook policy requires a
+    deprovision runbook") are NOT checked here — they're dispatch-time
+    concerns that ``dynamic_runner`` enforces when an order actually runs,
+    because asset types are typically created before their runbooks are
+    authored, and the DB is the only place that knows which runbooks exist
+    for a given asset type anyway.
     """
     errors: list[ConstraintViolation] = []
 
-    # ── Derived flag ───────────────────────────────────────────────────────────
-    # Rule 1 basis: GROUP_ONLY has no instance lifecycle support.
-    supports_instance_lifecycle = (automation_strategy != _GROUP_ONLY)
-
-    # ── Rule 1 – Derived flag: supportsInstanceLifecycle ──────────────────────
-    # If supportsInstanceLifecycle == False, forbid STOP_INSTANCE and DELETE_INSTANCE.
-    if not supports_instance_lifecycle:
-        if deprovision_policy in _INSTANCE_LIFECYCLE_POLICIES:
-            errors.append(ConstraintViolation(
-                code="FORBIDDEN_INSTANCE_POLICY_FOR_GROUP_ONLY",
-                message=(
-                    f"deprovision_policy='{deprovision_policy}' requires instance lifecycle, "
-                    f"which is not supported by automation_strategy='{automation_strategy}'. "
-                    f"Allowed policies for group_only: "
-                    f"'access_only', 'return_to_pool', 'return_to_pool_reinstall', 'custom_runbook'."
-                ),
-            ))
-
-    # ── Rule 2 – RETURN_TO_POOL[_REINSTALL] requires PERSONAL + ASSIGN_EXISTING_FREE ──
+    # ── Rule A – RETURN_TO_POOL[_REINSTALL] requires PERSONAL + ASSIGN_EXISTING_FREE ──
     if deprovision_policy in _POOL_RELEASE_POLICIES:
         if assignment_model != _PERSONAL:
             errors.append(ConstraintViolation(
@@ -111,51 +90,7 @@ def validate_asset_type(
                 ),
             ))
 
-    # ── Rule 3 – Shared asset protection ──────────────────────────────────────
-    # Shared (dedicated_shared) assets must not be deleted on revoke.
-    if assignment_model == _SHARED and deprovision_policy == _DELETE_INSTANCE:
-        errors.append(ConstraintViolation(
-            code="SHARED_FORBIDS_DELETE_INSTANCE",
-            message=(
-                "assignment_model='dedicated_shared' forbids "
-                "deprovision_policy='delete_instance'. "
-                "Shared assets must not be deleted on revoke."
-            ),
-        ))
-
-    # ── Rule 4 – Runbook requirements ─────────────────────────────────────────
-    # Skipped on initial create: runbooks can't exist before the asset type has an ID.
-    # The update path looks up existing runbooks in the DB and enforces this rule there.
-    if not skip_runbook_rules:
-        if automation_strategy == _RUNBOOK_ONLY and not runbook_provision_id:
-            errors.append(ConstraintViolation(
-                code="RUNBOOK_ONLY_REQUIRES_PROVISION_RUNBOOK",
-                message="automation_strategy='runbook_only' requires runbook_provision_id to be set.",
-            ))
-
-        if deprovision_policy == _CUSTOM_RUNBOOK and not runbook_revoke_id:
-            errors.append(ConstraintViolation(
-                code="RUNBOOK_POLICY_REQUIRES_REVOKE_RUNBOOK",
-                message="deprovision_policy='custom_runbook' requires runbook_revoke_id to be set.",
-            ))
-
-    # ── Rule 5 – COMPOSITE flexibility ────────────────────────────────────────
-    # COMPOSITE allows all deprovision_policy values. No additional restrictions
-    # beyond Rules 2 and 3 which already apply unconditionally above.
-
-    # ── Rule 6 – Non-instance categories require capacity_pooled ──────────────
-    # application_access, data_access, device_access are pure access grants with
-    # no dedicated VM per user. Only capacity_pooled is a valid assignment model.
-    if category in _POOLED_ONLY_CATEGORIES and assignment_model != _POOLED:
-        errors.append(ConstraintViolation(
-            code="CATEGORY_REQUIRES_CAPACITY_POOLED",
-            message=(
-                f"category='{category}' represents an access grant without a dedicated VM instance. "
-                f"Only assignment_model='capacity_pooled' is valid, got '{assignment_model}'."
-            ),
-        ))
-
-    # ── Rule 7 (was 6b) – create_new requires runbook/composite ──────────────
+    # ── Rule B – create_new requires runbook/composite ────────────────────────
     # Group-only automation has no script execution; create_new needs a runbook.
     _CREATE_NEW = "create_new"
     if personal_provisioning_strategy == _CREATE_NEW and automation_strategy == _GROUP_ONLY:
@@ -165,18 +100,6 @@ def validate_asset_type(
                 "personal_provisioning_strategy='create_new' requires a runbook to provision the VM. "
                 "automation_strategy='group_only' cannot execute scripts. "
                 "Use 'runbook_only' or 'composite'."
-            ),
-        ))
-
-    # ── Rule 8 – capacity_pooled forbids instance lifecycle deprovision ────────
-    # A pooled slot has no per-user VM to pause or destroy.
-    if assignment_model == _POOLED and deprovision_policy in _INSTANCE_LIFECYCLE_POLICIES:
-        errors.append(ConstraintViolation(
-            code="POOLED_FORBIDS_INSTANCE_LIFECYCLE",
-            message=(
-                f"assignment_model='capacity_pooled' has no per-user VM instance. "
-                f"deprovision_policy='{deprovision_policy}' is not allowed. "
-                f"Allowed for pooled: 'access_only', 'custom_runbook'."
             ),
         ))
 

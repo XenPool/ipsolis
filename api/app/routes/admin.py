@@ -331,9 +331,6 @@ async def create_asset_type(
         automation_strategy=payload.automation_strategy,
         deprovision_policy=payload.deprovision_policy,
         personal_provisioning_strategy=payload.personal_provisioning_strategy,
-        runbook_provision_id=payload.runbook_provision_id,
-        runbook_revoke_id=payload.runbook_revoke_id,
-        skip_runbook_rules=True,  # runbooks can't exist before the asset type has an ID
     )
     if violations:
         raise HTTPException(
@@ -400,9 +397,6 @@ async def update_asset_type(
         automation_strategy=eff_automation_strategy,
         deprovision_policy=eff_deprovision_policy,
         personal_provisioning_strategy=eff_pps,
-        runbook_provision_id=payload.runbook_provision_id,
-        runbook_revoke_id=payload.runbook_revoke_id,
-        skip_runbook_rules=True,  # runbooks are attached after the asset type exists; missing runbooks fail at order dispatch
     )
     if violations:
         raise HTTPException(
@@ -568,8 +562,6 @@ async def bulk_create_assets(payload: AssetBulkCreate, db: AsyncSession = Depend
             skipped.append(item.name)
             continue
         meta: dict = {}
-        if item.ip_address:
-            meta["ip_address"] = item.ip_address
         if item.notes:
             meta["notes"] = item.notes
         asset = AssetPool(
