@@ -11,7 +11,7 @@ from app.models.asset import AssetType, AssignmentModel
 from app.models.order import Order, OrderAction, OrderStatus
 from app.schemas.order import OrderCreate, OrderRead, OrderUpdate
 from app.utils.audit import _order_snap, aaudit
-from app.utils.capacity import enforce_pool_capacity
+from app.utils.capacity import enforce_max_per_user, enforce_pool_capacity
 from app.utils.license import is_feature_enabled
 
 logger = logging.getLogger(__name__)
@@ -108,6 +108,12 @@ async def create_order(
             and asset_type.pool_capacity is not None
         ):
             await enforce_pool_capacity(db, asset_type.id, asset_type.pool_capacity)
+
+        # Per-user quota — applies to personal + pooled (not shared instances).
+        if asset_type.assignment_model != AssignmentModel.DEDICATED_SHARED:
+            await enforce_max_per_user(
+                db, asset_type.id, str(payload.user_email), asset_type.max_per_user
+            )
 
     order = Order(
         user_email=str(payload.user_email),

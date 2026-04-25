@@ -18,7 +18,7 @@ from sqlalchemy import func as sa_func
 from app.config import settings
 from app.database import get_db
 from app.templates_instance import templates, get_app_logo
-from app.models.asset import AssetPool, AssetStatus, AssetType
+from app.models.asset import AssetPool, AssetStatus, AssetType, AssignmentModel
 from app.models.config import AppConfig
 from app.models.order import Order, OrderAction, OrderStatus
 from app.utils.ad_lookup import lookup_user
@@ -501,6 +501,16 @@ async def portal_create_order(
         return await _render_error(
             f"No free assets available for \"{asset_type.name}\". Please try again later."
         )
+
+    # Per-user quota — applies to personal + pooled, not shared instances
+    if asset_type.assignment_model != AssignmentModel.DEDICATED_SHARED:
+        from app.utils.capacity import enforce_max_per_user
+        try:
+            await enforce_max_per_user(
+                db, asset_type.id, user_email, asset_type.max_per_user
+            )
+        except HTTPException as exc:
+            return await _render_error(exc.detail)
 
     order_config, attr_error = _validate_order_attrs(form_data, asset_type.config or [])
     if attr_error:

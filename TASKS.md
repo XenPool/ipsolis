@@ -113,11 +113,25 @@ Ping / SailPoint can drive ipSolis as an authoritative target.
 
 ## Polish & smaller gaps (Prio 2)
 
-### [open] `max_per_user` for pooled types — Prio 2
-The field is hidden today for pooled assignment — but "one Microsoft 365 E5
-per person" is the canonical pooled scenario. Without this, nothing prevents
-one user grabbing 5 seats. Field already exists on the model; UI just needs
-to show it for pooled too, runtime needs to enforce.
+### [done] `max_per_user` for pooled types — Prio 2 (2026-04-25)
+Per-user quota now enforced everywhere a PROVISION order can be created
+(public API, ServiceNow webhook, self-service portal). Quota covers personal
+and pooled assignment models; `dedicated_shared` is exempt because everyone
+shares a single instance.
+- UI: `max_per_user` input lifted out of the personal-only section in the
+  asset-definition form; visible for `assigned_personal` + `capacity_pooled`,
+  hidden only for `dedicated_shared`. Helper text explains the active-status
+  set the count is taken over.
+- Runtime: new `enforce_max_per_user()` in `api/app/utils/capacity.py`
+  returns HTTP 409 with a descriptive detail when the user is at the limit.
+- Wired into `api/app/routes/orders.py` (after `enforce_pool_capacity`),
+  `api/app/routes/webhook.py` (ServiceNow path), and
+  `api/app/routes/portal.py` (renders error inline via `_render_error`).
+- Bonus correctness fix: `_ACTIVE_STATUSES` in `capacity.py` now includes
+  `PENDING_APPROVAL` and `SCHEDULED` — closes a hole that let scheduled and
+  approval-pending orders bypass both pool capacity *and* the per-user quota.
+- Counting uses case-insensitive `user_email` match so Outlook-style casing
+  variants don't yield a fresh slot.
 
 ### [done] `is_active` flag on asset definitions — Prio 2 (2026-04-25)
 Admins can now deprecate without delete. Inactive types are hidden from the
