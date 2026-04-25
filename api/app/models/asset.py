@@ -69,6 +69,11 @@ class AssetType(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # When False, the type is hidden from the portal catalog but remains
+    # visible to admins (used to deprecate without losing history).
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
     category: Mapped[AssetCategory] = mapped_column(
         Enum(AssetCategory, name="asset_category", values_callable=lambda x: [e.value for e in x]),
         nullable=False,

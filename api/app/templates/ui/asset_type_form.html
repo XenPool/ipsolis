@@ -32,6 +32,21 @@
                placeholder="Short description"
                class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
       </div>
+      <div>
+        <label class="flex items-start gap-2 text-sm cursor-pointer">
+          <input type="checkbox" name="is_active" value="true" id="at-is-active"
+                 {% if (not asset_type) or asset_type.is_active %}checked{% endif %}
+                 class="mt-0.5 rounded border-token-border text-blue-600 focus:ring-blue-400">
+          <span>
+            <span class="font-medium text-body">Active</span>
+            <span class="block text-xs text-muted/70 mt-0.5">
+              When unchecked, the definition is hidden from the portal catalog so users can't request new instances.
+              Existing orders, assets, and history remain intact — use this to <em>deprecate</em> a definition without
+              losing its lineage.
+            </span>
+          </span>
+        </label>
+      </div>
     </div>
 
     <!-- Logo + live tile preview -->
@@ -1244,6 +1259,7 @@ async function submitForm() {
   var payload = {
     name: name,
     description: form.querySelector('[name="description"]').value.trim() || null,
+    is_active: form.querySelector('[name="is_active"]').checked,
     category: form.querySelector('[name="category"]:checked').value,
     assignment_model: assignmentModel,
     pool_capacity: form.querySelector('[name="pool_capacity"]').value

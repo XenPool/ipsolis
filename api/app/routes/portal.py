@@ -309,7 +309,11 @@ async def portal_new_order_form(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_portal_auth),
 ):
-    types_result = await db.execute(select(AssetType).order_by(AssetType.name))
+    # Inactive (deprecated) types stay in the DB for historical orders but
+    # don't appear in the catalog.
+    types_result = await db.execute(
+        select(AssetType).where(AssetType.is_active.is_(True)).order_by(AssetType.name)
+    )
     all_types = list(types_result.scalars().all())
     asset_types = _filter_eligible_asset_types(all_types, current_user["email"])
     unavailable_ids = await _get_unavailable_type_ids(db, asset_types)
@@ -426,7 +430,9 @@ async def portal_create_order(
     form_data = await request.form()
 
     async def _render_error(msg: str):
-        types_result = await db.execute(select(AssetType).order_by(AssetType.name))
+        types_result = await db.execute(
+            select(AssetType).where(AssetType.is_active.is_(True)).order_by(AssetType.name)
+        )
         all_types_raw = list(types_result.scalars().all())
         all_types = _filter_eligible_asset_types(all_types_raw, current_user["email"])
         max_adv_row = await db.execute(

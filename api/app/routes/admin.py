@@ -340,6 +340,7 @@ async def create_asset_type(
     asset_type = AssetType(
         name=payload.name,
         description=payload.description,
+        is_active=payload.is_active,
         category=payload.category,
         config=payload.config,
         assignment_model=payload.assignment_model,
@@ -409,6 +410,8 @@ async def update_asset_type(
         asset_type.name = payload.name
     if payload.description is not None:
         asset_type.description = payload.description
+    if payload.is_active is not None:
+        asset_type.is_active = payload.is_active
     if payload.category is not None:
         asset_type.category = payload.category
     if payload.config is not None:
@@ -494,6 +497,7 @@ async def clone_asset_type(type_id: int, db: AsyncSession = Depends(get_db)) -> 
     new_type = AssetType(
         name=candidate,
         description=src.description,
+        is_active=src.is_active,
         category=src.category,
         config=src.config,
         assignment_model=src.assignment_model,

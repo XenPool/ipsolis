@@ -65,6 +65,7 @@ class AppConfigUpdate(BaseModel):
 class AssetTypeCreate(BaseModel):
     name: str
     description: str | None = None
+    is_active: bool = True
     category: AssetCategory = AssetCategory.PLATFORM_ACCESS
     config: list[dict[str, Any]] | None = None
     assignment_model: str = "assigned_personal"
@@ -94,6 +95,7 @@ class AssetTypeCreate(BaseModel):
 class AssetTypeUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
+    is_active: bool | None = None
     category: AssetCategory | None = None
     config: list[dict[str, Any]] | None = None
     assignment_model: str | None = None

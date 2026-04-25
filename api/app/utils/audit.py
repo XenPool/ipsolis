@@ -84,6 +84,7 @@ def _type_snap(t) -> dict:
     return {
         "id": t.id,
         "name": t.name,
+        "is_active": getattr(t, "is_active", True),
         "category": t.category.value if hasattr(t.category, "value") else t.category,
         "description": t.description,
         "config": t.config,
