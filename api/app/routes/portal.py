@@ -22,6 +22,9 @@ from app.models.asset import AssetPool, AssetStatus, AssetType, AssignmentModel
 from app.models.config import AppConfig
 from app.models.order import Order, OrderAction, OrderStatus
 from app.utils.ad_lookup import lookup_user
+from app.utils.audit import (
+    _order_snap, aaudit, classify_for_asset_type_id, portal_actor_by,
+)
 from app.utils.license import is_feature_enabled
 
 logger = logging.getLogger(__name__)
@@ -741,6 +744,18 @@ async def portal_create_order(
         order.status = OrderStatus.PROCESSING
         logger.info("Portal: Order created id=%s user=%s", order.id, order.user_email)
 
+    # Audit row written after the routing branch so the snapshot captures
+    # the final status (PENDING_APPROVAL / SCHEDULED / PROCESSING) and the
+    # asset reservation when applicable. Classification is inherited from
+    # the asset type so PII-bearing orders fall under the matching
+    # retention window.
+    await aaudit(
+        db, "order", order.id, "created",
+        new=_order_snap(order),
+        by=portal_actor_by(current_user, "portal_create_order"),
+        classification=await classify_for_asset_type_id(db, order.asset_type_id),
+    )
+
     await db.commit()
     return RedirectResponse(url=f"/portal/orders/{order.id}", status_code=303)
 
@@ -950,6 +965,14 @@ async def portal_change_order(
         new_order.celery_task_id = _dispatch_runbook(new_order)
         new_order.status = OrderStatus.PROCESSING
 
+    await aaudit(
+        db, "order", new_order.id, "created",
+        new=_order_snap(new_order),
+        by=portal_actor_by(current_user, "portal_change_order"),
+        ctx=f"modify_of:{order_id}",
+        classification=await classify_for_asset_type_id(db, new_order.asset_type_id),
+    )
+
     await db.commit()
 
     logger.info("Portal: Change order id=%s from order=%s", new_order.id, order_id)
@@ -987,6 +1010,13 @@ async def portal_cancel_order(
             logger.info("Portal: Released reserved asset %s for cancelled order %s",
                         original.assigned_asset_id, order_id)
         original.status = OrderStatus.CANCELLED
+        await aaudit(
+            db, "order", original.id, "status_changed",
+            old={"status": OrderStatus.SCHEDULED.value},
+            new={"status": OrderStatus.CANCELLED.value},
+            by=portal_actor_by(current_user, "portal_cancel_order"),
+            classification=await classify_for_asset_type_id(db, original.asset_type_id),
+        )
         await db.commit()
         logger.info("Portal: Scheduled order cancelled id=%s", order_id)
         return RedirectResponse(url=f"/portal/orders/{order_id}", status_code=303)
@@ -1022,7 +1052,28 @@ async def portal_cancel_order(
     cancel_order.status = OrderStatus.PROCESSING
 
     # Mark original provision order as cancelled so it disappears from My IT
+    original_old_status = original.status.value
     original.status = OrderStatus.CANCELLED
+
+    # Two audit rows: the new DELETE order being created, and the
+    # original provision order transitioning to CANCELLED. Same actor on
+    # both, classification inherits from the asset type.
+    cls = await classify_for_asset_type_id(db, original.asset_type_id)
+    actor = portal_actor_by(current_user, "portal_cancel_order")
+    await aaudit(
+        db, "order", cancel_order.id, "created",
+        new=_order_snap(cancel_order),
+        by=actor, ctx=f"cancel_of:{order_id}",
+        classification=cls,
+    )
+    await aaudit(
+        db, "order", original.id, "status_changed",
+        old={"status": original_old_status},
+        new={"status": OrderStatus.CANCELLED.value},
+        by=actor,
+        classification=cls,
+    )
+
     await db.commit()
 
     logger.info("Portal: Cancel order id=%s from order=%s", cancel_order.id, order_id)
@@ -1241,7 +1292,10 @@ async def portal_decide_approval(
         raise HTTPException(status_code=403, detail="You are not the designated approver")
 
     from app.utils.approval_decision import apply_approval_decision
-    await apply_approval_decision(db, approval, decision, comment)
+    await apply_approval_decision(
+        db, approval, decision, comment,
+        actor=portal_actor_by(current_user, "decide_approval"),
+    )
     return RedirectResponse(url="/portal/approvals", status_code=303)
 
 

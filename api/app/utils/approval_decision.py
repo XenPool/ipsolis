@@ -16,6 +16,7 @@ from app.config import settings
 from app.models.approval import OrderApproval
 from app.models.asset import AssetType
 from app.models.order import Order, OrderStatus
+from app.utils.audit import _order_snap, aaudit, classify_asset_type
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +34,21 @@ async def apply_approval_decision(
     approval: OrderApproval,
     decision: str,
     comment: str | None,
+    *,
+    actor: str | None = None,
 ) -> DecisionResult:
     """Record ``decision`` on ``approval`` and trigger downstream effects.
 
     Caller is responsible for verifying that the actor is authorized to
     decide on this approval (portal session match, or valid signed token).
     The function commits the session.
+
+    ``actor`` is the audit attribution string identifying who decided —
+    typically ``portal_actor_by(current_user, "decide_approval")`` for
+    the session path or ``api:approval_token:<email>`` for the
+    signed-token path. Falls back to a synthetic
+    ``api:apply_approval_decision (approver:<email>)`` when omitted so
+    legacy callers keep working.
 
     Returns a ``DecisionResult`` describing what happened so the caller can
     render an appropriate response.
@@ -58,14 +68,42 @@ async def apply_approval_decision(
         await db.rollback()
         return DecisionResult(status="already_decided", all_granted=False)
 
+    # Resolve the asset type once — needed for classification on every
+    # audit row this decision generates and for the quorum check below.
+    asset_type = await db.get(AssetType, order.asset_type_id)
+    classification = classify_asset_type(asset_type)
+
+    # Default actor when caller hasn't supplied one — preserves
+    # back-compat for any external callers we haven't migrated yet.
+    actor = actor or f"api:apply_approval_decision (approver:{approval.approver_email})"
+
     from celery import Celery
     celery_app = Celery(broker=settings.CELERY_BROKER_URL)
 
     if norm == "declined":
+        old_order_status = order.status.value
         order.status = OrderStatus.REJECTED
         order.error_message = (
             f"Declined by {approval.approver_name}: "
             f"{approval.comment or 'no reason given'}"
+        )
+        # Two audit rows: the approval row's decision, and the order
+        # status transition that the decline triggers.
+        await aaudit(
+            db, "order_approval", approval.id, "declined",
+            new={
+                "approver_email": approval.approver_email,
+                "approver_type": approval.approver_type,
+                "rule_name": approval.rule_name,
+                "comment": approval.comment,
+            },
+            by=actor, classification=classification,
+        )
+        await aaudit(
+            db, "order", order.id, "status_changed",
+            old={"status": old_order_status},
+            new={"status": OrderStatus.REJECTED.value, "reason": order.error_message},
+            by=actor, classification=classification,
         )
         celery_app.send_task(
             "tasks.workflows.dynamic_runner.send_approval_result_email",
@@ -75,6 +113,21 @@ async def apply_approval_decision(
         await db.commit()
         logger.info("Approval %s declined for order %s", approval.id, order.id)
         return DecisionResult(status="declined", all_granted=False)
+
+    # Approved branch — emit the per-approval audit row immediately so
+    # the trail captures each decision even when the quorum isn't
+    # yet met. The order-status transition (PENDING → DELIVERED-path)
+    # gets its own row inside the threshold-met branch below.
+    await aaudit(
+        db, "order_approval", approval.id, "approved",
+        new={
+            "approver_email": approval.approver_email,
+            "approver_type": approval.approver_type,
+            "rule_name": approval.rule_name,
+            "comment": approval.comment,
+        },
+        by=actor, classification=classification,
+    )
 
     # Approved — check whether quorum is now satisfied. Slice 2 of the
     # rules engine introduces per-rule N-of-M: each rule with its own
@@ -89,7 +142,6 @@ async def apply_approval_decision(
     )
     all_approvals = list(rows.scalars().all())
 
-    asset_type = await db.get(AssetType, order.asset_type_id)
     global_threshold_cfg = (asset_type.min_approvals_required if asset_type else None) or 0
 
     # Bucket approvals: "global" plus one bucket per rule_name with a
@@ -149,6 +201,7 @@ async def apply_approval_decision(
         # ``decided_at`` for the supersession timestamp.
         now = datetime.now(timezone.utc)
         superseded = 0
+        old_order_status = order.status.value
         for a in all_approvals:
             if a.status == "pending":
                 a.status = "superseded"
@@ -159,6 +212,19 @@ async def apply_approval_decision(
         # so the side-effects (asset reservation, runbook dispatch) stay there.
         from app.routes.portal import _post_approval_dispatch
         await _post_approval_dispatch(order, db, celery_app)
+        # Capture the post-dispatch status (typically PROCESSING / SCHEDULED).
+        # Single audit row covers both the gate-clearance and the
+        # downstream status hand-off; the per-approval audit rows above
+        # already record who voted to release the gate.
+        await aaudit(
+            db, "order", order.id, "approved_and_dispatched",
+            old={"status": old_order_status},
+            new=_order_snap(order) | {
+                "quorum": mode,
+                "superseded_pending": superseded,
+            },
+            by=actor, classification=classification,
+        )
         celery_app.send_task(
             "tasks.workflows.dynamic_runner.send_approval_result_email",
             args=[order.id, True],
@@ -170,8 +236,8 @@ async def apply_approval_decision(
         )
     else:
         logger.info(
-            "Order %s approval %d/%d (%s) — still waiting",
-            order.id, approved_count, threshold, mode,
+            "Order %s approval %d approved (%s) — still waiting",
+            order.id, approved_count, mode,
         )
 
     await db.commit()

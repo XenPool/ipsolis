@@ -174,10 +174,58 @@ follow-up slices.
 - Legacy `X-Admin-Key` and admin sessions retain implicit `admin:*`
   by design — UI flows and existing scripts continue working.
 
+**Done — audit attribution on /orders + portal flows (2026-04-26):**
+- New `portal_actor_by(current_user, label)` helper in
+  `app.utils.audit` mirrors the admin-side `actor_by(request, label)`
+  contract. Output formats:
+  * Authenticated portal user: `api:<label> (portal:user:<email>)`
+  * Anonymous portal mode (Entra disabled): `api:<label> (portal:anonymous)`
+  * Empty / missing email: `api:<label> (portal:user:unknown)`
+  * No `current_user` dict at all: `api:<label>` (clean fallback)
+  Email lower-cased so audit-log filters can match without case juggling.
+- Portal mutation routes audit rows now record who drove the change.
+  Three previously-silent mutations now emit audit rows:
+  * `POST /portal/orders/new` → `order` `created`
+  * `POST /portal/orders/{id}/change` → `order` `created` (with
+    `ctx="modify_of:<orig_id>"`)
+  * `POST /portal/orders/{id}/cancel` → both branches: scheduled
+    cancellation logs `order` `status_changed` on the original;
+    active cancellation logs the new DELETE order's `created` plus
+    the original's `status_changed`. Two rows, same actor.
+  All four routes pull classification via `classify_for_asset_type_id()`
+  so per-class retention windows apply uniformly across portal +
+  admin paths.
+- `apply_approval_decision()` reworked to emit per-decision audit rows.
+  Each individual approve / decline becomes an `order_approval`
+  audit row (with `rule_name` and `comment` in the snapshot) so the
+  trail captures each voter even before quorum is met. The order's
+  status transition (`status_changed` on decline,
+  `approved_and_dispatched` on quorum-met) gets its own row using the
+  same actor. New `actor=` kwarg on the helper; portal route passes
+  `portal_actor_by(current_user, "decide_approval")`,
+  signed-token route passes `api:approval_token (approver:<email>)`.
+  Default fallback preserves back-compat for any in-flight callers.
+- `/orders/` API router got a non-raising soft-auth dependency
+  `attribute_actor_if_present()` that mirrors `require_admin_key`'s
+  three-credential recognition (legacy key / session / bearer token)
+  but never raises on missing or invalid creds — keeps the public
+  ServiceNow contract unchanged. Three audit call sites switched
+  from hardcoded `api:create_order` etc. to `actor_by(request, ...)`:
+  POST `/orders/`, PATCH `/orders/{id}`, DELETE `/orders/{id}`.
+- `portal_delegations.py` aligned: `aaudit(by=...)` for create + revoke
+  switched from the ad-hoc `f"portal:{email}"` to `portal_actor_by()`
+  so portal-driven delegation rows now consistent with the rest of
+  the audit log.
+- Verified end-to-end:
+  * Anonymous `POST /orders/` → `api:create_order` (no actor —
+    fallback is unchanged).
+  * `POST /orders/` with `Authorization: Bearer xpat_…` → audit row
+    `api:create_order (token:smoke-orders-actor-2)`. Soft-auth path
+    correctly captured the token without 401-ing on missing scopes.
+  * `portal_actor_by()` produces the right strings for all five
+    cases (real user / anonymous / no email / None / mixed-case).
+
 **Still to do — separate slices:**
-- [ ] Audit attribution on `/orders` API and portal-side flows
-      (today they use hardcoded labels because there's no shared
-      auth context — would need a portal-user actor wrapper).
 - [ ] Optional: hard-delete vs. soft-delete policy (today everything
       is soft-deleted; some tenants will want a "purge revoked tokens
       older than 90 days" Beat task).

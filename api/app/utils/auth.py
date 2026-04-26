@@ -59,6 +59,49 @@ async def require_admin_key(
     )
 
 
+async def attribute_actor_if_present(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    api_key: str | None = Security(_api_key_header),
+    authorization: str | None = Security(_authorization_header),
+) -> None:
+    """Soft-auth dependency: populate ``request.state.actor`` *if* valid
+    credentials are provided, without ever raising on missing or invalid ones.
+
+    Use on intentionally-public routes (e.g. ``/orders/``, ``/webhook/``)
+    so that when a caller *does* present a valid token / admin key, the
+    audit log records who they are — but anonymous callers continue to
+    work unchanged. The route handler should keep using ``actor_by()`` as
+    usual; that helper falls back to ``api:<label>`` when no actor is
+    populated.
+
+    Mirrors the recognition logic from ``require_admin_key`` exactly so
+    the two paths stay in sync. Bad credentials (bogus token, wrong
+    admin key) are silently ignored at this level — the route handler
+    owns the decision of whether to enforce auth.
+    """
+    if api_key and api_key == settings.ADMIN_API_KEY:
+        request.state.actor = "admin:legacy_key"
+        return
+    if request.session.get("admin_authenticated"):
+        admin_user = request.session.get("admin_user") or "admin"
+        request.state.actor = f"admin:session:{admin_user}"
+        return
+    if authorization and authorization.lower().startswith("bearer "):
+        raw = authorization.split(" ", 1)[1].strip()
+        from app.utils.api_tokens import mark_used, verify_raw_token  # noqa: PLC0415
+
+        token = await verify_raw_token(db, raw)
+        if token is not None:
+            await mark_used(db, token.id)
+            await db.commit()
+            request.state.api_token = token
+            request.state.actor = f"token:{token.name}"
+            return
+    # No usable creds — leave request.state.actor unset; ``actor_by``
+    # will fall back to the bare ``api:<label>`` form.
+
+
 async def require_admin_session(request: Request) -> None:
     """Dependency: validates admin session cookie for browser-based UI access.
 

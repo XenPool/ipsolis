@@ -159,7 +159,11 @@ async def approve_post(
     # Normalize: portal uses 'approve' | else; we accept reject/decline as decline.
     norm = "approve" if decision == "approve" else "reject"
 
-    result = await apply_approval_decision(db, approval, norm, comment)
+    # Audit attribution names the signed-token path explicitly so a
+    # decision made via an emailed link is distinguishable from a
+    # portal-session decision in the audit log.
+    actor = f"api:approval_token (approver:{approval.approver_email})"
+    result = await apply_approval_decision(db, approval, norm, comment, actor=actor)
 
     if result.status == "already_decided":
         return _render_status_page(

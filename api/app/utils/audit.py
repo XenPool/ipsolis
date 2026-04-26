@@ -91,6 +91,32 @@ def actor_by(request: Request | None, label: str) -> str:
     return f"api:{label}"
 
 
+def portal_actor_by(current_user: dict | None, label: str) -> str:
+    """Build an audit ``triggered_by`` string for portal-driven actions.
+
+    Portal routes don't go through ``require_admin_key`` — they use
+    ``require_portal_auth`` which yields a ``current_user`` dict
+    (Entra ID-resolved or the synthetic anonymous user when Entra is
+    disabled). The dict carries ``email``, ``name``, and ``oid``;
+    ``oid == "anonymous"`` is the marker for the synthetic user.
+
+    Output mirrors ``actor_by`` so audit-log filters can apply
+    uniformly:
+
+    * authenticated:   ``api:<label> (portal:user:<email>)``
+    * anonymous portal:``api:<label> (portal:anonymous)``
+    * fallback:        ``api:<label>`` (no current_user at all)
+    """
+    if not isinstance(current_user, dict):
+        return f"api:{label}"
+    if (current_user.get("oid") or "").lower() == "anonymous":
+        return f"api:{label} (portal:anonymous)"
+    email = (current_user.get("email") or "").strip().lower()
+    if not email:
+        return f"api:{label} (portal:user:unknown)"
+    return f"api:{label} (portal:user:{email})"
+
+
 async def aaudit(
     db: AsyncSession,
     entity_type: str,

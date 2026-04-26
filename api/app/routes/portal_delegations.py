@@ -24,7 +24,7 @@ from app.database import get_db
 from app.models.approval_delegation import ApprovalDelegation
 from app.routes.portal import require_portal_auth
 from app.templates_instance import templates
-from app.utils.audit import aaudit
+from app.utils.audit import aaudit, portal_actor_by
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["portal-delegations"])
@@ -143,7 +143,7 @@ async def create_my_delegation(
             "until_at": row.until_at.isoformat(),
             "reason": row.reason,
         },
-        by=f"portal:{email}",
+        by=portal_actor_by(current_user, "portal_create_delegation"),
     )
     await db.commit()
     await db.refresh(row)
@@ -179,7 +179,7 @@ async def revoke_my_delegation(
         await aaudit(
             db, "approval_delegation", row.id, "revoked",
             new={"revoked_at": row.revoked_at.isoformat()},
-            by=f"portal:{email}",
+            by=portal_actor_by(current_user, "portal_revoke_delegation"),
         )
         await db.commit()
         logger.info("Portal: %s revoked self-service delegation id=%s", email, row.id)

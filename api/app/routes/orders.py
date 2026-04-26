@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -10,12 +10,23 @@ from app.database import get_db
 from app.models.asset import AssetType, AssignmentModel
 from app.models.order import Order, OrderAction, OrderStatus
 from app.schemas.order import OrderCreate, OrderRead, OrderUpdate
-from app.utils.audit import _order_snap, aaudit, classify_for_asset_type_id
+from app.utils.audit import _order_snap, aaudit, actor_by, classify_for_asset_type_id
+from app.utils.auth import attribute_actor_if_present
 from app.utils.capacity import enforce_max_per_user, enforce_pool_capacity
 from app.utils.license import is_feature_enabled
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/orders", tags=["orders"])
+# Public-by-design router: order creation accepts unauthenticated calls
+# (the portal hits /portal/orders/new instead, but external integrations
+# like ServiceNow can POST here with no auth — they sign at /webhook).
+# The ``attribute_actor_if_present`` dependency is non-raising: it
+# captures actor metadata when a caller *does* send X-Admin-Key or a
+# Bearer token, leaving anonymous calls unchanged.
+router = APIRouter(
+    prefix="/orders",
+    tags=["orders"],
+    dependencies=[Depends(attribute_actor_if_present)],
+)
 
 
 @router.get("/", response_model=list[OrderRead])
@@ -61,6 +72,7 @@ async def get_order(
 
 @router.post("/", response_model=OrderRead, status_code=status.HTTP_201_CREATED)
 async def create_order(
+    request: Request,
     payload: OrderCreate,
     db: AsyncSession = Depends(get_db),
 ) -> Order:
@@ -141,7 +153,7 @@ async def create_order(
 
     await aaudit(
         db, "order", order.id, "created", new=_order_snap(order),
-        by="api:create_order",
+        by=actor_by(request, "create_order"),
         classification=await classify_for_asset_type_id(db, order.asset_type_id),
     )
     await db.commit()
@@ -158,6 +170,7 @@ async def create_order(
 
 @router.patch("/{order_id}", response_model=OrderRead)
 async def update_order(
+    request: Request,
     order_id: int,
     payload: OrderUpdate,
     db: AsyncSession = Depends(get_db),
@@ -188,7 +201,7 @@ async def update_order(
 
     await aaudit(
         db, "order", order.id, "updated", old=old_snap, new=_order_snap(order),
-        by="api:update_order",
+        by=actor_by(request, "update_order"),
         classification=await classify_for_asset_type_id(db, order.asset_type_id),
     )
     await db.commit()
@@ -198,6 +211,7 @@ async def update_order(
 
 @router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def cancel_order(
+    request: Request,
     order_id: int,
     db: AsyncSession = Depends(get_db),
 ) -> None:
@@ -223,7 +237,7 @@ async def cancel_order(
     await aaudit(
         db, "order", order.id, "status_changed",
         old={"status": old_status}, new={"status": "cancelled"},
-        by="api:cancel_order",
+        by=actor_by(request, "cancel_order"),
         classification=await classify_for_asset_type_id(db, order.asset_type_id),
     )
     await db.commit()
