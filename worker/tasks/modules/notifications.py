@@ -366,6 +366,60 @@ def send_approval_request(
     return _send_html_email_multi(db, [approver_email], bcc, mail_from, subject, html)
 
 
+def send_approval_escalated(
+    db: "Session",
+    *,
+    escalation_emails: list[str],
+    approver_email: str,
+    approver_name: str,
+    requester_name: str,
+    requester_email: str,
+    asset_type_name: str,
+    reminder_count: int,
+    from_date: str = "",
+    until_date: str = "",
+    approval_url: str = "",
+) -> dict:
+    """Notify the configured escalation contact(s) that an approval has burned
+    through all its reminders without a decision.
+
+    The escalation email is informational — it doesn't carry a signed
+    approve/decline link. Recipients chase the original approver,
+    reassign the request, or cancel via the admin UI.
+    """
+    from tasks.modules.config_reader import get_config
+
+    addrs = [a.strip() for a in (escalation_emails or []) if a and a.strip()]
+    if not addrs:
+        return {"success": True, "skipped": True, "reason": "no escalation_email configured"}
+
+    company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "Ipsolis")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    variables = {
+        "company_name": company_name,
+        "app_title": app_title,
+        "approver_name": approver_name,
+        "approver_email": approver_email,
+        "requester_name": requester_name,
+        "requester_email": requester_email,
+        "asset_type_name": asset_type_name,
+        "from_date": from_date,
+        "until_date": until_date,
+        "approval_url": approval_url or "",
+        "reminder_count": reminder_count,
+    }
+
+    subject, body = _render_template(db, "approval_escalated", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, addrs, bcc, mail_from, subject, html)
+
+
 def send_approval_result(
     db: "Session",
     user_email: str,

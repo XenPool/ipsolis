@@ -40,6 +40,11 @@ class OrderApproval(Base):
     reminder_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    # Set the first time an approval is escalated; once non-NULL the Beat
+    # task stops sending reminders + escalations for this row.
+    escalated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Relationships
     order: Mapped["Order"] = relationship("Order", back_populates="approvals")  # noqa: F821

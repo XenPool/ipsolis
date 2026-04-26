@@ -280,13 +280,39 @@ delegation, N-of-M, conditional rules) remain.
   hits a known mapper-init quirk that doesn't affect the
   actual request path.
 
+**Done — approval escalation (2026-04-26):**
+- Migration `0059_approval_escalation.py` — adds
+  `order_approvals.escalated_at` column, seeds the
+  `approval.escalation_email` config key (default empty),
+  seeds a new `approval_escalated` email template with full
+  variable set (original approver name+email, requester, asset,
+  reminder_count, etc.).
+- ORM `OrderApproval.escalated_at` mapped.
+- `notif.send_approval_escalated()` — new notifications path that
+  loads the seeded template, renders branded HTML, sends to a list
+  of escalation addresses. Returns silently when no addresses are
+  configured.
+- `scan_and_remind` Beat task now does both jobs in a single tick:
+  reminders for rows below the cap, escalations for rows at or above
+  it. The escalation query filters `escalated_at IS NULL` so each
+  approval escalates **at most once** — subsequent ticks skip it.
+- Settings UI (E-Mail tab → Approval Reminders): new
+  "Escalation contact(s)" field accepting comma-separated emails.
+  Helper text explains the once-per-approval semantics.
+- Verified end-to-end: synthetic approval at `reminder_count=3` with
+  `escalated_at=NULL` → first scan returns
+  `reminded: 0, escalated: 1`, sets `escalated_at`; second scan
+  correctly skips it (`escalated: 0`).
+
 **Still to do:**
 - [ ] Schema: `approval_rules` JSONB on asset_type extending current `approval_owners`
 - [ ] Runtime evaluator that resolves rules → approval steps
 - [ ] UI: rule-builder (avoid full DSL; predefined patterns)
-- [ ] Escalation: after N reminders, notify a configured backup
-      approver (e.g. manager's manager, app-owner team distribution
-      list) instead of just stopping
+- [ ] Escalation v2: optionally **assign** the escalated approval
+      to the contact (creating a new approval row with their email)
+      so they can decide directly via the existing token URL —
+      currently they get a heads-up only and have to intervene
+      operationally.
 **Done — self-service portal delegation (2026-04-26):**
 - New router `app.routes.portal_delegations` exposes
   `GET /portal/delegations` (HTML page),

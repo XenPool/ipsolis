@@ -38,7 +38,7 @@ def _truthy(s: str | None) -> bool:
 
 @app.task(name="tasks.workflows.approval_reminders.scan_and_remind")
 def scan_and_remind() -> dict:
-    """Scan for stale pending approvals and re-send notifications."""
+    """Scan stale pending approvals: nudge new ones, escalate exhausted ones."""
     db = _get_db_session()
     try:
         if not _truthy(get_config(db, "approval.reminders_enabled", "true")):
@@ -53,10 +53,15 @@ def scan_and_remind() -> dict:
         except (TypeError, ValueError):
             max_reminders = 3
 
-        # Cutoff: a row qualifies if it was created (or last reminded) more
-        # than ``after_hours`` ago. Single SQL clause covers both branches.
         cutoff = datetime.now(timezone.utc) - timedelta(hours=after_hours)
+        portal_base = get_config(db, "portal.base_url", "http://localhost:8000")
+        teams_mode = (get_config(db, "teams.mode", "disabled") or "disabled").strip()
+        teams_webhook = (get_config(db, "teams.webhook_url") or "").strip()
+        app_title = get_config(db, "app.title", "Ipsolis") or "Ipsolis"
+        escalation_emails_raw = (get_config(db, "approval.escalation_email") or "").strip()
+        escalation_emails = [a.strip() for a in escalation_emails_raw.split(",") if a.strip()]
 
+        # ── Reminders: row not yet at cap, last touch older than cutoff ─────
         rows = db.execute(
             text("""
                 SELECT
@@ -70,20 +75,13 @@ def scan_and_remind() -> dict:
                 JOIN orders      o  ON o.id  = oa.order_id
                 JOIN asset_types at ON at.id = o.asset_type_id
                 WHERE oa.status = 'pending'
+                  AND oa.escalated_at IS NULL
                   AND oa.reminder_count < :max_reminders
                   AND COALESCE(oa.last_reminded_at, oa.created_at) < :cutoff
                 ORDER BY oa.created_at ASC
             """),
             {"max_reminders": max_reminders, "cutoff": cutoff},
         ).fetchall()
-
-        if not rows:
-            return {"success": True, "reminded": 0}
-
-        portal_base = get_config(db, "portal.base_url", "http://localhost:8000")
-        teams_mode = (get_config(db, "teams.mode", "disabled") or "disabled").strip()
-        teams_webhook = (get_config(db, "teams.webhook_url") or "").strip()
-        app_title = get_config(db, "app.title", "Ipsolis") or "Ipsolis"
 
         from tasks.workflows.dynamic_runner import deliver_approval_notification
 
@@ -124,15 +122,83 @@ def scan_and_remind() -> dict:
                 """),
                 {"id": r.approval_id},
             )
+
+        # ── Escalations: row at cap, never escalated, escalation configured ─
+        escalated = 0
+        if escalation_emails and max_reminders > 0:
+            esc_rows = db.execute(
+                text("""
+                    SELECT
+                      oa.id           AS approval_id,
+                      oa.approver_email, oa.approver_name,
+                      oa.reminder_count,
+                      o.user_email, o.user_name,
+                      o.requested_from, o.requested_until,
+                      at.name AS asset_type_name
+                    FROM order_approvals oa
+                    JOIN orders      o  ON o.id  = oa.order_id
+                    JOIN asset_types at ON at.id = o.asset_type_id
+                    WHERE oa.status = 'pending'
+                      AND oa.reminder_count >= :max_reminders
+                      AND oa.escalated_at IS NULL
+                """),
+                {"max_reminders": max_reminders},
+            ).fetchall()
+
+            from tasks.modules import notifications as notif
+
+            for r in esc_rows:
+                from_date = r.requested_from.strftime("%d.%m.%Y") if r.requested_from else ""
+                until_date = r.requested_until.strftime("%d.%m.%Y") if r.requested_until else ""
+
+                # Approval URL points the escalation contact at the order in
+                # the admin UI, not a signed-token page (they don't decide,
+                # they intervene operationally).
+                approval_url = f"{portal_base.rstrip('/')}/ui/orders"
+
+                try:
+                    notif.send_approval_escalated(
+                        db,
+                        escalation_emails=escalation_emails,
+                        approver_email=r.approver_email,
+                        approver_name=r.approver_name,
+                        requester_name=r.user_name or "",
+                        requester_email=r.user_email or "",
+                        asset_type_name=r.asset_type_name or "",
+                        reminder_count=r.reminder_count or 0,
+                        from_date=from_date,
+                        until_date=until_date,
+                        approval_url=approval_url,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Escalation send failed for approval %s: %s", r.approval_id, exc)
+                    continue
+
+                db.execute(
+                    text("UPDATE order_approvals SET escalated_at = NOW() WHERE id = :id"),
+                    {"id": r.approval_id},
+                )
+                escalated += 1
+                logger.info(
+                    "Approval %s escalated (original approver=%s, reminders=%d) to %s",
+                    r.approval_id, r.approver_email, r.reminder_count or 0,
+                    ", ".join(escalation_emails),
+                )
+
         db.commit()
+
+        if not rows and escalated == 0:
+            return {"success": True, "reminded": 0, "escalated": 0}
+
         logger.info(
-            "Approval reminders dispatched: %d emails, %d Teams cards (cutoff=%dh, cap=%d).",
-            reminded, teams_sent, after_hours, max_reminders,
+            "Approval scan: %d reminders, %d teams cards, %d escalations (cutoff=%dh, cap=%d).",
+            reminded, teams_sent, escalated, after_hours, max_reminders,
         )
         return {
             "success": True,
             "reminded": reminded,
             "teams_sent": teams_sent,
+            "escalated": escalated,
             "after_hours": after_hours,
             "max_reminders": max_reminders,
         }

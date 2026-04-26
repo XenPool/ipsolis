@@ -701,8 +701,21 @@
           <input type="number" id="approval-max-reminders" min="0" max="10"
                  value="{{ approval_config.get('approval.max_reminders', '3') }}"
                  class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
-          <p class="text-[11px] text-muted/60 mt-1">After this many nudges the approval is left alone.</p>
+          <p class="text-[11px] text-muted/60 mt-1">After this many nudges the approval escalates (or is left alone if no escalation contact is set).</p>
         </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Escalation contact(s)</label>
+        <input type="text" id="approval-escalation-email"
+               value="{{ approval_config.get('approval.escalation_email', '') }}"
+               placeholder="ops@example.com, oncall@example.com"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+        <p class="text-[11px] text-muted/60 mt-1 leading-snug">
+          Comma-separated. Notified once per stuck approval after the reminder cap is reached.
+          Each approval is escalated <em>at most once</em>; subsequent ticks ignore already-escalated rows.
+          Leave blank to disable escalation entirely.
+        </p>
       </div>
     </div>
 
@@ -1598,6 +1611,7 @@ async function saveApprovalReminderConfig() {
     'approval.reminders_enabled':    document.getElementById('approval-reminders-enabled').value,
     'approval.reminder_after_hours': document.getElementById('approval-reminder-hours').value.trim() || '24',
     'approval.max_reminders':        document.getElementById('approval-max-reminders').value.trim() || '3',
+    'approval.escalation_email':     document.getElementById('approval-escalation-email').value.trim(),
   };
   var errors = [];
   for (var key in fields) {
