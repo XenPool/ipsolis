@@ -660,6 +660,21 @@
                      class="col-span-9 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500">
               <span class="col-span-1"></span>
             </div>
+            <div class="grid grid-cols-12 gap-2 items-center mt-1">
+              <span class="col-span-2 text-xs text-muted/70 text-right pr-1">Classification:</span>
+              {% set _cls = attr.classification or '' %}
+              <select name="attr_classification[]"
+                      class="col-span-3 rounded border border-token-border bg-surface text-body text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <option value=""         {% if _cls == '' %}selected{% endif %}>— public —</option>
+                <option value="internal" {% if _cls == 'internal' %}selected{% endif %}>Internal</option>
+                <option value="pii"      {% if _cls == 'pii' %}selected{% endif %}>PII (personal data)</option>
+                <option value="phi"      {% if _cls == 'phi' %}selected{% endif %}>PHI (health)</option>
+                <option value="pci"      {% if _cls == 'pci' %}selected{% endif %}>PCI (cardholder)</option>
+              </select>
+              <span class="col-span-7 text-[11px] text-muted/60 leading-snug pl-2">
+                Sensitive classes show a warning badge to requesters and surface in the audit trail for retention queries.
+              </span>
+            </div>
           </div>
           {% endfor %}
         {% else %}
@@ -690,6 +705,20 @@
               <input type="text" name="attr_options[]" placeholder="e.g. 2, 4, 8"
                      class="col-span-9 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500">
               <span class="col-span-1"></span>
+            </div>
+            <div class="grid grid-cols-12 gap-2 items-center mt-1">
+              <span class="col-span-2 text-xs text-muted/70 text-right pr-1">Classification:</span>
+              <select name="attr_classification[]"
+                      class="col-span-3 rounded border border-token-border bg-surface text-body text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <option value="" selected>— public —</option>
+                <option value="internal">Internal</option>
+                <option value="pii">PII (personal data)</option>
+                <option value="phi">PHI (health)</option>
+                <option value="pci">PCI (cardholder)</option>
+              </select>
+              <span class="col-span-7 text-[11px] text-muted/60 leading-snug pl-2">
+                Sensitive classes show a warning badge to requesters and surface in the audit trail for retention queries.
+              </span>
             </div>
           </div>
         {% endif %}
@@ -1223,6 +1252,18 @@ function addAttrRow() {
     + '<input type="text" name="attr_options[]" placeholder="e.g. 2, 4, 8"'
     + ' class="col-span-9 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500">'
     + '<span class="col-span-1"></span>'
+    + '</div>'
+    + '<div class="grid grid-cols-12 gap-2 items-center mt-1">'
+    + '<span class="col-span-2 text-xs text-muted/70 text-right pr-1">Classification:</span>'
+    + '<select name="attr_classification[]"'
+    + ' class="col-span-3 rounded border border-token-border bg-surface text-body text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500">'
+    + '<option value="" selected>— public —</option>'
+    + '<option value="internal">Internal</option>'
+    + '<option value="pii">PII (personal data)</option>'
+    + '<option value="phi">PHI (health)</option>'
+    + '<option value="pci">PCI (cardholder)</option>'
+    + '</select>'
+    + '<span class="col-span-7 text-[11px] text-muted/60 leading-snug pl-2">Sensitive classes show a warning badge to requesters.</span>'
     + '</div>';
   document.getElementById('attr-rows').appendChild(row);
 }
@@ -1256,6 +1297,8 @@ async function submitForm() {
     var opts    = optEl && optEl.value.trim()
       ? optEl.value.trim().split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; })
       : [];
+    var clsEl  = rowEl.querySelector('[name="attr_classification[]"]');
+    var clsVal = clsEl ? clsEl.value.trim() : '';
     var entry = {
       key: k,
       label: rowEl.querySelector('[name="attr_label[]"]').value.trim() || k,
@@ -1264,6 +1307,7 @@ async function submitForm() {
     };
     if (defVal) entry.default_value = defVal;
     if (opts.length) entry.options = opts;
+    if (clsVal) entry.classification = clsVal;
     config.push(entry);
   });
 

@@ -153,6 +153,28 @@
            {% endif %}>
         <label class="block text-xs font-medium text-muted mb-1">
           {{ attr.label }}{% if attr.required %} <span class="text-red-500">*</span>{% endif %}
+          {% if attr.classification == 'pii' %}
+          <span class="ml-1 inline-flex items-center gap-1 align-middle px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
+                title="Personal data — handled with extra care; surfaces in audit log for compliance retention.">
+            <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M10 1l-7 3v6c0 4 3 7.4 7 9 4-1.6 7-5 7-9V4l-7-3z" clip-rule="evenodd"/></svg>
+            PII
+          </span>
+          {% elif attr.classification == 'phi' %}
+          <span class="ml-1 inline-flex items-center gap-1 align-middle px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300"
+                title="Protected health information — strict handling and retention requirements apply.">
+            <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M9 2h2v6h6v2h-6v6H9v-6H3V8h6V2z"/></svg>
+            PHI
+          </span>
+          {% elif attr.classification == 'pci' %}
+          <span class="ml-1 inline-flex items-center gap-1 align-middle px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300"
+                title="Cardholder data — PCI-DSS handling requirements apply.">
+            <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm14 2H4v8h12V7z" clip-rule="evenodd"/></svg>
+            PCI
+          </span>
+          {% elif attr.classification == 'internal' %}
+          <span class="ml-1 inline-flex items-center align-middle px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-surface-raised text-muted"
+                title="Internal use only.">internal</span>
+          {% endif %}
         </label>
         {% if attr_type == 'BOOL' %}
         <label class="flex items-center gap-2 text-sm text-body cursor-pointer">

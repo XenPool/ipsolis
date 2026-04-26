@@ -588,8 +588,48 @@ overkill for the value delta over the link-to-confirmation-page UX.
   `<at>...</at>` placeholder so the body renders gracefully even when
   a Workflow template strips entities.
 
-### [open] Field-level data classification — Prio 3
-Tag fields as PII / PHI / PCI; drive approval routing and audit retention.
+### [partial] Field-level data classification — Prio 3
+Slice 1 — schema (in JSON), admin UI tagging, portal badges, audit
+trail capture — **shipped 2026-04-26**. Approval routing and
+retention-policy enforcement remain.
+
+**Done — classification tagging (2026-04-26):**
+- `asset_types.config` per-attribute JSON gains a new optional
+  `classification` field. Allowed values: `""` (public default),
+  `internal`, `pii`, `phi`, `pci`. No DB migration needed — the
+  column was already JSON.
+- Admin form (`asset_type_form.html`): each attribute row now has
+  a "Classification" sub-row with a 5-option dropdown and an
+  inline hint. Both the existing-data branch and the addAttrRow JS
+  factory include the field. The submit serializer reads it and
+  attaches `classification` to the JSON entry only when set.
+- Admin list (`asset_types.html`): each rendered attribute key is
+  followed by a small classification badge — amber for PII, red for
+  PHI/PCI, neutral for `internal`. Public attributes stay
+  badge-free.
+- Portal (`order_new.html`): attribute labels render a matching
+  badge with a tooltip explaining the classification when the
+  requester is filling in the form. PII shows a shield icon and
+  amber badge; PHI/PCI show red badges with cross/card icons.
+- Audit log automatically captures the classification because
+  `_type_snap()` already serialises `t.config` verbatim — every
+  asset-type create/update/clone audit row carries the per-attribute
+  classification.
+- Verified end-to-end: tagged `manager_email` as PII and
+  `cost_center` as internal on a real asset definition, confirmed
+  admin list renders the badges and JSON persists correctly.
+
+**Still to do:**
+- [ ] Approval routing: orders containing PII/PHI/PCI fields
+      automatically include an extra approval step (e.g. compliance
+      officer) — needs the approval-rules schema.
+- [ ] Audit retention: separate retention windows per
+      classification (e.g. PHI = 7 years, public = 90 days);
+      requires a Beat task that prunes old rows by joining their
+      asset-type config.
+- [ ] Settings: per-classification policy switches (e.g. "PII fields
+      always trigger manager approval", "PHI requires owner-of-record
+      acknowledgement").
 
 ### [done] Catalog search & filter in the portal — Prio 3 (2026-04-25)
 Pure client-side filter on `/portal/orders/new`: a search input matches
