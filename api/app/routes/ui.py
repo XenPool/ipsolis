@@ -797,6 +797,13 @@ async def settings_page(
     teams_rows = teams_result.scalars().all()
     teams_config = {r.key: (_MASK if r.is_secret else (r.value or "")) for r in teams_rows}
 
+    # Load siem.* config keys
+    siem_result = await db.execute(
+        select(AppConfig).where(AppConfig.key.like("siem.%")).order_by(AppConfig.key)
+    )
+    siem_rows = siem_result.scalars().all()
+    siem_config = {r.key: (_MASK if r.is_secret else (r.value or "")) for r in siem_rows}
+
     # Load hosting config keys (vsphere.* / xenserver.*)
     def _cfg_dict(rows: list) -> dict:
         return {r.key.split(".", 1)[1]: (_MASK if r.is_secret else (r.value or "")) for r in rows}
@@ -826,6 +833,7 @@ async def settings_page(
         {"vars": masked_vars, "ad_config": ad_config, "entra_config": entra_config,
          "email_config": email_config, "email_templates": email_templates,
          "teams_config": teams_config,
+         "siem_config": siem_config,
          "hosting_vsphere": hosting_vsphere, "hosting_xenserver": hosting_xenserver,
          "hosting_sccm": hosting_sccm,
          "portal_config": portal_config,
@@ -856,4 +864,13 @@ async def license_page(request: Request) -> HTMLResponse:
         request,
         "ui/license.html",
         {"active_page": "license"},
+    )
+
+
+@router.get("/api-tokens", response_class=HTMLResponse)
+async def api_tokens_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ui/api_tokens.html",
+        {"active_page": "api-tokens"},
     )

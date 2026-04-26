@@ -18,6 +18,7 @@ app = Celery(
         "tasks.workflows.standalone_runner",
         "tasks.workflows.sccm_probe",
         "tasks.workflows.license_check",
+        "tasks.workflows.siem_streamer",
         "tasks.modules.maintenance",
     ],
 )
@@ -36,6 +37,7 @@ app.conf.update(
         "tasks.workflows.ps_module_installer.*": {"queue": "provision"},
         "tasks.workflows.standalone_runner.*": {"queue": "provision"},
         "tasks.workflows.license_check.*": {"queue": "default"},
+        "tasks.workflows.siem_streamer.*": {"queue": "default"},
         "tasks.modules.notifications.*": {"queue": "notifications"},
         "tasks.modules.maintenance.*": {"queue": "default"},
     },
@@ -74,6 +76,12 @@ app.conf.update(
         "license-expiry-check": {
             "task": "tasks.workflows.license_check.check_license_expiry",
             "schedule": crontab(hour=8, minute=0),  # Daily at 08:00 Europe/Berlin
+            "options": {"queue": "default"},
+        },
+        # Stream new audit_log rows to the configured SIEM endpoint
+        "siem-stream-audit-log": {
+            "task": "tasks.workflows.siem_streamer.stream_audit_log",
+            "schedule": crontab(minute="*"),  # Every minute
             "options": {"queue": "default"},
         },
     },

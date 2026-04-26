@@ -14,7 +14,8 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.config import AppConfig
-from app.routes import admin, admin_auth, admin_license, admin_maintenance, admin_modules, admin_runbooks, admin_seed_export, admin_standalone_runbooks, approvals_external, assets, auth, health, orders, portal, ui, webhook
+from app.routes import admin, admin_api_tokens, admin_auth, admin_license, admin_maintenance, admin_modules, admin_runbooks, admin_seed_export, admin_standalone_runbooks, approvals_external, assets, auth, health, metrics as metrics_route, orders, portal, ui, webhook
+from app.utils import metrics as metrics_util
 from app.templates_instance import set_app_title, set_app_logo_config, set_license_globals, refresh_app_config_if_stale
 from app.utils.license import load_license
 
@@ -112,6 +113,41 @@ async def sync_app_config_globals(request, call_next):
     return await call_next(request)
 
 
+# ── Prometheus request metrics ────────────────────────────────────────────────
+import time as _time  # noqa: E402 — local to the middleware
+
+
+@app.middleware("http")
+async def record_request_metrics(request, call_next):
+    """Record request count + latency, labelled by route template."""
+    started = _time.perf_counter()
+    response = await call_next(request)
+    duration = _time.perf_counter() - started
+
+    path = request.url.path
+    # /metrics scrapes don't count toward themselves to avoid trivially
+    # inflating the request rate displayed on dashboards.
+    if path == "/metrics":
+        return response
+
+    bucketed = metrics_util.collapse_high_volume_paths(path)
+    if bucketed is not None:
+        route_label = bucketed
+    else:
+        route = request.scope.get("route")
+        route_label = metrics_util.safe_route_template(
+            getattr(route, "path", None), fallback="<unmatched>"
+        )
+
+    metrics_util.record_request(
+        method=request.method,
+        route=route_label,
+        status_code=response.status_code,
+        duration_seconds=duration,
+    )
+    return response
+
+
 # ── Static Files ──────────────────────────────────────────────────────────────
 app.mount("/static", StaticFiles(directory="/app/app/static"), name="static")
 
@@ -133,9 +169,11 @@ app.include_router(admin_runbooks.router)
 app.include_router(admin_standalone_runbooks.router)
 app.include_router(admin_maintenance.router)
 app.include_router(admin_license.router)
+app.include_router(admin_api_tokens.router)
 app.include_router(admin_seed_export.router)
 app.include_router(admin_auth.router)  # admin login/logout — no auth, before ui.router
 app.include_router(ui.router)
 app.include_router(auth.router)   # login / callback / logout — before portal
 app.include_router(portal.router)
 app.include_router(approvals_external.router)  # tokenized /approve/{token} (no auth required)
+app.include_router(metrics_route.router)        # /metrics (Prometheus)

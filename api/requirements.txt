@@ -42,6 +42,9 @@ cryptography>=43.0.0
 markdown==3.7
 bleach==6.2.0
 
+# Prometheus /metrics endpoint
+prometheus-client==0.21.0
+
 # Logging
 structlog==24.4.0
 

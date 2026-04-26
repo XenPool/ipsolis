@@ -36,29 +36,88 @@ references like `vault://secret/data/ipsolis/ad/password`.
 - [ ] `app_config.value` resolver routes `is_secret=true` rows through the backend
 - [ ] One-shot migration tool: move existing plaintext secrets into the chosen backend
 
-### [open] API tokens with scopes — Prio 0 (show-stopper)
-Replace single shared `X-Admin-Key` with per-integration tokens that have
-scoped permissions, expiry, last-used timestamp, revocation UI. Each token
-gets a `name`, `created_by`, `scopes[]` (e.g. `orders:read`, `orders:write`,
-`asset_types:read`, `webhook:in`), `expires_at`. ServiceNow webhook secret
-becomes one such token.
-- [ ] `api_tokens` table + ORM
-- [ ] Issuance endpoint (creates random token, returns once, stores SHA256)
-- [ ] Header `Authorization: Bearer <token>` accepted alongside legacy `X-Admin-Key`
-- [ ] Admin UI: token list + create + revoke; show last 4 chars after issuance
-- [ ] Per-endpoint scope check decorator
-- [ ] Migration: the legacy `ADMIN_API_KEY` becomes a system token with `*` scope
+### [partial] API tokens with scopes — Prio 0
+Slice 1 — table + ORM + bearer auth + Admin UI — **shipped 2026-04-26**.
+Scope decorators and the ServiceNow webhook migration are split into
+follow-up slices.
 
-### [open] Tamper-evident audit + SIEM export — Prio 0 (show-stopper)
-`audit_log` is a normal table — admin with DB access (or SQL injection) can
-`DELETE` rows. Add append-only via DB-role grants (revoke `DELETE` from the
-app role on `audit_log`), plus a Beat task that streams new rows to a
-configurable webhook (Splunk HEC / Sentinel / ELK / generic) with HMAC
-signature.
-- [ ] Migration: revoke DELETE/UPDATE on `audit_log` from the app DB role
-- [ ] Settings: SIEM endpoint URL + HMAC secret + format (JSON / CEF)
-- [ ] Beat task: stream new audit rows since `last_streamed_id` every minute
-- [ ] On streaming failure: backoff + alert via existing health-alert email path
+**Done — token core (2026-04-26):**
+- Migration `0054_api_tokens.py` — `api_tokens` table with SHA-256 hash,
+  prefix, JSON scopes, expiry, last-used, soft-delete revocation.
+- ORM `app.models.api_token.ApiToken`.
+- `app.utils.api_tokens` — `generate_raw_token()`, `create_token()`,
+  `verify_raw_token()`, `mark_used()`, `status()`. Tokens are
+  `secrets.token_urlsafe(32)` with a recognisable `xpat_` prefix; raw
+  value never persisted.
+- `app.utils.auth.require_admin_key` extended to accept
+  `Authorization: Bearer xpat_…` alongside the legacy `X-Admin-Key`
+  and admin session cookie. Stores attribution as
+  `request.state.actor` = `token:<name>` / `admin:legacy_key` /
+  `admin:session:<user>` so future audit entries can record who
+  did what.
+- API endpoints `POST /admin/api-tokens` (one-time raw reveal),
+  `GET /admin/api-tokens` (list, prefix only), `DELETE /admin/api-tokens/{id}`
+  (soft-delete sets `revoked_at`).
+- Admin UI page `/ui/api-tokens` with list, create modal (name +
+  expiry: 30/90/180/365/730/never), one-time reveal banner with copy
+  button, and per-row revoke. Linked from the left nav above License.
+- README + `docs/ENTERPRISE_FEATURES.md` updated with auth-paths
+  section and the token lifecycle UX.
+- Verified end-to-end: create returns plaintext once, list shows
+  prefix only, bearer authenticates against admin endpoints,
+  bogus tokens return 401, `last_used_at` updates after use,
+  revocation returns 204 + immediately blocks further use, row
+  preserved with `revoked` status.
+
+**Still to do — separate slices:**
+- [ ] Scope catalog + per-endpoint scope decorator
+      (`orders:read`, `orders:write`, `asset_types:read`, `webhook:in`,
+      etc.). The `scopes` column is already JSON-shaped so this lands
+      without a migration.
+- [ ] ServiceNow webhook secret migration to a bearer token.
+- [ ] Audit log enrichment: record `triggered_by` from
+      `request.state.actor` so token-driven actions are attributable
+      by token name.
+- [ ] Optional: hard-delete vs. soft-delete policy (today everything
+      is soft-deleted; some tenants will want a "purge revoked tokens
+      older than 90 days" Beat task).
+
+### [partial] Tamper-evident audit + SIEM export — Prio 0
+SIEM streaming side **shipped 2026-04-26** (Splunk HEC adapter). Tamper-
+evident DB-grant revocation on `audit_log` is split into a separate slice
+because it touches role grants on a live table and is best paired with the
+RBAC work.
+
+**Done — SIEM streaming (2026-04-26):**
+- Worker module `worker/tasks/modules/siem_export.py` — Splunk HEC
+  payload builder + POST sender, stdlib `urllib`, no external deps,
+  graceful TLS-verify toggle for self-signed labs.
+- Beat task `worker/tasks/workflows/siem_streamer.py` — runs every
+  minute, fetches `audit_log WHERE id > :last LIMIT :batch_size`,
+  POSTs in HEC format, advances `siem.last_id` only on 2xx.
+- Cursor + observability state stored in `app_config`:
+  `siem.last_id`, `siem.last_error`, `siem.last_success_at`.
+- Migration `0053_seed_siem_config.py` seeds 9 `siem.*` keys.
+- API endpoints `POST /admin/config/siem/test` + `GET /admin/config/siem/status`.
+- Admin UI: new **Compliance** tab in Settings with mode, endpoint,
+  HEC token, batch size, TLS verify, Save / Send Test / Refresh
+  Status buttons, plus a live status panel showing cursor / backlog /
+  last error / last success.
+- README + `docs/ENTERPRISE_FEATURES.md` updated with Splunk HEC
+  setup walkthrough.
+- Verified end-to-end: connection-refused returns graceful failure,
+  cursor doesn't advance on failure, status surface reflects errors,
+  payload preview matches HEC's expected newline-delimited JSON
+  format with `event` / `sourcetype` / `host` / `time` envelope.
+
+**Still to do — separate slice:**
+- [ ] Migration: revoke DELETE/UPDATE on `audit_log` from the app DB role.
+      Best done together with admin RBAC (a real `auditor` role needs
+      `audit_log` SELECT but never write).
+- [ ] Microsoft Sentinel adapter (HEC-compatible — small `build_sentinel_payload` + `post_sentinel`).
+- [ ] Generic webhook adapter with HMAC signing for arbitrary SIEMs.
+- [ ] Streaming-failure email alert via the existing health-alert path
+      (currently surfaced only in `siem.last_error` and the UI).
 
 ### [open] Multi-instance HA — Prio 0 (show-stopper)
 Single api / single worker / single Postgres / single Beat. Beat especially
@@ -98,10 +157,36 @@ Ping / SailPoint can drive ipSolis as an authoritative target.
 - [ ] HR webhook receiver with vendor-specific adapters
 - [ ] Leaver flow: revoke all active orders for the user, audit
 
-### [open] Observability — Prometheus + OpenTelemetry — Prio 1
-- [ ] `/metrics` endpoint (request count, latency histograms, queue depth)
+### [done] Observability — Prometheus `/metrics` — Prio 1 (2026-04-26)
+Standard Prometheus text-format endpoint at `/metrics`. OpenTelemetry tracing
+deferred to a separate slice (different dep tree, optional).
+- HTTP request count + latency histogram per route template, labelled by
+  method / route / status class. Path templates (`/orders/{order_id}`) are
+  used so cardinality stays bounded; static / locale paths are bucketed
+  to `/static/*` and `/locales/*` so per-file lookups don't blow it up.
+- Business gauges refreshed on each scrape (cheap indexed `count GROUP BY`):
+  - `ipsolis_orders_in_status{status}` — orders by lifecycle status
+  - `ipsolis_approvals_pending` — pending approval rows
+  - `ipsolis_pool_assets{asset_type, status}` — pool size per definition
+- `metrics.enabled = false` flips the endpoint to 404 — toggle in
+  `app_config`. No built-in auth on the endpoint; restrict via reverse
+  proxy if exposed beyond the cluster perimeter.
+- New module: `api/app/utils/metrics.py` (CollectorRegistry, gauge
+  refresher, route-label helpers).
+- New route: `api/app/routes/metrics.py`.
+- Middleware: `record_request_metrics` in `main.py` records duration via
+  `time.perf_counter()` after the response is built. `/metrics` itself
+  doesn't count toward the request rate.
+- Migration: `0052_seed_metrics_config.py` seeds `metrics.enabled = true`.
+- Dep added: `prometheus-client==0.21.0`.
+- Verified: real data from a running instance — orders/approvals/pool
+  gauges populate correctly; disable toggle returns 404; re-enable
+  returns 200; histograms have non-zero values for sample requests.
+
+### [open] Observability — OpenTelemetry tracing — Prio 1 (split off)
 - [ ] OpenTelemetry tracing with auto-instrumentation for FastAPI, Celery, SQLAlchemy
 - [ ] Sample Grafana dashboards: provisioning latency p50/p95, queue depth, error rate
+- [ ] `ipsolis_celery_queue_depth{queue}` (needs Redis LLEN per Celery queue)
 
 ### [open] Cost / chargeback per asset type — Prio 1
 - [ ] Asset type fields: `monthly_cost`, `cost_center`, `currency`

@@ -32,6 +32,10 @@
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       E-Mail
     </button>
+    <button onclick="showTab('compliance')" id="tab-btn-compliance"
+            class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
+      Compliance
+    </button>
     {% if is_enterprise %}
     <button onclick="showTab('sccm')" id="tab-btn-sccm"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
@@ -702,6 +706,109 @@
   </div>
 </div>
 
+<!-- ── Tab: Compliance ─────────────────────────────────────────────────── -->
+<div id="tab-compliance" class="hidden">
+  <div id="compliance-banner" class="hidden mb-4 px-4 py-3 rounded text-sm font-medium"></div>
+
+  <!-- SIEM audit-log streaming (Splunk HEC) -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
+    <h2 class="text-sm font-semibold text-body mb-1">SIEM — Audit Log Streaming</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Stream every <code class="font-mono bg-surface-raised px-1 rounded">audit_log</code> entry to a SIEM
+      (Splunk HEC today, more adapters planned). The worker forwards new rows once a minute, tracks the
+      cursor in <code class="font-mono bg-surface-raised px-1 rounded">app_config</code>, and resumes
+      automatically on transient failure. Splunk HEC dedupes on event id, so at-least-once delivery is safe.
+    </p>
+
+    <div class="rounded border border-token-border bg-surface-raised/40 p-3 mb-4">
+      <p class="text-xs text-muted leading-relaxed">
+        <span class="font-medium text-body">Splunk setup:</span> Splunk Web → <span class="font-medium">Settings → Data inputs → HTTP Event Collector</span> →
+        <span class="font-medium">New Token</span>. Pick a sourcetype like <code class="font-mono">ipsolis:audit</code> (or leave default — the worker sets it),
+        copy the token. The endpoint URL is your collector, e.g.
+        <code class="font-mono text-[11px] bg-surface px-1 rounded">https://splunk.example.com:8088/services/collector/event</code>.
+      </p>
+    </div>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Mode</label>
+        <select id="siem-enabled"
+                class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          {% set _se = (siem_config.get('siem.enabled', 'false')).lower() %}
+          <option value="false" {% if _se != 'true' %}selected{% endif %}>Disabled — audit log stays local</option>
+          <option value="true"  {% if _se == 'true' %}selected{% endif %}>Enabled — stream new rows every minute</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Format</label>
+        <select id="siem-format"
+                class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          {% set _sf = siem_config.get('siem.format', 'splunk_hec') %}
+          <option value="splunk_hec" {% if _sf == 'splunk_hec' %}selected{% endif %}>Splunk HEC</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Endpoint URL</label>
+        <input type="text" id="siem-endpoint-url" value="{{ siem_config.get('siem.endpoint_url', '') }}"
+               placeholder="https://splunk.example.com:8088/services/collector/event"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">HEC Token</label>
+        <input type="password" id="siem-token" value=""
+               placeholder="{% if siem_config.get('siem.token') == '***' %}(configured — leave blank to keep current){% else %}HEC token{% endif %}"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+        <p class="text-[11px] text-muted/60 mt-1">Sent as <code class="font-mono bg-surface-raised px-1 rounded">Authorization: Splunk &lt;token&gt;</code>. Stored as a secret.</p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Batch size</label>
+          <input type="number" id="siem-batch-size" min="1" max="1000"
+                 value="{{ siem_config.get('siem.batch_size', '200') }}"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Maximum rows forwarded per Beat tick (1–1000).</p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Verify TLS</label>
+          <select id="siem-verify-tls"
+                  class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            {% set _vt = (siem_config.get('siem.verify_tls', 'true')).lower() %}
+            <option value="true"  {% if _vt != 'false' %}selected{% endif %}>Verify (recommended)</option>
+            <option value="false" {% if _vt == 'false' %}selected{% endif %}>Skip — self-signed lab only</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveSiemConfig()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save Settings
+      </button>
+      <button onclick="testSiemConfig()"
+              class="px-5 py-2 bg-surface-raised text-body text-sm font-medium rounded hover:bg-surface border border-token-border">
+        Send Test Event
+      </button>
+      <button onclick="refreshSiemStatus()"
+              class="px-5 py-2 bg-surface-raised text-body text-sm font-medium rounded hover:bg-surface border border-token-border">
+        Refresh Status
+      </button>
+    </div>
+
+    <!-- Live status: cursor, backlog, last error / success -->
+    <div id="siem-status" class="mt-5 text-xs text-muted/80 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 leading-relaxed">
+      <div><span class="text-muted/60">Cursor (last forwarded id):</span> <span id="siem-status-last-id" class="font-mono">—</span></div>
+      <div><span class="text-muted/60">Backlog:</span> <span id="siem-status-backlog" class="font-mono">—</span></div>
+      <div><span class="text-muted/60">Last success:</span> <span id="siem-status-last-success" class="font-mono">—</span></div>
+      <div><span class="text-muted/60">Last error:</span> <span id="siem-status-last-error" class="font-mono">—</span></div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Tab: SCCM ─────────────────────────────────────────────────────────── -->
 <div id="tab-sccm" class="hidden space-y-6">
 {% if is_enterprise %}
@@ -1290,6 +1397,79 @@ async function testEmailConfig() {
   var data = await resp.json();
   showEmailBanner(data);
 }
+
+// ── SIEM Settings ───────────────────────────────────────────────────────────────
+async function saveSiemConfig() {
+  var fields = {
+    'siem.enabled':      document.getElementById('siem-enabled').value,
+    'siem.format':       document.getElementById('siem-format').value,
+    'siem.endpoint_url': document.getElementById('siem-endpoint-url').value.trim(),
+    'siem.batch_size':   document.getElementById('siem-batch-size').value.trim() || '200',
+    'siem.verify_tls':   document.getElementById('siem-verify-tls').value,
+  };
+  var token = document.getElementById('siem-token').value;
+  if (token) fields['siem.token'] = token;
+
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showComplianceBanner(errors.length === 0
+    ? {ok: true,  message: 'SIEM settings saved.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+  refreshSiemStatus();
+}
+
+async function testSiemConfig() {
+  await saveSiemConfig();
+  showComplianceBanner({ok: null, message: 'Posting test event to SIEM…'});
+  var resp = await fetch('/admin/config/siem/test', {method: 'POST'});
+  var data = await resp.json();
+  showComplianceBanner(data);
+}
+
+async function refreshSiemStatus() {
+  try {
+    var resp = await fetch('/admin/config/siem/status');
+    if (!resp.ok) return;
+    var data = await resp.json();
+    document.getElementById('siem-status-last-id').textContent = data.last_id;
+    document.getElementById('siem-status-backlog').textContent =
+      data.backlog + (data.backlog > 0 ? ' rows pending' : ' (caught up)');
+    document.getElementById('siem-status-last-success').textContent = data.last_success_at || '—';
+    document.getElementById('siem-status-last-error').textContent = data.last_error || '—';
+  } catch (e) { /* swallow */ }
+}
+
+function showComplianceBanner(data) {
+  var el = document.getElementById('compliance-banner');
+  if (!el) return;
+  el.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'border', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30',
+                       'bg-red-50', 'text-red-800', 'border-red-200',
+                       'bg-blue-50', 'text-blue-800', 'border-blue-200');
+  if (data.ok === true) {
+    el.classList.add('bg-green-50', 'text-green-800', 'border', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30');
+  } else if (data.ok === false) {
+    el.classList.add('bg-red-50', 'text-red-800', 'border', 'border-red-200', 'dark:bg-red-500/10', 'dark:text-red-300', 'dark:border-red-500/30');
+  } else {
+    el.classList.add('bg-blue-50', 'text-blue-800', 'border', 'border-blue-200', 'dark:bg-blue-500/10', 'dark:text-blue-300', 'dark:border-blue-500/30');
+  }
+  el.textContent = data.message;
+  el.classList.remove('hidden');
+}
+
+// Refresh SIEM status when the Compliance tab is opened (delegated showTab observer).
+document.addEventListener('DOMContentLoaded', function() {
+  var btn = document.getElementById('tab-btn-compliance');
+  if (btn) btn.addEventListener('click', function() { setTimeout(refreshSiemStatus, 50); });
+  // Also fetch once on initial page load so the status is fresh on direct deeplink.
+  setTimeout(refreshSiemStatus, 100);
+});
 
 // ── Teams Settings ──────────────────────────────────────────────────────────────
 async function saveTeamsConfig() {

@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -270,6 +270,56 @@ async def test_entra_connection(db: AsyncSession = Depends(get_db)) -> dict:
         return {"ok": False, "message": f"Token acquisition failed: {error}"}
     except Exception as exc:
         return {"ok": False, "message": str(exc)}
+
+
+@router.post("/config/siem/test")
+async def test_siem_connection(db: AsyncSession = Depends(get_db)) -> dict:
+    """POST a single synthetic audit event to the configured SIEM endpoint."""
+    from app.utils.siem_export import send_test_event
+
+    cfg = await db.execute(
+        select(AppConfig).where(AppConfig.key.in_([
+            "siem.endpoint_url", "siem.token", "siem.format",
+            "siem.verify_tls", "app.title",
+        ]))
+    )
+    rows = {r.key: (r.value or "") for r in cfg.scalars().all()}
+    endpoint = (rows.get("siem.endpoint_url") or "").strip()
+    token = (rows.get("siem.token") or "").strip()
+    fmt = (rows.get("siem.format") or "splunk_hec").strip()
+    verify_tls = (rows.get("siem.verify_tls") or "true").strip().lower() not in ("false", "0", "no", "off")
+    host = (rows.get("app.title") or "ipsolis").strip().replace(" ", "_").lower()
+
+    if not endpoint or not token:
+        return {"ok": False, "message": "Endpoint URL or HEC token is missing."}
+
+    ok, msg = send_test_event(endpoint, token, fmt=fmt, verify_tls=verify_tls, host=host)
+    return {"ok": ok, "message": msg}
+
+
+@router.get("/config/siem/status")
+async def siem_status(db: AsyncSession = Depends(get_db)) -> dict:
+    """Return SIEM streaming health (cursor, last error, last success)."""
+    cfg = await db.execute(
+        select(AppConfig).where(AppConfig.key.in_([
+            "siem.enabled", "siem.last_id", "siem.last_error", "siem.last_success_at",
+        ]))
+    )
+    rows = {r.key: (r.value or "") for r in cfg.scalars().all()}
+
+    # How far behind is the cursor?
+    last_id = int(rows.get("siem.last_id") or "0")
+    backlog_row = await db.execute(
+        select(func.count()).select_from(AuditLog).where(AuditLog.id > last_id)
+    )
+    backlog = backlog_row.scalar_one()
+    return {
+        "enabled": (rows.get("siem.enabled") or "false").lower() in ("true", "1", "yes", "on", "enabled"),
+        "last_id": last_id,
+        "backlog": backlog,
+        "last_error": rows.get("siem.last_error") or "",
+        "last_success_at": rows.get("siem.last_success_at") or "",
+    }
 
 
 @router.post("/config/teams/test")

@@ -17,12 +17,15 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 - "My IT" dashboard showing active assets with extend/modify/cancel options
 - Deputy support (order on behalf of another user)
 - Multi-language UI (English, German, Spanish, French, Italian)
+- **Catalog search and category filter** in the request page (auto-shown for catalogs with more than ~6 definitions)
+- **Long-form help text per asset definition** (admin-authored markdown, sanitized) shown when the requester picks a type
 
 ### Approval Workflows
 - Configurable per asset type: manager approval, application owner approval, or both
 - Manager looked up automatically from Active Directory
 - Re-approval on asset modification (optional per asset type)
 - Email notifications to approvers with one-click approve/decline
+- **Microsoft Teams approval cards** — Adaptive Card delivered via Workflows webhook with a tokenized link that lets approvers decide without logging into the portal
 
 ### Dynamic Runbook Engine
 - Visual runbook builder in the Admin UI
@@ -54,6 +57,17 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 - Restrict asset types to specific AD groups (eligible requestors)
 - Per-asset-type configuration for RDP and admin user management
 - Capacity enforcement with pool availability checks
+- **Per-user quota** (`max_per_user`) for personal and pooled assignment models so one user can't exhaust the pool
+- **Active / inactive flag** on asset definitions — deprecate without losing history; inactive types disappear from the portal catalog but stay visible in the admin list
+
+### Observability
+- **Prometheus `/metrics` endpoint** — request count + latency histogram per route, plus business gauges (orders by status, pending approvals, pool free/busy by asset type)
+- Cardinality-bounded route labels (path templates, not actual paths)
+- Toggleable via the `metrics.enabled` config flag
+
+### Compliance & Audit
+- **SIEM audit-log streaming (Splunk HEC)** — every `audit_log` row is forwarded once a minute to a configured Splunk HTTP Event Collector, with persistent cursor, automatic retry on transient failure, and a "Send Test Event" button to verify connectivity before enabling
+- **Per-integration API tokens** — replaces the single shared `X-Admin-Key` with named, expiring, revocable bearer tokens stored as SHA-256 hashes (raw token shown once on creation); legacy `X-Admin-Key` still accepted as a fallback so existing integrations don't break on upgrade
 
 ### Admin UI
 - Dashboard with live pool status tiles (auto-refreshing HTMX fragments)
@@ -144,6 +158,8 @@ After startup, configure external systems (Active Directory, SMTP, vSphere, Entr
 ## Production Deployment
 
 See the full deployment guide: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**
+
+For per-feature setup (Teams approval cards, Prometheus metrics, per-user quotas, catalog help text, …) see **[docs/ENTERPRISE_FEATURES.md](docs/ENTERPRISE_FEATURES.md)**.
 
 Summary:
 1. Provision a Linux server with Docker
