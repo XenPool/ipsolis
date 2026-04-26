@@ -68,6 +68,7 @@ def build_approval_card(
     requester_email: str,
     approver_name: str,
     review_url: str,
+    approver_email: str = "",
     from_date: str = "",
     until_date: str = "",
     app_title: str = "Ipsolis",
@@ -78,6 +79,11 @@ def build_approval_card(
     shows the order details and lets the approver pick Approve or Decline
     with an optional comment. We intentionally avoid one-click GET-based
     approval here because Outlook and link previewers prefetch URLs.
+
+    When ``approver_email`` is set, the card includes a Teams
+    ``msteams.entities`` block with an ``@mention`` so the approver gets a
+    real banner/push notification (channel posts authored "by you via
+    Workflows" don't notify the author by default — explicit @mentions do).
     """
     facts = [
         {"title": "Asset", "value": asset_type_name or "(unknown)"},
@@ -88,13 +94,28 @@ def build_approval_card(
     if until_date:
         facts.append({"title": "Until", "value": until_date})
 
-    greeting = f"Hi {approver_name}," if approver_name else "Hi,"
+    # See worker/tasks/modules/teams_notify.py for the rationale on using the
+    # approver's name as the <at> placeholder rather than a synthetic token.
+    safe_name = "".join(c for c in (approver_name or "") if c not in "<>&").strip()
+    msteams: dict[str, Any] = {"width": "Full"}
+    if approver_email and approver_email.strip() and safe_name:
+        greeting = f"Hi <at>{safe_name}</at>,"
+        msteams["entities"] = [{
+            "type": "mention",
+            "text": f"<at>{safe_name}</at>",
+            "mentioned": {
+                "id": approver_email.strip(),
+                "name": safe_name,
+            },
+        }]
+    else:
+        greeting = f"Hi {approver_name}," if approver_name else "Hi,"
 
     return {
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
         "type": "AdaptiveCard",
         "version": "1.4",
-        "msTeams": {"width": "Full"},
+        "msteams": msteams,
         "body": [
             {
                 "type": "TextBlock",

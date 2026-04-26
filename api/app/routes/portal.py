@@ -562,6 +562,25 @@ async def portal_create_order(
     else:
         initial_status = OrderStatus.PENDING
 
+    # Snapshot the requester's HR attributes from AD so the cost / chargeback
+    # report can slice spend by consuming team without re-querying AD per
+    # report build. Best-effort: a stale/missing AD lookup must not block the
+    # order.
+    requester_attrs: dict = {}
+    try:
+        ad_lookup = lookup_user(user_email)
+        if ad_lookup.get("success"):
+            requester_attrs = {
+                "requester_sam_account": ad_lookup.get("sam_account") or None,
+                "requester_department": ad_lookup.get("department") or None,
+                "requester_cost_center": ad_lookup.get("cost_center") or None,
+                "requester_company": ad_lookup.get("company") or None,
+                "requester_employee_id": ad_lookup.get("employee_id") or None,
+                "requester_title": ad_lookup.get("title") or None,
+            }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not snapshot requester AD attrs for %s: %s", user_email, exc)
+
     order = Order(
         user_email=user_email,
         user_name=user_name,
@@ -575,6 +594,7 @@ async def portal_create_order(
         action=OrderAction.PROVISION,
         status=initial_status,
         config=order_config,
+        **requester_attrs,
     )
     db.add(order)
     await db.flush()
@@ -801,6 +821,15 @@ async def portal_change_order(
         requested_until=requested_until,
         action=OrderAction.MODIFY,
         status=initial_status,
+        # Inherit the AD snapshot — modifying an order shouldn't refetch
+        # AD; the requester's department at order time is the chargeback
+        # truth even if they've moved teams since.
+        requester_sam_account=original.requester_sam_account,
+        requester_department=original.requester_department,
+        requester_cost_center=original.requester_cost_center,
+        requester_company=original.requester_company,
+        requester_employee_id=original.requester_employee_id,
+        requester_title=original.requester_title,
     )
     db.add(new_order)
     await db.flush()
@@ -902,6 +931,13 @@ async def portal_cancel_order(
         status=OrderStatus.PENDING,
         # Copy snapshot from provision order → deterministic revoke
         provisioned_state=original.provisioned_state,
+        # Inherit the requester AD snapshot for consistent chargeback
+        requester_sam_account=original.requester_sam_account,
+        requester_department=original.requester_department,
+        requester_cost_center=original.requester_cost_center,
+        requester_company=original.requester_company,
+        requester_employee_id=original.requester_employee_id,
+        requester_title=original.requester_title,
     )
     db.add(cancel_order)
     await db.flush()

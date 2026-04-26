@@ -162,6 +162,16 @@ In ipSolis Admin UI:
 - The signed `/approve/{token}` endpoint is open (no Entra SSO
   required). Tampering, expiry, and already-decided cases all return
   appropriate status pages with no information leakage.
+- Cards include a Teams `@mention` of the approver
+  (`msteams.entities` block in the Adaptive Card) with the approver's
+  UPN as the entity id. Teams renders this as a real mention and fires
+  a banner / system-tray notification on the approver's client. Without
+  this the Workflow-authored channel post would arrive silently.
+- If your Workflow template strips `msteams.entities`, the body falls
+  back to plain text using the approver's display name — still
+  readable, just no banner notification. The fix is to either choose
+  a Workflow template that forwards entities, or change the channel's
+  per-user notification setting to "All new posts → Banner & feed".
 
 ### Stored config keys
 
@@ -485,3 +495,64 @@ load.
 - **Pooled licenses** — `active_orders` reflects current usage out of
   `pool_capacity`; multiplying gives a usage-adjusted projected
   monthly total rather than just the negotiated maximum.
+
+### Consumer breakdown — AD-driven chargeback
+
+The cost center on the asset definition tells you who **provides** the
+service. To see who **consumes** it, ipSolis also snapshots a
+configurable set of AD attributes from the requester onto each order
+at creation time:
+
+| Order column | Default AD attribute | Override config key |
+|---|---|---|
+| `requester_sam_account` | `sAMAccountName` | (not configurable — always sAM) |
+| `requester_department`  | `department`       | `ad.attribute.department` |
+| `requester_cost_center` | _(blank by default — set it)_ | `ad.attribute.cost_center` |
+| `requester_company`     | `company`          | `ad.attribute.company` |
+| `requester_employee_id` | `employeeID`       | `ad.attribute.employee_id` |
+| `requester_title`       | `title`            | `ad.attribute.title` |
+
+Where to configure:
+
+> Admin UI → *Settings* → *Active Directory* → **AD Attribute Mapping (Chargeback)** card.
+
+Most enterprises store cost centers in a custom attribute (commonly
+`extensionAttribute1` through `extensionAttribute15`); set the
+`cost_center` mapping accordingly and new orders pick it up
+immediately. Existing orders remain unchanged — the snapshot is the
+historical truth, even if the user later moves teams.
+
+The cost report dashboard then offers three views:
+
+| View | Aggregation key | Question it answers |
+|---|---|---|
+| **By provider** | asset definition's `cost_center` | "What is each platform team producing?" |
+| **By consumer cost center** | requester's `requester_cost_center` | "What is each business unit consuming?" |
+| **By department** | requester's `requester_department` | "How does spend split by department, regardless of cost-center taxonomy?" |
+
+### CSV format
+
+`GET /admin/cost-report?fmt=csv` returns one row per active order with
+the full requester snapshot, perfect for finance / HR reconciliation:
+
+```
+Order ID, Status, Created at, Requested from, Requested until,
+User email, User name, sAMAccountName, Employee ID, Title,
+Department, Requester cost center, Company,
+Asset type, Provider cost center, Currency, Unit monthly cost, Monthly total
+```
+
+Open in Excel / Sheets and pivot however you need — by `Department`,
+by `Asset type`, by `Provider cost center`, or any combination.
+
+### Operational notes
+
+- AD lookup at order creation is best-effort: if AD is unreachable or
+  the user can't be resolved, the order is still created (so users
+  aren't blocked). Affected fields stay NULL on that order.
+- Renew (`MODIFY`) and cancel (`DELETE`) orders inherit the snapshot
+  from the original provision order — re-querying AD on every status
+  change would risk drifting the snapshot if the user changed teams.
+- Attribute names are read from `app_config` on every request, so
+  rotating from `department` to a custom attribute lands on the next
+  order without restart.

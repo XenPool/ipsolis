@@ -340,11 +340,19 @@ async def test_teams_webhook(db: AsyncSession = Depends(get_db)) -> dict:
     if not url:
         return {"ok": False, "message": "Teams webhook URL is not configured."}
 
+    # Address the test card to a configured admin if available, otherwise
+    # fall back to a placeholder so the @mention path is still exercised.
+    test_approver = await db.execute(
+        select(AppConfig.value).where(AppConfig.key == "email.from")
+    )
+    test_email = (test_approver.scalar_one_or_none() or "").strip() or "approver@example.com"
+
     card = build_approval_card(
         asset_type_name="(Test asset)",
         requester_name="Test Requester",
         requester_email="test@example.com",
         approver_name="Approver",
+        approver_email=test_email,
         review_url="https://example.com/approve/test-token",
         from_date="2026-01-01",
         until_date="2026-01-08",

@@ -7,7 +7,8 @@
   <div>
     <h1 class="text-lg font-semibold text-heading">Cost Report</h1>
     <p class="text-xs text-muted/70 mt-1 max-w-2xl">
-      Projected monthly spend per cost center, based on currently active orders.
+      Projected monthly spend across two views — <strong>provider</strong> (asset definition's cost center,
+      who runs the platform) and <strong>consumer</strong> (the requester's AD attribute snapshot, who uses it).
       Asset definitions without a <code class="font-mono bg-surface-raised px-1 rounded">monthly_cost</code>
       are excluded — set one on the
       <a href="/ui/asset-types" class="text-blue-600 hover:underline">Asset Definitions</a>
@@ -16,15 +17,31 @@
   </div>
   <a href="/admin/cost-report?fmt=csv"
      class="px-4 py-2 bg-surface-raised text-body text-sm font-medium rounded hover:bg-surface border border-token-border whitespace-nowrap">
-    Download CSV
+    Download CSV (per-order detail)
   </a>
+</div>
+
+<!-- View tabs: provider (default) | consumer cost center | consumer department -->
+<div class="mb-4 flex gap-1 border-b border-token-border">
+  <button id="view-tab-provider" onclick="showView('provider')"
+          class="px-3 py-1.5 text-sm border-b-2 border-blue-600 text-blue-700 dark:text-blue-300 -mb-px">
+    By provider (asset cost center)
+  </button>
+  <button id="view-tab-consumer-cc" onclick="showView('consumer-cc')"
+          class="px-3 py-1.5 text-sm border-b-2 border-transparent text-muted hover:text-body">
+    By consumer cost center
+  </button>
+  <button id="view-tab-consumer-dept" onclick="showView('consumer-dept')"
+          class="px-3 py-1.5 text-sm border-b-2 border-transparent text-muted hover:text-body">
+    By department
+  </button>
 </div>
 
 <div id="totals-card" class="hidden mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
 
-<div class="bg-surface rounded-lg border border-token-border overflow-hidden">
+<div id="detail-table-wrap" class="bg-surface rounded-lg border border-token-border overflow-hidden">
   <table class="min-w-full divide-y divide-token-border text-sm">
-    <thead class="bg-surface-raised">
+    <thead id="detail-header" class="bg-surface-raised">
       <tr>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Cost center</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Asset definition</th>
@@ -59,6 +76,9 @@ function escapeHtml(s) {
   });
 }
 
+var _reportData = null;
+var _currentView = 'provider';
+
 async function loadReport() {
   var resp = await fetch('/admin/cost-report?fmt=json');
   if (!resp.ok) {
@@ -66,17 +86,50 @@ async function loadReport() {
       '<tr><td colspan="6" class="px-4 py-8 text-center text-red-600 text-sm">Failed to load report (HTTP ' + resp.status + ').</td></tr>';
     return;
   }
-  var data = await resp.json();
-  renderTotals(data.totals || []);
-  renderRows(data.rows || []);
+  _reportData = await resp.json();
+  showView(_currentView);
 }
 
-function renderTotals(totals) {
+function showView(name) {
+  _currentView = name;
+  // Update tab styling
+  ['provider', 'consumer-cc', 'consumer-dept'].forEach(function(n) {
+    var el = document.getElementById('view-tab-' + n);
+    if (!el) return;
+    if (n === name) {
+      el.classList.add('border-blue-600', 'text-blue-700', 'dark:text-blue-300');
+      el.classList.remove('border-transparent', 'text-muted');
+    } else {
+      el.classList.remove('border-blue-600', 'text-blue-700', 'dark:text-blue-300');
+      el.classList.add('border-transparent', 'text-muted');
+    }
+  });
+  if (!_reportData) return;
+  var totals = (name === 'consumer-cc')   ? _reportData.by_consumer_cost_center
+             : (name === 'consumer-dept') ? _reportData.by_consumer_department
+                                          : _reportData.totals;
+  renderTotals(totals || [], name);
+  // Detail table only meaningful for the provider view (rows are per asset_type).
+  var wrap = document.getElementById('detail-table-wrap');
+  if (name === 'provider') {
+    if (wrap) wrap.classList.remove('hidden');
+    renderRows(_reportData.rows || []);
+  } else {
+    if (wrap) wrap.classList.add('hidden');
+  }
+}
+
+function renderTotals(totals, viewName) {
   var card = document.getElementById('totals-card');
-  if (!totals.length) { card.classList.add('hidden'); return; }
+  if (!totals.length) {
+    card.classList.add('hidden');
+    return;
+  }
+  var emptyLabel = (viewName === 'consumer-dept') ? '(no department on file)' : '(unassigned)';
   card.innerHTML = totals.map(function(t) {
+    var label = t.key || t.cost_center || emptyLabel;
     return '<div class="bg-surface rounded-lg border border-token-border p-4">'
-      + '<div class="text-[11px] uppercase tracking-wider text-muted/60">' + escapeHtml(t.cost_center) + '</div>'
+      + '<div class="text-[11px] uppercase tracking-wider text-muted/60">' + escapeHtml(label) + '</div>'
       + '<div class="mt-1 text-lg font-semibold text-heading">' + fmtMoney(t.projected_monthly_total, t.currency) + '</div>'
       + '<div class="text-xs text-muted mt-0.5">' + t.active_orders + ' active orders across ' + t.asset_types + ' definition' + (t.asset_types === 1 ? '' : 's') + '</div>'
       + '</div>';

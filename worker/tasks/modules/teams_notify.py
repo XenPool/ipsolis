@@ -96,10 +96,23 @@ def build_approval_card(
     requester_email: str,
     approver_name: str,
     review_url: str,
+    approver_email: str = "",
     from_date: str = "",
     until_date: str = "",
     app_title: str = "Ipsolis",
 ) -> dict[str, Any]:
+    """Build an Adaptive Card for an approval request.
+
+    When ``approver_email`` is set, the card includes a Teams ``msteams.entities``
+    block with an ``@mention`` of the approver. Teams generates a real
+    notification (banner / mobile push) for an explicit @mention even when
+    the post is authored by "the user, via workflows" — without it, channel
+    posts authored by the actor themselves yield no notification on their
+    own client. The placeholder token ``approver`` is intentionally
+    synthetic: matching between body ``<at>approver</at>`` and the entity
+    ``text`` is byte-exact, so a synthetic token avoids any escaping
+    issues with names containing ``<``, ``>``, or ``&``.
+    """
     facts = [
         {"title": "Asset", "value": asset_type_name or "(unknown)"},
         {"title": "Requester", "value": f"{requester_name} <{requester_email}>"},
@@ -109,13 +122,33 @@ def build_approval_card(
     if until_date:
         facts.append({"title": "Until", "value": until_date})
 
-    greeting = f"Hi {approver_name}," if approver_name else "Hi,"
+    # Use the approver's display name as the <at> placeholder. When the
+    # Workflow template forwards msteams.entities, Teams renders this as a
+    # real @mention with notification. When it doesn't (most "Post to
+    # channel via webhook" templates strip entities), Teams still displays
+    # the inner text — so the user sees their actual name, not a generic
+    # placeholder. ``<>&`` are stripped from the inner text because the
+    # body/entity match is byte-exact and these chars confuse some renderers.
+    safe_name = "".join(c for c in (approver_name or "") if c not in "<>&").strip()
+    msteams: dict[str, Any] = {"width": "Full"}
+    if approver_email and approver_email.strip() and safe_name:
+        greeting = f"Hi <at>{safe_name}</at>,"
+        msteams["entities"] = [{
+            "type": "mention",
+            "text": f"<at>{safe_name}</at>",
+            "mentioned": {
+                "id": approver_email.strip(),
+                "name": safe_name,
+            },
+        }]
+    else:
+        greeting = f"Hi {approver_name}," if approver_name else "Hi,"
 
     return {
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
         "type": "AdaptiveCard",
         "version": "1.4",
-        "msTeams": {"width": "Full"},
+        "msteams": msteams,
         "body": [
             {
                 "type": "TextBlock",

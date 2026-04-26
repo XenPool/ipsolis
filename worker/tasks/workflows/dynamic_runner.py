@@ -1396,9 +1396,13 @@ def deliver_approval_notification(
     """Send a single approval notification (email + Teams card if enabled).
 
     Returns ``(email_sent, teams_sent)``. Reused by both the initial
-    dispatch and the reminder Beat task. ``is_reminder`` is currently
-    informational — future versions can use it to choose a different
-    email template / card title for stronger urgency.
+    dispatch and the reminder Beat task. ``approver_email`` is forwarded
+    to the Teams card builder so the rendered card can include an
+    ``@mention`` of the approver — required for Teams to surface a real
+    banner / push notification when the post is authored "by the user via
+    Workflows" (Teams suppresses self-authored channel-post notifications).
+    ``is_reminder`` bumps the card headline to "Reminder (n): …" so the
+    recipient can tell it's a nudge.
     """
     from tasks.modules import notifications as notif
 
@@ -1431,6 +1435,7 @@ def deliver_approval_notification(
                 requester_name=requester_name,
                 requester_email=requester_email,
                 approver_name=approver_name,
+                approver_email=approver_email,
                 review_url=review_url,
                 from_date=from_date,
                 until_date=until_date,

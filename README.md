@@ -72,6 +72,7 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 
 ### Finance & Chargeback
 - **Cost / chargeback per asset definition** — set `monthly_cost`, `currency`, and `cost_center` on each definition; the Cost Report page aggregates active orders into projected monthly spend per cost center with CSV export
+- **AD-driven consumer breakdown** — at order creation we snapshot the requester's AD attributes (`department`, `cost_center`, `company`, `employeeID`, `title`; attribute names configurable in Settings) onto each order, so the Cost Report can also slice spend by consuming team / department, and the per-order CSV carries every requester's full HR identity for spreadsheet pivots
 
 ### Admin UI
 - Dashboard with live pool status tiles (auto-refreshing HTMX fragments)

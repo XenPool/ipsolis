@@ -353,6 +353,58 @@
       </button>
     </div>
   </div><!-- /on-prem AD card -->
+
+  <!-- AD attribute mapping (drives the chargeback report) -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mt-6">
+    <h2 class="text-sm font-semibold text-body mb-1">AD Attribute Mapping (Chargeback)</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Snapshotted onto every order at creation time and shown in the
+      <a href="/ui/cost-report" class="text-blue-600 hover:underline">Cost Report</a>.
+      Defaults match the standard AD schema; override the cost-center mapping if your tenant
+      uses an <code class="font-mono bg-surface-raised px-1 rounded">extensionAttribute*</code>
+      or a custom attribute. Leave a field blank to skip that attribute.
+    </p>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Department</label>
+        <input type="text" id="ad-attr-department" value="{{ ad_config.get('ad.attribute.department', 'department') }}"
+               placeholder="department"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Cost center</label>
+        <input type="text" id="ad-attr-cost-center" value="{{ ad_config.get('ad.attribute.cost_center', '') }}"
+               placeholder="extensionAttribute1"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Company</label>
+        <input type="text" id="ad-attr-company" value="{{ ad_config.get('ad.attribute.company', 'company') }}"
+               placeholder="company"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Employee ID</label>
+        <input type="text" id="ad-attr-employee-id" value="{{ ad_config.get('ad.attribute.employee_id', 'employeeID') }}"
+               placeholder="employeeID"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+      </div>
+      <div class="col-span-2">
+        <label class="block text-xs font-medium text-muted mb-1">Job title</label>
+        <input type="text" id="ad-attr-title" value="{{ ad_config.get('ad.attribute.title', 'title') }}"
+               placeholder="title"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveAdAttributeMapping()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save
+      </button>
+    </div>
+  </div>
 </div><!-- /tab-ad -->
 
 <!-- ── Tab: Script Variables ─────────────────────────────────────────────── -->
@@ -1248,6 +1300,28 @@ async function testAdConnection() {
   var resp = await fetch('/admin/config/ad/test', {method: 'POST'});
   var data = await resp.json();
   showBanner(data);
+}
+
+async function saveAdAttributeMapping() {
+  var fields = {
+    'ad.attribute.department':  document.getElementById('ad-attr-department').value.trim(),
+    'ad.attribute.cost_center': document.getElementById('ad-attr-cost-center').value.trim(),
+    'ad.attribute.company':     document.getElementById('ad-attr-company').value.trim(),
+    'ad.attribute.employee_id': document.getElementById('ad-attr-employee-id').value.trim(),
+    'ad.attribute.title':       document.getElementById('ad-attr-title').value.trim(),
+  };
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showBanner(errors.length === 0
+    ? {ok: true,  message: 'AD attribute mapping saved. Snapshot applies to new orders going forward.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
 }
 
 function showBanner(data) {

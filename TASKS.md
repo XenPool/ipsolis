@@ -247,6 +247,39 @@ order detail page and threshold-based alerts deferred.
   two test definitions, CSV export with right content-type and
   attachment filename.
 
+**Done — AD-driven consumer breakdown (2026-04-26):**
+- Migration `0057_order_requester_attributes.py` — six new columns on
+  `orders` (`requester_sam_account`, `requester_department`,
+  `requester_cost_center`, `requester_company`, `requester_employee_id`,
+  `requester_title`) plus five `ad.attribute.*` config keys with
+  sensible defaults.
+- `ad_lookup._msldap_lookup` extended to fetch the configured HR
+  attributes alongside identity, with empty-mapping entries filtered
+  out so we don't ask AD for a literal "" attribute.
+- `portal.portal_create_order` snapshots the AD attributes onto the
+  Order row on creation (best-effort — AD outage doesn't block the
+  order). `MODIFY` and `DELETE` orders inherit the snapshot from the
+  original provision order so chargeback stays internally consistent.
+- Cost report rewritten to query active orders directly, exposing
+  three aggregation views via JSON: provider (asset cost_center),
+  consumer (requester cost_center), department (requester department).
+  Untracked but priced asset definitions still surface as 0-row
+  entries in the provider view so admins can spot misconfigured
+  ones.
+- CSV export switched to per-order detail (18 columns) — order id,
+  status, dates, full requester identity (email, name, sAMAccount,
+  employee id, title, department, cost center, company), asset type,
+  provider cost center, currency, unit cost, monthly total.
+- Cost report UI: three view tabs (By provider / By consumer cost
+  center / By department), summary cards swap based on selected
+  view, detail table only renders for the provider view.
+- Settings → Active Directory: new "AD Attribute Mapping
+  (Chargeback)" card with 5 inputs (department / cost center /
+  company / employee ID / title). Save handler `PUT`s each key.
+- Verified end-to-end: AD attrs populated on a real provisioned
+  order, JSON shows by_consumer_cost_center and by_consumer_department
+  populated correctly, CSV carries all requester fields per order.
+
 **Still to do:**
 - [ ] Per-order cost projection on the portal order detail page
       (`monthly_cost × months_requested`).
@@ -256,6 +289,9 @@ order detail page and threshold-based alerts deferred.
       active" (would need a snapshot table or order-status time series).
 - [ ] FX conversion for mixed-currency cost centers (today the
       summary cards keep currencies separate).
+- [ ] Webhook / `/orders` API: also do AD lookup for non-portal
+      order creation paths so externally-driven orders get the same
+      snapshot.
 
 ---
 
@@ -379,11 +415,18 @@ overkill for the value delta over the link-to-confirmation-page UX.
 - Token round-trip works in both directions; tampered/expired/garbage
   tokens all reject cleanly.
 - API endpoint serves 200 for valid pending approval, 200 for already-
-  decided, 410 for invalid/expired token.
+  decided, 404 for missing-approval-row (cleanup / cascade), 410 for
+  invalid/expired token. Each path renders its own status page so the
+  approver can tell what happened.
 - Test endpoint returns descriptive error for missing/disabled config and
   network errors (no 500s on misconfiguration).
 - Worker can import the mirror module; cross-verified token validates
   on the API side (shared `API_SECRET_KEY` from `.env`).
+- Adaptive Card includes a Teams `@mention` (`msteams.entities`) of the
+  approver — verified live, fires a Windows system-tray banner on the
+  approver's client. Approver's display name is also used as the
+  `<at>...</at>` placeholder so the body renders gracefully even when
+  a Workflow template strips entities.
 
 ### [open] Field-level data classification — Prio 3
 Tag fields as PII / PHI / PCI; drive approval routing and audit retention.
