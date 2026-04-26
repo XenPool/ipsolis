@@ -600,24 +600,44 @@ async def portal_create_order(
     await db.flush()
 
     if needs_any_approval:
-        # Create approval records
+        # Create approval records, applying delegation re-routing if active
         from app.models.approval import OrderApproval
+        from app.utils.approval_delegation import resolve_active_delegate
+
+        async def _make_approval(approver_type: str, email: str, name: str) -> OrderApproval:
+            d = await resolve_active_delegate(db, email)
+            if d is None:
+                return OrderApproval(
+                    order_id=order.id, approver_type=approver_type,
+                    approver_email=email, approver_name=name,
+                )
+            # Active delegation — route to the deputy. The original
+            # assignee is captured in the audit trail via the
+            # delegation row itself; the approval comment is left
+            # blank so the deputy's decision text isn't overwritten.
+            logger.info(
+                "Portal: order %s approval re-routed: %s → %s (delegation %s, until %s)",
+                order.id, email, d.delegate_email, d.id, d.until_at.isoformat(),
+            )
+            return OrderApproval(
+                order_id=order.id, approver_type=approver_type,
+                approver_email=d.delegate_email,
+                approver_name=d.delegate_name or d.delegate_email,
+            )
 
         if needs_manager_approval and manager_info:
-            db.add(OrderApproval(
-                order_id=order.id,
-                approver_type="manager",
-                approver_email=manager_info["email"],
-                approver_name=manager_info["display_name"],
+            db.add(await _make_approval(
+                "manager",
+                manager_info["email"],
+                manager_info["display_name"],
             ))
 
         if needs_owner_approval and asset_type.approval_owners:
             for owner in asset_type.approval_owners:
-                db.add(OrderApproval(
-                    order_id=order.id,
-                    approver_type="application_owner",
-                    approver_email=owner["email"],
-                    approver_name=owner.get("name", owner["email"]),
+                db.add(await _make_approval(
+                    "application_owner",
+                    owner["email"],
+                    owner.get("name", owner["email"]),
                 ))
 
         await db.flush()
@@ -835,28 +855,41 @@ async def portal_change_order(
     await db.flush()
 
     if needs_reapproval:
-        # Create approval records (same logic as new-order approval gate)
+        # Create approval records (same logic as new-order approval gate),
+        # applying delegation re-routing where applicable.
         from app.models.approval import OrderApproval
+        from app.utils.approval_delegation import resolve_active_delegate
+
+        async def _make_reapproval(approver_type: str, email: str, name: str) -> OrderApproval:
+            d = await resolve_active_delegate(db, email)
+            if d is None:
+                return OrderApproval(
+                    order_id=new_order.id, approver_type=approver_type,
+                    approver_email=email, approver_name=name,
+                )
+            logger.info(
+                "Portal: re-approval for order %s re-routed: %s → %s (delegation %s)",
+                new_order.id, email, d.delegate_email, d.id,
+            )
+            return OrderApproval(
+                order_id=new_order.id, approver_type=approver_type,
+                approver_email=d.delegate_email,
+                approver_name=d.delegate_name or d.delegate_email,
+            )
 
         if asset_type.requires_manager_approval:
             from app.utils.ad_lookup import lookup_manager
             mgr_result = lookup_manager(original.user_email)
             manager_info = mgr_result.get("manager") if mgr_result.get("success") else None
             if manager_info:
-                db.add(OrderApproval(
-                    order_id=new_order.id,
-                    approver_type="manager",
-                    approver_email=manager_info["email"],
-                    approver_name=manager_info["display_name"],
+                db.add(await _make_reapproval(
+                    "manager", manager_info["email"], manager_info["display_name"],
                 ))
 
         if asset_type.requires_owner_approval and asset_type.approval_owners:
             for owner in asset_type.approval_owners:
-                db.add(OrderApproval(
-                    order_id=new_order.id,
-                    approver_type="application_owner",
-                    approver_email=owner["email"],
-                    approver_name=owner.get("name", owner["email"]),
+                db.add(await _make_reapproval(
+                    "application_owner", owner["email"], owner.get("name", owner["email"]),
                 ))
 
         await db.flush()

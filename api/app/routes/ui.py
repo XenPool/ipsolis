@@ -900,3 +900,12 @@ async def audit_log_page(request: Request) -> HTMLResponse:
         "ui/audit_log.html",
         {"active_page": "audit-log"},
     )
+
+
+@router.get("/approval-delegations", response_class=HTMLResponse)
+async def approval_delegations_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ui/approval_delegations.html",
+        {"active_page": "approval-delegations"},
+    )

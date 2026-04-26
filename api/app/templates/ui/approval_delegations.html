@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+
+{% block title %}Approval Delegations – {{ app_title }}{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-lg font-semibold text-heading">Approval Delegations</h1>
+    <p class="text-xs text-muted/70 mt-1 max-w-2xl">
+      Re-route approval requests to a deputy while the assigned approver is out.
+      Applied at order-creation time — existing in-flight approvals are not retroactively re-routed.
+      Each new <code class="font-mono bg-surface-raised px-1 rounded">order_approvals</code> row is
+      automatically created against the delegate when an active delegation matches.
+    </p>
+  </div>
+  <button onclick="openCreateModal()"
+          class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+    + New delegation
+  </button>
+</div>
+
+<div class="bg-surface rounded-lg border border-token-border overflow-hidden">
+  <table class="min-w-full divide-y divide-token-border text-sm">
+    <thead class="bg-surface-raised">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Approver</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Delegate</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Window</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Reason</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Status</th>
+        <th class="px-4 py-3"></th>
+      </tr>
+    </thead>
+    <tbody id="delegations-body" class="divide-y divide-token-border">
+      <tr><td colspan="6" class="px-4 py-8 text-center text-muted/70 text-sm">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Create modal -->
+<div id="create-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  <div class="bg-surface rounded-lg border border-token-border shadow-xl w-full max-w-md p-6">
+    <h2 class="text-base font-semibold text-heading mb-4">New approval delegation</h2>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Approver email <span class="text-red-500">*</span></label>
+        <input id="d-approver-email" type="email" placeholder="alice@example.com"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+        <p class="text-[11px] text-muted/60 mt-1">The user whose approvals should be routed away while OOO.</p>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Approver name</label>
+        <input id="d-approver-name" type="text" placeholder="Alice Doe (optional)"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Delegate email <span class="text-red-500">*</span></label>
+        <input id="d-delegate-email" type="email" placeholder="bob@example.com"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Delegate name</label>
+        <input id="d-delegate-name" type="text" placeholder="Bob Doe (optional)"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">From <span class="text-red-500">*</span></label>
+          <input id="d-from" type="datetime-local"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Until <span class="text-red-500">*</span></label>
+          <input id="d-until" type="datetime-local"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Reason</label>
+        <input id="d-reason" type="text" maxlength="500" placeholder="e.g. Vacation, sick leave (optional)"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+      </div>
+    </div>
+
+    <div id="create-error" class="hidden mt-3 text-xs text-red-600"></div>
+
+    <div class="flex justify-end gap-2 mt-6">
+      <button onclick="closeCreateModal()"
+              class="px-4 py-2 text-sm rounded border border-token-border text-body hover:bg-surface-raised">Cancel</button>
+      <button onclick="submitDelegation()"
+              class="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function fmtDate(s) {
+  if (!s) return '—';
+  try {
+    var d = new Date(s);
+    return d.toLocaleString();
+  } catch (e) { return s; }
+}
+
+function escapeHtml(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+function statusBadge(s) {
+  var classes = {
+    active:    'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300',
+    scheduled: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+    expired:   'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
+    revoked:   'bg-surface-raised text-muted',
+  }[s] || 'bg-surface-raised text-muted';
+  return '<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ' + classes + '">' + s + '</span>';
+}
+
+async function loadList() {
+  var resp = await fetch('/admin/approval-delegations');
+  var body = document.getElementById('delegations-body');
+  if (!resp.ok) {
+    body.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-red-600 text-sm">Failed to load (HTTP ' + resp.status + ').</td></tr>';
+    return;
+  }
+  var rows = await resp.json();
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="6" class="px-4 py-12 text-center text-muted/70 text-sm">No delegations yet. <button onclick="openCreateModal()" class="text-blue-600 hover:underline ml-1">Create one →</button></td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(function(r) {
+    var revokeBtn = (r.status === 'revoked' || r.status === 'expired')
+      ? '<span class="text-muted/60 text-xs">' + (r.status === 'revoked' ? 'revoked ' + fmtDate(r.revoked_at) : 'window closed') + '</span>'
+      : '<button onclick="revokeDelegation(' + r.id + ')" class="text-red-500 hover:text-red-700 text-xs">Revoke</button>';
+    return '<tr ' + ((r.status === 'revoked' || r.status === 'expired') ? 'class="opacity-60"' : '') + '>'
+      + '<td class="px-4 py-3"><div class="font-medium text-heading">' + escapeHtml(r.approver_name || r.approver_email) + '</div><div class="text-[11px] text-muted/60 font-mono">' + escapeHtml(r.approver_email) + '</div></td>'
+      + '<td class="px-4 py-3"><div class="font-medium text-heading">' + escapeHtml(r.delegate_name || r.delegate_email) + '</div><div class="text-[11px] text-muted/60 font-mono">' + escapeHtml(r.delegate_email) + '</div></td>'
+      + '<td class="px-4 py-3 text-xs text-muted">' + escapeHtml(fmtDate(r.from_at)) + ' →<br>' + escapeHtml(fmtDate(r.until_at)) + '</td>'
+      + '<td class="px-4 py-3 text-xs text-muted">' + escapeHtml(r.reason || '—') + '</td>'
+      + '<td class="px-4 py-3">' + statusBadge(r.status) + '</td>'
+      + '<td class="px-4 py-3 text-right">' + revokeBtn + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function openCreateModal() {
+  ['d-approver-email','d-approver-name','d-delegate-email','d-delegate-name','d-reason']
+    .forEach(function(id) { document.getElementById(id).value = ''; });
+  // Default window: tomorrow 09:00 → in two weeks 17:00, in local TZ.
+  var now = new Date();
+  var from = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 0);
+  var until = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 15, 17, 0);
+  document.getElementById('d-from').value = toLocalIso(from);
+  document.getElementById('d-until').value = toLocalIso(until);
+  document.getElementById('create-error').classList.add('hidden');
+  document.getElementById('create-modal').classList.remove('hidden');
+  setTimeout(function() { document.getElementById('d-approver-email').focus(); }, 50);
+}
+
+function toLocalIso(d) {
+  function pad(n) { return n < 10 ? '0' + n : n; }
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+       + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+function closeCreateModal() {
+  document.getElementById('create-modal').classList.add('hidden');
+}
+
+async function submitDelegation() {
+  var err = document.getElementById('create-error');
+  err.classList.add('hidden');
+
+  var body = {
+    approver_email: document.getElementById('d-approver-email').value.trim(),
+    approver_name:  document.getElementById('d-approver-name').value.trim() || null,
+    delegate_email: document.getElementById('d-delegate-email').value.trim(),
+    delegate_name:  document.getElementById('d-delegate-name').value.trim() || null,
+    from_at:        new Date(document.getElementById('d-from').value).toISOString(),
+    until_at:       new Date(document.getElementById('d-until').value).toISOString(),
+    reason:         document.getElementById('d-reason').value.trim() || null,
+  };
+
+  if (!body.approver_email || !body.delegate_email || !body.from_at || !body.until_at) {
+    err.textContent = 'Approver email, delegate email, from, and until are required.';
+    err.classList.remove('hidden');
+    return;
+  }
+
+  var resp = await fetch('/admin/approval-delegations', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    var detail = await resp.json().catch(function() { return {}; });
+    err.textContent = detail.detail || ('HTTP ' + resp.status);
+    err.classList.remove('hidden');
+    return;
+  }
+  closeCreateModal();
+  loadList();
+}
+
+async function revokeDelegation(id) {
+  if (!confirm('Revoke this delegation now?\n\nIn-flight approvals already routed to the delegate stay where they are. New orders from this point onward will go to the original approver again.')) return;
+  var resp = await fetch('/admin/approval-delegations/' + id, {method: 'DELETE'});
+  if (resp.status === 204) {
+    loadList();
+  } else {
+    var detail = await resp.json().catch(function() { return {}; });
+    alert(detail.detail || ('Revoke failed (HTTP ' + resp.status + ')'));
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadList);
+</script>
+{% endblock %}

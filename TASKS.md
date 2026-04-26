@@ -247,6 +247,39 @@ delegation, N-of-M, conditional rules) remain.
   advanced, second run within cutoff window correctly skipped,
   disabled mode skips silently.
 
+**Done — approval delegation / OOO routing (2026-04-26):**
+- Migration `0058_approval_delegations.py` — `approval_delegations`
+  table with approver/delegate emails+names, from/until window,
+  reason, created_by, revoked_at, plus a covering index
+  `(approver_email, from_at, until_at)` so the lookup on every
+  order-creation is single-index-scan cheap.
+- ORM `app.models.approval_delegation.ApprovalDelegation` with a
+  CHECK constraint guaranteeing `until_at > from_at`.
+- Resolver `app.utils.approval_delegation.resolve_active_delegate`
+  finds the most-recent matching active delegation for an email
+  (case-insensitive), filters out revoked rows and rows whose
+  window doesn't cover NOW(), returns the row or `None`.
+- Wired into both portal flows that create approval rows: the
+  initial order (`portal_create_order`) and the
+  modify/extend re-approval (`portal_modify_order`). Each
+  call site uses an inline `_make_approval` helper that checks
+  for an active delegation and routes to the deputy when one
+  matches; logged at INFO so re-routes are visible in worker logs.
+- Admin endpoints `GET/POST/DELETE /admin/approval-delegations`
+  with `approvals:read` / `approvals:write` scope gates.
+  Validation: 422 when `until_at <= from_at` or when delegate
+  email equals approver email.
+- Admin UI page `/ui/approval-delegations` with create modal
+  (defaults to "tomorrow 09:00 → 14 days later 17:00" in local
+  TZ), per-row revoke button, status badges
+  (active / scheduled / expired / revoked).
+- Audit log captures every create/revoke with `actor_by()` so
+  the audit trail names which credential set up the delegation.
+- Verified end-to-end: resolver returns the right delegate
+  inside the FastAPI process; standalone-Python invocation
+  hits a known mapper-init quirk that doesn't affect the
+  actual request path.
+
 **Still to do:**
 - [ ] Schema: `approval_rules` JSONB on asset_type extending current `approval_owners`
 - [ ] Runtime evaluator that resolves rules → approval steps
@@ -254,7 +287,8 @@ delegation, N-of-M, conditional rules) remain.
 - [ ] Escalation: after N reminders, notify a configured backup
       approver (e.g. manager's manager, app-owner team distribution
       list) instead of just stopping
-- [ ] Delegation: per-user "I'm OOO, route to <user> until <date>"
+- [ ] Self-service portal flow: let portal users configure their
+      own OOO delegation (currently admin-managed only)
 - [ ] Auto-decline policy after extended inactivity (opt-in)
 
 ### [open] HR feed + SCIM — Prio 1

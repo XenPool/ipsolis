@@ -2,6 +2,7 @@ from .api_token import ApiToken
 from .asset import AssetType, AssetPool
 from .order import Order, OrderStep
 from .approval import OrderApproval
+from .approval_delegation import ApprovalDelegation
 from .audit import AuditLog
 from .config import AppConfig
 from .standalone_runbook import (
@@ -18,6 +19,7 @@ __all__ = [
     "Order",
     "OrderStep",
     "OrderApproval",
+    "ApprovalDelegation",
     "AuditLog",
     "AppConfig",
     "StandaloneRunbook",
