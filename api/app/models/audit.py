@@ -41,6 +41,16 @@ class AuditLog(Base):
     # Additional context (e.g. request ID, Celery task ID)
     context: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Data classification of the entity touched by this row, used to
+    # drive per-class retention windows. One of:
+    # ``internal`` (default), ``pii``, ``phi``, ``pci``. Set at write
+    # time from the entity's classification metadata so the row's
+    # retention class is frozen against subsequent attribute edits on
+    # the asset type. Rows with NULL fall under the global window.
+    classification: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, index=True,
+    )
+
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )

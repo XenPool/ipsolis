@@ -29,7 +29,10 @@ from app.schemas.admin import (
 )
 from app.schemas.asset import AssetPoolRead, AssetTypeRead
 from app.utils.asset_type_constraints import validate_asset_type
-from app.utils.audit import _asset_snap, _config_snap, _type_snap, aaudit, actor_by
+from app.utils.audit import (
+    _asset_snap, _config_snap, _type_snap,
+    aaudit, actor_by, classify_asset_type, classify_for_asset_type_id,
+)
 from app.utils.auth import require_admin_key, require_scopes
 from app.utils.features import require_enterprise
 from app.utils.license import is_feature_enabled
@@ -44,6 +47,14 @@ router = APIRouter(
 )
 
 _SECRET_MASK = "***"
+
+
+# Audit writes touching asset rows inherit their parent type's
+# classification — both because the asset's own status / expiry /
+# linkage is gate-keepable by the same regulatory framework as the
+# attribute data on the type, and because the prune task only knows
+# how to bucket on ``classification`` (not entity_type chains).
+_classify_for_asset_type_id = classify_for_asset_type_id
 
 
 def _enterprise_gate_for_config_key(key: str) -> str | None:
@@ -509,7 +520,8 @@ async def create_asset_type(
     db.add(asset_type)
     await db.flush()
     await aaudit(db, "asset_type", asset_type.id, "created", new=_type_snap(asset_type),
-                 by=actor_by(request, "create_asset_type"))
+                 by=actor_by(request, "create_asset_type"),
+                 classification=classify_asset_type(asset_type))
     await db.commit()
     await db.refresh(asset_type)
     logger.info("admin: created asset_type id=%s name=%s", asset_type.id, asset_type.name)
@@ -619,7 +631,8 @@ async def update_asset_type(
     if payload.logo is not None:
         asset_type.logo = payload.logo or None
     await aaudit(db, "asset_type", asset_type.id, "updated", old=old_snap, new=_type_snap(asset_type),
-                 by=actor_by(request, "update_asset_type"))
+                 by=actor_by(request, "update_asset_type"),
+                 classification=classify_asset_type(asset_type))
     await db.commit()
     await db.refresh(asset_type)
     logger.info("admin: updated asset_type id=%s", type_id)
@@ -698,7 +711,8 @@ async def clone_asset_type(
     db.add(new_type)
     await db.flush()
     await aaudit(db, "asset_type", new_type.id, "cloned", new=_type_snap(new_type),
-                 by=actor_by(request, f"clone_asset_type from id={src.id}"))
+                 by=actor_by(request, f"clone_asset_type from id={src.id}"),
+                 classification=classify_asset_type(new_type))
     await db.commit()
     await db.refresh(new_type)
     logger.info("admin: cloned asset_type id=%s -> id=%s name=%r", src.id, new_type.id, new_type.name)
@@ -744,7 +758,8 @@ async def delete_asset_type(
     )
     # 6. runbook_definitions/steps cascade via FK ondelete=CASCADE
     await aaudit(db, "asset_type", asset_type.id, "deleted", old=_type_snap(asset_type),
-                 by=actor_by(request, "delete_asset_type"))
+                 by=actor_by(request, "delete_asset_type"),
+                 classification=classify_asset_type(asset_type))
     await db.delete(asset_type)
     await db.commit()
     logger.info("admin: deleted asset_type id=%s", type_id)
@@ -783,7 +798,8 @@ async def create_asset(
     db.add(asset)
     await db.flush()
     await aaudit(db, "asset", asset.id, "created", new=_asset_snap(asset),
-                 by=actor_by(request, "create_asset"))
+                 by=actor_by(request, "create_asset"),
+                 classification=await _classify_for_asset_type_id(db, asset.asset_type_id))
     await db.commit()
     await db.refresh(asset)
     logger.info("admin: created asset id=%s name=%s", asset.id, asset.name)
@@ -870,7 +886,8 @@ async def update_asset(
         asset.expires_at = payload.expires_at
     action = "status_changed" if payload.status is not None else "updated"
     await aaudit(db, "asset", asset.id, action, old=old_snap, new=_asset_snap(asset),
-                 by=actor_by(request, "update_asset"))
+                 by=actor_by(request, "update_asset"),
+                 classification=await _classify_for_asset_type_id(db, asset.asset_type_id))
     await db.commit()
     await db.refresh(asset)
     logger.info("admin: updated asset id=%s", asset_id)
@@ -900,7 +917,8 @@ async def delete_asset(
         .values(assigned_asset_id=None)
     )
     await aaudit(db, "asset", asset.id, "deleted", old=_asset_snap(asset),
-                 by=actor_by(request, "delete_asset"))
+                 by=actor_by(request, "delete_asset"),
+                 classification=await _classify_for_asset_type_id(db, asset.asset_type_id))
     await db.delete(asset)
     await db.commit()
     logger.info("admin: deleted asset id=%s", asset_id)
@@ -1007,7 +1025,8 @@ async def force_delete_asset(
     if revoke_result is not None:
         audit_extra["revoke_result"] = revoke_result
     await aaudit(db, "asset", asset.id, "force_deleted", old=snap, new=audit_extra,
-                 by=actor_by(request, "force_delete_asset"))
+                 by=actor_by(request, "force_delete_asset"),
+                 classification=await _classify_for_asset_type_id(db, asset.asset_type_id))
     await db.delete(asset)
     await db.commit()
     logger.info("admin: force-deleted asset id=%s (revoke=%s)", asset_id, payload.revoke_permissions)
@@ -1080,7 +1099,8 @@ async def revoke_asset(
     if revoke_result is not None:
         audit_extra["revoke_result"] = revoke_result
     await aaudit(db, "asset", asset.id, "revoked", old=snap, new=audit_extra,
-                 by=actor_by(request, "revoke_asset"))
+                 by=actor_by(request, "revoke_asset"),
+                 classification=await _classify_for_asset_type_id(db, asset.asset_type_id))
     await db.commit()
     logger.info("admin: revoked asset id=%s back to free (revoke_permissions=%s)", asset_id, payload.revoke_permissions)
 

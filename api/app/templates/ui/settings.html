@@ -1036,23 +1036,55 @@
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
     <h2 class="text-sm font-semibold text-body mb-1">Audit Log Retention</h2>
     <p class="text-xs text-muted/70 mb-4 leading-snug">
-      Auto-prune <code class="font-mono bg-surface-raised px-1 rounded">audit_log</code> rows older than the
+      Auto-prune <code class="font-mono bg-surface-raised px-1 rounded">audit_log</code> rows older than each
       configured window. Runs daily at 03:00 (Europe/Berlin) via a Beat task that uses the documented
       append-only-bypass GUC — every other path still hits the tamper-evident triggers from migration 0062.
-      Pair this with SIEM streaming so the long-term archive lives outside the app's blast radius.
+      Per-class windows let regulated data (PII / PHI / PCI) sit longer than routine config changes —
+      pair with SIEM streaming so the long-term archive also lives outside the app's blast radius.
     </p>
 
     <div class="space-y-4">
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs font-medium text-muted mb-1">Retention window</label>
-          <div class="flex items-center gap-2">
-            <input type="number" id="retention-days" min="0" max="36500"
-                   value="{{ retention_config.get('retention.audit_log_days', '0') if retention_config else '0' }}"
-                   class="w-24 rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
-            <span class="text-sm text-muted">days</span>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Default retention</label>
+        <div class="flex items-center gap-2">
+          <input type="number" id="retention-days" min="0" max="36500"
+                 value="{{ retention_config.get('retention.audit_log_days', '0') if retention_config else '0' }}"
+                 class="w-24 rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <span class="text-sm text-muted">days</span>
+        </div>
+        <p class="text-[11px] text-muted/60 mt-1">
+          Applies to rows tagged <code class="font-mono">internal</code> (default) and to legacy NULL rows.
+          0 disables pruning of this bucket.
+        </p>
+      </div>
+
+      <div class="rounded border border-token-border bg-surface-raised/40 p-3">
+        <p class="text-[11px] font-medium text-muted mb-2">Per-classification overrides</p>
+        <p class="text-[11px] text-muted/60 mb-3 leading-snug">
+          Set a separate window for audit rows tagged with each data class. Classification is set at write
+          time from the strictest <em>classification</em> declared on the touched asset type's attributes.
+          Leave at <code class="font-mono">0</code> to keep that bucket indefinitely (the global default
+          does <strong>not</strong> apply to non-internal classes).
+        </p>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-[11px] font-medium text-muted mb-1">PII (days)</label>
+            <input type="number" id="retention-pii-days" min="0" max="36500"
+                   value="{{ retention_config.get('retention.pii_days', '0') if retention_config else '0' }}"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
           </div>
-          <p class="text-[11px] text-muted/60 mt-1">0 disables pruning (keep everything).</p>
+          <div>
+            <label class="block text-[11px] font-medium text-muted mb-1">PHI (days)</label>
+            <input type="number" id="retention-phi-days" min="0" max="36500"
+                   value="{{ retention_config.get('retention.phi_days', '0') if retention_config else '0' }}"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          </div>
+          <div>
+            <label class="block text-[11px] font-medium text-muted mb-1">PCI (days)</label>
+            <input type="number" id="retention-pci-days" min="0" max="36500"
+                   value="{{ retention_config.get('retention.pci_days', '0') if retention_config else '0' }}"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          </div>
         </div>
       </div>
     </div>
@@ -1065,6 +1097,11 @@
       <span class="text-xs text-muted/70">
         Last run: <span id="retention-last-run" class="font-mono">{{ retention_config.get('retention.last_run_at', '—') or '—' if retention_config else '—' }}</span> ·
         Pruned: <span id="retention-last-pruned" class="font-mono">{{ retention_config.get('retention.last_pruned', '0') if retention_config else '0' }}</span> rows
+        {% set _by_class = retention_config.get('retention.last_pruned_by_class', '') if retention_config else '' %}
+        {% if _by_class and _by_class != '{}' %}
+          <span class="text-muted/50">— breakdown:</span>
+          <span class="font-mono">{{ _by_class }}</span>
+        {% endif %}
       </span>
     </div>
   </div>
@@ -1685,6 +1722,9 @@ async function testEmailConfig() {
 async function saveRetentionConfig() {
   var fields = {
     'retention.audit_log_days': document.getElementById('retention-days').value.trim() || '0',
+    'retention.pii_days':       document.getElementById('retention-pii-days').value.trim() || '0',
+    'retention.phi_days':       document.getElementById('retention-phi-days').value.trim() || '0',
+    'retention.pci_days':       document.getElementById('retention-pci-days').value.trim() || '0',
   };
   var errors = [];
   for (var key in fields) {

@@ -948,16 +948,62 @@ retention-policy enforcement remain.
   DELETE outside the prune transaction still blocked by the
   tamper-evident trigger (bypass is properly txn-scoped).
 
-**Still to do — slice 2 (per-classification windows):**
-- [ ] Per-classification retention windows (e.g. `retention.pii_days`,
-      `retention.phi_days`, `retention.pci_days`). The audit row's
-      classification gets derived at prune-time by joining to the
-      relevant asset_type's `config[].classification` and taking the
-      strictest tag. Slice 1's single-window code is the right spot
-      to grow this.
+**Done — per-classification retention slice 2 (2026-04-26):**
+- Migration `0067_audit_log_classification.py` adds a
+  `classification` column on `audit_log` (default `internal`,
+  indexed) and seeds three new windows + a status field:
+  `retention.pii_days`, `retention.phi_days`, `retention.pci_days`,
+  `retention.last_pruned_by_class` (auto-managed JSON breakdown).
+  Backfilled existing rows to `internal` inside a `SET LOCAL`
+  bypass transaction so the immutability triggers from 0062 don't
+  block the migration.
+- Classification is set at write time (not at prune time, as
+  originally sketched in slice-1 notes). The strictest of any
+  attribute on the touched asset type wins (`pci > phi > pii > internal`)
+  via shared `classify_asset_type()` / `classify_for_asset_type_id()`
+  helpers in `app.utils.audit`. Classifying at write time freezes
+  each row's retention class against subsequent attribute edits on
+  the type — the row's regulatory category is determined by the
+  type's state at the moment of the audited change, not the type's
+  state at prune time.
+- Wired into all high-value audit writes: asset_type CRUD (4 sites),
+  asset CRUD (5 sites), order create/update/cancel (3 sites),
+  webhook order create. Other audit writes default to `internal` —
+  config / approval delegation / api token / etc. fall under the
+  global window. `waudit()` (worker side) gets the same kwarg.
+- Beat task rewritten to iterate buckets: one DELETE per
+  classification scoped via `SET LOCAL ipsolis.allow_audit_mutation`
+  + COMMIT, so a single huge bucket can't starve the others. The
+  global window applies to `internal` + NULL only; per-class
+  windows apply to that class only and **do not fall back to the
+  global default** when set to 0 — explicit opt-in to retention so
+  PII/PHI/PCI rows are never accidentally dropped under the
+  catch-all. `retention.last_pruned_by_class` records the per-class
+  count for ops visibility.
+- Settings UI (Compliance tab → "Audit Log Retention" card)
+  rebuilt: default window unchanged, plus a sub-card with three
+  per-class day inputs (PII / PHI / PCI). Status panel renders the
+  last-run-by-class breakdown when non-empty.
+- Verified end-to-end:
+  * Asset type 16 with one `pii`-tagged attribute → audit rows
+    from `PUT /admin/asset-types/16` come out with
+    `classification='pii'`. Pre-existing rows backfilled to
+    `internal`. Total counts match.
+  * Backdated 5 internal rows + 1 PII row by 30 days. With
+    `audit_log_days=1, pii_days=0`: prune deleted 5 internal rows,
+    PII row preserved. With `audit_log_days=1, pii_days=14`: PII
+    row (30d > 14d) was deleted in the next pass; per-class JSON
+    `{"internal":0,"pii":1}` matches.
+  * Tamper-evident triggers still hold outside the prune
+    transaction — direct DELETE/UPDATE without the GUC bypass
+    raises the original error.
+
+**Still to do — slice 3 (out of scope here):**
 - [ ] Approval routing: orders containing PII/PHI/PCI fields
       automatically include an extra approval step (e.g. compliance
-      officer) — needs the approval-rules schema.
+      officer). The conditional-approval-rules engine already covers
+      this with `has_pii / has_phi / has_pci` fields — slice is more
+      about defaults / discoverability than mechanism.
 - [ ] Settings: per-classification policy switches (e.g. "PII fields
       always trigger manager approval", "PHI requires owner-of-record
       acknowledgement").

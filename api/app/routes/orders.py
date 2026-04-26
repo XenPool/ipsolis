@@ -10,7 +10,7 @@ from app.database import get_db
 from app.models.asset import AssetType, AssignmentModel
 from app.models.order import Order, OrderAction, OrderStatus
 from app.schemas.order import OrderCreate, OrderRead, OrderUpdate
-from app.utils.audit import _order_snap, aaudit
+from app.utils.audit import _order_snap, aaudit, classify_for_asset_type_id
 from app.utils.capacity import enforce_max_per_user, enforce_pool_capacity
 from app.utils.license import is_feature_enabled
 
@@ -139,7 +139,11 @@ async def create_order(
     order.celery_task_id = task_id
     order.status = OrderStatus.PROCESSING
 
-    await aaudit(db, "order", order.id, "created", new=_order_snap(order), by="api:create_order")
+    await aaudit(
+        db, "order", order.id, "created", new=_order_snap(order),
+        by="api:create_order",
+        classification=await classify_for_asset_type_id(db, order.asset_type_id),
+    )
     await db.commit()
 
     # Re-fetch with relationships to avoid async lazy-load error
@@ -182,7 +186,11 @@ async def update_order(
     if payload.error_message is not None:
         order.error_message = payload.error_message
 
-    await aaudit(db, "order", order.id, "updated", old=old_snap, new=_order_snap(order), by="api:update_order")
+    await aaudit(
+        db, "order", order.id, "updated", old=old_snap, new=_order_snap(order),
+        by="api:update_order",
+        classification=await classify_for_asset_type_id(db, order.asset_type_id),
+    )
     await db.commit()
     await db.refresh(order)
     return order
@@ -216,5 +224,6 @@ async def cancel_order(
         db, "order", order.id, "status_changed",
         old={"status": old_status}, new={"status": "cancelled"},
         by="api:cancel_order",
+        classification=await classify_for_asset_type_id(db, order.asset_type_id),
     )
     await db.commit()

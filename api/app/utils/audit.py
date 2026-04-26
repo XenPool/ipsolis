@@ -3,11 +3,71 @@
 All writes land in the same transaction as the main change –
 no separate commit needed. Entries in audit_log are immutable (no UPDATE/DELETE).
 """
+from __future__ import annotations
+
+from typing import Any, Iterable
 
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit import AuditLog
+
+
+# Sensitivity ordering for classify_asset_type. Higher index = stricter
+# class. ``pci`` requires PCI DSS controls; ``phi`` HIPAA / equivalent;
+# ``pii`` GDPR / similar. ``internal`` is the default — non-public but
+# not regulated, falling under the global retention window.
+_CLASS_RANK = {"internal": 0, "pii": 1, "phi": 2, "pci": 3}
+CLASSIFICATIONS = ("internal", "pii", "phi", "pci")
+
+
+def classify_attrs(attrs: Iterable[dict[str, Any]] | None) -> str:
+    """Pick the strictest classification declared on a list of attribute defs.
+
+    Each attribute may carry a ``classification`` field set to one of
+    ``pii`` / ``phi`` / ``pci``. Anything else (including missing) is
+    treated as ``internal``. The strictest class wins so an asset type
+    with even one PHI attribute taints every audit row touching it.
+    """
+    best = "internal"
+    best_rank = 0
+    for attr in attrs or ():
+        if not isinstance(attr, dict):
+            continue
+        cls = (attr.get("classification") or "").lower()
+        rank = _CLASS_RANK.get(cls, 0)
+        if rank > best_rank:
+            best_rank = rank
+            best = cls
+    return best
+
+
+def classify_asset_type(asset_type: Any) -> str:
+    """Classification of an asset type = strictest class on its config attrs."""
+    if asset_type is None:
+        return "internal"
+    return classify_attrs(getattr(asset_type, "config", None))
+
+
+async def classify_for_asset_type_id(db: AsyncSession, asset_type_id: int | None) -> str:
+    """Resolve an asset type's classification given just its id.
+
+    Convenience for audit-write paths that don't already hold the
+    ``AssetType`` row (e.g. order modify / cancel routes that operate
+    on an Order without eager-loading its parent type). Falls back to
+    ``internal`` when the id is missing or the type can't be resolved.
+    """
+    if not asset_type_id:
+        return "internal"
+    # Local import — keep utils/audit.py free of model deps so the
+    # snapshot helpers below can be imported by tests / scripts that
+    # don't initialise the full ORM registry.
+    from sqlalchemy import select  # noqa: PLC0415
+    from app.models.asset import AssetType  # noqa: PLC0415
+
+    res = await db.execute(select(AssetType).where(AssetType.id == asset_type_id))
+    at = res.scalar_one_or_none()
+    return classify_asset_type(at) if at else "internal"
 
 
 def actor_by(request: Request | None, label: str) -> str:
@@ -41,19 +101,27 @@ async def aaudit(
     new: dict | None = None,
     by: str,
     ctx: str | None = None,
+    classification: str | None = None,
 ) -> None:
     """Schreibt einen Audit-Log-Eintrag in die laufende Transaktion.
 
     Args:
-        db:          Aktive AsyncSession (wird vom Caller committed)
-        entity_type: "order" | "asset" | "asset_type" | "app_config"
-        entity_id:   PK of the changed record
-        action:      "created" | "updated" | "status_changed" | "deleted"
-        old:         Snapshot before the change (None on created)
-        new:         Snapshot after the change (None on deleted)
-        by:          Trigger, e.g. "api:create_order" | "api:servicenow_webhook"
-        ctx:         Optionaler Kontext (servicenow_ref, celery_task_id, ...)
+        db:             Aktive AsyncSession (wird vom Caller committed)
+        entity_type:    "order" | "asset" | "asset_type" | "app_config"
+        entity_id:      PK of the changed record
+        action:         "created" | "updated" | "status_changed" | "deleted"
+        old:            Snapshot before the change (None on created)
+        new:            Snapshot after the change (None on deleted)
+        by:             Trigger, e.g. "api:create_order"
+        ctx:             Optionaler Kontext (servicenow_ref, celery_task_id, ...)
+        classification: Data class of the touched entity. One of
+                        ``internal`` (default), ``pii``, ``phi``, ``pci``.
+                        Drives per-class retention windows. Pass the
+                        result of ``classify_asset_type(asset_type)`` for
+                        any audit row that touches asset / order /
+                        asset_type data.
     """
+    cls = classification if classification in CLASSIFICATIONS else None
     db.add(AuditLog(
         entity_type=entity_type,
         entity_id=entity_id,
@@ -62,6 +130,7 @@ async def aaudit(
         new_value=new,
         triggered_by=by,
         context=ctx,
+        classification=cls or "internal",
     ))
 
 

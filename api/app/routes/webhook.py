@@ -12,7 +12,7 @@ from app.database import get_db
 from app.models.asset import AssetType, AssignmentModel
 from app.models.order import Order, OrderAction, OrderStatus
 from app.schemas.order import OrderRead, WebhookPayload
-from app.utils.audit import _order_snap, aaudit
+from app.utils.audit import _order_snap, aaudit, classify_for_asset_type_id
 from app.utils.capacity import enforce_max_per_user, enforce_pool_capacity
 from app.utils.features import require_enterprise
 
@@ -179,6 +179,7 @@ async def receive_servicenow_webhook(
         new=_order_snap(order),
         by=f"api:servicenow_webhook ({actor})",
         ctx=order.servicenow_ref,
+        classification=await classify_for_asset_type_id(db, order.asset_type_id),
     )
     await db.commit()
 
