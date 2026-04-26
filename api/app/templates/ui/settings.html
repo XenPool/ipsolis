@@ -822,22 +822,35 @@
 <div id="tab-compliance" class="hidden">
   <div id="compliance-banner" class="hidden mb-4 px-4 py-3 rounded text-sm font-medium"></div>
 
-  <!-- SIEM audit-log streaming (Splunk HEC) -->
+  <!-- SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel) -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
     <h2 class="text-sm font-semibold text-body mb-1">SIEM — Audit Log Streaming</h2>
     <p class="text-xs text-muted/70 mb-4 leading-snug">
-      Stream every <code class="font-mono bg-surface-raised px-1 rounded">audit_log</code> entry to a SIEM
-      (Splunk HEC today, more adapters planned). The worker forwards new rows once a minute, tracks the
-      cursor in <code class="font-mono bg-surface-raised px-1 rounded">app_config</code>, and resumes
-      automatically on transient failure. Splunk HEC dedupes on event id, so at-least-once delivery is safe.
+      Stream every <code class="font-mono bg-surface-raised px-1 rounded">audit_log</code> entry to your SIEM.
+      Adapters today: <span class="font-medium">Splunk HEC</span> and <span class="font-medium">Microsoft Sentinel</span>
+      (Azure Monitor Data Collector API). The worker forwards new rows once a minute, tracks the cursor in
+      <code class="font-mono bg-surface-raised px-1 rounded">app_config</code>, and resumes automatically on
+      transient failure. Both back-ends dedupe by event id, so at-least-once delivery is safe.
     </p>
 
-    <div class="rounded border border-token-border bg-surface-raised/40 p-3 mb-4">
+    <div id="siem-help-splunk" class="rounded border border-token-border bg-surface-raised/40 p-3 mb-4">
       <p class="text-xs text-muted leading-relaxed">
         <span class="font-medium text-body">Splunk setup:</span> Splunk Web → <span class="font-medium">Settings → Data inputs → HTTP Event Collector</span> →
         <span class="font-medium">New Token</span>. Pick a sourcetype like <code class="font-mono">ipsolis:audit</code> (or leave default — the worker sets it),
         copy the token. The endpoint URL is your collector, e.g.
         <code class="font-mono text-[11px] bg-surface px-1 rounded">https://splunk.example.com:8088/services/collector/event</code>.
+      </p>
+    </div>
+
+    <div id="siem-help-sentinel" class="hidden rounded border border-token-border bg-surface-raised/40 p-3 mb-4">
+      <p class="text-xs text-muted leading-relaxed">
+        <span class="font-medium text-body">Sentinel setup:</span> Azure portal → your Log Analytics workspace →
+        <span class="font-medium">Settings → Agents → Log Analytics agent instructions</span>. Copy
+        <span class="font-medium">Workspace ID</span> and <span class="font-medium">Primary key</span>.
+        ipSolis writes to a custom table called <code class="font-mono">{Log-Type}_CL</code> (default
+        <code class="font-mono">IpsolisAudit_CL</code>) — the table is created on first ingest, no schema
+        registration needed. Uses the HTTP Data Collector API (HMAC-signed); Microsoft supports it through
+        Sept 2026.
       </p>
     </div>
 
@@ -854,26 +867,57 @@
 
       <div>
         <label class="block text-xs font-medium text-muted mb-1">Format</label>
-        <select id="siem-format"
+        <select id="siem-format" onchange="onSiemFormatChange()"
                 class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
           {% set _sf = siem_config.get('siem.format', 'splunk_hec') %}
           <option value="splunk_hec" {% if _sf == 'splunk_hec' %}selected{% endif %}>Splunk HEC</option>
+          <option value="sentinel"   {% if _sf == 'sentinel' %}selected{% endif %}>Microsoft Sentinel</option>
         </select>
       </div>
 
-      <div>
-        <label class="block text-xs font-medium text-muted mb-1">Endpoint URL</label>
-        <input type="text" id="siem-endpoint-url" value="{{ siem_config.get('siem.endpoint_url', '') }}"
-               placeholder="https://splunk.example.com:8088/services/collector/event"
-               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+      <!-- ── Splunk fields ───────────────────────────────────────────────── -->
+      <div id="siem-splunk-fields" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Endpoint URL</label>
+          <input type="text" id="siem-endpoint-url" value="{{ siem_config.get('siem.endpoint_url', '') }}"
+                 placeholder="https://splunk.example.com:8088/services/collector/event"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">HEC Token</label>
+          <input type="password" id="siem-token" value=""
+                 placeholder="{% if siem_config.get('siem.token') == '***' %}(configured — leave blank to keep current){% else %}HEC token{% endif %}"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Sent as <code class="font-mono bg-surface-raised px-1 rounded">Authorization: Splunk &lt;token&gt;</code>. Stored as a secret.</p>
+        </div>
       </div>
 
-      <div>
-        <label class="block text-xs font-medium text-muted mb-1">HEC Token</label>
-        <input type="password" id="siem-token" value=""
-               placeholder="{% if siem_config.get('siem.token') == '***' %}(configured — leave blank to keep current){% else %}HEC token{% endif %}"
-               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
-        <p class="text-[11px] text-muted/60 mt-1">Sent as <code class="font-mono bg-surface-raised px-1 rounded">Authorization: Splunk &lt;token&gt;</code>. Stored as a secret.</p>
+      <!-- ── Sentinel fields ─────────────────────────────────────────────── -->
+      <div id="siem-sentinel-fields" class="hidden space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Workspace ID</label>
+          <input type="text" id="siem-workspace-id" value="{{ siem_config.get('siem.workspace_id', '') }}"
+                 placeholder="00000000-0000-0000-0000-000000000000"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">GUID of the Log Analytics workspace backing your Sentinel instance.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Shared Key</label>
+          <input type="password" id="siem-shared-key" value=""
+                 placeholder="{% if siem_config.get('siem.shared_key') == '***' %}(configured — leave blank to keep current){% else %}base64-encoded primary or secondary key{% endif %}"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Used to HMAC-SHA256 sign each batch. Stored as a secret.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Log Type</label>
+          <input type="text" id="siem-log-type" value="{{ siem_config.get('siem.log_type', 'IpsolisAudit') }}"
+                 placeholder="IpsolisAudit"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Custom table name without the <code class="font-mono">_CL</code> suffix. Sentinel will create <code class="font-mono">{value}_CL</code> on first ingest. Letters/digits only, ≤100 chars.</p>
+        </div>
       </div>
 
       <div class="grid grid-cols-2 gap-4">
@@ -1681,16 +1725,42 @@ async function saveOtelConfig() {
     : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
 }
 
+function onSiemFormatChange() {
+  var fmt = document.getElementById('siem-format').value;
+  var splunkFields = document.getElementById('siem-splunk-fields');
+  var sentinelFields = document.getElementById('siem-sentinel-fields');
+  var splunkHelp = document.getElementById('siem-help-splunk');
+  var sentinelHelp = document.getElementById('siem-help-sentinel');
+  if (fmt === 'sentinel') {
+    splunkFields.classList.add('hidden');
+    sentinelFields.classList.remove('hidden');
+    splunkHelp.classList.add('hidden');
+    sentinelHelp.classList.remove('hidden');
+  } else {
+    splunkFields.classList.remove('hidden');
+    sentinelFields.classList.add('hidden');
+    splunkHelp.classList.remove('hidden');
+    sentinelHelp.classList.add('hidden');
+  }
+}
+
 async function saveSiemConfig() {
+  var fmt = document.getElementById('siem-format').value;
   var fields = {
-    'siem.enabled':      document.getElementById('siem-enabled').value,
-    'siem.format':       document.getElementById('siem-format').value,
-    'siem.endpoint_url': document.getElementById('siem-endpoint-url').value.trim(),
-    'siem.batch_size':   document.getElementById('siem-batch-size').value.trim() || '200',
-    'siem.verify_tls':   document.getElementById('siem-verify-tls').value,
+    'siem.enabled':     document.getElementById('siem-enabled').value,
+    'siem.format':      fmt,
+    'siem.batch_size':  document.getElementById('siem-batch-size').value.trim() || '200',
+    'siem.verify_tls':  document.getElementById('siem-verify-tls').value,
   };
-  var token = document.getElementById('siem-token').value;
-  if (token) fields['siem.token'] = token;
+  // Always persist both adapter inputs so admins can flip back without retyping.
+  fields['siem.endpoint_url'] = document.getElementById('siem-endpoint-url').value.trim();
+  fields['siem.workspace_id'] = document.getElementById('siem-workspace-id').value.trim();
+  fields['siem.log_type']     = document.getElementById('siem-log-type').value.trim() || 'IpsolisAudit';
+
+  var splunkToken = document.getElementById('siem-token').value;
+  if (splunkToken) fields['siem.token'] = splunkToken;
+  var sentinelKey = document.getElementById('siem-shared-key').value;
+  if (sentinelKey) fields['siem.shared_key'] = sentinelKey;
 
   var errors = [];
   for (var key in fields) {
@@ -1751,6 +1821,8 @@ document.addEventListener('DOMContentLoaded', function() {
   if (btn) btn.addEventListener('click', function() { setTimeout(refreshSiemStatus, 50); });
   // Also fetch once on initial page load so the status is fresh on direct deeplink.
   setTimeout(refreshSiemStatus, 100);
+  // Sync visible adapter fields with the saved siem.format on page load.
+  onSiemFormatChange();
 });
 
 // ── Approval Reminder Settings ──────────────────────────────────────────────────

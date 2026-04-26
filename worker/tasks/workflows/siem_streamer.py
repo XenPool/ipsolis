@@ -61,6 +61,9 @@ def stream_audit_log() -> dict:
 
         endpoint = (get_config(db, "siem.endpoint_url", "") or "").strip()
         token = (get_config(db, "siem.token", "") or "").strip()
+        workspace_id = (get_config(db, "siem.workspace_id", "") or "").strip()
+        shared_key = (get_config(db, "siem.shared_key", "") or "").strip()
+        log_type = (get_config(db, "siem.log_type", "IpsolisAudit") or "IpsolisAudit").strip() or "IpsolisAudit"
         fmt = (get_config(db, "siem.format", "splunk_hec") or "splunk_hec").strip()
         try:
             batch_size = max(1, min(1000, int(get_config(db, "siem.batch_size", "200") or "200")))
@@ -73,12 +76,16 @@ def stream_audit_log() -> dict:
         except (TypeError, ValueError):
             last_id = 0
 
-        if not endpoint or not token:
-            # Mark as misconfigured but don't spam logs every minute.
+        if fmt == "splunk_hec" and (not endpoint or not token):
             _set_config(db, "siem.last_error",
                         f"Missing endpoint or token at {datetime.now(timezone.utc).isoformat()}")
             db.commit()
             return {"success": False, "reason": "missing endpoint or token"}
+        if fmt == "sentinel" and (not workspace_id or not shared_key):
+            _set_config(db, "siem.last_error",
+                        f"Missing workspace_id or shared_key at {datetime.now(timezone.utc).isoformat()}")
+            db.commit()
+            return {"success": False, "reason": "missing workspace_id or shared_key"}
 
         rows = db.execute(
             text("""
@@ -97,7 +104,9 @@ def stream_audit_log() -> dict:
 
         from tasks.modules.siem_export import (
             _row_to_event,
+            build_sentinel_payload,
             build_splunk_hec_payload,
+            post_sentinel,
             post_splunk_hec,
         )
 
@@ -107,6 +116,12 @@ def stream_audit_log() -> dict:
         if fmt == "splunk_hec":
             payload = build_splunk_hec_payload(events, host=host)
             ok, msg = post_splunk_hec(endpoint, token, payload, verify_tls=verify_tls)
+        elif fmt == "sentinel":
+            payload = build_sentinel_payload(events)
+            ok, msg = post_sentinel(
+                workspace_id, shared_key, payload,
+                log_type=log_type, verify_tls=verify_tls,
+            )
         else:
             ok, msg = False, f"Unknown SIEM format: {fmt!r}"
 

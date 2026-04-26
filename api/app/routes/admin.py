@@ -305,19 +305,32 @@ async def test_siem_connection(db: AsyncSession = Depends(get_db)) -> dict:
         select(AppConfig).where(AppConfig.key.in_([
             "siem.endpoint_url", "siem.token", "siem.format",
             "siem.verify_tls", "app.title",
+            "siem.workspace_id", "siem.shared_key", "siem.log_type",
         ]))
     )
     rows = {r.key: (r.value or "") for r in cfg.scalars().all()}
-    endpoint = (rows.get("siem.endpoint_url") or "").strip()
-    token = (rows.get("siem.token") or "").strip()
     fmt = (rows.get("siem.format") or "splunk_hec").strip()
     verify_tls = (rows.get("siem.verify_tls") or "true").strip().lower() not in ("false", "0", "no", "off")
     host = (rows.get("app.title") or "ipsolis").strip().replace(" ", "_").lower()
 
-    if not endpoint or not token:
-        return {"ok": False, "message": "Endpoint URL or HEC token is missing."}
+    endpoint = (rows.get("siem.endpoint_url") or "").strip()
+    token = (rows.get("siem.token") or "").strip()
+    workspace_id = (rows.get("siem.workspace_id") or "").strip()
+    shared_key = (rows.get("siem.shared_key") or "").strip()
+    log_type = (rows.get("siem.log_type") or "IpsolisAudit").strip() or "IpsolisAudit"
 
-    ok, msg = send_test_event(endpoint, token, fmt=fmt, verify_tls=verify_tls, host=host)
+    # Per-format precondition check so admins get a tight error before
+    # we round-trip out to a SIEM that would have rejected anyway.
+    if fmt == "splunk_hec" and (not endpoint or not token):
+        return {"ok": False, "message": "Endpoint URL or HEC token is missing."}
+    if fmt == "sentinel" and (not workspace_id or not shared_key):
+        return {"ok": False, "message": "Workspace ID or shared key is missing."}
+
+    ok, msg = send_test_event(
+        endpoint, token,
+        fmt=fmt, verify_tls=verify_tls, host=host,
+        workspace_id=workspace_id, shared_key=shared_key, log_type=log_type,
+    )
     return {"ok": ok, "message": msg}
 
 

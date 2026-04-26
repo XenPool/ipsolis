@@ -183,10 +183,10 @@ follow-up slices.
       older than 90 days" Beat task).
 
 ### [partial] Tamper-evident audit + SIEM export — Prio 0
-SIEM streaming side **shipped 2026-04-26** (Splunk HEC adapter). Tamper-
-evident DB-grant revocation on `audit_log` is split into a separate slice
-because it touches role grants on a live table and is best paired with the
-RBAC work.
+SIEM streaming side **shipped 2026-04-26** (Splunk HEC + Microsoft
+Sentinel adapters). Tamper-evident DB-grant revocation on `audit_log`
+is split into a separate slice because it touches role grants on a
+live table and is best paired with the RBAC work.
 
 **Done — SIEM streaming (2026-04-26):**
 - Worker module `worker/tasks/modules/siem_export.py` — Splunk HEC
@@ -229,8 +229,57 @@ RBAC work.
   after the bypass commit, and the app-level audit-write flow
   (config PUT → new audit row) is unaffected.
 
+**Done — Microsoft Sentinel adapter (2026-04-26):**
+- New `build_sentinel_payload()` + `post_sentinel()` in
+  `worker/tasks/modules/siem_export.py`, mirrored on the API side in
+  `api/app/utils/siem_export.py`. Uses Azure Monitor's HTTP Data
+  Collector API (workspace_id + base64 shared key, HMAC-SHA256 signed
+  per request — stdlib `hmac`/`hashlib`, no Azure SDK dependency).
+  `validate=True` on the base64 decode so a pasted-with-typos shared
+  key fails with a descriptive error instead of producing a wrong
+  signature that Sentinel rejects with an opaque 403.
+- `Log-Type` header drives the custom table name — Sentinel
+  materialises ingest into `{log_type}_CL` (default `IpsolisAudit_CL`)
+  on first event; no schema registration needed. The
+  `time-generated-field: timestamp` header tells Sentinel to use our
+  audit-log timestamp as the row time, not ingest time.
+- Migration `0065_seed_sentinel_siem_config.py` seeds three new
+  `app_config` keys: `siem.workspace_id` (plain), `siem.shared_key`
+  (secret), `siem.log_type` (default `IpsolisAudit`). Existing siem.*
+  values are not touched. `siem.format` description updated to list
+  both adapters.
+- Streamer Beat task picks up the new branch on `siem.format == 'sentinel'`,
+  with the same cursor / retry / status semantics as Splunk. Per-format
+  precondition checks on missing creds give tighter error messages
+  instead of round-tripping out to a misconfigured endpoint.
+- Settings UI (Compliance tab) gets a Format dropdown that swaps
+  between Splunk and Sentinel field groups via `onSiemFormatChange()`,
+  syncs visible fields with the saved format on page load, and persists
+  both adapter inputs so admins can flip back without retyping.
+  Per-adapter help cards explain where to find each set of credentials.
+- Send Test Event button is wired through `/admin/config/siem/test`
+  with the new keys; same flow as Splunk.
+- README + `docs/ENTERPRISE_FEATURES.md` updated: setup walkthrough,
+  full table of stored config keys, note that Microsoft supports the
+  Data Collector API through Sept 2026 with a future slice planned
+  for the newer Logs Ingestion API (DCE/DCR).
+- Smoke-tested end-to-end:
+  * Invalid base64 shared key → `Shared key is not valid base64: Only
+    base64 data is allowed`.
+  * Empty workspace_id → `Workspace ID or shared key is missing.`
+  * Valid base64 + bogus workspace GUID → DNS-fails on the
+    `{guid}.ods.opinsights.azure.com` resolution (proves URL builder).
+  * Streamer dispatched to the Sentinel branch, batched 20 audit rows,
+    failed cleanly on the bogus endpoint, kept the cursor at 0 for
+    retry, recorded `siem.last_error`, did not advance.
+  * Switched format back to splunk_hec mid-test and the original
+    Splunk error path returned its old "Endpoint URL or HEC token is
+    missing." message — no regression.
+
 **Still to do — separate slice:**
-- [ ] Microsoft Sentinel adapter (HEC-compatible — small `build_sentinel_payload` + `post_sentinel`).
+- [ ] Sentinel via the newer Logs Ingestion API (DCE / DCR / service
+      principal) — mainly for tenants that have already switched off
+      the Data Collector API or who want enriched DCR transformations.
 - [ ] Generic webhook adapter with HMAC signing for arbitrary SIEMs.
 - [ ] Streaming-failure email alert via the existing health-alert path
       (currently surfaced only in `siem.last_error` and the UI).

@@ -11,7 +11,7 @@ explicit *Enterprise license* note appears.
 - [Microsoft Teams approval cards](#microsoft-teams-approval-cards)
 - [Approval reminders](#approval-reminders)
 - [Prometheus `/metrics` endpoint](#prometheus-metrics-endpoint)
-- [SIEM audit-log streaming (Splunk HEC)](#siem-audit-log-streaming-splunk-hec)
+- [SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel)](#siem-audit-log-streaming-splunk-hec--microsoft-sentinel)
 - [Per-integration API tokens](#per-integration-api-tokens)
 - [Cost report / chargeback](#cost-report--chargeback)
 
@@ -308,14 +308,15 @@ intervals which Prometheus typically doesn't use.
 
 ---
 
-## SIEM audit-log streaming (Splunk HEC)
+## SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel)
 
 Every `audit_log` row (every order/asset/asset-type/approval mutation)
-gets forwarded to a configured SIEM endpoint. Today's adapter is
-**Splunk HEC**; the architecture is generic and additional adapters
-(Microsoft Sentinel, Elastic, generic JSON webhook) can be added by
-implementing a new `build_*_payload` and `post_*` pair in
-`worker/tasks/modules/siem_export.py`.
+gets forwarded to a configured SIEM endpoint. Two adapters today:
+**Splunk HEC** and **Microsoft Sentinel** (Azure Monitor Data Collector
+API). Additional adapters (Elastic, generic JSON webhook) can be added
+by implementing a new `build_*_payload` and `post_*` pair in
+`worker/tasks/modules/siem_export.py` and dispatching on `siem.format`
+in the streamer.
 
 ### Architecture
 
@@ -342,17 +343,35 @@ implementing a new `build_*_payload` and `post_*` pair in
 3. Copy the token. The endpoint URL is your Splunk collector,
    typically `https://splunk.example.com:8088/services/collector/event`.
 
+### Microsoft Sentinel setup
+
+ipSolis uses the Azure Monitor **HTTP Data Collector API** (HMAC-signed
+shared key). It's the simpler ingestion path — no service principal, no
+Data Collection Endpoint / Data Collection Rule, no schema registration.
+The custom log table (`{Log-Type}_CL`, default `IpsolisAudit_CL`) is
+created in the Log Analytics workspace on first ingest. Microsoft
+supports the Data Collector API through September 2026; a future slice
+will add the newer Logs Ingestion API for installs that need it.
+
+1. Azure portal → your **Log Analytics workspace** → *Settings → Agents
+   → Log Analytics agent instructions*.
+2. Copy **Workspace ID** and **Primary key** (or secondary key).
+3. Decide on a *Log Type* — letters/digits only, ≤100 chars. Default
+   `IpsolisAudit` materialises as `IpsolisAudit_CL` in Sentinel/KQL.
+
 ### ipSolis setup
 
 Admin UI → *Settings* → *Compliance* tab → *SIEM — Audit Log Streaming*:
 
 1. Set *Mode* to `Enabled`.
-2. Leave *Format* at `Splunk HEC`.
-3. Paste the *Endpoint URL* and *HEC Token*.
+2. Set *Format* to `Splunk HEC` or `Microsoft Sentinel`. The form
+   swaps to the matching credential fields.
+3. Paste the credentials — *Endpoint URL* + *HEC Token* (Splunk) or
+   *Workspace ID* + *Shared Key* + *Log Type* (Sentinel).
 4. Adjust *Batch size* and *Verify TLS* as needed (defaults are sane:
    200 / verify on).
 5. Click **Save Settings**, then **Send Test Event** — a single
-   synthetic `siem_test` event is posted; success means Splunk
+   synthetic `siem_test` event is posted; success means the SIEM
    accepts your payload format and authentication.
 6. Enable the master switch and watch the live status panel:
    `Backlog: 41 rows pending` → `(caught up)` after the next
@@ -362,15 +381,18 @@ Admin UI → *Settings* → *Compliance* tab → *SIEM — Audit Log Streaming*:
 
 | Key | Purpose | Stored as |
 |---|---|---|
-| `siem.enabled`         | `true`/`false` master switch | plain |
-| `siem.format`          | `splunk_hec` (only adapter today) | plain |
-| `siem.endpoint_url`    | Splunk HEC endpoint URL | plain |
-| `siem.token`           | HEC token | secret |
-| `siem.batch_size`      | Max events per minute (1–1000) | plain |
-| `siem.verify_tls`      | Verify endpoint TLS cert | plain |
-| `siem.last_id`         | Auto: last forwarded audit_log id | plain |
-| `siem.last_error`      | Auto: most recent failure message | plain |
-| `siem.last_success_at` | Auto: ISO timestamp of last success | plain |
+| `siem.enabled`          | `true`/`false` master switch | plain |
+| `siem.format`           | `splunk_hec` or `sentinel` | plain |
+| `siem.endpoint_url`     | Splunk HEC endpoint URL | plain |
+| `siem.token`            | Splunk HEC token | secret |
+| `siem.workspace_id`     | Sentinel: Log Analytics workspace GUID | plain |
+| `siem.shared_key`       | Sentinel: workspace shared key (base64) | secret |
+| `siem.log_type`         | Sentinel: custom log table name (no `_CL` suffix; default `IpsolisAudit`) | plain |
+| `siem.batch_size`       | Max events per minute (1–1000) | plain |
+| `siem.verify_tls`       | Verify endpoint TLS cert | plain |
+| `siem.last_id`          | Auto: last forwarded audit_log id | plain |
+| `siem.last_error`       | Auto: most recent failure message | plain |
+| `siem.last_success_at`  | Auto: ISO timestamp of last success | plain |
 
 ### Operational notes
 
