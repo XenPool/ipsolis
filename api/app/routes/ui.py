@@ -59,14 +59,98 @@ _ASSET_STATUS_COLORS = {
 }
 
 
+_CAPACITY_WARNING_THRESHOLD = 80   # %, below this we don't flag the pool
+_CAPACITY_CRITICAL_THRESHOLD = 95  # %, at or above this severity = critical
+
+
+async def _pool_warnings(db: AsyncSession) -> list[dict]:
+    """Per-asset-type capacity pressure for the dashboard warning band.
+
+    Flags pools whose fill is ≥ ``_CAPACITY_WARNING_THRESHOLD``. Two
+    queries total — one for active-order counts on capacity-pooled
+    types, one for ``AssetPool`` rows grouped by status. No N+1.
+    """
+    from app.utils.capacity import _ACTIVE_STATUSES  # imported locally to avoid cycles
+
+    # 1) Active orders for capacity_pooled types only.
+    pooled_rows = await db.execute(
+        select(Order.asset_type_id, func.count())
+        .join(AssetType, AssetType.id == Order.asset_type_id)
+        .where(
+            Order.status.in_(_ACTIVE_STATUSES),
+            AssetType.assignment_model == "capacity_pooled",
+        )
+        .group_by(Order.asset_type_id)
+    )
+    pooled_used: dict[int, int] = {atid: cnt for atid, cnt in pooled_rows.all()}
+
+    # 2) Pool rows by (type, status) for shared / personal.
+    pool_rows = await db.execute(
+        select(AssetPool.asset_type_id, AssetPool.status, func.count())
+        .group_by(AssetPool.asset_type_id, AssetPool.status)
+    )
+    pool_by_type: dict[int, dict[str, int]] = {}
+    for atid, status_val, cnt in pool_rows.all():
+        key = status_val.value if hasattr(status_val, "value") else str(status_val)
+        pool_by_type.setdefault(atid, {})[key] = cnt
+
+    # 3) Active asset definitions; inactive ones can't accept new orders so we
+    # don't need to flag pressure on them.
+    types = (
+        await db.execute(
+            select(AssetType).where(AssetType.is_active.is_(True))
+        )
+    ).scalars().all()
+
+    warnings: list[dict] = []
+    for at in types:
+        if at.assignment_model == "capacity_pooled":
+            cap = at.pool_capacity
+            if not cap:
+                continue
+            used = pooled_used.get(at.id, 0)
+            total = cap
+            kind = "pooled"
+        elif at.assignment_model in ("dedicated_shared", "assigned_personal"):
+            counts = pool_by_type.get(at.id, {})
+            total = sum(counts.values())
+            if total == 0:
+                continue
+            # Treat anything that isn't Free as "consuming a slot" — busy,
+            # reserved, maintenance, Failed, Reinstall, Reinstalling. They
+            # all keep the row from satisfying a new request.
+            free = counts.get("Free", 0)
+            used = total - free
+            kind = at.assignment_model
+        else:
+            continue
+
+        fill_pct = round(100 * used / total) if total else 0
+        if fill_pct < _CAPACITY_WARNING_THRESHOLD:
+            continue
+        warnings.append({
+            "asset_type_id": at.id,
+            "asset_type_name": at.name,
+            "kind": kind,
+            "used": used,
+            "total": total,
+            "fill_pct": fill_pct,
+            "severity": "critical" if fill_pct >= _CAPACITY_CRITICAL_THRESHOLD else "warning",
+        })
+
+    warnings.sort(key=lambda w: (-w["fill_pct"], w["asset_type_name"]))
+    return warnings
+
+
 async def _pool_summary(db: AsyncSession) -> dict:
-    """Returns pool status counts."""
+    """Returns pool status counts plus per-type capacity warnings."""
     rows = await db.execute(
         select(AssetPool.status, func.count().label("cnt"))
         .group_by(AssetPool.status)
     )
     counts = {row.status.value: row.cnt for row in rows}
     total = sum(counts.values())
+    warnings = await _pool_warnings(db)
     return {
         "free":        counts.get("Free", 0),
         "busy":        counts.get("busy", 0),
@@ -75,6 +159,7 @@ async def _pool_summary(db: AsyncSession) -> dict:
         "reserved":    counts.get("reserved", 0),
         "reinstall":   counts.get("Reinstall", 0),
         "total":       total,
+        "warnings":    warnings,
     }
 
 

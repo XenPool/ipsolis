@@ -582,6 +582,38 @@ there are six or fewer definitions to avoid clutter on small catalogs.
   `catalog_clear_filters`) added across all five locales (en/de/fr/es/it).
   `tools/validate_locales.py` confirms 143 keys per locale, all aligned.
 
+### [done] Dashboard pool-capacity warnings — Prio 3 (2026-04-26)
+A capacity-pressure band that auto-renders above the status tiles when
+any active asset pool is at ≥80% fill, listed by severity with direct
+links to the affected definition / pool view. Surfaces capacity
+problems before users hit a 409 from the existing per-pool quota
+enforcement.
+
+- New `_pool_warnings(db)` helper in `api/app/routes/ui.py` —
+  computes per-asset-type fill in two batched queries (one for
+  active orders on capacity_pooled types, one for AssetPool grouped
+  by `(asset_type_id, status)`); no N+1 regardless of catalog size.
+- `assigned_personal` / `dedicated_shared` types: anything not in
+  `Free` status counts as a consuming slot — busy, reserved,
+  maintenance, Failed, Reinstall all keep the row from satisfying
+  a new request, so the operator sees real availability pressure.
+- `capacity_pooled` types: count active orders against
+  `pool_capacity` using the same status set as quota enforcement.
+- Severity: ≥80% → `warning` (amber), ≥95% → `critical` (red).
+  Banner copy adapts: "N pools at critical capacity, M approaching",
+  "N pools at critical capacity", or "M pools approaching capacity".
+- Each warning row is a clickable link — `pooled` → asset-definition
+  edit page (where capacity is configured); `personal/shared` →
+  the asset-pool list filtered to that type.
+- Inactive asset definitions are excluded — they can't accept new
+  orders so flagging them as "full" is noise.
+- Renders inside the existing `fragments/pool_summary.html` so it
+  participates in the existing dashboard auto-refresh path; no
+  schema or migration needed.
+- Verified: a real pool with 2/2 personal VDIs renders as
+  `1 pool at critical capacity · Personal VDI Host · 100% (2/2)`
+  in red/critical styling.
+
 ### [done] In-app setup checklist — Prio 3 (2026-04-26)
 Replaced the originally-planned "guided tour" with a persistent setup
 checklist on the dashboard — more useful for both first-run setup
