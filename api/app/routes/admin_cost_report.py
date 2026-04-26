@@ -31,12 +31,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.utils.auth import require_admin_key
+from app.utils.auth import require_admin_key, require_scopes
 
 router = APIRouter(
     prefix="/admin/cost-report",
     tags=["admin-cost-report"],
-    dependencies=[Depends(require_admin_key)],
+    dependencies=[Depends(require_admin_key), require_scopes("orders:read")],
 )
 
 _ACTIVE_ORDER_STATUSES = (

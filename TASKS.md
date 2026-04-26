@@ -69,15 +69,59 @@ follow-up slices.
   revocation returns 204 + immediately blocks further use, row
   preserved with `revoked` status.
 
+**Done — scope catalog + decorators (2026-04-26):**
+- 14-scope catalog in `app.utils.api_tokens.AVAILABLE_SCOPES` covering
+  orders / asset_types / assets / approvals / audit / config / metrics /
+  webhook plus the `admin:*` wildcard.
+- `require_scopes(*needed)` factory in `app.utils.auth` — back-compat
+  by design: legacy `X-Admin-Key` and admin sessions retain implicit
+  `admin:*`, only bearer tokens are scope-gated. Missing scopes return
+  HTTP 403 with a message listing both missing and granted scopes so
+  integrations can self-diagnose.
+- Token create endpoint accepts `scopes: list[str]`; unknown scopes
+  filtered silently; empty list defaults to `["admin:*"]` for
+  back-compat with slice-1 token UX.
+- New `GET /admin/api-tokens/scopes` endpoint exposes the catalog so
+  the UI renders checkboxes dynamically.
+- Token list response includes `scopes`; UI renders them as badges
+  (amber for `admin:*`, neutral for narrow scopes).
+- Token create modal: scope picker with checkbox grid, defaults to
+  `admin:*` selected, validates at-least-one before submitting.
+- Representative endpoints scoped to demonstrate wiring:
+  `GET /admin/audit-log` → `audit:read`,
+  4× `POST/PUT/DELETE /admin/asset-types/*` → `asset_types:write`,
+  `GET /admin/cost-report` → `orders:read`.
+- Verified end-to-end: read-only token gets 200 on audit, 403 on
+  asset-type create + cost-report (descriptive error). Legacy
+  `X-Admin-Key` still grants full access.
+
+**Done — ServiceNow webhook bearer auth (2026-04-26):**
+- `POST /webhook/servicenow` accepts either `Authorization: Bearer xpat_…`
+  (with `webhook:in` scope, checked first) or the legacy
+  `X-Hub-Signature-256` HMAC. Either is sufficient; both paths are
+  independent and the legacy one is preserved for back-compat.
+- Bearer-path validation: token must exist, not be revoked / expired,
+  and carry the `webhook:in` scope. Mismatches return 401 (bad token)
+  or 403 (wrong scope) with descriptive bodies that name the token
+  and list its granted scopes.
+- Audit attribution: `triggered_by` records
+  `api:servicenow_webhook (webhook:token:<name>)` for the bearer path
+  and `api:servicenow_webhook (webhook:hmac)` for the legacy path —
+  so revocation events in the audit log can be tied to specific
+  integrations.
+- `last_used_at` on the api_token row updates on every successful
+  webhook delivery (same path as admin endpoints).
+- Verified end-to-end: no auth / bogus bearer / wrong-scope / valid-bearer
+  / valid-HMAC all return correct status codes and create or reject
+  orders consistently. Audit log shows correct attribution per path.
+
 **Still to do — separate slices:**
-- [ ] Scope catalog + per-endpoint scope decorator
-      (`orders:read`, `orders:write`, `asset_types:read`, `webhook:in`,
-      etc.). The `scopes` column is already JSON-shaped so this lands
-      without a migration.
-- [ ] ServiceNow webhook secret migration to a bearer token.
+- [ ] Wider scope rollout to the rest of the `/admin/*` surface
+      (mechanical, decorator-only).
 - [ ] Audit log enrichment: record `triggered_by` from
-      `request.state.actor` so token-driven actions are attributable
-      by token name.
+      `request.state.actor` on **all** mutating admin routes so
+      token-driven actions are attributable by token name everywhere
+      (today only the webhook path does this end-to-end).
 - [ ] Optional: hard-delete vs. soft-delete policy (today everything
       is soft-deleted; some tenants will want a "purge revoked tokens
       older than 90 days" Beat task).

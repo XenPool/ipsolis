@@ -50,8 +50,8 @@
       <tr>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Name</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Prefix</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Scopes</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Status</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Created</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Last used</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Expires</th>
         <th class="px-4 py-3"></th>
@@ -90,6 +90,20 @@
         </select>
         <p class="text-[11px] text-muted/60 mt-1">Pick a horizon that matches your rotation policy.</p>
       </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Scopes</label>
+        <div class="rounded border border-token-border bg-surface-raised/40 p-3 max-h-56 overflow-y-auto">
+          <div id="scope-grid" class="grid grid-cols-1 gap-1.5 text-xs">
+            <p class="text-muted/60">Loading scopes…</p>
+          </div>
+        </div>
+        <p class="text-[11px] text-muted/60 mt-1 leading-snug">
+          Select what this token can do. <code class="font-mono bg-surface-raised px-1 rounded">admin:*</code>
+          grants everything (equivalent to the legacy <code class="font-mono bg-surface-raised px-1 rounded">X-Admin-Key</code>).
+          Narrowly-scoped tokens are recommended for new integrations.
+        </p>
+      </div>
     </div>
 
     <div id="create-error" class="hidden mt-3 text-xs text-red-600"></div>
@@ -121,6 +135,46 @@ function statusBadge(s) {
   return '<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ' + classes + '">' + s + '</span>';
 }
 
+var _scopeCatalog = [];
+
+async function loadScopes() {
+  try {
+    var resp = await fetch('/admin/api-tokens/scopes');
+    if (!resp.ok) return;
+    var data = await resp.json();
+    _scopeCatalog = data.scopes || [];
+  } catch (e) { /* swallow */ }
+}
+
+function renderScopeGrid() {
+  var grid = document.getElementById('scope-grid');
+  if (!grid) return;
+  if (!_scopeCatalog.length) {
+    grid.innerHTML = '<p class="text-muted/60">Could not load scopes.</p>';
+    return;
+  }
+  grid.innerHTML = _scopeCatalog.map(function(s) {
+    var checked = (s.name === 'admin:*') ? 'checked' : '';
+    return '<label class="flex items-start gap-2 py-1 cursor-pointer hover:bg-surface-raised/40 px-2 rounded">'
+      + '<input type="checkbox" class="scope-cb mt-0.5 rounded border-token-border" value="' + escapeHtml(s.name) + '" ' + checked + '>'
+      + '<div class="min-w-0">'
+      +   '<code class="font-mono text-[11px] text-blue-700 dark:text-blue-300">' + escapeHtml(s.name) + '</code>'
+      +   '<span class="text-muted/80 ml-2">' + escapeHtml(s.description) + '</span>'
+      + '</div>'
+      + '</label>';
+  }).join('');
+}
+
+function scopeBadges(scopes) {
+  if (!scopes || !scopes.length) return '<span class="text-muted/50 text-xs">—</span>';
+  return scopes.map(function(s) {
+    var color = s === 'admin:*'
+      ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'
+      : 'bg-surface-raised text-body';
+    return '<span class="inline-block ' + color + ' rounded px-1.5 py-0.5 text-[10px] font-mono mr-1 mb-0.5">' + escapeHtml(s) + '</span>';
+  }).join('');
+}
+
 async function loadTokens() {
   var resp = await fetch('/admin/api-tokens');
   var body = document.getElementById('tokens-body');
@@ -138,10 +192,10 @@ async function loadTokens() {
       ? '<span class="text-muted/60 text-xs">revoked ' + fmtDate(r.revoked_at) + '</span>'
       : '<button onclick="revokeToken(' + r.id + ', \'' + (r.name || '').replace(/'/g, "\\'") + '\')" class="text-red-500 hover:text-red-700 text-xs">Revoke</button>';
     return '<tr data-token-id="' + r.id + '" ' + (r.status === 'revoked' ? 'class="opacity-60"' : '') + '>'
-      + '<td class="px-4 py-3"><div class="font-medium text-heading">' + escapeHtml(r.name) + '</div><div class="text-[11px] text-muted/60">created by ' + escapeHtml(r.created_by) + '</div></td>'
+      + '<td class="px-4 py-3"><div class="font-medium text-heading">' + escapeHtml(r.name) + '</div><div class="text-[11px] text-muted/60">created by ' + escapeHtml(r.created_by) + ' · ' + fmtDate(r.created_at) + '</div></td>'
       + '<td class="px-4 py-3"><span class="font-mono text-xs text-muted">' + escapeHtml(r.token_prefix) + '…</span></td>'
+      + '<td class="px-4 py-3">' + scopeBadges(r.scopes) + '</td>'
       + '<td class="px-4 py-3">' + statusBadge(r.status) + '</td>'
-      + '<td class="px-4 py-3 text-xs text-muted">' + fmtDate(r.created_at) + '</td>'
       + '<td class="px-4 py-3 text-xs text-muted">' + fmtDate(r.last_used_at) + '</td>'
       + '<td class="px-4 py-3 text-xs text-muted">' + (r.expires_at ? fmtDate(r.expires_at) : 'never') + '</td>'
       + '<td class="px-4 py-3 text-right">' + revokeBtn + '</td>'
@@ -159,6 +213,7 @@ function openCreateModal() {
   document.getElementById('new-token-name').value = '';
   document.getElementById('new-token-expiry').value = '90';
   document.getElementById('create-error').classList.add('hidden');
+  renderScopeGrid();  // re-render so checkboxes reset to defaults
   document.getElementById('create-modal').classList.remove('hidden');
   setTimeout(function() { document.getElementById('new-token-name').focus(); }, 50);
 }
@@ -181,6 +236,14 @@ async function submitCreateToken() {
 
   var body = { name: name };
   if (exp) body.expires_in_days = parseInt(exp);
+
+  var selected = Array.from(document.querySelectorAll('.scope-cb:checked')).map(function(cb) { return cb.value; });
+  if (!selected.length) {
+    err.textContent = 'At least one scope is required.';
+    err.classList.remove('hidden');
+    return;
+  }
+  body.scopes = selected;
 
   var resp = await fetch('/admin/api-tokens', {
     method: 'POST',
@@ -229,6 +292,9 @@ async function revokeToken(id, name) {
   }
 }
 
-document.addEventListener('DOMContentLoaded', loadTokens);
+document.addEventListener('DOMContentLoaded', async function() {
+  await loadScopes();
+  await loadTokens();
+});
 </script>
 {% endblock %}

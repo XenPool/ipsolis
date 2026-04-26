@@ -30,7 +30,7 @@ from app.schemas.admin import (
 from app.schemas.asset import AssetPoolRead, AssetTypeRead
 from app.utils.asset_type_constraints import validate_asset_type
 from app.utils.audit import _asset_snap, _config_snap, _type_snap, aaudit
-from app.utils.auth import require_admin_key
+from app.utils.auth import require_admin_key, require_scopes
 from app.utils.features import require_enterprise
 from app.utils.license import is_feature_enabled
 from app.templates_instance import set_app_title, set_app_logo_config
@@ -406,7 +406,12 @@ async def asset_type_logo(type_id: int, db: AsyncSession = Depends(get_db)):
     return Response(content=raw, media_type=mime, headers={"Cache-Control": "no-cache"})
 
 
-@router.post("/asset-types", response_model=AssetTypeRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/asset-types",
+    response_model=AssetTypeRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[require_scopes("asset_types:write")],
+)
 async def create_asset_type(
     payload: AssetTypeCreate, db: AsyncSession = Depends(get_db)
 ) -> AssetType:
@@ -471,7 +476,11 @@ async def create_asset_type(
     return asset_type
 
 
-@router.put("/asset-types/{type_id}", response_model=AssetTypeRead)
+@router.put(
+    "/asset-types/{type_id}",
+    response_model=AssetTypeRead,
+    dependencies=[require_scopes("asset_types:write")],
+)
 async def update_asset_type(
     type_id: int, payload: AssetTypeUpdate, db: AsyncSession = Depends(get_db)
 ) -> AssetType:
@@ -571,7 +580,12 @@ async def update_asset_type(
     return asset_type
 
 
-@router.post("/asset-types/{type_id}/clone", response_model=AssetTypeRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/asset-types/{type_id}/clone",
+    response_model=AssetTypeRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[require_scopes("asset_types:write")],
+)
 async def clone_asset_type(type_id: int, db: AsyncSession = Depends(get_db)) -> AssetType:
     """Shallow-clone an asset type: same configuration, fresh row, name suffixed.
 
@@ -641,7 +655,11 @@ async def clone_asset_type(type_id: int, db: AsyncSession = Depends(get_db)) -> 
     return new_type
 
 
-@router.delete("/asset-types/{type_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/asset-types/{type_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[require_scopes("asset_types:write")],
+)
 async def delete_asset_type(type_id: int, db: AsyncSession = Depends(get_db)) -> None:
     result = await db.execute(select(AssetType).where(AssetType.id == type_id))
     asset_type = result.scalar_one_or_none()
@@ -1028,7 +1046,11 @@ async def list_assets(
 
 # ── Audit-Log ──────────────────────────────────────────────────────────────────
 
-@router.get("/audit-log", response_model=list[AuditLogRead], dependencies=[require_enterprise("audit_log_viewer")])
+@router.get(
+    "/audit-log",
+    response_model=list[AuditLogRead],
+    dependencies=[require_enterprise("audit_log_viewer"), require_scopes("audit:read")],
+)
 async def list_audit_log(
     entity_type: str | None = None,
     entity_id: int | None = None,

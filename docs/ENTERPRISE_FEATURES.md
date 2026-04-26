@@ -433,15 +433,91 @@ Admin UI → **API Tokens** in the left nav.
 **In:** Table + ORM + create/list/revoke endpoints + Admin UI page +
 Bearer header acceptance + last-used tracking + soft-delete revocation.
 
+### Scopes
+
+Each token carries a list of scopes that gate which endpoints it can
+reach. The catalog lives in `app.utils.api_tokens.AVAILABLE_SCOPES`:
+
+| Scope | What it allows |
+|---|---|
+| `admin:*` | Wildcard — full access. Equivalent to legacy `X-Admin-Key`. |
+| `orders:read` / `orders:write` | List/view orders / create-update-cancel orders |
+| `asset_types:read` / `asset_types:write` | List/view / edit asset definitions |
+| `assets:read` / `assets:write` | View / manage the asset pool |
+| `approvals:read` / `approvals:write` | View / decide on pending approvals |
+| `audit:read` | Read the audit log |
+| `config:read` / `config:write` | Read / modify application settings |
+| `metrics:read` | Scrape the Prometheus `/metrics` endpoint |
+| `webhook:in` | Inbound webhook receiver (ServiceNow et al.) |
+
+When the bearer-token path is used, the request must carry every scope
+the route declares. Missing scopes return **HTTP 403** with a
+descriptive message listing the missing and granted scopes.
+
+Legacy `X-Admin-Key` and admin sessions are intentionally
+**unconstrained** — they implicitly carry `admin:*` so existing
+integrations and the UI keep working on upgrade.
+
+### How to gate an endpoint
+
+```python
+from app.utils.auth import require_scopes
+
+@router.get(
+    "/audit-log",
+    dependencies=[require_scopes("audit:read")],
+)
+async def list_audit_log(...): ...
+```
+
+Combine multiple scopes by passing several positional args; all are
+required (`require_scopes("orders:read", "audit:read")`).
+
+### Endpoints scoped today
+
+A representative set is gated to demonstrate the wiring; the rest still
+accept any authenticated bearer token:
+
+| Endpoint | Required scope |
+|---|---|
+| `GET /admin/audit-log` | `audit:read` |
+| `POST/PUT/DELETE /admin/asset-types/*` | `asset_types:write` |
+| `POST /admin/asset-types/{id}/clone` | `asset_types:write` |
+| `GET /admin/cost-report` | `orders:read` |
+
+Adding scopes to the rest of the admin surface is mechanical
+(decorator-only); rolling them out gradually keeps the back-compat
+guarantee intact.
+
+### ServiceNow webhook — bearer-token auth
+
+`POST /webhook/servicenow` accepts **either** of two auth paths
+(checked in this order):
+
+1. `Authorization: Bearer xpat_…` with the `webhook:in` scope. Issue
+   the token from Admin UI → API Tokens with only `webhook:in` ticked,
+   give it a recognisable name (e.g. `servicenow-int`), copy the raw
+   token once, paste it into the ServiceNow integration's HTTP-headers
+   config. Revoke it from the UI to instantly cut access.
+2. `X-Hub-Signature-256: sha256=<HMAC>` against `WEBHOOK_SECRET_TOKEN`
+   from `.env`. Kept for back-compat with existing integrations.
+
+The audit log records which path authenticated each request:
+
+| Auth path | `triggered_by` value |
+|---|---|
+| Bearer token | `api:servicenow_webhook (webhook:token:<name>)` |
+| HMAC fallback | `api:servicenow_webhook (webhook:hmac)` |
+
+So when "who triggered this?" comes up in a compliance review, the
+audit trail names the specific token (and therefore the specific
+integration) instead of just the catch-all `WEBHOOK_SECRET_TOKEN`.
+
 **Not yet:**
 
-- Scope decorators per endpoint (everything still requires
-  `admin:*` for now). The `scopes` column is already JSON-shaped so
-  this lands without a migration.
-- ServiceNow webhook secret migration to a bearer token. The webhook
-  HMAC stays as-is; admins can pre-create a token named e.g.
-  `servicenow-int` and send it as `Authorization: Bearer …` once the
-  scoped admin endpoints land.
+- Wider rollout of scope decorators (only the most commonly-integrated
+  endpoints carry them today; the rest still accept any authenticated
+  bearer token regardless of scope).
 
 ---
 

@@ -4,6 +4,12 @@ The raw token is shown to the user **once** at creation time. We store
 only its SHA-256 in the database, so a database leak doesn't expose
 working credentials. Tokens have an unmistakable ``xpat_`` prefix
 (ipsolis admin token) so they're easy to spot in logs and config files.
+
+Scope catalog (``AVAILABLE_SCOPES``) defines the per-resource permissions
+a token can carry. ``admin:*`` is the wildcard granted by legacy
+``X-Admin-Key`` and admin sessions for back-compat — narrowly-scoped
+tokens (``orders:read`` etc.) are the recommended path for new
+integrations.
 """
 from __future__ import annotations
 
@@ -21,6 +27,52 @@ logger = logging.getLogger(__name__)
 
 _PREFIX = "xpat_"
 _RAW_BYTES = 32  # 256 bits → 43-char URL-safe base64 → token length 48 with prefix
+
+
+# Scope catalog. Keys are the scope strings stored on the token; values are
+# human-readable labels shown in the create-token modal. Group prefix
+# (``orders:``, ``asset_types:`` …) makes it easy to skim and to add new
+# scopes alongside the resource they protect.
+AVAILABLE_SCOPES: dict[str, str] = {
+    "admin:*":           "Full admin access — equivalent to legacy X-Admin-Key.",
+    "orders:read":       "List and view orders.",
+    "orders:write":      "Create, update, cancel orders.",
+    "asset_types:read":  "List and view asset definitions.",
+    "asset_types:write": "Create, edit, delete asset definitions.",
+    "assets:read":       "View the asset pool.",
+    "assets:write":      "Manage assets in the pool.",
+    "approvals:read":    "View pending approvals.",
+    "approvals:write":   "Approve or decline requests.",
+    "audit:read":        "Read the audit log.",
+    "config:read":       "Read application settings.",
+    "config:write":      "Modify application settings.",
+    "metrics:read":      "Scrape the /metrics Prometheus endpoint.",
+    "webhook:in":        "Inbound webhook receiver (ServiceNow et al.).",
+}
+
+
+def is_valid_scope(scope: str) -> bool:
+    return scope in AVAILABLE_SCOPES
+
+
+def filter_valid_scopes(scopes: list[str] | None) -> list[str]:
+    """Drop unknown scopes; preserve order; deduplicate."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for s in scopes or []:
+        if s in AVAILABLE_SCOPES and s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
+
+
+def token_has_scope(token_scopes: list[str] | None, needed: str) -> bool:
+    """``True`` if the token grants ``needed``, including via the ``admin:*`` wildcard."""
+    if not token_scopes:
+        return False
+    if "admin:*" in token_scopes:
+        return True
+    return needed in token_scopes
 
 
 def _hash(raw: str) -> str:

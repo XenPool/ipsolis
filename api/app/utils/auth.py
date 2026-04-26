@@ -70,3 +70,50 @@ async def require_admin_session(request: Request) -> None:
             status_code=status.HTTP_302_FOUND,
             headers={"Location": "/ui/login"},
         )
+
+
+def require_scopes(*needed: str):
+    """FastAPI dependency factory: enforce token scopes on top of auth.
+
+    Use **alongside** ``require_admin_key`` (typically inherited from a
+    router-level dependency). This dependency assumes auth has already
+    populated ``request.state.actor`` and, on the bearer-token path,
+    ``request.state.api_token``. For routes that aren't already
+    auth-protected, also list ``Depends(require_admin_key)`` first.
+
+    Legacy ``X-Admin-Key`` and admin sessions are intentionally
+    unconstrained (back-compat with existing integrations and the UI).
+    Bearer tokens with ``admin:*`` grant everything; otherwise every
+    scope in ``needed`` must be present.
+    """
+    async def _scoped(request: Request) -> None:
+        from app.utils.api_tokens import token_has_scope
+
+        actor = getattr(request.state, "actor", "") or ""
+        if actor.startswith("admin:legacy_key") or actor.startswith("admin:session"):
+            return  # legacy path — implicit admin:*
+
+        token = getattr(request.state, "api_token", None)
+        if token is None:
+            # Defensive: should be unreachable when require_admin_key has
+            # already run. Reaching here means a route wired this scope
+            # check without an auth dependency in its chain.
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        scopes = list(token.scopes or [])
+        missing = [s for s in needed if not token_has_scope(scopes, s)]
+        if missing:
+            granted = ", ".join(sorted(scopes)) or "(none)"
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Token '{token.name}' is missing required scope(s): "
+                    f"{', '.join(missing)}. Granted: {granted}."
+                ),
+            )
+
+    return Depends(_scoped)

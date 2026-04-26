@@ -18,7 +18,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.api_token import ApiToken
-from app.utils.api_tokens import create_token, status as token_status
+from app.utils.api_tokens import (
+    AVAILABLE_SCOPES,
+    create_token,
+    filter_valid_scopes,
+    status as token_status,
+)
 from app.utils.auth import require_admin_key
 
 logger = logging.getLogger(__name__)
@@ -32,6 +37,9 @@ router = APIRouter(
 class TokenCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     expires_in_days: int | None = Field(default=None, ge=1, le=3650)
+    # Empty/missing → defaults to ``["admin:*"]`` for back-compat with the
+    # slice-1 token UX. Unknown scopes are filtered out silently.
+    scopes: list[str] | None = None
 
 
 class TokenRow(BaseModel):
@@ -74,6 +82,12 @@ async def list_tokens(db: AsyncSession = Depends(get_db)) -> list[dict]:
     return [_to_row(t) for t in rows.scalars().all()]
 
 
+@router.get("/scopes")
+async def list_scopes() -> dict:
+    """Return the scope catalog so the UI can render checkboxes dynamically."""
+    return {"scopes": [{"name": k, "description": v} for k, v in AVAILABLE_SCOPES.items()]}
+
+
 @router.post("", response_model=TokenCreated, status_code=status.HTTP_201_CREATED)
 async def create_api_token(
     payload: TokenCreate,
@@ -85,11 +99,13 @@ async def create_api_token(
         expires_at = datetime.now(timezone.utc) + timedelta(days=payload.expires_in_days)
 
     actor = getattr(request.state, "actor", "admin:unknown")
+    requested_scopes = filter_valid_scopes(payload.scopes) or ["admin:*"]
     token, raw = await create_token(
         db,
         name=payload.name,
         created_by=actor,
         expires_at=expires_at,
+        scopes=requested_scopes,
     )
     await db.commit()
     await db.refresh(token)
