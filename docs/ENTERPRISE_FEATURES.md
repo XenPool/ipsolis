@@ -270,6 +270,21 @@ scrape_configs:
       - targets: ['ipsolis.your-host:8000']
 ```
 
+### Ready-to-import dashboards + alerts
+
+`docs/grafana/` ships a turnkey set:
+
+* [`ipsolis-overview.json`](grafana/ipsolis-overview.json) — Grafana
+  dashboard with 9 panels covering HTTP rate / errors / p95 latency,
+  request rate by route, latency percentiles, orders by status, asset
+  pool composition, Celery queue depth.
+* [`prometheus-alerts.yaml`](grafana/prometheus-alerts.yaml) — 6 sample
+  alert rules (high error rate, p95 latency, approval backlog, queue
+  backlog warning + critical, pool near capacity). Drop into your
+  Prometheus `rule_files`.
+* [`grafana/README.md`](grafana/README.md) — import walkthrough +
+  threshold rationale.
+
 ### Authentication
 
 The endpoint has no built-in auth — restrict via reverse proxy when

@@ -445,10 +445,29 @@ instrumentation, sample dashboards, and the queue-depth gauge remain.
   scrape reported `provision=0.0`. Pre-existing `default=2.0`
   matched real Beat-scheduled tasks waiting in the broker.
 
-**Still to do:**
-- [ ] Sample Grafana dashboards: provisioning latency p50/p95,
-      queue depth, error rate (purely a content task — JSON files
-      under `docs/grafana/` admins can import directly)
+**Done — Grafana dashboard + Prometheus alerts (2026-04-26):**
+- New `docs/grafana/ipsolis-overview.json` — 9-panel dashboard
+  (request rate, error rate, p95 latency, pending approvals stats;
+  request-rate-by-route + latency-percentiles timeseries; orders by
+  status + asset-pool composition; Celery queue depth). Uses
+  `${DS_PROMETHEUS}` template variable so it imports against any
+  Prometheus datasource UID without editing.
+- New `docs/grafana/prometheus-alerts.yaml` — 6 alert rules across
+  3 groups: HTTP (high 5xx, slow p95), business (approval backlog,
+  Celery queue warning + critical), pool capacity. Uses the labels
+  we already emit, so no extra recording rules needed.
+- New `docs/grafana/README.md` — Prometheus scrape config snippet,
+  Grafana import walkthrough, threshold rationale, plus a section
+  on wiring Tempo / Jaeger as a separate datasource for the OTel
+  traces we ship.
+- Cross-linked from `docs/ENTERPRISE_FEATURES.md` so admins find
+  it from the main feature docs.
+- Verified the JSON dashboard parses (9 panels) and the YAML alerts
+  parse (6 rules / 3 groups) — no field-shape regressions.
+
+The full observability story (Prometheus metrics + business gauges +
+Celery queue depth + OpenTelemetry api/worker tracing + ready-to-import
+Grafana dashboard + Prometheus alert rules) is now end-to-end complete.
 
 ### [partial] Cost / chargeback per asset type — Prio 1
 Reporting side **shipped 2026-04-26**. Per-order cost projection on the
