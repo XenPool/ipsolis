@@ -22,6 +22,7 @@ from app.database import get_db
 from app.models.db_backup import DbBackup
 from app.utils.auth import require_admin_key
 from app.utils.features import require_enterprise
+from app.utils.rbac import require_role
 
 _ENT = require_enterprise("advanced_maintenance")
 
@@ -30,7 +31,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/admin/maintenance",
     tags=["admin-maintenance"],
-    dependencies=[Depends(require_admin_key)],
+    # Backups, queue inspection, retention, alerts — operational
+    # surfaces that an ``admin`` runs day-to-day. Auditor read access
+    # to maintenance status (without trigger buttons) is slice-3
+    # polish; today the whole router is admin+.
+    dependencies=[Depends(require_admin_key), require_role("admin")],
 )
 
 BACKUP_DIR = Path("/app/backups")

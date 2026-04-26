@@ -23,13 +23,18 @@ from app.models.standalone_runbook import (
 )
 from app.utils.auth import require_admin_key
 from app.utils.features import require_enterprise
+from app.utils.rbac import require_role
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin/standalone-runbooks",
     tags=["admin-standalone-runbooks"],
-    dependencies=[Depends(require_admin_key), require_enterprise("standalone_runbooks")],
+    dependencies=[
+        Depends(require_admin_key),
+        require_enterprise("standalone_runbooks"),
+        require_role("admin"),
+    ],
 )
 
 def _get_celery():

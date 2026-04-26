@@ -18,12 +18,13 @@ from app.database import get_db
 from app.models.approval_delegation import ApprovalDelegation
 from app.utils.audit import aaudit, actor_by
 from app.utils.auth import require_admin_key, require_scopes
+from app.utils.rbac import require_role
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/admin/approval-delegations",
     tags=["admin-approval-delegations"],
-    dependencies=[Depends(require_admin_key)],
+    dependencies=[Depends(require_admin_key), require_role("admin")],
 )
 
 

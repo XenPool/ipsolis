@@ -32,11 +32,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.utils.auth import require_admin_key, require_scopes
+from app.utils.rbac import require_role
 
 router = APIRouter(
     prefix="/admin/cost-report",
     tags=["admin-cost-report"],
-    dependencies=[Depends(require_admin_key), require_scopes("orders:read")],
+    # Read-only chargeback breakdown — auditor+ can pull it, no
+    # mutating endpoints exist on this router today.
+    dependencies=[
+        Depends(require_admin_key),
+        require_scopes("orders:read"),
+        require_role("auditor"),
+    ],
 )
 
 _ACTIVE_ORDER_STATUSES = (

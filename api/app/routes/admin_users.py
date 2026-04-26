@@ -29,6 +29,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.admin_user import AdminUser
+from app.models.admin_user_grant import AdminUserAssetTypeGrant
+from app.models.asset import AssetType
 from app.utils.audit import aaudit, actor_by
 from app.utils.auth import require_admin_key
 from app.utils.password import hash_password
@@ -290,3 +292,129 @@ async def delete_admin_user(
     await db.commit()
     logger.info("Admin user deleted: id=%s username=%s", user_id, user.username)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── Per-asset-type ACL grants (RBAC slice 2) ──────────────────────────────────
+
+
+class GrantRow(BaseModel):
+    asset_type_id: int
+    asset_type_name: str
+    created_at: datetime
+    created_by: str
+
+    model_config = {"from_attributes": True}
+
+
+class GrantSet(BaseModel):
+    """Whole-set replacement for a user's asset-type grants.
+
+    Sending an empty ``asset_type_ids`` deliberately clears all grants
+    — the user flips back into "see all" (back-compat) mode. Senders
+    that only want to *add* a grant should fetch the current set first,
+    extend it, and PUT the merged list.
+    """
+    asset_type_ids: list[int]
+
+
+@router.get("/{user_id}/grants", response_model=list[GrantRow])
+async def list_user_grants(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """List every asset-type grant the user holds (joined with type names)."""
+    user_res = await db.execute(select(AdminUser).where(AdminUser.id == user_id))
+    if user_res.scalar_one_or_none() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    rows = await db.execute(
+        select(
+            AdminUserAssetTypeGrant.asset_type_id,
+            AssetType.name,
+            AdminUserAssetTypeGrant.created_at,
+            AdminUserAssetTypeGrant.created_by,
+        )
+        .join(AssetType, AssetType.id == AdminUserAssetTypeGrant.asset_type_id)
+        .where(AdminUserAssetTypeGrant.admin_user_id == user_id)
+        .order_by(AssetType.name)
+    )
+    return [
+        {
+            "asset_type_id": r[0],
+            "asset_type_name": r[1],
+            "created_at": r[2],
+            "created_by": r[3],
+        }
+        for r in rows.all()
+    ]
+
+
+@router.put("/{user_id}/grants", response_model=list[GrantRow])
+async def set_user_grants(
+    request: Request,
+    user_id: int,
+    payload: GrantSet,
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Replace a user's grant set wholesale.
+
+    Idempotent: sending the same set twice is a no-op (other than
+    audit). Validates every supplied id against ``asset_types`` so a
+    typo can't silently create a dangling grant.
+    """
+    user_res = await db.execute(select(AdminUser).where(AdminUser.id == user_id))
+    user = user_res.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    requested = {int(i) for i in payload.asset_type_ids if isinstance(i, int) and i > 0}
+    if requested:
+        existing_types = await db.execute(
+            select(AssetType.id).where(AssetType.id.in_(requested))
+        )
+        valid_ids = {r for r in existing_types.scalars().all()}
+        missing = sorted(requested - valid_ids)
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unknown asset_type id(s): {missing}",
+            )
+
+    # Diff against current state so the audit row is informative.
+    current_rows = await db.execute(
+        select(AdminUserAssetTypeGrant.asset_type_id).where(
+            AdminUserAssetTypeGrant.admin_user_id == user_id
+        )
+    )
+    current = {int(r) for r in current_rows.scalars().all()}
+    to_add = requested - current
+    to_remove = current - requested
+
+    if to_remove:
+        from sqlalchemy import delete as sa_delete
+        await db.execute(
+            sa_delete(AdminUserAssetTypeGrant).where(
+                AdminUserAssetTypeGrant.admin_user_id == user_id,
+                AdminUserAssetTypeGrant.asset_type_id.in_(to_remove),
+            )
+        )
+    actor = actor_by(request, "set_admin_user_grants")
+    for tid in sorted(to_add):
+        db.add(AdminUserAssetTypeGrant(
+            admin_user_id=user_id,
+            asset_type_id=tid,
+            created_by=actor,
+        ))
+
+    if to_add or to_remove:
+        await aaudit(
+            db, "admin_user", user.id, "grants_updated",
+            old={"asset_type_ids": sorted(current)},
+            new={"asset_type_ids": sorted(requested)},
+            by=actor,
+        )
+    await db.commit()
+    logger.info(
+        "Admin user %s grants updated: +%s -%s",
+        user.username, sorted(to_add), sorted(to_remove),
+    )
+    return await list_user_grants(user.id, db)

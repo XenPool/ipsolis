@@ -94,24 +94,92 @@ enforcement (configurer ≠ approver) split into follow-up slices.
     (deliberate — avoids accidental session lockout).
   * Audit row attribution: `api:create_admin_user (admin:session:alice:superadmin)`.
 
-**Still to do — RBAC slice 2:**
-- [ ] Comprehensive role gating across the rest of `/admin/*` —
-      runbooks, modules, maintenance, standalone runbooks, license,
-      seed-export, cost-report. Most slot in as
-      `dependencies=[require_role("admin")]` mechanically; auditor
-      read paths for endpoints that have separate GET/PUT need
-      careful per-route classification.
-- [ ] Per-asset-type ACL grants (`admin_user_asset_type_grants`)
-      so platform owners can be delegated without seeing other
-      teams' configs.
+**Done — RBAC slice 2 (2026-04-26):**
+- Comprehensive role gating applied across the rest of `/admin/*`:
+  * `admin` minimum on the operational routers — `admin_modules`,
+    `admin_runbooks`, `admin_standalone_runbooks`,
+    `admin_maintenance`, `admin_approval_delegations`. Plus per-route
+    `admin` gates on the previously-unguarded writes in `admin.py`:
+    POST/PUT/DELETE `/config`, the `*/test` endpoints (AD, Entra,
+    SIEM, Teams, SCCM, Email), assets CRUD + bulk + force-delete +
+    revoke, email-template PUT.
+  * `superadmin` minimum on the infrastructure routers —
+    `admin_license`, `admin_seed_export`, `admin_setup`,
+    `admin_api_tokens`. License upload, seed-to-disk export,
+    integration provisioning, and integration token issuance are
+    all authority-level changes that don't belong to operational
+    admins.
+  * `auditor` minimum on `admin_cost_report` — read-only chargeback
+    breakdown for finance / audit consumers.
+  * Audit-log GET stays at `auditor` (slice-1) and asset-type CRUD
+    stays at `admin` (slice-1). No regressions.
+- Per-asset-type ACL grants — the headline feature:
+  * Migration `0070_admin_user_asset_type_grants.py` adds a junction
+    table with a composite PK `(admin_user_id, asset_type_id)` and
+    cascade-on-delete on both FKs so dropping a user or asset type
+    cleans the grant set automatically. Reverse-lookup index on
+    `asset_type_id` for fast "which users see this type" queries.
+  * ORM `AdminUserAssetTypeGrant` registered in `app.models`.
+  * Visibility helper `app.utils.rbac_grants.visible_asset_type_ids`
+    returns `None` (= unrestricted) for the bypass set
+    (superadmin / approver / auditor / helpdesk / legacy key /
+    bearer tokens) and `set[int]` of allowed ids for scoped admins.
+    Zero grants → `None` (back-compat — single-team installs see
+    everything by default). At least one grant → flips into scoped
+    mode and only the granted set is returned.
+  * `assert_asset_type_visible(request, db, type_id)` raises 404
+    (not 403) for out-of-scope ids. 404 prevents leaking the
+    existence of asset types the user has no business knowing
+    about — a scoped admin asking for an unrelated team's type
+    gets the same response as for a missing id.
+  * Wired into the admin UI asset-types list page (filters the
+    catalog) and the four asset-type CRUD writes in `admin.py`
+    (PUT, clone POST, DELETE — create POST is the auto-grant path).
+  * Auto-grant on create: when a scoped admin creates a new asset
+    type, the grant is added inside the same transaction so they
+    don't lose visibility on their own creation. Superadmins,
+    ungranted admins, and integrations are not affected.
+  * Grant CRUD on `admin_users.py` (superadmin only): GET/PUT
+    `/admin/admin-users/{user_id}/grants`. The PUT replaces the
+    full set (idempotent — same set twice is a no-op besides
+    audit), validates every supplied id against `asset_types` so a
+    typo can't create a dangling grant, and computes diffs for the
+    audit row (`{"asset_type_ids": [...]}` old/new).
+  * Admin UI: the admin-users page gains an "Asset-type scope"
+    column with an inline summary (`unscoped` or `N granted`) and
+    an "Edit grants…" button that opens a modal listing every
+    asset type as a checkbox. Lazy-loaded summaries so the page
+    render isn't blocked on N grant queries.
+- Verified end-to-end:
+  * `dave` (auditor) → `/admin/maintenance/backups` returns 403
+    with the descriptive role-mismatch message; `/admin/api-tokens`
+    returns 403 (superadmin required); `/admin/cost-report` returns
+    200 with the projected-cost breakdown — three different role
+    tiers each producing the right outcome.
+  * `eve` (admin, ungranted) sees both `Personal VDI Host` and
+    `Shared Remote Desktop` on `/ui/asset-types` (back-compat).
+  * `alice` (superadmin) PUTs grants `[16]` for eve →
+    `grants_updated` audit row written with diff old/new.
+  * Eve (now scoped) PUT type 16 (in-scope) → 200; PUT type 17
+    (out-of-scope) → `404 Asset type 17 not found` — same response
+    shape as a genuinely missing id.
+  * Clearing eve's grants flips her back to unscoped — PUT type 17
+    succeeds again.
+  * Audit attribution on grant changes:
+    `api:set_admin_user_grants (admin:session:alice:superadmin)`.
+
+**Still to do — RBAC slice 3:**
 - [ ] SoD enforcement: configurer of an asset type must not also
       approve their own access requests against it. Likely a check
       at order-creation time using the audit trail.
 - [ ] Bearer-token role binding (today scopes are orthogonal to roles
       — a token with `admin:*` is implicitly superadmin-equivalent;
-      slice 2 binds tokens to a specific role for clearer authz).
+      slice 3 binds tokens to a specific role for clearer authz).
 - [ ] Self-service "change my password" page for non-superadmins.
 - [ ] Forced password rotation policy + lockout-on-N-failed-attempts.
+- [ ] Auditor read paths for endpoints currently gated at `admin`
+      (e.g. `GET /admin/maintenance/backups` shouldn't need write
+      authority to view the backup list).
 
 ### [open] External secret management — Prio 0 (show-stopper)
 Today AD password / vSphere creds / SMTP password / Entra client secret all

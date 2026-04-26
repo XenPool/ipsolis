@@ -30,13 +30,16 @@ from fastapi.responses import FileResponse
 
 from app.utils import license as license_utils
 from app.utils.auth import require_admin_key
+from app.utils.rbac import require_role
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin/license",
     tags=["admin-license"],
-    dependencies=[Depends(require_admin_key)],
+    # License upload / removal touches the platform's commercial
+    # gating — superadmin only, like API token issuance.
+    dependencies=[Depends(require_admin_key), require_role("superadmin")],
 )
 
 MAX_LICENSE_BYTES = 64 * 1024  # 64 KiB — a signed license is a few hundred bytes

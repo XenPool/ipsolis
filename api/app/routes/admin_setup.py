@@ -19,11 +19,15 @@ from app.models.api_token import ApiToken
 from app.models.asset import AssetPool, AssetType
 from app.models.config import AppConfig
 from app.utils.auth import require_admin_key
+from app.utils.rbac import require_role
 
 router = APIRouter(
     prefix="/admin/setup",
     tags=["admin-setup"],
-    dependencies=[Depends(require_admin_key)],
+    # Initial-setup endpoints provision integrations and the first API
+    # token — superadmin only, since they touch infrastructure-level
+    # state that wouldn't normally be re-applied after deployment.
+    dependencies=[Depends(require_admin_key), require_role("superadmin")],
 )
 
 

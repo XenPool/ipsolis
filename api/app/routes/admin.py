@@ -36,6 +36,7 @@ from app.utils.audit import (
 from app.utils.auth import require_admin_key, require_scopes
 from app.utils.features import require_enterprise
 from app.utils.rbac import require_role
+from app.utils.rbac_grants import assert_asset_type_visible
 from app.utils.license import is_feature_enabled
 from app.templates_instance import set_app_title, set_app_logo_config
 
@@ -121,6 +122,53 @@ def _require_asset_type_fields_licensed(payload) -> None:
         )
 
 
+async def _maybe_auto_grant_creator(
+    request: Request, db: AsyncSession, asset_type_id: int,
+) -> None:
+    """Auto-grant the creating session admin on a newly created asset type.
+
+    Only fires when the actor is a session admin who already has at
+    least one grant (i.e. they're in scoped mode). Superadmins,
+    ungranted admins, legacy-key actors, and bearer-token integrations
+    are skipped — their visibility is unrestricted, so a grant would
+    have no effect today and risks turning them into a scoped admin
+    on first creation if the model ever shifts.
+    """
+    actor = getattr(request.state, "actor", "") or ""
+    if not actor.startswith("admin:session:"):
+        return
+    role = (request.session.get("admin_role") or "").strip()
+    if role != "admin":
+        return
+    username = (request.session.get("admin_user") or "").strip().lower()
+    if not username:
+        return
+    # Local imports — avoids a module cycle since admin_user_grant lives
+    # under the same package and pulls in the AdminUser model registry.
+    from app.models.admin_user import AdminUser
+    from app.models.admin_user_grant import AdminUserAssetTypeGrant
+
+    user_row = await db.execute(
+        select(AdminUser.id).where(AdminUser.username == username, AdminUser.is_active.is_(True))
+    )
+    user_id = user_row.scalar_one_or_none()
+    if user_id is None:
+        return
+    existing_grants = await db.execute(
+        select(AdminUserAssetTypeGrant.asset_type_id).where(
+            AdminUserAssetTypeGrant.admin_user_id == user_id
+        ).limit(1)
+    )
+    if existing_grants.scalar_one_or_none() is None:
+        # User is in unscoped (back-compat) mode — leave them alone.
+        return
+    db.add(AdminUserAssetTypeGrant(
+        admin_user_id=user_id,
+        asset_type_id=asset_type_id,
+        created_by=f"auto-grant:create_asset_type ({actor})",
+    ))
+
+
 def _mask(cfg: AppConfig) -> AppConfigRead:
     """Returns AppConfigRead; masks the value if is_secret=True."""
     return AppConfigRead(
@@ -163,7 +211,7 @@ async def get_config(key: str, db: AsyncSession = Depends(get_db)) -> AppConfigR
     "/config",
     response_model=AppConfigRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[require_scopes("config:write")],
+    dependencies=[require_scopes("config:write"), require_role("admin")],
 )
 async def create_config(
     request: Request, payload: AppConfigCreate, db: AsyncSession = Depends(get_db)
@@ -194,7 +242,7 @@ async def create_config(
 @router.put(
     "/config/{key}",
     response_model=AppConfigRead,
-    dependencies=[require_scopes("config:write")],
+    dependencies=[require_scopes("config:write"), require_role("admin")],
 )
 async def update_config(
     request: Request, key: str, payload: AppConfigUpdate, db: AsyncSession = Depends(get_db)
@@ -223,7 +271,7 @@ async def update_config(
 @router.delete(
     "/config/{key}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[require_scopes("config:write")],
+    dependencies=[require_scopes("config:write"), require_role("admin")],
 )
 async def delete_config(request: Request, key: str, db: AsyncSession = Depends(get_db)) -> None:
     _require_config_key_licensed(key)
@@ -238,7 +286,7 @@ async def delete_config(request: Request, key: str, db: AsyncSession = Depends(g
     logger.info("admin: deleted config key=%s", key)
 
 
-@router.post("/config/ad/test")
+@router.post("/config/ad/test", dependencies=[require_role("admin")])
 async def test_ad_connection(db: AsyncSession = Depends(get_db)) -> dict:
     """Tries to bind to AD with current ad.* config and returns a status dict."""
     from sqlalchemy import text as sa_text
@@ -279,7 +327,7 @@ async def test_ad_connection(db: AsyncSession = Depends(get_db)) -> dict:
         return {"ok": False, "message": str(exc)}
 
 
-@router.post("/config/entra/test")
+@router.post("/config/entra/test", dependencies=[require_role("admin")])
 async def test_entra_connection(db: AsyncSession = Depends(get_db)) -> dict:
     """Verifies Entra ID credentials by acquiring an app-only token (client credentials flow)."""
     from app.utils.entra import _get_entra_config, get_msal_app
@@ -308,7 +356,7 @@ async def test_entra_connection(db: AsyncSession = Depends(get_db)) -> dict:
         return {"ok": False, "message": str(exc)}
 
 
-@router.post("/config/siem/test")
+@router.post("/config/siem/test", dependencies=[require_role("admin")])
 async def test_siem_connection(db: AsyncSession = Depends(get_db)) -> dict:
     """POST a single synthetic audit event to the configured SIEM endpoint."""
     from app.utils.siem_export import send_test_event
@@ -382,7 +430,7 @@ async def siem_status(db: AsyncSession = Depends(get_db)) -> dict:
     }
 
 
-@router.post("/config/teams/test")
+@router.post("/config/teams/test", dependencies=[require_role("admin")])
 async def test_teams_webhook(db: AsyncSession = Depends(get_db)) -> dict:
     """POST a test Adaptive Card to the configured Teams Workflow webhook."""
     from app.utils.teams_notify import build_approval_card, post_adaptive_card
@@ -424,7 +472,7 @@ async def test_teams_webhook(db: AsyncSession = Depends(get_db)) -> dict:
     return {"ok": ok, "message": msg}
 
 
-@router.post("/config/sccm/test", dependencies=[require_enterprise("sccm_integration")])
+@router.post("/config/sccm/test", dependencies=[require_enterprise("sccm_integration"), require_role("admin")])
 async def test_sccm_connection() -> dict:
     """Enqueues a Celery task that runs a pwsh+Kerberos probe inside the worker
     container (where krb5 libs and pwsh are installed) and waits for the result."""
@@ -534,6 +582,13 @@ async def create_asset_type(
     await aaudit(db, "asset_type", asset_type.id, "created", new=_type_snap(asset_type),
                  by=actor_by(request, "create_asset_type"),
                  classification=classify_asset_type(asset_type))
+
+    # RBAC slice 2: auto-grant the creator if they're a scoped admin —
+    # otherwise creating a new type would silently remove it from their
+    # own list as soon as the page reloads. Superadmins / ungranted
+    # admins are unaffected (their visibility is "all").
+    await _maybe_auto_grant_creator(request, db, asset_type.id)
+
     await db.commit()
     await db.refresh(asset_type)
     logger.info("admin: created asset_type id=%s name=%s", asset_type.id, asset_type.name)
@@ -549,6 +604,10 @@ async def update_asset_type(
     request: Request, type_id: int, payload: AssetTypeUpdate, db: AsyncSession = Depends(get_db)
 ) -> AssetType:
     _require_asset_type_fields_licensed(payload)
+    # RBAC slice 2: scoped admins get a clean 404 for out-of-scope ids
+    # before any further work — same response shape as a missing id, so
+    # the existence of unrelated teams' types isn't leaked.
+    await assert_asset_type_visible(request, db, type_id)
     result = await db.execute(select(AssetType).where(AssetType.id == type_id))
     asset_type = result.scalar_one_or_none()
     if not asset_type:
@@ -669,6 +728,7 @@ async def clone_asset_type(
 
     Name collision is resolved by appending " (copy)", " (copy 2)", etc.
     """
+    await assert_asset_type_visible(request, db, type_id)
     result = await db.execute(select(AssetType).where(AssetType.id == type_id))
     src = result.scalar_one_or_none()
     if not src:
@@ -739,6 +799,7 @@ async def clone_asset_type(
 async def delete_asset_type(
     request: Request, type_id: int, db: AsyncSession = Depends(get_db)
 ) -> None:
+    await assert_asset_type_visible(request, db, type_id)
     result = await db.execute(select(AssetType).where(AssetType.id == type_id))
     asset_type = result.scalar_one_or_none()
     if not asset_type:
@@ -783,7 +844,7 @@ async def delete_asset_type(
     "/assets",
     response_model=AssetPoolRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[require_scopes("assets:write")],
+    dependencies=[require_scopes("assets:write"), require_role("admin")],
 )
 async def create_asset(
     request: Request, payload: AssetPoolCreate, db: AsyncSession = Depends(get_db)
@@ -818,7 +879,7 @@ async def create_asset(
     return asset
 
 
-@router.post("/assets/bulk", dependencies=[require_scopes("assets:write")])
+@router.post("/assets/bulk", dependencies=[require_scopes("assets:write"), require_role("admin")])
 async def bulk_create_assets(payload: AssetBulkCreate, db: AsyncSession = Depends(get_db)) -> dict:
     """Create multiple assets at once. Skips duplicates, collects errors per item."""
     # Validate all referenced type IDs exist (batch lookup)
@@ -866,7 +927,7 @@ async def bulk_create_assets(payload: AssetBulkCreate, db: AsyncSession = Depend
 @router.put(
     "/assets/{asset_id}",
     response_model=AssetPoolRead,
-    dependencies=[require_scopes("assets:write")],
+    dependencies=[require_scopes("assets:write"), require_role("admin")],
 )
 async def update_asset(
     request: Request, asset_id: int, payload: AssetPoolUpdate, db: AsyncSession = Depends(get_db)
@@ -909,7 +970,7 @@ async def update_asset(
 @router.delete(
     "/assets/{asset_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[require_scopes("assets:write")],
+    dependencies=[require_scopes("assets:write"), require_role("admin")],
 )
 async def delete_asset(
     request: Request, asset_id: int, db: AsyncSession = Depends(get_db)
@@ -963,7 +1024,7 @@ def _sync_revoke(user_email: str, asset_type_id: int) -> dict:
 @router.post(
     "/assets/{asset_id}/force-delete",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[require_scopes("assets:write")],
+    dependencies=[require_scopes("assets:write"), require_role("admin")],
 )
 async def force_delete_asset(
     request: Request,
@@ -1047,7 +1108,7 @@ async def force_delete_asset(
 @router.post(
     "/assets/{asset_id}/revoke",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[require_scopes("assets:write")],
+    dependencies=[require_scopes("assets:write"), require_role("admin")],
 )
 async def revoke_asset(
     request: Request,
@@ -1250,7 +1311,11 @@ async def get_email_template(event_key: str, db: AsyncSession = Depends(get_db))
 
 @router.put(
     "/email-templates/{event_key}",
-    dependencies=[require_enterprise("email_template_editor"), require_scopes("config:write")],
+    dependencies=[
+        require_enterprise("email_template_editor"),
+        require_scopes("config:write"),
+        require_role("admin"),
+    ],
 )
 async def update_email_template(
     event_key: str,
@@ -1292,7 +1357,10 @@ async def update_email_template(
 
 # ── Email Test ──────────────────────────────────────────────────────────────────
 
-@router.post("/config/email/test", dependencies=[require_enterprise("email_template_editor")])
+@router.post(
+    "/config/email/test",
+    dependencies=[require_enterprise("email_template_editor"), require_role("admin")],
+)
 async def test_email(payload: dict = None, db: AsyncSession = Depends(get_db)) -> dict:
     """Sends a test email using the current email.* config settings."""
     import asyncio

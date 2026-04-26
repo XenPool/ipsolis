@@ -25,12 +25,15 @@ from app.utils.api_tokens import (
     status as token_status,
 )
 from app.utils.auth import require_admin_key
+from app.utils.rbac import require_role
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/admin/api-tokens",
     tags=["admin-api-tokens"],
-    dependencies=[Depends(require_admin_key)],
+    # Issuing or revoking integration tokens is an authority-level
+    # change — same trust threshold as managing admin users.
+    dependencies=[Depends(require_admin_key), require_role("superadmin")],
 )
 
 

@@ -472,7 +472,26 @@ async def asset_types_list(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> HTMLResponse:
-    result = await db.execute(select(AssetType).order_by(AssetType.name))
+    # RBAC slice 2: filter the catalog by per-user grants. ``None``
+    # means "unrestricted" — the actor sees every type (superadmin,
+    # ungranted admin, audit/approver/helpdesk, legacy key, tokens).
+    # A set means "only these ids" — scoped admins.
+    from app.utils.rbac_grants import visible_asset_type_ids
+    visible = await visible_asset_type_ids(request, db)
+    query = select(AssetType).order_by(AssetType.name)
+    if visible is not None:
+        if not visible:
+            asset_types = []
+            return templates.TemplateResponse(
+                request, "ui/asset_types.html",
+                {
+                    "asset_types": asset_types,
+                    "rb_counts": {}, "pool_counts": {}, "pooled_usage": {},
+                    "active_page": "asset-types",
+                },
+            )
+        query = query.where(AssetType.id.in_(visible))
+    result = await db.execute(query)
     asset_types = result.scalars().all()
 
     # Runbook-Counts je Asset-Typ

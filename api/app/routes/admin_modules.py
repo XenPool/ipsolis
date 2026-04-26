@@ -21,13 +21,18 @@ from app.models.runbook import RunbookStep
 from app.models.script_module import ScriptModule
 from app.utils.auth import require_admin_key
 from app.utils.features import require_enterprise
+from app.utils.rbac import require_role
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin",
     tags=["admin-modules"],
-    dependencies=[Depends(require_admin_key)],
+    # Operational config — script modules and global variables shape
+    # how runbooks behave at execution time. Same write authority as
+    # asset-type CRUD: ``admin`` minimum (read for auditor+ would
+    # need per-route splitting; deferred to slice 3).
+    dependencies=[Depends(require_admin_key), require_role("admin")],
 )
 
 # Enterprise gates (per-endpoint; script-modules stays Community)

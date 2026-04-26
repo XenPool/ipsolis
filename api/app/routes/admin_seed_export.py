@@ -36,13 +36,17 @@ from app.database import get_db
 from app.models.script_module import ScriptModule
 from app.models.standalone_runbook import StandaloneRunbook, StandaloneRunbookStep
 from app.utils.auth import require_admin_key
+from app.utils.rbac import require_role
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin/seed",
     tags=["admin-seed"],
-    dependencies=[Depends(require_admin_key)],
+    # Seed export writes scripts/runbooks to disk for git commit —
+    # superadmin only since it touches the seed material that
+    # ships in the docker image.
+    dependencies=[Depends(require_admin_key), require_role("superadmin")],
 )
 
 SCRIPTS_ROOT = Path("/app/scripts")
