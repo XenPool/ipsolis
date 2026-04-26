@@ -615,6 +615,53 @@
     </div>
   </div>
 
+  <!-- Section A3: Approval reminders -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
+    <h2 class="text-sm font-semibold text-body mb-1">Approval Reminders</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      A Beat task scans every hour for pending approvals that haven't been acted on. When one
+      crosses the threshold below, ipSolis re-sends the email and the Teams card (if configured)
+      with the same signed approval link as the original notification. Capped at <em>Max reminders</em>
+      per approval so approvers don't get spammed.
+    </p>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Status</label>
+        <select id="approval-reminders-enabled"
+                class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          {% set _are = (approval_config.get('approval.reminders_enabled', 'true')).lower() %}
+          <option value="false" {% if _are != 'true' %}selected{% endif %}>Disabled</option>
+          <option value="true"  {% if _are == 'true' %}selected{% endif %}>Enabled — re-send on stale approvals</option>
+        </select>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Reminder after (hours)</label>
+          <input type="number" id="approval-reminder-hours" min="1" max="720"
+                 value="{{ approval_config.get('approval.reminder_after_hours', '24') }}"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Time since the last notification before a nudge fires.</p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Max reminders</label>
+          <input type="number" id="approval-max-reminders" min="0" max="10"
+                 value="{{ approval_config.get('approval.max_reminders', '3') }}"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">After this many nudges the approval is left alone.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveApprovalReminderConfig()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save Settings
+      </button>
+    </div>
+  </div>
+
   {% if is_enterprise %}
   <!-- Section B: Email Templates (Enterprise: email_template_editor) -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 overflow-hidden">
@@ -1470,6 +1517,27 @@ document.addEventListener('DOMContentLoaded', function() {
   // Also fetch once on initial page load so the status is fresh on direct deeplink.
   setTimeout(refreshSiemStatus, 100);
 });
+
+// ── Approval Reminder Settings ──────────────────────────────────────────────────
+async function saveApprovalReminderConfig() {
+  var fields = {
+    'approval.reminders_enabled':    document.getElementById('approval-reminders-enabled').value,
+    'approval.reminder_after_hours': document.getElementById('approval-reminder-hours').value.trim() || '24',
+    'approval.max_reminders':        document.getElementById('approval-max-reminders').value.trim() || '3',
+  };
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showEmailBanner(errors.length === 0
+    ? {ok: true,  message: 'Approval reminder settings saved.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
 
 // ── Teams Settings ──────────────────────────────────────────────────────────────
 async function saveTeamsConfig() {

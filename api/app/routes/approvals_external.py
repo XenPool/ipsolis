@@ -28,14 +28,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["approvals-external"])
 
 
-async def _load_approval_by_token(db: AsyncSession, token: str) -> OrderApproval | None:
+class _LookupResult:
+    """Outcome of resolving a tokenised approval link."""
+    __slots__ = ("approval", "reason")
+
+    def __init__(self, approval: OrderApproval | None, reason: str) -> None:
+        self.approval = approval
+        self.reason = reason  # "ok" | "bad_token" | "missing_row"
+
+
+async def _load_approval_by_token(db: AsyncSession, token: str) -> _LookupResult:
     payload = verify_token(token)
     if payload is None:
-        return None
+        return _LookupResult(None, "bad_token")
     result = await db.execute(
         select(OrderApproval).where(OrderApproval.id == payload["aid"])
     )
-    return result.scalar_one_or_none()
+    approval = result.scalar_one_or_none()
+    if approval is None:
+        # Token signature is fine and not expired, but the approval row is
+        # gone — typically because the owning order was deleted (cascade)
+        # or the row was administratively cleaned up.
+        return _LookupResult(None, "missing_row")
+    return _LookupResult(approval, "ok")
 
 
 def _render_status_page(
@@ -67,20 +82,34 @@ async def approve_get(
     db: AsyncSession = Depends(get_db),
 ):
     """Render the approve / decline confirmation page for a tokenized link."""
-    approval = await _load_approval_by_token(db, token)
-    if approval is None:
+    lookup = await _load_approval_by_token(db, token)
+    if lookup.reason == "bad_token":
         return _render_status_page(
             request,
-            title="Link expired",
-            headline="This approval link is no longer valid.",
+            title="Link invalid",
+            headline="This approval link is invalid or has expired.",
             message=(
-                "The link may have expired or the secret used to sign it has rotated. "
-                "Open the portal directly to find pending approvals."
+                "The link may have expired (links are valid for 14 days) or the "
+                "secret used to sign it has rotated. Open the portal directly to "
+                "find pending approvals."
             ),
             tone="warning",
             status_code=410,
         )
+    if lookup.reason == "missing_row":
+        return _render_status_page(
+            request,
+            title="Request no longer exists",
+            headline="This request is no longer in the system.",
+            message=(
+                "The associated order may have been cancelled or deleted before "
+                "you reached this page. Open the portal to see your current pending approvals."
+            ),
+            tone="info",
+            status_code=404,
+        )
 
+    approval = lookup.approval
     if approval.status != "pending":
         return _render_status_page(
             request,
@@ -118,9 +147,12 @@ async def approve_post(
     db: AsyncSession = Depends(get_db),
 ):
     """Record the decision encoded in the form against the token's approval row."""
-    approval = await _load_approval_by_token(db, token)
-    if approval is None:
-        raise HTTPException(status_code=410, detail="Approval link expired or invalid")
+    lookup = await _load_approval_by_token(db, token)
+    if lookup.reason == "bad_token":
+        raise HTTPException(status_code=410, detail="Approval link invalid or expired")
+    if lookup.reason == "missing_row":
+        raise HTTPException(status_code=404, detail="Approval row no longer exists")
+    approval = lookup.approval
 
     if decision not in ("approve", "reject", "decline"):
         raise HTTPException(status_code=400, detail="Invalid decision")

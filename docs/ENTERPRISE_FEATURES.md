@@ -9,6 +9,7 @@ explicit *Enterprise license* note appears.
 - [Long-form help text per asset definition (markdown)](#long-form-help-text-per-asset-definition-markdown)
 - [Catalog search and category filter](#catalog-search-and-category-filter)
 - [Microsoft Teams approval cards](#microsoft-teams-approval-cards)
+- [Approval reminders](#approval-reminders)
 - [Prometheus `/metrics` endpoint](#prometheus-metrics-endpoint)
 - [SIEM audit-log streaming (Splunk HEC)](#siem-audit-log-streaming-splunk-hec)
 - [Per-integration API tokens](#per-integration-api-tokens)
@@ -167,6 +168,59 @@ In ipSolis Admin UI:
 |---|---|---|
 | `teams.mode` | `disabled` or `enabled` | plain |
 | `teams.webhook_url` | Teams Workflows webhook URL | secret |
+
+---
+
+## Approval reminders
+
+A Beat task scans every hour for `pending` approvals that haven't been
+acted on in the configured window and re-sends both the email and the
+Teams card (if configured). The original signed approval link from
+`/approve/{token}` is reused, so the reminder works exactly like the
+initial notification — one click in either channel still lands on the
+no-login confirmation page.
+
+### Why this matters
+
+Approvals stack up in inboxes. A 24-hour SLA on access requests is
+common in regulated environments; without automatic nudges, ipSolis
+relied on the original email being seen the same day. Reminders close
+that gap without operator intervention.
+
+### Behaviour
+
+- **Cadence**: Beat task runs hourly at minute 15. A pending approval
+  qualifies when `COALESCE(last_reminded_at, created_at)` is older
+  than `approval.reminder_after_hours` (default 24).
+- **Cap**: each approval gets at most `approval.max_reminders`
+  reminders (default 3). After the cap is hit the row is left alone —
+  the request stays pending until somebody acts on it directly or
+  cancels the order.
+- **Channels**: identical delivery path to the original notification.
+  Email always; Teams card only when `teams.mode = enabled`. The
+  Adaptive Card title is bumped to *"Reminder (n): access request
+  awaiting approval"* so recipients can tell it's a nudge, not a
+  duplicate.
+- **Tracking**: per-row `reminder_count` and `last_reminded_at`
+  columns on `order_approvals`.
+
+### Where to configure
+
+Admin UI → *Settings* → *E-Mail* tab → *Approval Reminders* section:
+
+| Field | Default | Notes |
+|---|---|---|
+| Status | Enabled | `disabled` skips the Beat task silently |
+| Reminder after (hours) | 24 | 1–720 |
+| Max reminders | 3 | 0 disables nudges entirely without flipping the master switch |
+
+### Stored config keys
+
+| Key | Purpose |
+|---|---|
+| `approval.reminders_enabled` | `true`/`false` master switch |
+| `approval.reminder_after_hours` | Hours since the last notification before a reminder fires |
+| `approval.max_reminders` | Cap per approval row |
 
 ---
 

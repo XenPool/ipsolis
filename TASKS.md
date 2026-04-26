@@ -142,13 +142,43 @@ reminders, escalation, auto-revoke on no-response. Hard requirement for ISO27001
 - [ ] Manager portal page: list pending reviews with one-click confirm/revoke
 - [ ] Email reminders T-7d / T-1d / overdue; escalation to manager's manager
 
-### [open] Approval-flow sophistication — Prio 1
-N-of-M approvers, sequential vs parallel, escalation if no response in X
-hours, delegation when approver is OOO, conditional rules (e.g., "extend
-> 90 days needs CISO", "PCI-tagged types need both manager + app owner").
+### [partial] Approval-flow sophistication — Prio 1
+Reminder slice **shipped 2026-04-26**. The bigger pieces (escalation,
+delegation, N-of-M, conditional rules) remain.
+
+**Done — approval reminders (2026-04-26):**
+- Migration `0055_approval_reminders.py` — `last_reminded_at` +
+  `reminder_count` on `order_approvals`, plus three `approval.*`
+  config keys.
+- Beat task `tasks.workflows.approval_reminders.scan_and_remind` runs
+  hourly (`crontab(minute=15)` to spread load away from other Beat
+  tasks). Picks pending approvals where
+  `COALESCE(last_reminded_at, created_at) < NOW() - reminder_after_hours`
+  and `reminder_count < max_reminders`.
+- Refactored `dynamic_runner.send_approval_requests` per-approval
+  block into a shared helper `deliver_approval_notification()` so
+  both initial dispatch and reminders use the same email + Teams
+  card path. Reminders bump the card title to "Reminder (n): …" so
+  recipients can tell it's a nudge.
+- Config: `approval.reminders_enabled` (default true),
+  `approval.reminder_after_hours` (default 24),
+  `approval.max_reminders` (default 3).
+- Settings UI: new "Approval Reminders" section in the E-Mail tab
+  with status / hours / cap inputs.
+- Verified end-to-end: synthetic 48-hour-old approval picked up,
+  Teams card delivered to live workflow webhook, reminder counter
+  advanced, second run within cutoff window correctly skipped,
+  disabled mode skips silently.
+
+**Still to do:**
 - [ ] Schema: `approval_rules` JSONB on asset_type extending current `approval_owners`
 - [ ] Runtime evaluator that resolves rules → approval steps
 - [ ] UI: rule-builder (avoid full DSL; predefined patterns)
+- [ ] Escalation: after N reminders, notify a configured backup
+      approver (e.g. manager's manager, app-owner team distribution
+      list) instead of just stopping
+- [ ] Delegation: per-user "I'm OOO, route to <user> until <date>"
+- [ ] Auto-decline policy after extended inactivity (opt-in)
 
 ### [open] HR feed + SCIM — Prio 1
 Auto-deprovision on `LeaverEvent` from Workday/SAP HR; SCIM in/out so Okta /

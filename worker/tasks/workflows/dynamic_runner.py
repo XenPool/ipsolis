@@ -1375,10 +1375,87 @@ def send_scheduled_confirmation(order_id: int) -> dict:
         db.close()
 
 
+def deliver_approval_notification(
+    db,
+    *,
+    approval_id: int,
+    approver_email: str,
+    approver_name: str,
+    requester_name: str,
+    requester_email: str,
+    asset_type_name: str,
+    from_date: str,
+    until_date: str,
+    portal_base: str,
+    teams_mode: str,
+    teams_webhook: str,
+    app_title: str,
+    is_reminder: bool = False,
+    reminder_count: int = 0,
+) -> tuple[bool, bool]:
+    """Send a single approval notification (email + Teams card if enabled).
+
+    Returns ``(email_sent, teams_sent)``. Reused by both the initial
+    dispatch and the reminder Beat task. ``is_reminder`` is currently
+    informational — future versions can use it to choose a different
+    email template / card title for stronger urgency.
+    """
+    from tasks.modules import notifications as notif
+
+    approval_url = f"{portal_base.rstrip('/')}/portal/approvals"
+    notif.send_approval_request(
+        db=db,
+        approver_email=approver_email,
+        approver_name=approver_name,
+        requester_name=requester_name,
+        requester_email=requester_email,
+        asset_type_name=asset_type_name,
+        from_date=from_date,
+        until_date=until_date,
+        approval_url=approval_url,
+    )
+    email_sent = True
+    teams_sent = False
+
+    if teams_mode == "enabled" and teams_webhook:
+        try:
+            from tasks.modules.teams_notify import (
+                build_approval_card,
+                make_approval_token,
+                post_adaptive_card,
+            )
+            token = make_approval_token(approval_id)
+            review_url = f"{portal_base.rstrip('/')}/approve/{token}"
+            card = build_approval_card(
+                asset_type_name=asset_type_name,
+                requester_name=requester_name,
+                requester_email=requester_email,
+                approver_name=approver_name,
+                review_url=review_url,
+                from_date=from_date,
+                until_date=until_date,
+                app_title=app_title,
+            )
+            if is_reminder and reminder_count > 0:
+                # Bump the headline so the recipient sees this is a nudge,
+                # not a duplicate of the original card.
+                card["body"][0]["text"] = (
+                    f"{app_title} — Reminder ({reminder_count}): access request awaiting approval"
+                )
+            ok, msg = post_adaptive_card(teams_webhook, card)
+            if ok:
+                teams_sent = True
+            else:
+                logger.warning("Teams card delivery failed for approval %s: %s", approval_id, msg)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Teams card error for approval %s: %s", approval_id, exc)
+
+    return email_sent, teams_sent
+
+
 @app.task(name="tasks.workflows.dynamic_runner.send_approval_requests")
 def send_approval_requests(order_id: int) -> dict:
     """Sends approval request emails to all pending approvers for an order."""
-    from tasks.modules import notifications as notif
     from tasks.modules.config_reader import get_config
 
     db = _get_db_session()
@@ -1427,8 +1504,9 @@ def send_approval_requests(order_id: int) -> dict:
         sent = 0
         teams_sent = 0
         for a in approvals:
-            notif.send_approval_request(
-                db=db,
+            email_ok, teams_ok = deliver_approval_notification(
+                db,
+                approval_id=a.id,
                 approver_email=a.approver_email,
                 approver_name=a.approver_name,
                 requester_name=row.user_name or "",
@@ -1436,36 +1514,16 @@ def send_approval_requests(order_id: int) -> dict:
                 asset_type_name=row.asset_type_name or "",
                 from_date=from_date,
                 until_date=until_date,
-                approval_url=approval_url,
+                portal_base=portal_base,
+                teams_mode=teams_mode,
+                teams_webhook=teams_webhook,
+                app_title=app_title,
+                is_reminder=False,
             )
-            sent += 1
-
-            if teams_mode == "enabled" and teams_webhook:
-                try:
-                    from tasks.modules.teams_notify import (
-                        build_approval_card,
-                        make_approval_token,
-                        post_adaptive_card,
-                    )
-                    token = make_approval_token(a.id)
-                    review_url = f"{portal_base.rstrip('/')}/approve/{token}"
-                    card = build_approval_card(
-                        asset_type_name=row.asset_type_name or "",
-                        requester_name=row.user_name or "",
-                        requester_email=row.user_email or "",
-                        approver_name=a.approver_name,
-                        review_url=review_url,
-                        from_date=from_date,
-                        until_date=until_date,
-                        app_title=app_title,
-                    )
-                    ok, msg = post_adaptive_card(teams_webhook, card)
-                    if ok:
-                        teams_sent += 1
-                    else:
-                        logger.warning("Teams card delivery failed for approval %s: %s", a.id, msg)
-                except Exception as exc:  # noqa: BLE001 — never abort the email loop
-                    logger.warning("Teams card error for approval %s: %s", a.id, exc)
+            if email_ok:
+                sent += 1
+            if teams_ok:
+                teams_sent += 1
 
         logger.info(
             "Approval notifications for order %s — emails=%d teams=%d (mode=%s)",

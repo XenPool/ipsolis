@@ -19,6 +19,7 @@ app = Celery(
         "tasks.workflows.sccm_probe",
         "tasks.workflows.license_check",
         "tasks.workflows.siem_streamer",
+        "tasks.workflows.approval_reminders",
         "tasks.modules.maintenance",
     ],
 )
@@ -38,6 +39,7 @@ app.conf.update(
         "tasks.workflows.standalone_runner.*": {"queue": "provision"},
         "tasks.workflows.license_check.*": {"queue": "default"},
         "tasks.workflows.siem_streamer.*": {"queue": "default"},
+        "tasks.workflows.approval_reminders.*": {"queue": "notifications"},
         "tasks.modules.notifications.*": {"queue": "notifications"},
         "tasks.modules.maintenance.*": {"queue": "default"},
     },
@@ -83,6 +85,12 @@ app.conf.update(
             "task": "tasks.workflows.siem_streamer.stream_audit_log",
             "schedule": crontab(minute="*"),  # Every minute
             "options": {"queue": "default"},
+        },
+        # Re-notify approvers who have not yet decided on stale requests
+        "approval-reminder-scan": {
+            "task": "tasks.workflows.approval_reminders.scan_and_remind",
+            "schedule": crontab(minute=15),  # Hourly at :15 to spread Beat load
+            "options": {"queue": "notifications"},
         },
     },
 )
