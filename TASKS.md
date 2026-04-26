@@ -187,10 +187,26 @@ RBAC work.
   payload preview matches HEC's expected newline-delimited JSON
   format with `event` / `sourcetype` / `host` / `time` envelope.
 
+**Done — Tamper-evident audit_log (2026-04-26):**
+- Migration `0062_audit_log_append_only.py` installs three
+  BEFORE-statement triggers on `audit_log` (DELETE / UPDATE /
+  TRUNCATE) that raise an exception unless the transaction sets
+  `ipsolis.allow_audit_mutation = 'true'` via `SET LOCAL`.
+- Default-deny posture: nobody — including an operator with full
+  DB credentials — can quietly mutate audit history. Errors are
+  loud and self-documenting (the message names the bypass GUC).
+- Documented escape hatch for retention pruning so future
+  classification-driven retention work can implement it cleanly.
+- Triggers are FOR EACH STATEMENT (single fire per statement
+  regardless of row count), implemented via a shared
+  `audit_log_no_mutate()` plpgsql function.
+- Verified end-to-end: INSERT works, DELETE/UPDATE/TRUNCATE all
+  blocked with descriptive errors, bypass via `SET LOCAL` works
+  within a single transaction, default-deny returns immediately
+  after the bypass commit, and the app-level audit-write flow
+  (config PUT → new audit row) is unaffected.
+
 **Still to do — separate slice:**
-- [ ] Migration: revoke DELETE/UPDATE on `audit_log` from the app DB role.
-      Best done together with admin RBAC (a real `auditor` role needs
-      `audit_log` SELECT but never write).
 - [ ] Microsoft Sentinel adapter (HEC-compatible — small `build_sentinel_payload` + `post_sentinel`).
 - [ ] Generic webhook adapter with HMAC signing for arbitrary SIEMs.
 - [ ] Streaming-failure email alert via the existing health-alert path
@@ -737,14 +753,36 @@ retention-policy enforcement remain.
   `cost_center` as internal on a real asset definition, confirmed
   admin list renders the badges and JSON persists correctly.
 
-**Still to do:**
+**Done — audit retention pruning slice 1 (2026-04-26):**
+- Migration `0063_seed_retention_config.py` seeds three keys:
+  `retention.audit_log_days` (window, 0 = disabled),
+  `retention.last_run_at`, `retention.last_pruned` (auto-managed
+  status fields).
+- New Beat task `worker/tasks/workflows/audit_retention.py:prune_old_rows`,
+  scheduled daily at 03:00 Europe/Berlin via crontab. Reads the
+  window, opens a transaction, sets the documented
+  `ipsolis.allow_audit_mutation` GUC via `SET LOCAL`, and DELETEs
+  rows past the window with a CTE that returns the count.
+- Status fields updated atomically with the prune so the Settings
+  UI can show "Last run: <ts> · Pruned: <N> rows".
+- Settings UI (Compliance tab → "Audit Log Retention" card):
+  retention-days input + status panel showing last run + last pruned.
+- Verified end-to-end: 5 stale rows + 5 fresh rows seeded → set
+  window to 30 days → prune ran → returned `pruned: 5`, only
+  fresh rows survived; status fields updated correctly; direct
+  DELETE outside the prune transaction still blocked by the
+  tamper-evident trigger (bypass is properly txn-scoped).
+
+**Still to do — slice 2 (per-classification windows):**
+- [ ] Per-classification retention windows (e.g. `retention.pii_days`,
+      `retention.phi_days`, `retention.pci_days`). The audit row's
+      classification gets derived at prune-time by joining to the
+      relevant asset_type's `config[].classification` and taking the
+      strictest tag. Slice 1's single-window code is the right spot
+      to grow this.
 - [ ] Approval routing: orders containing PII/PHI/PCI fields
       automatically include an extra approval step (e.g. compliance
       officer) — needs the approval-rules schema.
-- [ ] Audit retention: separate retention windows per
-      classification (e.g. PHI = 7 years, public = 90 days);
-      requires a Beat task that prunes old rows by joining their
-      asset-type config.
 - [ ] Settings: per-classification policy switches (e.g. "PII fields
       always trigger manager approval", "PHI requires owner-of-record
       acknowledgement").

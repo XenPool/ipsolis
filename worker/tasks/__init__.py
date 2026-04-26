@@ -20,6 +20,7 @@ app = Celery(
         "tasks.workflows.license_check",
         "tasks.workflows.siem_streamer",
         "tasks.workflows.approval_reminders",
+        "tasks.workflows.audit_retention",
         "tasks.modules.maintenance",
     ],
 )
@@ -49,6 +50,7 @@ app.conf.update(
         "tasks.workflows.standalone_runner.*": {"queue": "provision"},
         "tasks.workflows.license_check.*": {"queue": "default"},
         "tasks.workflows.siem_streamer.*": {"queue": "default"},
+        "tasks.workflows.audit_retention.*": {"queue": "default"},
         "tasks.workflows.approval_reminders.*": {"queue": "notifications"},
         "tasks.modules.notifications.*": {"queue": "notifications"},
         "tasks.modules.maintenance.*": {"queue": "default"},
@@ -94,6 +96,12 @@ app.conf.update(
         "siem-stream-audit-log": {
             "task": "tasks.workflows.siem_streamer.stream_audit_log",
             "schedule": crontab(minute="*"),  # Every minute
+            "options": {"queue": "default"},
+        },
+        # Prune audit_log rows past the configured retention window
+        "audit-retention-prune": {
+            "task": "tasks.workflows.audit_retention.prune_old_rows",
+            "schedule": crontab(hour=3, minute=0),  # Daily at 03:00 Europe/Berlin
             "options": {"queue": "default"},
         },
         # Re-notify approvers who have not yet decided on stale requests

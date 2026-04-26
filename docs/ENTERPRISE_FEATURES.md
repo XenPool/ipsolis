@@ -381,11 +381,26 @@ Admin UI → *Settings* → *Compliance* tab → *SIEM — Audit Log Streaming*:
   want to backfill from the beginning into a fresh Splunk index),
   set it directly via `PUT /admin/config/siem.last_id` with
   `{"value": "0"}`.
-- Tamper-evidence at the database layer (revoking `DELETE`/`UPDATE`
-  on `audit_log` from the application role) is a separate forthcoming
-  slice; today an admin with DB credentials could still mutate the
-  underlying table. Streaming to an external SIEM mitigates that risk
-  by giving you a copy outside the app's blast radius.
+- Tamper-evidence at the database layer is enforced via three
+  BEFORE-statement triggers on ``audit_log`` (DELETE / UPDATE /
+  TRUNCATE) installed by migration ``0062``. Mutations fail with
+  a descriptive error unless the session sets
+  ``ipsolis.allow_audit_mutation = 'true'`` inside the transaction —
+  a documented escape hatch for legitimate maintenance like
+  retention pruning. The app's normal INSERT path is unaffected.
+
+  ```sql
+  -- Legitimate maintenance pattern:
+  BEGIN;
+  SET LOCAL ipsolis.allow_audit_mutation = 'true';
+  DELETE FROM audit_log WHERE timestamp < NOW() - INTERVAL '7 years';
+  COMMIT;
+  ```
+
+  Combined with SIEM streaming, this gives you defense in depth:
+  the local row is hard to mutate quietly, and even if it were
+  mutated the SIEM has the original copy outside the app's blast
+  radius.
 
 ---
 

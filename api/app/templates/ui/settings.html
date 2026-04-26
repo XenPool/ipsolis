@@ -987,6 +987,43 @@
       </span>
     </div>
   </div>
+
+  <!-- Audit log retention -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
+    <h2 class="text-sm font-semibold text-body mb-1">Audit Log Retention</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Auto-prune <code class="font-mono bg-surface-raised px-1 rounded">audit_log</code> rows older than the
+      configured window. Runs daily at 03:00 (Europe/Berlin) via a Beat task that uses the documented
+      append-only-bypass GUC — every other path still hits the tamper-evident triggers from migration 0062.
+      Pair this with SIEM streaming so the long-term archive lives outside the app's blast radius.
+    </p>
+
+    <div class="space-y-4">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Retention window</label>
+          <div class="flex items-center gap-2">
+            <input type="number" id="retention-days" min="0" max="36500"
+                   value="{{ retention_config.get('retention.audit_log_days', '0') if retention_config else '0' }}"
+                   class="w-24 rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+            <span class="text-sm text-muted">days</span>
+          </div>
+          <p class="text-[11px] text-muted/60 mt-1">0 disables pruning (keep everything).</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6 items-center">
+      <button onclick="saveRetentionConfig()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save Settings
+      </button>
+      <span class="text-xs text-muted/70">
+        Last run: <span id="retention-last-run" class="font-mono">{{ retention_config.get('retention.last_run_at', '—') or '—' if retention_config else '—' }}</span> ·
+        Pruned: <span id="retention-last-pruned" class="font-mono">{{ retention_config.get('retention.last_pruned', '0') if retention_config else '0' }}</span> rows
+      </span>
+    </div>
+  </div>
 </div>
 
 <!-- ── Tab: SCCM ─────────────────────────────────────────────────────────── -->
@@ -1601,6 +1638,24 @@ async function testEmailConfig() {
 }
 
 // ── SIEM Settings ───────────────────────────────────────────────────────────────
+async function saveRetentionConfig() {
+  var fields = {
+    'retention.audit_log_days': document.getElementById('retention-days').value.trim() || '0',
+  };
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showComplianceBanner(errors.length === 0
+    ? {ok: true,  message: 'Retention settings saved. Pruning runs daily at 03:00 (Europe/Berlin).'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
+
 async function saveOtelConfig() {
   var fields = {
     'otel.enabled':          document.getElementById('otel-enabled').value,
