@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session  # noqa: F401 – used by _run_step_inline/_r
 from tasks import app
 from tasks.modules import audit_helper
 from tasks.modules.config_reader import get_config
+from tasks.modules.secrets import get_secret_config as _get_secret_config
 from tasks.modules.step_helper import make_log_json, update_order_step, update_order_status
 
 logger = logging.getLogger(__name__)
@@ -487,6 +488,10 @@ def _load_global_vars(db: Session) -> dict:
     for row in rows:
         gv[row[0]] = row[1] or ""
 
+    # External-secret resolution: ``*.password`` keys may be ``vault://``
+    # or ``ccp://`` references and need dereferencing before they hit
+    # the runbook script's environment. Plain values pass through.
+    from tasks.modules.secrets import resolve_secret_value
     hosting_keys = [
         "xenserver.host", "xenserver.username", "xenserver.password",
         "vsphere.host", "vsphere.username", "vsphere.password",
@@ -494,7 +499,7 @@ def _load_global_vars(db: Session) -> dict:
     for k in hosting_keys:
         val = get_config(db, k, "")
         if val:
-            gv[k] = val
+            gv[k] = resolve_secret_value(db, val) if k.endswith(".password") else val
     return gv
 
 
@@ -864,13 +869,16 @@ def _run_runbook_path(
         "asset_name": pre_asset_name,
         "snow_req": order.get("snow_req"),
         "snow_ritm": order.get("servicenow_ref"),
-        # Hosting infrastructure — available as {{config.vsphere.host}} etc. in params templates
+        # Hosting infrastructure — available as {{config.vsphere.host}} etc. in params templates.
+        # ``.password`` reads go through the secret resolver so vault://
+        # and ccp:// references get dereferenced before landing in the
+        # runbook script's environment.
         "config.vsphere.host":       get_config(db, "vsphere.host", ""),
         "config.vsphere.username":   get_config(db, "vsphere.username", ""),
-        "config.vsphere.password":   get_config(db, "vsphere.password", ""),
+        "config.vsphere.password":   _get_secret_config(db, "vsphere.password", ""),
         "config.xenserver.host":     get_config(db, "xenserver.host", ""),
         "config.xenserver.username": get_config(db, "xenserver.username", ""),
-        "config.xenserver.password": get_config(db, "xenserver.password", ""),
+        "config.xenserver.password": _get_secret_config(db, "xenserver.password", ""),
     }
 
     # 4. Execute steps

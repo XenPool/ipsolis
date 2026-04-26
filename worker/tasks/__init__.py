@@ -44,6 +44,26 @@ app.conf.update(
     task_track_started=True,
     task_acks_late=True,                     # ACK only after successful completion
     worker_prefetch_multiplier=1,            # No prefetch accumulation for long-running tasks
+
+    # ── celery-redbeat: HA Beat scheduler ────────────────────────────────────
+    # Redis-backed schedule store + Lua-script distributed lock means N Beat
+    # replicas can run side-by-side and only the lock-holder dispatches. The
+    # static ``beat_schedule`` dict below is loaded into Redis on first start
+    # and re-synced on every restart, so changes here ship via container
+    # rebuild as before.
+    #
+    # Failover timing: ``redbeat_lock_timeout`` is how long the dead lock
+    # stays in Redis before another replica can claim it.
+    # ``beat_max_loop_interval`` caps how long a non-leader sleeps before
+    # re-checking the lock. We set both to 30s so a hard kill of the active
+    # replica produces a sub-minute leader handover; default RedBeat polls
+    # only every 5 min, which yields ~5 min failover and isn't really HA.
+    redbeat_redis_url=BROKER_URL,
+    redbeat_lock_timeout=30,                 # seconds — dead-lock TTL in Redis
+    beat_max_loop_interval=30,               # seconds — non-leader poll cadence
+    redbeat_key_prefix="ipsolis:redbeat:",   # namespace so multiple ipSolis
+                                             # tenants on a shared Redis don't
+                                             # collide on schedule keys
     task_routes={
         "tasks.workflows.dynamic_runner.*": {"queue": "provision"},
         "tasks.workflows.ps_module_installer.*": {"queue": "provision"},

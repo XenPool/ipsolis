@@ -1,6 +1,10 @@
 # Task Queue
 celery==5.4.0
 redis==5.2.1
+# HA Beat scheduler — Redis-backed schedule store + distributed lock
+# so multiple Beat replicas can run side-by-side and only one dispatches
+# at a time. Drop-in replacement for the file-based PersistentScheduler.
+celery-redbeat==2.3.2
 
 # Database (sync driver for Celery tasks)
 sqlalchemy==2.0.36

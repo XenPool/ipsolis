@@ -258,17 +258,103 @@ enforcement (configurer ≠ approver) split into follow-up slices.
       the router gate so admins can mint their own narrow tokens,
       the existing mint guard becomes the operative defense.
 
-### [open] External secret management — Prio 0 (show-stopper)
-Today AD password / vSphere creds / SMTP password / Entra client secret all
-sit in `app_config` as plaintext. The `is_secret=true` flag only hides them
-in the UI. Add a `SecretBackend` abstraction with implementations for
-`db` (current), `vault`, `azure_keyvault`, `aws_secretsmanager`. Resolution
-goes through the backend on read — schema unchanged but values may be
-references like `vault://secret/data/ipsolis/ad/password`.
-- [ ] `SecretBackend` interface + `db` (no-op) + `vault` (HashiCorp Vault) impl
-- [ ] Settings: backend choice + connection params
-- [ ] `app_config.value` resolver routes `is_secret=true` rows through the backend
-- [ ] One-shot migration tool: move existing plaintext secrets into the chosen backend
+### [partial] External secret management — Prio 0 (show-stopper)
+Slice 1 — Vault + CyberArk CCP/AIM, on-read resolution, no plaintext
+removal — **shipped 2026-04-26**. Conjur, AWS Secrets Manager, Azure
+Key Vault, and the one-shot migration tool stay queued.
+
+**Done — secrets slice 1 (2026-04-26):**
+- Migration `0072_seed_secret_backend_config.py` seeds 11 keys for the
+  backend selector + cache TTL + per-backend creds + diagnostic
+  surface (`secret.last_test_at`, `secret.last_test_error`).
+- Reference grammar: `vault://<path>[#<field>]` (KV v2, default field
+  `value`) and `ccp://[<safe>/]<object>` (CyberArk CCP returns the
+  `Content` field of the account). Plain strings pass through unchanged
+  — partial migrations are fine since the existing DB-plaintext path
+  is the default.
+- Resolver in `app.utils.secrets`:
+  * `resolve_secret_value(db, raw)` (async) and
+    `resolve_secret_value_sync(raw)` (sync, psycopg2-backed) sharing
+    the dispatch core. Process-local TTL cache, default 60s,
+    keyed by `(backend, reference)`. Cache TTL configurable via
+    `secret.cache_ttl_seconds`.
+  * Backends use stdlib only (`urllib`, `ssl`, `hmac`, `hashlib`).
+    No `hvac`/`requests`/Azure SDK pulled into the runtime image.
+  * Vault: static-token auth (X-Vault-Token), optional Enterprise
+    namespace, configurable KV mount (default `secret`). KV v2
+    envelope unwrapped to `data.data.<field>`.
+  * CCP: GETs `/api/Accounts?AppID=…&Safe=…&Object=…`. Optional
+    mTLS — when `secret.ccp.client_cert_pem` is set, the cert+key
+    PEM is materialised to a 0600 temp file just for the duration
+    of the request. CCP installs that authorise by AppID + IP
+    allow-list leave the field empty.
+  * Failures (network / auth / missing path) log at WARNING and
+    return empty string — fail-closed-quiet so a Vault outage
+    doesn't crash unrelated requests; the calling integration's
+    auth-failure error is the user-visible signal.
+- Worker mirror at `worker/tasks/modules/secrets.py` (sync only,
+  same boundary as `audit_helper.py` — no api-package import).
+  `get_secret_config(db, key, default)` is the worker convenience
+  that wraps `get_config` + resolution.
+- Wired into the high-value credential consumers:
+  * `ad_lookup._get_ad_config` resolves `ad.password`.
+  * `entra.get_msal_app` resolves `entra.client_secret`.
+  * `admin.test_ad_connection` and `admin.test_email` resolve their
+    passwords before binding / SMTP-AUTH.
+  * Worker `dynamic_runner` resolves `vsphere.password` and
+    `xenserver.password` for both the `_global_vars` injection
+    and the per-step `config.*.password` template substitutions.
+- Test endpoint `POST /admin/config/secret-backend/test` clears the
+  process cache, hits the right probe (`/v1/sys/health` for Vault,
+  `/api/Verify` for CCP), and stamps `secret.last_test_at` on
+  success or `secret.last_test_error` on failure for the Settings
+  UI to render.
+- `_mask()` exception: reference-shaped values
+  (`vault://…`, `ccp://…`) stay in clear when displayed via
+  `GET /admin/config/...`. Knowing the path doesn't grant access,
+  and admins need to see which store entry each row points to.
+  Genuine secrets (`secret.vault.token`, `secret.ccp.client_cert_pem`)
+  are still masked as `***`.
+- Settings UI: new "External Secret Backend" card on the Compliance
+  tab — backend dropdown + per-backend field group with show/hide
+  toggle, "Save" + "Test connection" buttons, "Last verified"
+  timestamp, last-error inline. Vault group has URL / token (secret) /
+  KV mount / namespace; CCP group has URL / AppID / default Safe /
+  client cert PEM (secret) / verify-TLS toggle.
+- README updated; `docs/ENTERPRISE_FEATURES.md` doc deferred (the
+  README line is comprehensive; a dedicated section is slice-2 polish).
+- Verified end-to-end with stdlib stubs:
+  * Vault stub: `/v1/sys/health` 200 → backend test reports
+    "Vault reachable". Resolver returns `S3cretFromVault` for
+    `vault://ipsolis/ad/password`, empty + WARNING for missing
+    paths. Worker-side resolver returns the same value through
+    `get_secret_config`.
+  * CCP stub: `/api/Verify` 200 → backend test reports "CCP
+    reachable". `ccp://vsphere-svc` resolves to its Content;
+    `ccp://OperationsSafe/sccm-svc` (explicit Safe) resolves
+    correctly; missing object returns empty + WARNING.
+  * Setting `ad.password` to `vault://ipsolis/ad/password` and
+    re-reading via `GET /admin/config/ad.password` returns the
+    reference in clear (not `***`) — masking exception works.
+
+**Still to do — secrets slice 2:**
+- [ ] CyberArk Conjur adapter (REST + token auth, similar shape to
+      Vault). Same dispatcher framework — slot in alongside vault://
+      with a new `conjur://` scheme.
+- [ ] AWS Secrets Manager adapter.
+- [ ] Azure Key Vault adapter (Entra-bound auth via the same MSAL
+      app already used for portal SSO).
+- [ ] Vault AppRole + Kubernetes-JWT auth methods (slice 1 ships
+      static-token only).
+- [ ] CCP: dedicated mTLS bootstrap UX (today operators paste the
+      PEM; a future slice could fetch from the host's keystore).
+- [ ] One-shot migration tool: walk every `is_secret=true` row in
+      `app_config`, write the value into the chosen backend, replace
+      the row's value with the matching reference, audit.
+- [ ] Make all remaining secret-bearing config keys go through the
+      resolver — slice 1 covered the high-value ones (AD, Entra,
+      SMTP, vSphere/XenServer); SCCM password and the various
+      webhook tokens still read raw.
 
 ### [partial] API tokens with scopes — Prio 0
 Slice 1 — table + ORM + bearer auth + Admin UI — **shipped 2026-04-26**.
@@ -616,16 +702,70 @@ live table and is best paired with the RBAC work.
 - [ ] Streaming-failure email alert via the existing health-alert path
       (currently surfaced only in `siem.last_error` and the UI).
 
-### [open] Multi-instance HA — Prio 0 (show-stopper)
-Single api / single worker / single Postgres / single Beat. Beat especially
-is a SPOF — default Celery Beat doesn't lock, two beats = duplicate
-dispatches. Need documented multi-replica deployment.
-- [ ] Replace default Celery Beat with `celery-singleton` or Redis-locked beat
-- [ ] Document Postgres standby setup (logical replication or pgBackRest)
-- [ ] Multi-replica api: ensure session storage is Redis-backed (currently
-      cookie-signed — already stateless, just verify)
-- [ ] Multi-replica worker: prefork already works, just document scaling
-- [ ] Health probe that detects "Beat is alive somewhere" via Redis heartbeat
+### [partial] Multi-instance HA — Prio 0 (show-stopper)
+Beat slice — **shipped 2026-04-26**. The remaining HA work
+(api/worker replicas, Postgres standby, dedicated Beat-alive health
+probe) stays queued — each carries its own risk surface and is best
+sliced independently rather than bundled.
+
+**Done — Beat HA via celery-redbeat (2026-04-26):**
+- Added `celery-redbeat==2.3.2` to the worker requirements. Redis is
+  already the Celery broker, so reusing it for the redbeat schedule
+  store + Lua-script distributed lock pulls in zero new infra.
+- Wired in `worker/tasks/__init__.py`:
+  * `redbeat_redis_url=BROKER_URL` — schedule + lock keys live in
+    Redis; the on-disk `celerybeat-schedule` shadow file is gone.
+  * `redbeat_lock_timeout=30` — how long a dead lock survives in
+    Redis before another replica can claim it.
+  * `beat_max_loop_interval=30` — caps the non-leader poll cadence so
+    failover happens within ~lock-TTL. Default RedBeat polls every
+    5 min, which yields a 5-minute failover and isn't really HA.
+  * `redbeat_key_prefix="ipsolis:redbeat:"` — namespace so multiple
+    ipSolis tenants on a shared Redis don't collide on schedule keys.
+- `docker-compose.yml`:
+  * Beat service no longer has a fixed `container_name`, so it can
+    be scaled (`docker compose up -d --scale beat=N`).
+  * Command switched to `--scheduler redbeat.RedBeatScheduler`.
+  * Retired the `beat_schedule` named volume (file-based scheduler
+    isn't used any more).
+- Static `app.conf.beat_schedule` dict is unchanged — RedBeat
+  ingests it on first boot and re-syncs on every restart, so
+  "schedule edits ship via container rebuild" stays true.
+- Existing Beat tasks audited for idempotence under at-most-once-
+  but-rarely-twice semantics: SIEM streamer's cursor-advance,
+  retention prune (deterministic cutoff), license-expiry mailer,
+  approval reminders (last-reminded-at guard), and
+  check_backup_schedule (per-minute dedupe via ``db_backups`` row
+  query) are all naturally safe. The handover window is sub-second
+  on clean restart and ≤30s on hard kill, so the duplicate-dispatch
+  risk is limited to the very narrow lock-handover window.
+- Verified end-to-end:
+  * Single replica: lock acquired immediately, all 9 scheduled
+    tasks dispatch on cadence. Redis shows
+    `ipsolis:redbeat:` keys (schedule entries + `:lock` + `:statics`).
+  * Two replicas (`docker compose up -d --scale beat=2`): replica 1
+    dispatched 6 tasks in a 35-second window; replica 2 dispatched
+    0 (idle, polling for the lock). Single-leader guarantee holds.
+  * Failover: SIGKILL on the leader → other replica acquired the
+    lock in **13 seconds** with the tuned timings (was ~234s with
+    RedBeat defaults).
+  * Schedule survives restart — stopped both replicas, restarted
+    one, schedule keys still in Redis, dispatch resumed without
+    re-seed.
+
+**Still to do — HA slice 2:**
+- [ ] Document Postgres standby setup (logical replication or
+      pgBackRest) — separate slice; needs real failover testing,
+      not just docs.
+- [ ] Multi-replica api: confirm session storage is Redis-backed
+      (currently cookie-signed via itsdangerous — already stateless,
+      so this is mostly a verification task).
+- [ ] Multi-replica worker: prefork already supports N concurrent
+      consumers on the same queues; document the scaling pattern
+      and add a recommendation table for queue-vs-replica sizing.
+- [ ] Health probe that detects "Beat is alive somewhere" via the
+      RedBeat lock key in Redis — surface in `/health` so a load
+      balancer can alert when no Beat is running.
 
 ---
 

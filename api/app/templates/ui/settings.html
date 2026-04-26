@@ -1156,6 +1156,138 @@
       </span>
     </div>
   </div>
+
+  <!-- ── External Secret Backend (Vault / CyberArk CCP) ─────────────────── -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-3xl mb-6">
+    <h2 class="text-sm font-semibold text-body mb-1">External Secret Backend</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Replace plaintext credentials with references to your secret store. When a backend is enabled, any
+      <code class="font-mono bg-surface-raised px-1 rounded">secret.is_secret=true</code> row whose value is
+      <code class="font-mono bg-surface-raised px-1 rounded">vault://&lt;path&gt;</code> or
+      <code class="font-mono bg-surface-raised px-1 rounded">ccp://[&lt;safe&gt;/]&lt;object&gt;</code>
+      gets resolved at read time. Plain string values keep working unchanged — partial migrations are fine.
+    </p>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Backend</label>
+        <select id="secret-backend" onchange="onSecretBackendChange()"
+                class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          {% set _sb = secret_config.get('secret.backend', 'db') if secret_config else 'db' %}
+          <option value="db"     {% if _sb == 'db' %}selected{% endif %}>Database (default — plaintext in app_config)</option>
+          <option value="vault"  {% if _sb == 'vault' %}selected{% endif %}>HashiCorp Vault (KV v2)</option>
+          <option value="ccp"    {% if _sb == 'ccp' %}selected{% endif %}>CyberArk CCP / AIM Web Service</option>
+        </select>
+      </div>
+
+      <!-- Vault fields -->
+      <div id="secret-vault-fields" class="hidden space-y-3 border-l-2 border-blue-300/40 dark:border-blue-500/30 pl-3">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Vault URL</label>
+          <input type="text" id="secret-vault-url"
+                 value="{{ secret_config.get('secret.vault.url', '') if secret_config else '' }}"
+                 placeholder="https://vault.example.com:8200"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Vault Token</label>
+          <input type="password" id="secret-vault-token" value=""
+                 placeholder="{% if secret_config and secret_config.get('secret.vault.token') == '***' %}(configured — leave blank to keep current){% else %}static Vault token{% endif %}"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <p class="text-[11px] text-muted/60 mt-1">Slice 1 supports static tokens. AppRole / k8s JWT planned for slice 2.</p>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">KV mount</label>
+            <input type="text" id="secret-vault-kv-mount"
+                   value="{{ secret_config.get('secret.vault.kv_mount', 'secret') if secret_config else 'secret' }}"
+                   placeholder="secret"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">KV v2 mount path. Default <code class="font-mono">secret</code>.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Namespace (Vault Enterprise)</label>
+            <input type="text" id="secret-vault-namespace"
+                   value="{{ secret_config.get('secret.vault.namespace', '') if secret_config else '' }}"
+                   placeholder="ipsolis/prod"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">Optional. Sent as <code class="font-mono">X-Vault-Namespace</code>.</p>
+          </div>
+        </div>
+        <p class="text-[11px] text-muted/70 leading-snug">
+          Reference shape: <code class="font-mono bg-surface-raised px-1 rounded">vault://&lt;path&gt;[#&lt;field&gt;]</code>
+          (default field <code class="font-mono">value</code>). Example:
+          <code class="font-mono bg-surface-raised px-1 rounded">vault://ipsolis/ad/password</code>.
+        </p>
+      </div>
+
+      <!-- CCP fields -->
+      <div id="secret-ccp-fields" class="hidden space-y-3 border-l-2 border-amber-300/40 dark:border-amber-500/30 pl-3">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">CCP URL</label>
+          <input type="text" id="secret-ccp-url"
+                 value="{{ secret_config.get('secret.ccp.url', '') if secret_config else '' }}"
+                 placeholder="https://ccp.example.com/AIMWebService"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">AppID</label>
+            <input type="text" id="secret-ccp-app-id"
+                   value="{{ secret_config.get('secret.ccp.app_id', '') if secret_config else '' }}"
+                   placeholder="ipsolis-prod"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Default Safe</label>
+            <input type="text" id="secret-ccp-safe"
+                   value="{{ secret_config.get('secret.ccp.safe', '') if secret_config else '' }}"
+                   placeholder="(optional)"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">Used when a reference omits the Safe.</p>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Client cert PEM (mTLS — optional)</label>
+          <textarea id="secret-ccp-client-cert-pem" rows="3"
+                    placeholder="{% if secret_config and secret_config.get('secret.ccp.client_cert_pem') == '***' %}(configured — leave blank to keep current){% else %}-----BEGIN CERTIFICATE-----…&#10;-----BEGIN PRIVATE KEY-----…{% endif %}"
+                    class="w-full rounded border border-token-border bg-surface text-body text-xs px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea>
+          <p class="text-[11px] text-muted/60 mt-1">Concatenated cert + key. Stored as a secret. Leave empty for AppID + IP allow-list installs.</p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Verify TLS</label>
+          <select id="secret-ccp-verify-tls"
+                  class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            {% set _vt = (secret_config.get('secret.ccp.verify_tls', 'true') if secret_config else 'true').lower() %}
+            <option value="true"  {% if _vt != 'false' %}selected{% endif %}>Verify (recommended)</option>
+            <option value="false" {% if _vt == 'false' %}selected{% endif %}>Skip — self-signed lab only</option>
+          </select>
+        </div>
+        <p class="text-[11px] text-muted/70 leading-snug">
+          Reference shape: <code class="font-mono bg-surface-raised px-1 rounded">ccp://[&lt;safe&gt;/]&lt;object&gt;</code>.
+          ipSolis returns the account's <code class="font-mono">Content</code> field (the password).
+        </p>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6 items-center">
+      <button onclick="saveSecretBackend()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save
+      </button>
+      <button onclick="testSecretBackend()"
+              class="px-5 py-2 bg-surface-raised text-body text-sm font-medium rounded hover:bg-surface border border-token-border">
+        Test connection
+      </button>
+      <span class="text-xs text-muted/70">
+        Last verified: <span id="secret-last-test" class="font-mono">{{ secret_config.get('secret.last_test_at', '—') or '—' if secret_config else '—' }}</span>
+        {% set _err = secret_config.get('secret.last_test_error', '') if secret_config else '' %}
+        {% if _err %}
+          · <span class="text-red-600 dark:text-red-300">{{ _err }}</span>
+        {% endif %}
+      </span>
+    </div>
+  </div>
 </div>
 
 <!-- ── Tab: SCCM ─────────────────────────────────────────────────────────── -->
@@ -1768,6 +1900,61 @@ async function testEmailConfig() {
   var data = await resp.json();
   showEmailBanner(data);
 }
+
+// ── External Secret Backend (Vault / CyberArk CCP) ─────────────────────────────
+function onSecretBackendChange() {
+  var b = document.getElementById('secret-backend').value;
+  var vault = document.getElementById('secret-vault-fields');
+  var ccp = document.getElementById('secret-ccp-fields');
+  if (b === 'vault') { vault.classList.remove('hidden'); ccp.classList.add('hidden'); }
+  else if (b === 'ccp') { vault.classList.add('hidden'); ccp.classList.remove('hidden'); }
+  else { vault.classList.add('hidden'); ccp.classList.add('hidden'); }
+}
+
+async function saveSecretBackend() {
+  var fields = {
+    'secret.backend':            document.getElementById('secret-backend').value,
+    // Always persist all backend inputs so admins can flip between them without retyping.
+    'secret.vault.url':          document.getElementById('secret-vault-url').value.trim(),
+    'secret.vault.kv_mount':     document.getElementById('secret-vault-kv-mount').value.trim() || 'secret',
+    'secret.vault.namespace':    document.getElementById('secret-vault-namespace').value.trim(),
+    'secret.ccp.url':            document.getElementById('secret-ccp-url').value.trim(),
+    'secret.ccp.app_id':         document.getElementById('secret-ccp-app-id').value.trim(),
+    'secret.ccp.safe':           document.getElementById('secret-ccp-safe').value.trim(),
+    'secret.ccp.verify_tls':     document.getElementById('secret-ccp-verify-tls').value,
+  };
+  var vaultToken = document.getElementById('secret-vault-token').value;
+  if (vaultToken) fields['secret.vault.token'] = vaultToken;
+  var ccpPem = document.getElementById('secret-ccp-client-cert-pem').value;
+  if (ccpPem) fields['secret.ccp.client_cert_pem'] = ccpPem;
+
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showComplianceBanner(errors.length === 0
+    ? {ok: true,  message: 'Secret backend settings saved.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
+
+async function testSecretBackend() {
+  showComplianceBanner({ok: null, message: 'Testing backend connection…'});
+  var resp = await fetch('/admin/config/secret-backend/test', {method: 'POST'});
+  var data = await resp.json();
+  showComplianceBanner(data);
+  if (data.ok) {
+    document.getElementById('secret-last-test').textContent = new Date().toISOString();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('secret-backend')) onSecretBackendChange();
+});
 
 // ── SIEM Settings ───────────────────────────────────────────────────────────────
 async function saveRetentionConfig() {

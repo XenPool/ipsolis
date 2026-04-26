@@ -929,6 +929,21 @@ async def settings_page(
     retention_rows = retention_result.scalars().all()
     retention_config = {r.key: (r.value or "") for r in retention_rows}
 
+    # Load secret.* config keys (external secret backends — Vault / CCP).
+    # Reference-shaped values stay in clear (the path is non-sensitive);
+    # genuine secrets (vault token, CCP client cert PEM) get masked.
+    from app.utils.secrets import is_secret_reference  # noqa: PLC0415
+    secret_rows = (await db.execute(
+        select(AppConfig).where(AppConfig.key.like("secret.%")).order_by(AppConfig.key)
+    )).scalars().all()
+    secret_config: dict = {}
+    for r in secret_rows:
+        raw = r.value or ""
+        if r.is_secret and not is_secret_reference(raw):
+            secret_config[r.key] = _MASK
+        else:
+            secret_config[r.key] = raw
+
     # Load hosting config keys (vsphere.* / xenserver.*)
     def _cfg_dict(rows: list) -> dict:
         return {r.key.split(".", 1)[1]: (_MASK if r.is_secret else (r.value or "")) for r in rows}
@@ -962,6 +977,7 @@ async def settings_page(
          "approval_config": approval_config,
          "otel_config": otel_config,
          "retention_config": retention_config,
+         "secret_config": secret_config,
          "hosting_vsphere": hosting_vsphere, "hosting_xenserver": hosting_xenserver,
          "hosting_sccm": hosting_sccm,
          "portal_config": portal_config,

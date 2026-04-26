@@ -121,7 +121,9 @@ services:
     build:
       context: ./worker
       dockerfile: Dockerfile
-    container_name: xp_beat
+    # No ``container_name`` so this service can be scaled to N replicas
+    # (``docker compose up -d --scale beat=2``). RedBeat's distributed
+    # lock keeps the dispatch single-leader regardless of replica count.
     restart: unless-stopped
     env_file: .env
     environment:
@@ -129,7 +131,6 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
     volumes:
-      - beat_schedule:/app/beat_schedule
       - ./licenses:/app/license:ro         # Signed .lic file (read-only)
       - ps_user_modules:/root/.local/share/powershell/Modules
     depends_on:
@@ -137,11 +138,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # RedBeatScheduler stores the schedule in Redis (no file volume needed)
+    # and serialises ticks across replicas via a Lua-script distributed lock.
     command: >
       celery -A tasks beat
       --loglevel=info
-      --scheduler celery.beat.PersistentScheduler
-      --schedule /app/beat_schedule/celerybeat-schedule
+      --scheduler redbeat.RedBeatScheduler
 
   # ─────────────────────────────────────────────────────────────────
   # Flower – Celery Monitoring UI
@@ -170,5 +172,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  beat_schedule:
+  # ``beat_schedule`` (file-based PersistentScheduler shadow) was retired
+  # when Beat moved to RedBeat — schedule lives in Redis now.
   ps_user_modules:

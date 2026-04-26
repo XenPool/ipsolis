@@ -62,13 +62,18 @@ def _get_ad_config() -> dict:
     cfg = _load_ad_config_from_db()
     if not cfg.get("ad.server"):
         return {}
+    # External-secret resolution: ``ad.password`` may be a literal or a
+    # ``vault://...`` / ``ccp://...`` reference. Plain strings pass
+    # through unchanged so existing installs keep working.
+    from app.utils.secrets import resolve_secret_value_sync
+    raw_password = cfg.get("ad.password", "")
     return {
         "server": cfg.get("ad.server", ""),
         "port": int(cfg.get("ad.port", "389")),
         "base_dn": cfg.get("ad.base_dn", ""),
         "domain": cfg.get("ad.domain", ""),
         "username": cfg.get("ad.username", ""),
-        "password": cfg.get("ad.password", ""),
+        "password": resolve_secret_value_sync(raw_password),
         "use_ssl": cfg.get("ad.use_ssl", "false") == "true",
         "attr_department":  (cfg.get("ad.attribute.department")  or "department").strip(),
         "attr_cost_center": (cfg.get("ad.attribute.cost_center") or "").strip(),

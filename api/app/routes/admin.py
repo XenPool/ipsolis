@@ -170,11 +170,24 @@ async def _maybe_auto_grant_creator(
 
 
 def _mask(cfg: AppConfig) -> AppConfigRead:
-    """Returns AppConfigRead; masks the value if is_secret=True."""
+    """Returns AppConfigRead; masks the value if is_secret=True.
+
+    Exception (slice 1 external secrets): when ``value`` is a recognised
+    reference scheme (``vault://``, ``ccp://``), it stays in clear —
+    the path itself is non-sensitive (knowing it doesn't grant access)
+    and admins need to see *which* secret-store path each row points
+    to. The actual resolved secret is never returned by this API.
+    """
+    from app.utils.secrets import is_secret_reference  # noqa: PLC0415
+    raw = cfg.value or ""
+    if cfg.is_secret and not is_secret_reference(raw):
+        rendered = _SECRET_MASK
+    else:
+        rendered = raw
     return AppConfigRead(
         id=cfg.id,
         key=cfg.key,
-        value=_SECRET_MASK if cfg.is_secret else cfg.value,
+        value=rendered,
         description=cfg.description,
         is_secret=cfg.is_secret,
         updated_at=cfg.updated_at,
@@ -300,9 +313,13 @@ async def test_ad_connection(db: AsyncSession = Depends(get_db)) -> dict:
     server_host = await _get("ad.server", "dc.example.com")
     server_port = int(await _get("ad.port", "389"))
     bind_user = await _get("ad.username", "")
-    bind_password = await _get("ad.password", "")
+    raw_bind_password = await _get("ad.password", "")
     domain = await _get("ad.domain", "")
     base_dn = await _get("ad.base_dn", "DC=example,DC=com")
+
+    # External-secret resolution — supports vault:// and ccp:// references.
+    from app.utils.secrets import resolve_secret_value
+    bind_password = await resolve_secret_value(db, raw_bind_password)
 
     raw_user = f"{domain}\\{bind_user}" if domain else bind_user
     url = (f"ldap+ntlm-password://{quote(raw_user, safe='')}:"
@@ -469,6 +486,41 @@ async def test_teams_webhook(db: AsyncSession = Depends(get_db)) -> dict:
     # Replace the body's first line so the recipient knows this is a test.
     card["body"][0]["text"] = f"{app_title} — Test notification (no action required)"
     ok, msg = post_adaptive_card(url, card)
+    return {"ok": ok, "message": msg}
+
+
+@router.post("/config/secret-backend/test", dependencies=[require_role("admin")])
+async def test_secret_backend(db: AsyncSession = Depends(get_db)) -> dict:
+    """Verify the configured secret backend (Vault or CCP) is reachable.
+
+    Updates ``secret.last_test_at`` / ``secret.last_test_error`` so the
+    Settings UI can show "last verified" state without re-running the
+    test. Also clears the in-process resolution cache so the next read
+    after a credential rotation goes back to source.
+    """
+    from datetime import datetime, timezone
+    from sqlalchemy import text as sa_text
+    from app.utils.secrets import cache_clear, test_backend
+
+    cache_clear()
+    ok, msg = await test_backend(db)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    if ok:
+        await db.execute(sa_text("""
+            UPDATE app_config SET value = :v, updated_at = NOW()
+            WHERE key = 'secret.last_test_at'
+        """), {"v": now_iso})
+        await db.execute(sa_text("""
+            UPDATE app_config SET value = '', updated_at = NOW()
+            WHERE key = 'secret.last_test_error'
+        """))
+    else:
+        await db.execute(sa_text("""
+            UPDATE app_config SET value = :v, updated_at = NOW()
+            WHERE key = 'secret.last_test_error'
+        """), {"v": msg})
+    await db.commit()
     return {"ok": ok, "message": msg}
 
 
@@ -1377,7 +1429,10 @@ async def test_email(payload: dict = None, db: AsyncSession = Depends(get_db)) -
     smtp_host = await _get("email.smtp_server", "localhost")
     smtp_port = int(await _get("email.smtp_port", "25"))
     smtp_user = await _get("email.username", "")
-    smtp_password = await _get("email.password", "")
+    raw_smtp_password = await _get("email.password", "")
+    # External-secret resolution
+    from app.utils.secrets import resolve_secret_value
+    smtp_password = await resolve_secret_value(db, raw_smtp_password)
     mail_from = await _get("email.from", "noreply@example.com")
     from_name = await _get("email.from_name", "Ipsolis")
     bcc = await _get("email.bcc", "")
