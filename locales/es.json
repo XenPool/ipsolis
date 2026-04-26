@@ -4,6 +4,7 @@
       "my_orders": "Mis pedidos",
       "my_it": "Mi IT",
       "my_approvals": "Mis aprobaciones",
+      "delegations": "Delegaciones",
       "request_access": "Solicitar acceso"
     },
     "user": {
@@ -86,6 +87,31 @@
       "empty_recent": "No hay decisiones recientes.",
       "approver_manager": "Responsable",
       "approver_app_owner": "Propietario de aplicación"
+    },
+    "delegations": {
+      "page_title": "Mis delegaciones de aprobación",
+      "intro": "Cuando esté ausente, redirija sus aprobaciones a una persona delegada. Se aplica a los nuevos pedidos durante la ventana — las aprobaciones ya pendientes permanecen igual.",
+      "create_button": "+ Nueva delegación",
+      "modal_title": "Nueva delegación",
+      "modal_subtitle": "Las aprobaciones que se le asignen durante la ventana siguiente irán a su delegado.",
+      "delegate_email": "Correo del delegado",
+      "delegate_name": "Nombre del delegado",
+      "delegate_name_placeholder": "(opcional)",
+      "from_label": "Desde",
+      "until_label": "Hasta",
+      "reason_label": "Motivo",
+      "reason_placeholder": "p. ej. vacaciones (opcional)",
+      "col_delegate": "Delegado",
+      "col_window": "Ventana",
+      "col_reason": "Motivo",
+      "col_status": "Estado",
+      "status_active": "activa",
+      "status_scheduled": "programada",
+      "status_expired": "expirada",
+      "status_revoked": "revocada",
+      "revoke_button": "Revocar",
+      "revoke_confirm": "¿Revocar esta delegación ahora? Las futuras aprobaciones volverán a usted.",
+      "empty": "Aún no hay delegaciones."
     },
     "order_new": {
       "page_title": "Solicitar nuevo acceso",

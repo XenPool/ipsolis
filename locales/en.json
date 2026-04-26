@@ -4,6 +4,7 @@
       "my_orders": "My Orders",
       "my_it": "My IT",
       "my_approvals": "My Approvals",
+      "delegations": "Delegations",
       "request_access": "Request Access"
     },
     "user": {
@@ -86,6 +87,31 @@
       "empty_recent": "No recent decisions.",
       "approver_manager": "Manager",
       "approver_app_owner": "App Owner"
+    },
+    "delegations": {
+      "page_title": "My Approval Delegations",
+      "intro": "When you're out, route the approvals you'd normally handle to a deputy. Applies to new orders during the window — already-pending approvals stay where they are.",
+      "create_button": "+ New delegation",
+      "modal_title": "New delegation",
+      "modal_subtitle": "Approvals assigned to you during the window below will go to your delegate instead.",
+      "delegate_email": "Delegate email",
+      "delegate_name": "Delegate name",
+      "delegate_name_placeholder": "(optional)",
+      "from_label": "From",
+      "until_label": "Until",
+      "reason_label": "Reason",
+      "reason_placeholder": "e.g. Vacation (optional)",
+      "col_delegate": "Delegate",
+      "col_window": "Window",
+      "col_reason": "Reason",
+      "col_status": "Status",
+      "status_active": "active",
+      "status_scheduled": "scheduled",
+      "status_expired": "expired",
+      "status_revoked": "revoked",
+      "revoke_button": "Revoke",
+      "revoke_confirm": "Revoke this delegation now? Future approvals will go to you again.",
+      "empty": "No delegations yet."
     },
     "order_new": {
       "page_title": "Request New Access",

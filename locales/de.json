@@ -4,6 +4,7 @@
       "my_orders": "Meine Bestellungen",
       "my_it": "Meine IT",
       "my_approvals": "Meine Freigaben",
+      "delegations": "Vertretungen",
       "request_access": "Zugang anfordern"
     },
     "user": {
@@ -86,6 +87,31 @@
       "empty_recent": "Keine kürzlichen Entscheidungen.",
       "approver_manager": "Vorgesetzte:r",
       "approver_app_owner": "Applikations-Owner"
+    },
+    "delegations": {
+      "page_title": "Meine Genehmigungs-Vertretungen",
+      "intro": "Wenn Sie abwesend sind, leiten Sie Ihre Genehmigungen an eine Vertretung weiter. Gilt für neue Bestellungen im Zeitraum — bereits offene Genehmigungen bleiben unverändert.",
+      "create_button": "+ Neue Vertretung",
+      "modal_title": "Neue Vertretung",
+      "modal_subtitle": "Genehmigungen, die Ihnen im unten gewählten Zeitraum zugewiesen werden, gehen stattdessen an Ihre Vertretung.",
+      "delegate_email": "E-Mail der Vertretung",
+      "delegate_name": "Name der Vertretung",
+      "delegate_name_placeholder": "(optional)",
+      "from_label": "Von",
+      "until_label": "Bis",
+      "reason_label": "Grund",
+      "reason_placeholder": "z. B. Urlaub (optional)",
+      "col_delegate": "Vertretung",
+      "col_window": "Zeitraum",
+      "col_reason": "Grund",
+      "col_status": "Status",
+      "status_active": "aktiv",
+      "status_scheduled": "geplant",
+      "status_expired": "abgelaufen",
+      "status_revoked": "widerrufen",
+      "revoke_button": "Widerrufen",
+      "revoke_confirm": "Diese Vertretung jetzt widerrufen? Künftige Genehmigungen gehen wieder an Sie.",
+      "empty": "Noch keine Vertretungen."
     },
     "order_new": {
       "page_title": "Neuen Zugang anfordern",

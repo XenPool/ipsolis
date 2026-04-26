@@ -287,8 +287,31 @@ delegation, N-of-M, conditional rules) remain.
 - [ ] Escalation: after N reminders, notify a configured backup
       approver (e.g. manager's manager, app-owner team distribution
       list) instead of just stopping
-- [ ] Self-service portal flow: let portal users configure their
-      own OOO delegation (currently admin-managed only)
+**Done — self-service portal delegation (2026-04-26):**
+- New router `app.routes.portal_delegations` exposes
+  `GET /portal/delegations` (HTML page),
+  `GET /portal/api/delegations` (list mine),
+  `POST /portal/api/delegations` (create mine),
+  `DELETE /portal/api/delegations/{id}` (revoke mine).
+- Identity enforcement: every write coerces ``approver_email`` to
+  the SSO-authenticated user's email. A portal user **cannot**
+  re-route another user's approvals even by tampering with the
+  payload. Cross-user revoke attempts return 404 (not 403) so we
+  don't leak delegation existence.
+- Anonymous mode (`entra.mode = disabled`) returns 403 from the
+  write endpoints — no real identity to delegate from.
+- Portal sidebar: new "Delegations" entry under "My Approvals",
+  visible only when the user has had at least one approval
+  (matching the existing `has_any_approvals` gate).
+- New template `portal/delegations.html` mirrors the admin page UX
+  but pre-fills the approver-email server-side and offers no
+  ability to manage other users' rows.
+- Audit trail: each portal-driven create / revoke records
+  ``portal:<email>`` as ``triggered_by``.
+- i18n complete: 21 new keys added to all 5 locales (en/de/fr/es/it),
+  validator confirms 167 keys per locale.
+- Verified: routes return 302 (portal-login redirect) without a
+  session; 167 i18n keys present in every locale.
 - [ ] Auto-decline policy after extended inactivity (opt-in)
 
 ### [open] HR feed + SCIM — Prio 1

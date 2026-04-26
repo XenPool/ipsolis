@@ -4,6 +4,7 @@
       "my_orders": "I miei ordini",
       "my_it": "La mia IT",
       "my_approvals": "Le mie approvazioni",
+      "delegations": "Deleghe",
       "request_access": "Richiedi accesso"
     },
     "user": {
@@ -86,6 +87,31 @@
       "empty_recent": "Nessuna decisione recente.",
       "approver_manager": "Responsabile",
       "approver_app_owner": "Proprietario applicazione"
+    },
+    "delegations": {
+      "page_title": "Le mie deleghe di approvazione",
+      "intro": "Quando sei assente, reindirizza le approvazioni che gestisci a un delegato. Si applica ai nuovi ordini nel periodo — le approvazioni già in sospeso rimangono invariate.",
+      "create_button": "+ Nuova delega",
+      "modal_title": "Nuova delega",
+      "modal_subtitle": "Le approvazioni assegnate a te nel periodo seguente andranno al tuo delegato.",
+      "delegate_email": "Email delegato",
+      "delegate_name": "Nome delegato",
+      "delegate_name_placeholder": "(opzionale)",
+      "from_label": "Dal",
+      "until_label": "Al",
+      "reason_label": "Motivo",
+      "reason_placeholder": "es. ferie (opzionale)",
+      "col_delegate": "Delegato",
+      "col_window": "Periodo",
+      "col_reason": "Motivo",
+      "col_status": "Stato",
+      "status_active": "attiva",
+      "status_scheduled": "programmata",
+      "status_expired": "scaduta",
+      "status_revoked": "revocata",
+      "revoke_button": "Revoca",
+      "revoke_confirm": "Revocare questa delega adesso? Le future approvazioni torneranno a te.",
+      "empty": "Nessuna delega ancora."
     },
     "order_new": {
       "page_title": "Richiedi nuovo accesso",

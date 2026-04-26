@@ -4,6 +4,7 @@
       "my_orders": "Mes commandes",
       "my_it": "Mon IT",
       "my_approvals": "Mes approbations",
+      "delegations": "Délégations",
       "request_access": "Demander l'accès"
     },
     "user": {
@@ -86,6 +87,31 @@
       "empty_recent": "Aucune décision récente.",
       "approver_manager": "Manager",
       "approver_app_owner": "Propriétaire d'application"
+    },
+    "delegations": {
+      "page_title": "Mes délégations d'approbation",
+      "intro": "Lorsque vous êtes absent, redirigez les approbations qui vous reviennent vers une personne déléguée. S'applique aux nouvelles commandes pendant la période — les approbations déjà en attente restent telles quelles.",
+      "create_button": "+ Nouvelle délégation",
+      "modal_title": "Nouvelle délégation",
+      "modal_subtitle": "Les approbations qui vous seront assignées pendant la période ci-dessous iront à votre délégué.",
+      "delegate_email": "E-mail du délégué",
+      "delegate_name": "Nom du délégué",
+      "delegate_name_placeholder": "(facultatif)",
+      "from_label": "Du",
+      "until_label": "Au",
+      "reason_label": "Motif",
+      "reason_placeholder": "p. ex. vacances (facultatif)",
+      "col_delegate": "Délégué",
+      "col_window": "Période",
+      "col_reason": "Motif",
+      "col_status": "Statut",
+      "status_active": "actif",
+      "status_scheduled": "planifié",
+      "status_expired": "expiré",
+      "status_revoked": "révoqué",
+      "revoke_button": "Révoquer",
+      "revoke_confirm": "Révoquer cette délégation maintenant ? Les futures approbations vous reviendront.",
+      "empty": "Aucune délégation."
     },
     "order_new": {
       "page_title": "Demander un nouvel accès",
