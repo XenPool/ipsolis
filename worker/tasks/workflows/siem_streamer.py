@@ -64,6 +64,10 @@ def stream_audit_log() -> dict:
         workspace_id = (get_config(db, "siem.workspace_id", "") or "").strip()
         shared_key = (get_config(db, "siem.shared_key", "") or "").strip()
         log_type = (get_config(db, "siem.log_type", "IpsolisAudit") or "IpsolisAudit").strip() or "IpsolisAudit"
+        webhook_url = (get_config(db, "siem.webhook_url", "") or "").strip()
+        webhook_secret = (get_config(db, "siem.webhook_secret", "") or "").strip()
+        webhook_sig_header = (get_config(db, "siem.webhook_signature_header", "X-Hub-Signature-256") or "X-Hub-Signature-256").strip()
+        webhook_extra_raw = get_config(db, "siem.webhook_extra_headers", "") or ""
         fmt = (get_config(db, "siem.format", "splunk_hec") or "splunk_hec").strip()
         try:
             batch_size = max(1, min(1000, int(get_config(db, "siem.batch_size", "200") or "200")))
@@ -86,6 +90,11 @@ def stream_audit_log() -> dict:
                         f"Missing workspace_id or shared_key at {datetime.now(timezone.utc).isoformat()}")
             db.commit()
             return {"success": False, "reason": "missing workspace_id or shared_key"}
+        if fmt == "webhook" and (not webhook_url or not webhook_secret):
+            _set_config(db, "siem.last_error",
+                        f"Missing webhook_url or webhook_secret at {datetime.now(timezone.utc).isoformat()}")
+            db.commit()
+            return {"success": False, "reason": "missing webhook_url or webhook_secret"}
 
         rows = db.execute(
             text("""
@@ -103,11 +112,14 @@ def stream_audit_log() -> dict:
             return {"success": True, "forwarded": 0, "last_id": last_id}
 
         from tasks.modules.siem_export import (
+            _parse_extra_headers,
             _row_to_event,
             build_sentinel_payload,
             build_splunk_hec_payload,
+            build_webhook_payload,
             post_sentinel,
             post_splunk_hec,
+            post_webhook,
         )
 
         events = [_row_to_event(r) for r in rows]
@@ -121,6 +133,14 @@ def stream_audit_log() -> dict:
             ok, msg = post_sentinel(
                 workspace_id, shared_key, payload,
                 log_type=log_type, verify_tls=verify_tls,
+            )
+        elif fmt == "webhook":
+            payload = build_webhook_payload(events)
+            ok, msg = post_webhook(
+                webhook_url, webhook_secret, payload,
+                signature_header=webhook_sig_header,
+                extra_headers=_parse_extra_headers(webhook_extra_raw),
+                verify_tls=verify_tls,
             )
         else:
             ok, msg = False, f"Unknown SIEM format: {fmt!r}"

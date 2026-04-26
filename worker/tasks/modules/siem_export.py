@@ -1,12 +1,16 @@
 """SIEM audit-log streaming.
 
-Streams new ``audit_log`` rows to an external SIEM endpoint. Two
+Streams new ``audit_log`` rows to an external SIEM endpoint. Three
 adapters today:
 
 * ``splunk_hec`` — Splunk HTTP Event Collector (token in
   ``Authorization: Splunk …`` header, NDJSON body).
 * ``sentinel`` — Microsoft Sentinel / Azure Monitor Data Collector
   API (workspace id + shared key, HMAC-SHA256 signed, JSON array body).
+* ``webhook`` — Generic HMAC-signed JSON webhook (GitHub-compatible
+  ``X-Hub-Signature-256: sha256=<hex>`` header by default, header
+  name configurable). Targets Elastic / Datadog / Sumo / Loki /
+  homegrown receivers — anything that consumes signed JSON.
 
 Designed to be:
 
@@ -22,16 +26,20 @@ Configuration in ``app_config``:
 
 | Key | Purpose |
 |---|---|
-| ``siem.enabled``        | ``true``/``false`` master switch |
-| ``siem.format``         | ``splunk_hec`` or ``sentinel`` |
-| ``siem.endpoint_url``   | Splunk HEC endpoint (Splunk only) |
-| ``siem.token``          | HEC token sent as ``Authorization: Splunk <token>`` (Splunk only) |
-| ``siem.workspace_id``   | Log Analytics workspace GUID (Sentinel only) |
-| ``siem.shared_key``     | Workspace shared key, base64-encoded (Sentinel only) |
-| ``siem.log_type``       | Custom log table name, e.g. ``IpsolisAudit`` → ``IpsolisAudit_CL`` (Sentinel only) |
-| ``siem.batch_size``     | Max events per POST (default 200) |
-| ``siem.last_id``        | Auto-managed cursor, last successfully forwarded id |
-| ``siem.verify_tls``     | ``true``/``false``; default ``true``. Set false for self-signed labs only. |
+| ``siem.enabled``                | ``true``/``false`` master switch |
+| ``siem.format``                 | ``splunk_hec``, ``sentinel``, or ``webhook`` |
+| ``siem.endpoint_url``           | Splunk HEC endpoint (Splunk only) |
+| ``siem.token``                  | HEC token sent as ``Authorization: Splunk <token>`` (Splunk only) |
+| ``siem.workspace_id``           | Log Analytics workspace GUID (Sentinel only) |
+| ``siem.shared_key``             | Workspace shared key, base64-encoded (Sentinel only) |
+| ``siem.log_type``               | Custom log table name, e.g. ``IpsolisAudit`` → ``IpsolisAudit_CL`` (Sentinel only) |
+| ``siem.webhook_url``            | Webhook URL (webhook only) |
+| ``siem.webhook_secret``         | HMAC-SHA256 key for body signing (webhook only) |
+| ``siem.webhook_signature_header`` | Header name carrying ``sha256=<hex>``; default ``X-Hub-Signature-256`` |
+| ``siem.webhook_extra_headers``  | JSON object of additional headers, e.g. ``{"Authorization":"Bearer …"}`` |
+| ``siem.batch_size``             | Max events per POST (default 200) |
+| ``siem.last_id``                | Auto-managed cursor, last successfully forwarded id |
+| ``siem.verify_tls``             | ``true``/``false``; default ``true``. Set false for self-signed labs only. |
 """
 from __future__ import annotations
 
@@ -253,6 +261,130 @@ def post_sentinel(
         return False, f"{type(e).__name__}: {e}"
 
 
+# ── Generic HMAC-signed JSON webhook ──────────────────────────────────────────
+
+_DEFAULT_SIGNATURE_HEADER = "X-Hub-Signature-256"
+
+
+def build_webhook_payload(events: list[dict[str, Any]]) -> bytes:
+    """Build a JSON array body for the generic webhook adapter.
+
+    Mirrors the Sentinel shape: one ``[{...}, {...}]`` array per POST.
+    Receivers iterate the array and dedupe on ``event.id``. Compact
+    separators keep the body small and the HMAC over the exact bytes
+    we send.
+    """
+    return json.dumps(events, separators=(",", ":")).encode("utf-8")
+
+
+def _webhook_signature(secret: str, payload: bytes) -> str:
+    """HMAC-SHA256 sign ``payload`` with ``secret`` and return ``sha256=<hex>``.
+
+    GitHub-compatible format so receivers can reuse standard libraries
+    (``hmac.compare_digest`` against the computed digest is the canonical
+    check). We always emit lowercase hex to match GitHub's reference
+    implementation.
+    """
+    digest = hmac.new(
+        secret.encode("utf-8"), payload, hashlib.sha256,
+    ).hexdigest()
+    return f"sha256={digest}"
+
+
+def _parse_extra_headers(raw: str | None) -> dict[str, str]:
+    """Parse ``siem.webhook_extra_headers`` from a JSON object string.
+
+    Returns an empty dict on parse failure / non-object / non-string
+    values — so a malformed config can't tank the streamer. Keys with
+    empty / whitespace values are dropped.
+    """
+    if not raw or not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        logger.warning("siem.webhook_extra_headers is not valid JSON; ignoring")
+        return {}
+    if not isinstance(parsed, dict):
+        logger.warning("siem.webhook_extra_headers must be a JSON object; ignoring")
+        return {}
+    out: dict[str, str] = {}
+    for k, v in parsed.items():
+        if not isinstance(k, str) or not isinstance(v, str):
+            continue
+        k_clean = k.strip()
+        v_clean = v.strip()
+        if k_clean and v_clean:
+            out[k_clean] = v_clean
+    return out
+
+
+def post_webhook(
+    webhook_url: str,
+    secret: str,
+    payload: bytes,
+    *,
+    signature_header: str = _DEFAULT_SIGNATURE_HEADER,
+    extra_headers: dict[str, str] | None = None,
+    verify_tls: bool = True,
+) -> tuple[bool, str]:
+    """POST a signed payload to a generic webhook. Returns ``(success, message)``.
+
+    Headers always sent:
+
+    * ``Content-Type: application/json``
+    * ``User-Agent: ipsolis-siem/1.0``
+    * ``X-Ipsolis-Event: audit.batch``
+    * ``<signature_header>: sha256=<hex>`` — HMAC-SHA256 over the raw body
+
+    Plus any keys in ``extra_headers`` (e.g. a static
+    ``Authorization: Bearer …`` for receivers that prefer bearer auth
+    over HMAC verification, or service-specific headers like
+    ``DD-API-KEY`` for Datadog). ``extra_headers`` keys silently
+    override the always-sent set, except the signature header itself
+    which is always written by us.
+    """
+    if not webhook_url.strip() or not secret.strip():
+        return False, "Webhook URL or secret is missing."
+
+    sig_header = (signature_header or _DEFAULT_SIGNATURE_HEADER).strip() or _DEFAULT_SIGNATURE_HEADER
+    sig = _webhook_signature(secret.strip(), payload)
+
+    headers: dict[str, str] = {
+        "Content-Type": "application/json",
+        "User-Agent": "ipsolis-siem/1.0",
+        "X-Ipsolis-Event": "audit.batch",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+    headers[sig_header] = sig  # signature always wins, even over extras
+
+    req = urllib.request.Request(
+        webhook_url.strip(),
+        data=payload,
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(
+            req, timeout=_TIMEOUT_SECONDS, context=_ssl_context(verify_tls)
+        ) as resp:
+            status = resp.status
+            if 200 <= status < 300:
+                return True, f"Webhook accepted (HTTP {status})."
+            return False, f"Webhook returned HTTP {status}."
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:  # noqa: BLE001
+            detail = ""
+        return False, f"HTTP {e.code}: {e.reason} {detail}".rstrip()
+    except urllib.error.URLError as e:
+        return False, f"Network error: {e.reason}"
+    except Exception as e:  # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}"
+
+
 # ── Convenience: single-event "send a test" path used by the API ───────────────
 
 def send_test_event(
@@ -265,6 +397,10 @@ def send_test_event(
     workspace_id: str = "",
     shared_key: str = "",
     log_type: str = "IpsolisAudit",
+    webhook_url: str = "",
+    webhook_secret: str = "",
+    webhook_signature_header: str = _DEFAULT_SIGNATURE_HEADER,
+    webhook_extra_headers: str = "",
 ) -> tuple[bool, str]:
     """Post a single synthetic audit event so admins can verify the
     SIEM endpoint accepts our payload before they enable streaming."""
@@ -287,5 +423,13 @@ def send_test_event(
         return post_sentinel(
             workspace_id, shared_key, payload,
             log_type=log_type, verify_tls=verify_tls,
+        )
+    if fmt == "webhook":
+        payload = build_webhook_payload([test_event])
+        return post_webhook(
+            webhook_url, webhook_secret, payload,
+            signature_header=webhook_signature_header,
+            extra_headers=_parse_extra_headers(webhook_extra_headers),
+            verify_tls=verify_tls,
         )
     return False, f"Unknown SIEM format: {fmt!r}"

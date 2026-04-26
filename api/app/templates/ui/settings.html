@@ -822,15 +822,16 @@
 <div id="tab-compliance" class="hidden">
   <div id="compliance-banner" class="hidden mb-4 px-4 py-3 rounded text-sm font-medium"></div>
 
-  <!-- SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel) -->
+  <!-- SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel + Generic Webhook) -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
     <h2 class="text-sm font-semibold text-body mb-1">SIEM — Audit Log Streaming</h2>
     <p class="text-xs text-muted/70 mb-4 leading-snug">
       Stream every <code class="font-mono bg-surface-raised px-1 rounded">audit_log</code> entry to your SIEM.
-      Adapters today: <span class="font-medium">Splunk HEC</span> and <span class="font-medium">Microsoft Sentinel</span>
-      (Azure Monitor Data Collector API). The worker forwards new rows once a minute, tracks the cursor in
-      <code class="font-mono bg-surface-raised px-1 rounded">app_config</code>, and resumes automatically on
-      transient failure. Both back-ends dedupe by event id, so at-least-once delivery is safe.
+      Adapters today: <span class="font-medium">Splunk HEC</span>, <span class="font-medium">Microsoft Sentinel</span>
+      (Azure Monitor Data Collector API), and a <span class="font-medium">generic HMAC-signed webhook</span>
+      (Elastic, Datadog, Sumo, Loki, homegrown receivers). The worker forwards new rows once a minute, tracks
+      the cursor in <code class="font-mono bg-surface-raised px-1 rounded">app_config</code>, and resumes
+      automatically on transient failure. All back-ends dedupe by event id, so at-least-once delivery is safe.
     </p>
 
     <div id="siem-help-splunk" class="rounded border border-token-border bg-surface-raised/40 p-3 mb-4">
@@ -854,6 +855,18 @@
       </p>
     </div>
 
+    <div id="siem-help-webhook" class="hidden rounded border border-token-border bg-surface-raised/40 p-3 mb-4">
+      <p class="text-xs text-muted leading-relaxed">
+        <span class="font-medium text-body">Webhook setup:</span> point ipSolis at any HTTPS endpoint that accepts
+        a JSON array of events. Each POST is signed with HMAC-SHA256 over the raw body and the digest is sent in
+        a configurable header (default <code class="font-mono">X-Hub-Signature-256: sha256=&lt;hex&gt;</code>,
+        GitHub-compatible). Receivers verify by recomputing HMAC with the shared secret. Use the
+        <em>Extra headers</em> field to add per-receiver tokens (Datadog's
+        <code class="font-mono">DD-API-KEY</code>, Sumo's collector URL token, a static
+        <code class="font-mono">Authorization: Bearer …</code>, etc.).
+      </p>
+    </div>
+
     <div class="space-y-4">
       <div>
         <label class="block text-xs font-medium text-muted mb-1">Mode</label>
@@ -872,6 +885,7 @@
           {% set _sf = siem_config.get('siem.format', 'splunk_hec') %}
           <option value="splunk_hec" {% if _sf == 'splunk_hec' %}selected{% endif %}>Splunk HEC</option>
           <option value="sentinel"   {% if _sf == 'sentinel' %}selected{% endif %}>Microsoft Sentinel</option>
+          <option value="webhook"    {% if _sf == 'webhook' %}selected{% endif %}>Generic Webhook (HMAC-signed)</option>
         </select>
       </div>
 
@@ -917,6 +931,43 @@
                  placeholder="IpsolisAudit"
                  class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
           <p class="text-[11px] text-muted/60 mt-1">Custom table name without the <code class="font-mono">_CL</code> suffix. Sentinel will create <code class="font-mono">{value}_CL</code> on first ingest. Letters/digits only, ≤100 chars.</p>
+        </div>
+      </div>
+
+      <!-- ── Webhook fields ──────────────────────────────────────────────── -->
+      <div id="siem-webhook-fields" class="hidden space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Webhook URL</label>
+          <input type="text" id="siem-webhook-url" value="{{ siem_config.get('siem.webhook_url', '') }}"
+                 placeholder="https://siem.example.com/ingest/ipsolis"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Shared Secret</label>
+          <input type="password" id="siem-webhook-secret" value=""
+                 placeholder="{% if siem_config.get('siem.webhook_secret') == '***' %}(configured — leave blank to keep current){% else %}HMAC-SHA256 secret{% endif %}"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Used to HMAC-sign each batch. Stored as a secret. Receivers verify with the same value.</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Signature Header</label>
+            <input type="text" id="siem-webhook-signature-header"
+                   value="{{ siem_config.get('siem.webhook_signature_header', 'X-Hub-Signature-256') }}"
+                   placeholder="X-Hub-Signature-256"
+                   class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+            <p class="text-[11px] text-muted/60 mt-1">Header name carrying <code class="font-mono">sha256=&lt;hex&gt;</code>. GitHub-compatible default.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Extra Headers (JSON)</label>
+            <input type="text" id="siem-webhook-extra-headers"
+                   value="{{ siem_config.get('siem.webhook_extra_headers', '') }}"
+                   placeholder='{"DD-API-KEY":"…"}'
+                   class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+            <p class="text-[11px] text-muted/60 mt-1">Optional JSON object of additional headers. Malformed JSON is ignored at runtime.</p>
+          </div>
         </div>
       </div>
 
@@ -1767,21 +1818,22 @@ async function saveOtelConfig() {
 
 function onSiemFormatChange() {
   var fmt = document.getElementById('siem-format').value;
-  var splunkFields = document.getElementById('siem-splunk-fields');
-  var sentinelFields = document.getElementById('siem-sentinel-fields');
-  var splunkHelp = document.getElementById('siem-help-splunk');
-  var sentinelHelp = document.getElementById('siem-help-sentinel');
-  if (fmt === 'sentinel') {
-    splunkFields.classList.add('hidden');
-    sentinelFields.classList.remove('hidden');
-    splunkHelp.classList.add('hidden');
-    sentinelHelp.classList.remove('hidden');
-  } else {
-    splunkFields.classList.remove('hidden');
-    sentinelFields.classList.add('hidden');
-    splunkHelp.classList.remove('hidden');
-    sentinelHelp.classList.add('hidden');
-  }
+  var groups = {
+    splunk_hec: {fields: 'siem-splunk-fields',   help: 'siem-help-splunk'},
+    sentinel:   {fields: 'siem-sentinel-fields', help: 'siem-help-sentinel'},
+    webhook:    {fields: 'siem-webhook-fields',  help: 'siem-help-webhook'},
+  };
+  Object.keys(groups).forEach(function(key) {
+    var f = document.getElementById(groups[key].fields);
+    var h = document.getElementById(groups[key].help);
+    if (key === fmt) {
+      if (f) f.classList.remove('hidden');
+      if (h) h.classList.remove('hidden');
+    } else {
+      if (f) f.classList.add('hidden');
+      if (h) h.classList.add('hidden');
+    }
+  });
 }
 
 async function saveSiemConfig() {
@@ -1792,15 +1844,22 @@ async function saveSiemConfig() {
     'siem.batch_size':  document.getElementById('siem-batch-size').value.trim() || '200',
     'siem.verify_tls':  document.getElementById('siem-verify-tls').value,
   };
-  // Always persist both adapter inputs so admins can flip back without retyping.
+  // Always persist all adapter inputs so admins can flip back without retyping.
   fields['siem.endpoint_url'] = document.getElementById('siem-endpoint-url').value.trim();
   fields['siem.workspace_id'] = document.getElementById('siem-workspace-id').value.trim();
   fields['siem.log_type']     = document.getElementById('siem-log-type').value.trim() || 'IpsolisAudit';
+  fields['siem.webhook_url']  = document.getElementById('siem-webhook-url').value.trim();
+  fields['siem.webhook_signature_header'] =
+    document.getElementById('siem-webhook-signature-header').value.trim() || 'X-Hub-Signature-256';
+  fields['siem.webhook_extra_headers'] =
+    document.getElementById('siem-webhook-extra-headers').value.trim();
 
   var splunkToken = document.getElementById('siem-token').value;
   if (splunkToken) fields['siem.token'] = splunkToken;
   var sentinelKey = document.getElementById('siem-shared-key').value;
   if (sentinelKey) fields['siem.shared_key'] = sentinelKey;
+  var webhookSecret = document.getElementById('siem-webhook-secret').value;
+  if (webhookSecret) fields['siem.webhook_secret'] = webhookSecret;
 
   var errors = [];
   for (var key in fields) {

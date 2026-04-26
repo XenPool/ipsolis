@@ -324,11 +324,61 @@ live table and is best paired with the RBAC work.
     Splunk error path returned its old "Endpoint URL or HEC token is
     missing." message — no regression.
 
+**Done — generic HMAC-signed webhook adapter (2026-04-26):**
+- New `build_webhook_payload()` + `post_webhook()` in
+  `worker/tasks/modules/siem_export.py`, mirrored on the API side in
+  `api/app/utils/siem_export.py`. Sends the same flat JSON array of
+  events that Sentinel uses; signs the raw body with HMAC-SHA256 and
+  emits the digest in a configurable header (default
+  `X-Hub-Signature-256: sha256=<hex>`, GitHub-compatible — receivers
+  can reuse `hmac.compare_digest` against a recomputed digest with no
+  vendor-specific library required).
+- Always-emitted headers: `Content-Type: application/json`,
+  `User-Agent: ipsolis-siem/1.0`, `X-Ipsolis-Event: audit.batch`,
+  plus the configured signature header. Operators can supply
+  additional headers as a JSON object in
+  `siem.webhook_extra_headers` (e.g.
+  `{"DD-API-KEY":"…","Authorization":"Bearer …"}`) — useful for
+  Datadog, Sumo, Splunk-cloud, or homegrown receivers that want a
+  static auth header alongside HMAC verification. Malformed JSON in
+  that field is logged and ignored at runtime so a single typo can't
+  silently break streaming.
+- Migration `0068_seed_webhook_siem_config.py` seeds four new
+  `app_config` keys: `siem.webhook_url` (plain), `siem.webhook_secret`
+  (secret), `siem.webhook_signature_header` (default
+  `X-Hub-Signature-256`), `siem.webhook_extra_headers` (JSON).
+  `siem.format` description updated to list all three adapters.
+- Streamer Beat task gets the third branch on `siem.format == 'webhook'`,
+  with the same cursor / retry / status semantics as Splunk and
+  Sentinel. Per-format precondition checks added so missing
+  webhook credentials surface a tight error instead of round-tripping
+  out to nothing.
+- Settings UI (Compliance tab) format dropdown gains a third option
+  "Generic Webhook (HMAC-signed)"; the existing format-toggle
+  generalised to a config-driven loop so future adapters can be
+  wired without further JS surgery. Per-adapter help cards explain
+  HMAC verification with a copy-pasteable Python snippet for receivers.
+- README + `docs/ENTERPRISE_FEATURES.md` updated: third adapter in
+  feature description, full setup walkthrough including HMAC
+  verification example, table of new config keys, hints for Elastic /
+  Datadog / Sumo / Loki receivers.
+- Smoke-tested end-to-end with a stdlib HMAC-verifying listener:
+  * "Send Test Event" with the listener inside the api container →
+    `Webhook accepted test event (HTTP 200)`. Listener log confirmed
+    the sent `X-Hub-Signature-256` digest matched its independent
+    recompute, the `X-Datadog-Test: hello` extra header was
+    propagated, and the JSON-array payload contained 1 event.
+  * Worker streamer pass with the listener inside the worker
+    container forwarded a 40-event batch in a single POST,
+    advanced the cursor to id 878, and the listener confirmed
+    HMAC-match on the larger payload.
+  * Switched format back to `splunk_hec` mid-test → no regression on
+    the existing adapters.
+
 **Still to do — separate slice:**
 - [ ] Sentinel via the newer Logs Ingestion API (DCE / DCR / service
       principal) — mainly for tenants that have already switched off
       the Data Collector API or who want enriched DCR transformations.
-- [ ] Generic webhook adapter with HMAC signing for arbitrary SIEMs.
 - [ ] Streaming-failure email alert via the existing health-alert path
       (currently surfaced only in `siem.last_error` and the UI).
 

@@ -11,7 +11,7 @@ explicit *Enterprise license* note appears.
 - [Microsoft Teams approval cards](#microsoft-teams-approval-cards)
 - [Approval reminders](#approval-reminders)
 - [Prometheus `/metrics` endpoint](#prometheus-metrics-endpoint)
-- [SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel)](#siem-audit-log-streaming-splunk-hec--microsoft-sentinel)
+- [SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel + Generic Webhook)](#siem-audit-log-streaming-splunk-hec--microsoft-sentinel--generic-webhook)
 - [Per-integration API tokens](#per-integration-api-tokens)
 - [Cost report / chargeback](#cost-report--chargeback)
 
@@ -308,13 +308,14 @@ intervals which Prometheus typically doesn't use.
 
 ---
 
-## SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel)
+## SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel + Generic Webhook)
 
 Every `audit_log` row (every order/asset/asset-type/approval mutation)
-gets forwarded to a configured SIEM endpoint. Two adapters today:
-**Splunk HEC** and **Microsoft Sentinel** (Azure Monitor Data Collector
-API). Additional adapters (Elastic, generic JSON webhook) can be added
-by implementing a new `build_*_payload` and `post_*` pair in
+gets forwarded to a configured SIEM endpoint. Three adapters today:
+**Splunk HEC**, **Microsoft Sentinel** (Azure Monitor Data Collector
+API), and a **generic HMAC-signed JSON webhook** (Elastic, Datadog,
+Sumo, Loki, anything that consumes signed JSON). New back-ends can be
+added by implementing a new `build_*_payload` and `post_*` pair in
 `worker/tasks/modules/siem_export.py` and dispatching on `siem.format`
 in the streamer.
 
@@ -359,15 +360,54 @@ will add the newer Logs Ingestion API for installs that need it.
 3. Decide on a *Log Type* — letters/digits only, ≤100 chars. Default
    `IpsolisAudit` materialises as `IpsolisAudit_CL` in Sentinel/KQL.
 
+### Generic webhook setup
+
+The generic webhook adapter targets any HTTPS receiver that accepts
+a JSON array of events. ipSolis signs every batch with HMAC-SHA256
+over the raw body and sends the digest in a header (default
+`X-Hub-Signature-256: sha256=<hex>` — GitHub-compatible, so receivers
+can reuse standard verification libraries). Tested shapes for
+common back-ends:
+
+* **Elastic ingest pipeline / generic HTTP** — point `webhook_url` at
+  your `_bulk` or custom ingest endpoint; verify HMAC in the receiver.
+* **Datadog Logs HTTP intake** — set `webhook_url` to
+  `https://http-intake.logs.datadoghq.com/api/v2/logs`, add
+  `{"DD-API-KEY":"<key>"}` to *Extra Headers*. Datadog ignores the
+  HMAC header but ipSolis sends it anyway — set the secret to any
+  value; receivers that don't verify simply discard it.
+* **Sumo HTTP source** — `webhook_url` is the Sumo collector URL
+  (already carries auth in the URL); HMAC adds defense in depth.
+* **Loki Push API** — `webhook_url` is `/loki/api/v1/push`; the
+  receiver expects a different body shape today, so this needs a
+  small adapter helper for full integration. Plain webhook works
+  for any custom receiver.
+
+The receiver verifies the signature like this (Python):
+
+```python
+import hmac, hashlib
+def verify(body: bytes, header: str, secret: str) -> bool:
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header)
+```
+
+1. Spin up your receiver and capture its URL + HMAC secret.
+2. (Optional) Decide which extra static headers it needs (Bearer
+   token, vendor API key) and prepare a small JSON object.
+
 ### ipSolis setup
 
 Admin UI → *Settings* → *Compliance* tab → *SIEM — Audit Log Streaming*:
 
 1. Set *Mode* to `Enabled`.
-2. Set *Format* to `Splunk HEC` or `Microsoft Sentinel`. The form
-   swaps to the matching credential fields.
-3. Paste the credentials — *Endpoint URL* + *HEC Token* (Splunk) or
-   *Workspace ID* + *Shared Key* + *Log Type* (Sentinel).
+2. Set *Format* to `Splunk HEC`, `Microsoft Sentinel`, or
+   `Generic Webhook (HMAC-signed)`. The form swaps to the matching
+   credential fields.
+3. Paste the credentials — *Endpoint URL* + *HEC Token* (Splunk),
+   *Workspace ID* + *Shared Key* + *Log Type* (Sentinel), or
+   *Webhook URL* + *Shared Secret* + optional *Signature Header* /
+   *Extra Headers (JSON)* (webhook).
 4. Adjust *Batch size* and *Verify TLS* as needed (defaults are sane:
    200 / verify on).
 5. Click **Save Settings**, then **Send Test Event** — a single
@@ -382,12 +422,16 @@ Admin UI → *Settings* → *Compliance* tab → *SIEM — Audit Log Streaming*:
 | Key | Purpose | Stored as |
 |---|---|---|
 | `siem.enabled`          | `true`/`false` master switch | plain |
-| `siem.format`           | `splunk_hec` or `sentinel` | plain |
+| `siem.format`           | `splunk_hec`, `sentinel`, or `webhook` | plain |
 | `siem.endpoint_url`     | Splunk HEC endpoint URL | plain |
 | `siem.token`            | Splunk HEC token | secret |
 | `siem.workspace_id`     | Sentinel: Log Analytics workspace GUID | plain |
 | `siem.shared_key`       | Sentinel: workspace shared key (base64) | secret |
 | `siem.log_type`         | Sentinel: custom log table name (no `_CL` suffix; default `IpsolisAudit`) | plain |
+| `siem.webhook_url`      | Webhook: HTTPS receiver URL | plain |
+| `siem.webhook_secret`   | Webhook: HMAC-SHA256 shared secret | secret |
+| `siem.webhook_signature_header` | Webhook: header name carrying `sha256=<hex>` (default `X-Hub-Signature-256`) | plain |
+| `siem.webhook_extra_headers`    | Webhook: JSON object of additional headers (vendor API keys etc.) | plain |
 | `siem.batch_size`       | Max events per minute (1–1000) | plain |
 | `siem.verify_tls`       | Verify endpoint TLS cert | plain |
 | `siem.last_id`          | Auto: last forwarded audit_log id | plain |

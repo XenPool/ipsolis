@@ -317,6 +317,8 @@ async def test_siem_connection(db: AsyncSession = Depends(get_db)) -> dict:
             "siem.endpoint_url", "siem.token", "siem.format",
             "siem.verify_tls", "app.title",
             "siem.workspace_id", "siem.shared_key", "siem.log_type",
+            "siem.webhook_url", "siem.webhook_secret",
+            "siem.webhook_signature_header", "siem.webhook_extra_headers",
         ]))
     )
     rows = {r.key: (r.value or "") for r in cfg.scalars().all()}
@@ -329,6 +331,10 @@ async def test_siem_connection(db: AsyncSession = Depends(get_db)) -> dict:
     workspace_id = (rows.get("siem.workspace_id") or "").strip()
     shared_key = (rows.get("siem.shared_key") or "").strip()
     log_type = (rows.get("siem.log_type") or "IpsolisAudit").strip() or "IpsolisAudit"
+    webhook_url = (rows.get("siem.webhook_url") or "").strip()
+    webhook_secret = (rows.get("siem.webhook_secret") or "").strip()
+    webhook_sig_header = (rows.get("siem.webhook_signature_header") or "X-Hub-Signature-256").strip()
+    webhook_extra = rows.get("siem.webhook_extra_headers") or ""
 
     # Per-format precondition check so admins get a tight error before
     # we round-trip out to a SIEM that would have rejected anyway.
@@ -336,11 +342,16 @@ async def test_siem_connection(db: AsyncSession = Depends(get_db)) -> dict:
         return {"ok": False, "message": "Endpoint URL or HEC token is missing."}
     if fmt == "sentinel" and (not workspace_id or not shared_key):
         return {"ok": False, "message": "Workspace ID or shared key is missing."}
+    if fmt == "webhook" and (not webhook_url or not webhook_secret):
+        return {"ok": False, "message": "Webhook URL or secret is missing."}
 
     ok, msg = send_test_event(
         endpoint, token,
         fmt=fmt, verify_tls=verify_tls, host=host,
         workspace_id=workspace_id, shared_key=shared_key, log_type=log_type,
+        webhook_url=webhook_url, webhook_secret=webhook_secret,
+        webhook_signature_header=webhook_sig_header,
+        webhook_extra_headers=webhook_extra,
     )
     return {"ok": ok, "message": msg}
 

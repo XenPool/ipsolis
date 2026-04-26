@@ -152,6 +152,67 @@ def _send_sentinel(
         return False, f"{type(e).__name__}: {e}"
 
 
+_DEFAULT_SIGNATURE_HEADER = "X-Hub-Signature-256"
+
+
+def _send_webhook(
+    webhook_url: str,
+    secret: str,
+    *,
+    signature_header: str,
+    extra_headers_raw: str,
+    verify_tls: bool,
+) -> tuple[bool, str]:
+    if not webhook_url.strip() or not secret.strip():
+        return False, "Webhook URL or secret is missing."
+
+    payload = json.dumps([_test_event()], separators=(",", ":")).encode("utf-8")
+    sig = "sha256=" + hmac.new(
+        secret.strip().encode("utf-8"), payload, hashlib.sha256,
+    ).hexdigest()
+    sig_header = (signature_header or _DEFAULT_SIGNATURE_HEADER).strip() or _DEFAULT_SIGNATURE_HEADER
+
+    headers: dict[str, str] = {
+        "Content-Type": "application/json",
+        "User-Agent": "ipsolis-siem/1.0",
+        "X-Ipsolis-Event": "audit.batch",
+    }
+    # Best-effort parse of the extra-headers JSON. A malformed value is
+    # ignored so the test button still surfaces the network result.
+    if extra_headers_raw and extra_headers_raw.strip():
+        try:
+            parsed = json.loads(extra_headers_raw)
+            if isinstance(parsed, dict):
+                for k, v in parsed.items():
+                    if isinstance(k, str) and isinstance(v, str) and k.strip() and v.strip():
+                        headers[k.strip()] = v.strip()
+        except (TypeError, ValueError):
+            pass
+    headers[sig_header] = sig
+
+    req = urllib.request.Request(
+        webhook_url.strip(), data=payload, headers=headers, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(
+            req, timeout=_TIMEOUT_SECONDS, context=_ssl_context(verify_tls)
+        ) as resp:
+            status = resp.status
+            if 200 <= status < 300:
+                return True, f"Webhook accepted test event (HTTP {status})."
+            return False, f"Webhook returned HTTP {status}."
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:  # noqa: BLE001
+            detail = ""
+        return False, f"HTTP {e.code}: {e.reason} {detail}".rstrip()
+    except urllib.error.URLError as e:
+        return False, f"Network error: {e.reason}"
+    except Exception as e:  # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}"
+
+
 def send_test_event(
     endpoint_url: str,
     token: str,
@@ -162,6 +223,10 @@ def send_test_event(
     workspace_id: str = "",
     shared_key: str = "",
     log_type: str = "IpsolisAudit",
+    webhook_url: str = "",
+    webhook_secret: str = "",
+    webhook_signature_header: str = _DEFAULT_SIGNATURE_HEADER,
+    webhook_extra_headers: str = "",
 ) -> tuple[bool, str]:
     if fmt == "splunk_hec":
         return _send_splunk(endpoint_url, token, verify_tls=verify_tls, host=host)
@@ -169,5 +234,12 @@ def send_test_event(
         return _send_sentinel(
             workspace_id, shared_key,
             log_type=log_type, verify_tls=verify_tls,
+        )
+    if fmt == "webhook":
+        return _send_webhook(
+            webhook_url, webhook_secret,
+            signature_header=webhook_signature_header,
+            extra_headers_raw=webhook_extra_headers,
+            verify_tls=verify_tls,
         )
     return False, f"Unknown SIEM format: {fmt!r}"
