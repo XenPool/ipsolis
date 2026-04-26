@@ -31,6 +31,20 @@
                value="{{ asset_type.description if asset_type else '' }}"
                placeholder="Short description"
                class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <p class="text-[11px] text-muted/60 mt-1">One line, shown on the portal catalog tile.</p>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">
+          Help text
+          <span class="text-muted/60 font-normal ml-1">(optional, markdown)</span>
+        </label>
+        <textarea name="help_text" rows="6"
+                  placeholder="Longer description shown to requesters on the order page. Markdown supported: **bold**, *italic*, [links](https://…), bullet lists, `code`, headings."
+                  class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">{{ asset_type.help_text if asset_type and asset_type.help_text else '' }}</textarea>
+        <p class="text-[11px] text-muted/60 mt-1 leading-snug">
+          Use this for things requesters need to know before ordering — pre-installed software, expected provision time,
+          who to contact for support, license terms. Rendered safely (scripts and inline styles are stripped).
+        </p>
       </div>
       <div>
         <label class="flex items-start gap-2 text-sm cursor-pointer">
@@ -1269,6 +1283,7 @@ async function submitForm() {
   var payload = {
     name: name,
     description: form.querySelector('[name="description"]').value.trim() || null,
+    help_text: form.querySelector('[name="help_text"]').value.trim() || null,
     is_active: form.querySelector('[name="is_active"]').checked,
     category: form.querySelector('[name="category"]:checked').value,
     assignment_model: assignmentModel,

@@ -14,6 +14,12 @@ from fastapi.templating import Jinja2Templates
 APP_TITLE_DEFAULT = "Ipsolis"
 
 templates = Jinja2Templates(directory="/app/app/templates")
+
+# Sanitized markdown filter — used by `| markdown` in templates.
+# Imported here so registration happens once at module load.
+from app.utils.markdown_render import render_markdown as _render_markdown  # noqa: E402
+templates.env.filters["markdown"] = _render_markdown
+
 templates.env.globals["app_title"] = APP_TITLE_DEFAULT
 templates.env.globals["app_version"] = os.environ.get("APP_VERSION", "0.0.0")
 templates.env.globals["app_logo"] = False          # bool: whether a logo is configured

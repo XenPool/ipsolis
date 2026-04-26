@@ -790,6 +790,13 @@ async def settings_page(
     entra_rows = entra_result.scalars().all()
     entra_config = {r.key: (_MASK if r.is_secret else (r.value or "")) for r in entra_rows}
 
+    # Load teams.* config keys
+    teams_result = await db.execute(
+        select(AppConfig).where(AppConfig.key.like("teams.%")).order_by(AppConfig.key)
+    )
+    teams_rows = teams_result.scalars().all()
+    teams_config = {r.key: (_MASK if r.is_secret else (r.value or "")) for r in teams_rows}
+
     # Load hosting config keys (vsphere.* / xenserver.*)
     def _cfg_dict(rows: list) -> dict:
         return {r.key.split(".", 1)[1]: (_MASK if r.is_secret else (r.value or "")) for r in rows}
@@ -818,6 +825,7 @@ async def settings_page(
         request, "ui/settings.html",
         {"vars": masked_vars, "ad_config": ad_config, "entra_config": entra_config,
          "email_config": email_config, "email_templates": email_templates,
+         "teams_config": teams_config,
          "hosting_vsphere": hosting_vsphere, "hosting_xenserver": hosting_xenserver,
          "hosting_sccm": hosting_sccm,
          "portal_config": portal_config,

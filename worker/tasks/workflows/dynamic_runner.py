@@ -1414,11 +1414,18 @@ def send_approval_requests(order_id: int) -> dict:
             until_date = ru.strftime("%d.%m.%Y")
 
         approvals = db.execute(
-            text("SELECT approver_email, approver_name FROM order_approvals WHERE order_id = :oid AND status = 'pending'"),
+            text("SELECT id, approver_email, approver_name FROM order_approvals WHERE order_id = :oid AND status = 'pending'"),
             {"oid": order_id},
         ).fetchall()
 
+        # Teams notifications are best-effort — read config once, skip silently
+        # when not enabled. Failure to deliver to Teams must not abort the order.
+        teams_mode = (get_config(db, "teams.mode", "disabled") or "disabled").strip()
+        teams_webhook = (get_config(db, "teams.webhook_url") or "").strip()
+        app_title = get_config(db, "app.title", "Ipsolis") or "Ipsolis"
+
         sent = 0
+        teams_sent = 0
         for a in approvals:
             notif.send_approval_request(
                 db=db,
@@ -1433,8 +1440,38 @@ def send_approval_requests(order_id: int) -> dict:
             )
             sent += 1
 
-        logger.info("Sent %d approval request emails for order_id=%s", sent, order_id)
-        return {"success": True, "sent": sent}
+            if teams_mode == "enabled" and teams_webhook:
+                try:
+                    from tasks.modules.teams_notify import (
+                        build_approval_card,
+                        make_approval_token,
+                        post_adaptive_card,
+                    )
+                    token = make_approval_token(a.id)
+                    review_url = f"{portal_base.rstrip('/')}/approve/{token}"
+                    card = build_approval_card(
+                        asset_type_name=row.asset_type_name or "",
+                        requester_name=row.user_name or "",
+                        requester_email=row.user_email or "",
+                        approver_name=a.approver_name,
+                        review_url=review_url,
+                        from_date=from_date,
+                        until_date=until_date,
+                        app_title=app_title,
+                    )
+                    ok, msg = post_adaptive_card(teams_webhook, card)
+                    if ok:
+                        teams_sent += 1
+                    else:
+                        logger.warning("Teams card delivery failed for approval %s: %s", a.id, msg)
+                except Exception as exc:  # noqa: BLE001 — never abort the email loop
+                    logger.warning("Teams card error for approval %s: %s", a.id, exc)
+
+        logger.info(
+            "Approval notifications for order %s — emails=%d teams=%d (mode=%s)",
+            order_id, sent, teams_sent, teams_mode,
+        )
+        return {"success": True, "sent": sent, "teams_sent": teams_sent}
     finally:
         db.close()
 

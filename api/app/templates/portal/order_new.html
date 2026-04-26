@@ -3,6 +3,29 @@
 {% block title %}Request New Access – {{ app_title }}{% endblock %}
 
 {% block content %}
+<style>
+  /* Tailwind via CDN ships without the typography plugin, so we hand-tune the
+     few elements admin-supplied markdown can produce. Scoped to .help-md so it
+     doesn't leak into the rest of the page. */
+  .help-md p { margin: 0.25rem 0; }
+  .help-md p + p { margin-top: 0.5rem; }
+  .help-md h1, .help-md h2, .help-md h3, .help-md h4 { font-weight: 600; color: var(--token-heading, inherit); margin: 0.6rem 0 0.25rem; }
+  .help-md h1 { font-size: 1.05rem; }
+  .help-md h2 { font-size: 1rem; }
+  .help-md h3, .help-md h4 { font-size: 0.95rem; }
+  .help-md ul, .help-md ol { margin: 0.4rem 0 0.4rem 1.25rem; }
+  .help-md ul { list-style: disc; }
+  .help-md ol { list-style: decimal; }
+  .help-md li { margin: 0.1rem 0; }
+  .help-md a { color: rgb(37 99 235); text-decoration: underline; }
+  .help-md a:hover { color: rgb(29 78 216); }
+  .help-md code { background: rgba(0,0,0,0.06); padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.85em; }
+  .help-md pre { background: rgba(0,0,0,0.06); padding: 0.5rem 0.75rem; border-radius: 4px; overflow-x: auto; margin: 0.5rem 0; }
+  .help-md pre code { background: transparent; padding: 0; }
+  .help-md blockquote { border-left: 3px solid rgba(0,0,0,0.15); padding-left: 0.75rem; color: var(--token-muted, #666); margin: 0.5rem 0; }
+  .help-md hr { border: 0; border-top: 1px solid rgba(0,0,0,0.1); margin: 0.75rem 0; }
+</style>
+
 <div class="mb-6">
   <a href="/portal/" class="text-sm text-muted hover:text-heading" data-i18n="portal.common.back_to_orders">← Orders</a>
 </div>
@@ -20,12 +43,46 @@
   <!-- Asset-Typ -->
   <div class="bg-surface rounded-lg border border-token-border p-5">
     <h2 class="text-sm font-semibold text-body mb-4" data-i18n="portal.order_new.section_asset_type">Asset Definition</h2>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+    {# Search + category filter — pure client-side, hidden when there are
+       only a handful of definitions because it just clutters the page. #}
+    {% if asset_types | length > 6 %}
+    <div class="mb-4 flex flex-col sm:flex-row gap-2">
+      <div class="relative flex-1">
+        <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted/60 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/>
+        </svg>
+        <input type="text" id="catalog-search" autocomplete="off"
+               placeholder="Search definitions…"
+               data-i18n-attr-placeholder="portal.order_new.catalog_search_placeholder"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm pl-9 pr-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+      </div>
+      <select id="catalog-filter-category"
+              class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <option value="" data-i18n="portal.order_new.catalog_filter_all">All categories</option>
+        <option value="platform_access" data-i18n="portal.order_new.catalog_filter_platform">VDI / Server / Cloud</option>
+        <option value="application_access" data-i18n="portal.order_new.catalog_filter_application">Business &amp; SaaS Apps</option>
+        <option value="data_access" data-i18n="portal.order_new.catalog_filter_data">Data &amp; Collaboration</option>
+        <option value="device_access" data-i18n="portal.order_new.catalog_filter_device">Clients / MDM / WLAN</option>
+        <option value="infrastructure_access" data-i18n="portal.order_new.catalog_filter_infrastructure">Network / Firewall / Admin</option>
+      </select>
+      <button type="button" id="catalog-clear-filters"
+              class="hidden text-xs text-muted hover:text-body underline px-2 self-center"
+              data-i18n="portal.order_new.catalog_clear_filters">Clear</button>
+    </div>
+    {% endif %}
+
+    <div id="catalog-no-match" class="hidden text-center text-sm text-muted/70 py-6"
+         data-i18n="portal.order_new.catalog_no_match">No definitions match your search.</div>
+
+    <div id="catalog-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       {% for t in asset_types %}
       {% set sold_out = t.id in unavailable_ids %}
-      <label class="relative flex rounded-lg border p-4
+      <label class="catalog-card relative flex rounded-lg border p-4
         {% if sold_out %}border-token-border bg-surface-raised cursor-not-allowed opacity-60
-        {% else %}cursor-pointer border-token-border hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50 dark:has-[:checked]:bg-blue-500/20 has-[:checked]:[&_p]:text-blue-900 dark:has-[:checked]:[&_p]:text-blue-200{% endif %}">
+        {% else %}cursor-pointer border-token-border hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50 dark:has-[:checked]:bg-blue-500/20 has-[:checked]:[&_p]:text-blue-900 dark:has-[:checked]:[&_p]:text-blue-200{% endif %}"
+        data-category="{{ t.category.value if t.category else '' }}"
+        data-search="{{ (t.name ~ ' ' ~ (t.description or '') ~ ' ' ~ (t.help_text or '')) | lower }}">
         <input type="radio" name="asset_type_id" value="{{ t.id }}"
                {% if sold_out %}disabled{% endif %}
                {% if not sold_out and form and form.asset_type_id == t.id %}checked{% endif %}
@@ -61,6 +118,24 @@
       </label>
       {% endfor %}
     </div>
+  </div>
+
+  <!-- Help text (dynamic, based on selected type — only types with help_text get a panel) -->
+  <div id="help-section-wrapper" class="hidden">
+    {% for t in asset_types %}
+    {% if t.help_text %}
+    <div id="help-section-{{ t.id }}" class="help-section help-md hidden rounded-lg border border-blue-100 dark:border-blue-500/30 bg-blue-50/40 dark:bg-blue-500/10 px-5 py-4">
+      <div class="flex items-start gap-3">
+        <svg class="shrink-0 w-4 h-4 mt-0.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 21a9 9 0 110-18 9 9 0 010 18z"/>
+        </svg>
+        <div class="text-sm text-body min-w-0 flex-1">
+          {{ t.help_text | markdown | safe }}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
   </div>
 
   <!-- Attributes (dynamic, based on selected type) -->
@@ -437,6 +512,29 @@ function updateAttrSection() {
   }
 }
 
+function updateHelpSection() {
+  var checked = document.querySelector('[name="asset_type_id"]:checked');
+  var typeId = checked ? checked.value : null;
+  var wrapper = document.getElementById('help-section-wrapper');
+
+  document.querySelectorAll('.help-section').forEach(function(sec) {
+    sec.classList.add('hidden');
+  });
+
+  if (!typeId) {
+    if (wrapper) wrapper.classList.add('hidden');
+    return;
+  }
+  var target = document.getElementById('help-section-' + typeId);
+  if (target) {
+    target.classList.remove('hidden');
+    if (wrapper) wrapper.classList.remove('hidden');
+  } else {
+    // Selected type has no help text — hide the wrapper.
+    if (wrapper) wrapper.classList.add('hidden');
+  }
+}
+
 var _unavailableIds = new Set([{% for tid in unavailable_ids %}{{ tid }}{% if not loop.last %}, {% endif %}{% endfor %}]);
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -450,6 +548,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('[name="asset_type_id"]').forEach(function(r) {
     r.addEventListener('change', updateAttrSection);
     r.addEventListener('change', updateUserListsSection);
+    r.addEventListener('change', updateHelpSection);
   });
 
   // visibleWhen: observe fields within each section
@@ -501,9 +600,53 @@ document.addEventListener('DOMContentLoaded', function() {
   if (fromInput) fromInput.addEventListener('change', updateScheduleHint);
   updateScheduleHint();
 
+  // Catalog search + category filter (only present when many definitions exist)
+  var searchInput = document.getElementById('catalog-search');
+  var categorySelect = document.getElementById('catalog-filter-category');
+  var clearBtn = document.getElementById('catalog-clear-filters');
+  var noMatch = document.getElementById('catalog-no-match');
+  var grid = document.getElementById('catalog-grid');
+
+  function applyCatalogFilter() {
+    if (!grid) return;
+    var q = (searchInput && searchInput.value || '').trim().toLowerCase();
+    var cat = (categorySelect && categorySelect.value) || '';
+    var visibleCount = 0;
+    grid.querySelectorAll('.catalog-card').forEach(function(card) {
+      var matchesText = !q || (card.dataset.search || '').indexOf(q) !== -1;
+      var matchesCat = !cat || card.dataset.category === cat;
+      var visible = matchesText && matchesCat;
+      card.classList.toggle('hidden', !visible);
+      if (visible) visibleCount++;
+    });
+    if (noMatch) noMatch.classList.toggle('hidden', visibleCount > 0);
+    if (clearBtn) clearBtn.classList.toggle('hidden', !q && !cat);
+
+    // If the previously checked card is now hidden, clear the selection
+    // and reset the dependent panels so a stale type isn't submitted.
+    var checked = document.querySelector('[name="asset_type_id"]:checked');
+    if (checked && checked.closest('.catalog-card.hidden')) {
+      checked.checked = false;
+      updateAttrSection();
+      updateUserListsSection();
+      updateHelpSection();
+    }
+  }
+
+  if (searchInput) searchInput.addEventListener('input', applyCatalogFilter);
+  if (categorySelect) categorySelect.addEventListener('change', applyCatalogFilter);
+  if (clearBtn) clearBtn.addEventListener('click', function() {
+    if (searchInput) searchInput.value = '';
+    if (categorySelect) categorySelect.value = '';
+    applyCatalogFilter();
+    if (searchInput) searchInput.focus();
+  });
+
   // Set initial state
   updateAttrSection();
   updateUserListsSection();
+  updateHelpSection();
+  applyCatalogFilter();
 });
 </script>
 {% endblock %}

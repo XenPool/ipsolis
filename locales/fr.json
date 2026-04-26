@@ -113,7 +113,16 @@
       "schedule_hint_body": "Votre commande sera réservée maintenant et exécutée automatiquement à la date de début sélectionnée.",
       "submit_button": "Envoyer la commande →",
       "field_rdp_user": "Utilisateur RDP",
-      "field_admin_user": "Utilisateur Admin"
+      "field_admin_user": "Utilisateur Admin",
+      "catalog_search_placeholder": "Rechercher des définitions…",
+      "catalog_filter_all": "Toutes les catégories",
+      "catalog_filter_platform": "VDI / Serveur / Cloud",
+      "catalog_filter_application": "Applications métier & SaaS",
+      "catalog_filter_data": "Données & Collaboration",
+      "catalog_filter_device": "Clients / MDM / WLAN",
+      "catalog_filter_infrastructure": "Réseau / Pare-feu / Admin",
+      "catalog_no_match": "Aucune définition ne correspond à votre recherche.",
+      "catalog_clear_filters": "Effacer"
     },
     "order_detail": {
       "order_prefix": "Commande",

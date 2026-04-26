@@ -87,6 +87,7 @@ def _type_snap(t) -> dict:
         "is_active": getattr(t, "is_active", True),
         "category": t.category.value if hasattr(t.category, "value") else t.category,
         "description": t.description,
+        "help_text": getattr(t, "help_text", None),
         "config": t.config,
         "assignment_model": t.assignment_model,
         "automation_mode": t.automation_mode,

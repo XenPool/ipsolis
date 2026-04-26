@@ -147,21 +147,115 @@ an "Inactive" badge so historical orders, audit, and runbook configs stay cohere
 - Portal: catalog list / re-render error path filter `WHERE is_active = true`.
 - Verified end-to-end: PUT `is_active=false` removes from catalog, admin list keeps it with badge.
 
-### [open] Long-form `help_text` per asset definition (markdown) — Prio 2
-Requesters see only the one-line description in the catalog. Admins routinely
-want a paragraph: "this VDI ships with Office 2024, IntelliJ, AutoCAD; expect
-2-min provision; contact ITops@…". Render at order time as sanitized markdown.
+### [done] Long-form `help_text` per asset definition (markdown) — Prio 2 (2026-04-25)
+Admins can now write a multi-paragraph note in markdown that requesters see
+when they pick the type on `/portal/orders/new` — separate from the one-line
+catalog description. Used for things requesters need *before* ordering:
+pre-installed software, expected provision time, support contact, license terms.
+- Migration `0050_asset_type_help_text.py` — adds `help_text TEXT` column.
+- ORM `AssetType.help_text` (`api/app/models/asset.py`).
+- Pydantic Create/Update/Read schemas carry `help_text`.
+- Admin form: new textarea below Description in the Identity section, with a
+  helper line listing supported markdown features. JSON payload includes
+  `help_text` on both create and update; clone preserves it.
+- Audit `_type_snap()` includes `help_text` so revisions show up in the audit log.
+- Rendering: `api/app/utils/markdown_render.py` uses python-markdown +
+  bleach with a strict allowlist (`p, br, strong, em, code, pre, blockquote,
+  ul, ol, li, h1-h6, a, hr`; `a` only keeps `href`/`title`; protocols
+  limited to `http/https/mailto`). Linkified hrefs auto-set
+  `target="_blank" rel="noopener noreferrer"`.
+- Filter registered as `| markdown` on the shared Jinja env in
+  `templates_instance.py`. Used in `portal/order_new.html` via
+  `{{ t.help_text | markdown | safe }}`.
+- Portal: per-type panel that toggles when the asset is selected — same
+  pattern as the attribute section. Hidden when the selected type has no help.
+- Styling: hand-tuned CSS scoped to `.help-md` (paragraphs, headings,
+  lists, code, blockquote) — Tailwind via CDN doesn't ship the typography
+  plugin, so we don't rely on `prose-*` classes.
+- New deps: `markdown==3.7`, `bleach==6.2.0` in `api/requirements.txt`.
+- Verified: XSS attempts (`<script>`, `<img onerror>`, `javascript:` href)
+  are stripped by the bleach pass; round-trip via direct SQL update + render.
 
-### [open] Microsoft Teams / Slack approval cards — Prio 2
-One-click approve from a chat card, signed JWT in the action link so the
-approver doesn't need to log into the portal.
+### [done] Microsoft Teams approval cards — Prio 2 (2026-04-25)
+Approvers now receive an Adaptive Card in Teams alongside the email when a
+request needs sign-off. The card has a single "Review request →" button
+that opens a tokenized confirmation page with no portal login required.
+Slack adapter is deferred — same token + endpoint is reusable when needed.
+
+**Architecture**: Microsoft Teams **Workflows** webhook (no Azure Bot
+registration, no Graph permissions). Admin creates a Workflow once per
+target channel/chat with the template "Post to a channel when a webhook
+request is received", pastes the URL into Settings → E-Mail → Microsoft
+Teams. Card delivery is done by the worker, best-effort, never blocks the
+order on Teams misconfiguration.
+
+**Why not bot/GET-auto-approve**: GET-based one-click would let Outlook /
+Teams link previewers prefetch and accidentally approve. Bot Framework
+needs a publicly reachable bot endpoint and Microsoft App ID/Secret —
+overkill for the value delta over the link-to-confirmation-page UX.
+
+**Components**:
+- `api/app/utils/approval_token.py` — HMAC-SHA256 stateless token, signed
+  with `API_SECRET_KEY` (rotating that env var invalidates all outstanding
+  links — usually the right thing on incident response). 14-day TTL.
+- `api/app/utils/approval_decision.py` — shared decision-recording helper;
+  portal route and tokenized route both call it so the two paths can never
+  drift on what counts as "approved" or how downstream effects fire.
+- `api/app/routes/approvals_external.py` — `GET /approve/{token}` renders
+  the confirmation page; `POST /approve/{token}` records the decision.
+  No portal session required. Status pages for already-decided / expired /
+  invalid token cases.
+- `api/app/templates/approve_confirm.html` + `approve_status.html` —
+  standalone branded pages, dark-mode aware, work without Entra SSO.
+- `api/app/utils/teams_notify.py` + `worker/tasks/modules/teams_notify.py` —
+  the worker copy duplicates the token signer + card builder verbatim
+  (separate Docker images, no cross-image imports). Cross-verified that a
+  token minted in the worker validates on the API endpoint.
+- `worker/tasks/workflows/dynamic_runner.py` — `send_approval_requests`
+  posts the card after sending the email when `teams.mode = enabled` and
+  `teams.webhook_url` is set. Failures are logged at WARNING and don't
+  abort the email loop.
+- `api/alembic/versions/0051_seed_teams_config.py` — seeds `teams.mode`
+  (default `disabled`) and `teams.webhook_url` (`is_secret=true`).
+- `api/app/routes/admin.py` — `POST /admin/config/teams/test` posts a
+  test card to the configured webhook so admins can verify the workflow
+  end-to-end before enabling.
+- `api/app/templates/ui/settings.html` — new "Microsoft Teams — Approval
+  Cards" section in the E-Mail tab with Mode dropdown, Webhook URL field,
+  Save + Send Test Card buttons, and a setup hint.
+- `api/app/routes/portal.py` — refactored `portal_decide_approval` to
+  delegate to the shared helper (40 lines deleted, 2 added).
+- `api/app/main.py` — registers the new router.
+
+**Verified**:
+- Token round-trip works in both directions; tampered/expired/garbage
+  tokens all reject cleanly.
+- API endpoint serves 200 for valid pending approval, 200 for already-
+  decided, 410 for invalid/expired token.
+- Test endpoint returns descriptive error for missing/disabled config and
+  network errors (no 500s on misconfiguration).
+- Worker can import the mirror module; cross-verified token validates
+  on the API side (shared `API_SECRET_KEY` from `.env`).
 
 ### [open] Field-level data classification — Prio 3
 Tag fields as PII / PHI / PCI; drive approval routing and audit retention.
 
-### [open] Catalog search & filter in the portal — Prio 3
-Search box + category filter on `/portal/orders/new`. Becomes important once
-a customer has > ~30 asset definitions.
+### [done] Catalog search & filter in the portal — Prio 3 (2026-04-25)
+Pure client-side filter on `/portal/orders/new`: a search input matches
+against name + description + help_text (lowercased), and a category dropdown
+narrows by the existing `AssetCategory` enum. The controls auto-hide when
+there are six or fewer definitions to avoid clutter on small catalogs.
+- Server pre-renders `data-search` and `data-category` on every card so
+  filtering is one DOM pass — no fetches, no extra round-trip.
+- "No definitions match" empty state replaces the grid when nothing matches.
+- "Clear" link appears once any filter is set, resets both controls.
+- If the user already had a card selected and the new filter hides it,
+  the selection is cleared and the help / attribute / user-list panels reset
+  so a stale `asset_type_id` can't be submitted.
+- i18n: 9 new keys (`catalog_search_placeholder`, `catalog_filter_all`,
+  five `catalog_filter_*` category labels, `catalog_no_match`,
+  `catalog_clear_filters`) added across all five locales (en/de/fr/es/it).
+  `tools/validate_locales.py` confirms 143 keys per locale, all aligned.
 
 ### [open] In-app onboarding / guided tour — Prio 3
 First-run admin walkthrough; drop-in for new admins.

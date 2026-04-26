@@ -113,7 +113,16 @@
       "schedule_hint_body": "Su pedido se reservará ahora y se ejecutará automáticamente en la fecha de inicio seleccionada.",
       "submit_button": "Enviar pedido →",
       "field_rdp_user": "Usuario RDP",
-      "field_admin_user": "Usuario Admin"
+      "field_admin_user": "Usuario Admin",
+      "catalog_search_placeholder": "Buscar definiciones…",
+      "catalog_filter_all": "Todas las categorías",
+      "catalog_filter_platform": "VDI / Servidor / Nube",
+      "catalog_filter_application": "Aplicaciones de negocio y SaaS",
+      "catalog_filter_data": "Datos y Colaboración",
+      "catalog_filter_device": "Clientes / MDM / WLAN",
+      "catalog_filter_infrastructure": "Red / Firewall / Admin",
+      "catalog_no_match": "Ninguna definición coincide con su búsqueda.",
+      "catalog_clear_filters": "Limpiar"
     },
     "order_detail": {
       "order_prefix": "Pedido",

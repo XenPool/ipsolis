@@ -10,6 +10,7 @@ class AssetTypeRead(BaseModel):
     id: int
     name: str
     description: str | None
+    help_text: str | None = None
     is_active: bool = True
     category: AssetCategory
     config: list[dict[str, Any]] | None

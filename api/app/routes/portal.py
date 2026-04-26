@@ -1129,53 +1129,8 @@ async def portal_decide_approval(
     if approval.approver_email != current_user["email"]:
         raise HTTPException(status_code=403, detail="You are not the designated approver")
 
-    if approval.status != "pending":
-        return RedirectResponse(url="/portal/approvals", status_code=303)
-
-    # Record decision
-    approval.status = "approved" if decision == "approve" else "declined"
-    approval.decided_at = datetime.now(timezone.utc)
-    approval.comment = comment.strip() or None
-
-    order = await db.get(Order, approval.order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-
-    from celery import Celery
-    celery_app = Celery(broker=settings.CELERY_BROKER_URL)
-
-    if decision != "approve":
-        # Decline: reject the order immediately
-        order.status = OrderStatus.REJECTED
-        order.error_message = f"Declined by {approval.approver_name}: {comment.strip() or 'no reason given'}"
-        celery_app.send_task(
-            "tasks.workflows.dynamic_runner.send_approval_result_email",
-            args=[order.id, False, approval.approver_name, comment.strip() or None],
-            queue="provision",
-        )
-        logger.info("Approval %s declined by %s for order %s", approval_id, current_user["email"], order.id)
-    else:
-        # Approve: check if all approvals are now granted
-        all_result = await db.execute(
-            select(OrderApproval).where(OrderApproval.order_id == order.id)
-        )
-        all_approvals = list(all_result.scalars().all())
-        all_approved = all(a.status == "approved" for a in all_approvals)
-
-        if all_approved:
-            # All approved — proceed with order
-            await _post_approval_dispatch(order, db, celery_app)
-            celery_app.send_task(
-                "tasks.workflows.dynamic_runner.send_approval_result_email",
-                args=[order.id, True],
-                queue="provision",
-            )
-            logger.info("All approvals granted for order %s — dispatching", order.id)
-        else:
-            logger.info("Approval %s approved by %s for order %s (still pending others)",
-                        approval_id, current_user["email"], order.id)
-
-    await db.commit()
+    from app.utils.approval_decision import apply_approval_decision
+    await apply_approval_decision(db, approval, decision, comment)
     return RedirectResponse(url="/portal/approvals", status_code=303)
 
 

@@ -272,6 +272,40 @@ async def test_entra_connection(db: AsyncSession = Depends(get_db)) -> dict:
         return {"ok": False, "message": str(exc)}
 
 
+@router.post("/config/teams/test")
+async def test_teams_webhook(db: AsyncSession = Depends(get_db)) -> dict:
+    """POST a test Adaptive Card to the configured Teams Workflow webhook."""
+    from app.utils.teams_notify import build_approval_card, post_adaptive_card
+
+    cfg = await db.execute(
+        select(AppConfig).where(AppConfig.key.in_(["teams.mode", "teams.webhook_url", "app.title"]))
+    )
+    rows = {r.key: (r.value or "") for r in cfg.scalars().all()}
+    mode = (rows.get("teams.mode") or "disabled").strip()
+    url = (rows.get("teams.webhook_url") or "").strip()
+    app_title = (rows.get("app.title") or "Ipsolis").strip()
+
+    if mode == "disabled":
+        return {"ok": None, "message": "Teams notifications are disabled — no test sent."}
+    if not url:
+        return {"ok": False, "message": "Teams webhook URL is not configured."}
+
+    card = build_approval_card(
+        asset_type_name="(Test asset)",
+        requester_name="Test Requester",
+        requester_email="test@example.com",
+        approver_name="Approver",
+        review_url="https://example.com/approve/test-token",
+        from_date="2026-01-01",
+        until_date="2026-01-08",
+        app_title=app_title,
+    )
+    # Replace the body's first line so the recipient knows this is a test.
+    card["body"][0]["text"] = f"{app_title} — Test notification (no action required)"
+    ok, msg = post_adaptive_card(url, card)
+    return {"ok": ok, "message": msg}
+
+
 @router.post("/config/sccm/test", dependencies=[require_enterprise("sccm_integration")])
 async def test_sccm_connection() -> dict:
     """Enqueues a Celery task that runs a pwsh+Kerberos probe inside the worker
@@ -340,6 +374,7 @@ async def create_asset_type(
     asset_type = AssetType(
         name=payload.name,
         description=payload.description,
+        help_text=payload.help_text,
         is_active=payload.is_active,
         category=payload.category,
         config=payload.config,
@@ -410,6 +445,8 @@ async def update_asset_type(
         asset_type.name = payload.name
     if payload.description is not None:
         asset_type.description = payload.description
+    if payload.help_text is not None:
+        asset_type.help_text = payload.help_text or None
     if payload.is_active is not None:
         asset_type.is_active = payload.is_active
     if payload.category is not None:
@@ -497,6 +534,7 @@ async def clone_asset_type(type_id: int, db: AsyncSession = Depends(get_db)) -> 
     new_type = AssetType(
         name=candidate,
         description=src.description,
+        help_text=src.help_text,
         is_active=src.is_active,
         category=src.category,
         config=src.config,
