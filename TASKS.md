@@ -6,12 +6,99 @@ and historical "done" entries at the bottom.
 
 ---
 
+## Status — 2026-04-26
+
+The Prio-0 enterprise-procurement push paused after this round. Headline features
+across RBAC, external secret management, audit + SIEM, conditional approval rules,
+per-classification retention, and HA Beat are all **shipped and verified**; the
+remaining slice-N+1 enrichments are consolidated in *Deferred Enterprise Backlog*
+below for whenever the focus comes back here. Each backlog item points at the
+originating section so the build-log context is one click away.
+
+---
+
+## Deferred Enterprise Backlog
+
+Items here are **not actively planned** — they're the slices we deliberately
+deferred from the 2026-04-26 enterprise push. Each is independently slice-able;
+pull one when there's a procurement need or a quiet week.
+
+### RBAC slice 4
+*(originating section: [`Admin RBAC`](#done-admin-rbac--prio-0-show-stopper) further down)*
+- [ ] Forced password rotation policy + lockout-on-N-failed-attempts.
+- [ ] Auditor read paths for endpoints currently gated at `admin`
+      (e.g. `GET /admin/maintenance/backups` shouldn't require write authority).
+- [ ] SoD on per-rule approvers — admins might want a per-rule opt-out
+      ("this rule's approver is a static compliance officer, never a configurer").
+- [ ] Token-role-aware mint guard relaxation — once the router gate is
+      relaxed so admins can mint their own narrow tokens, the existing
+      mint guard becomes the operative defense.
+
+### External secret management slice 2
+*(originating section: [`External secret management`](#done-external-secret-management--prio-0-show-stopper) further down)*
+- [ ] CyberArk Conjur adapter (REST + token auth, similar shape to Vault).
+- [ ] AWS Secrets Manager adapter.
+- [ ] Azure Key Vault adapter (Entra-bound auth via the same MSAL app
+      already used for portal SSO).
+- [ ] Vault AppRole + Kubernetes-JWT auth methods (slice 1 ships static-token only).
+- [ ] CCP: dedicated mTLS bootstrap UX (today operators paste the PEM).
+- [ ] One-shot migration tool: walk every `is_secret=true` row in `app_config`,
+      write the value into the chosen backend, replace the row's value with
+      the matching reference, audit.
+- [ ] Make all remaining secret-bearing config keys go through the resolver —
+      slice 1 covered AD, Entra, SMTP, vSphere/XenServer; SCCM password
+      and the various webhook tokens still read raw.
+
+### API tokens — residuals
+- [ ] Optional: hard-delete vs. soft-delete policy (today everything is
+      soft-deleted; some tenants will want a "purge revoked tokens older
+      than 90 days" Beat task).
+
+### Audit + SIEM — residuals
+- [ ] Sentinel via the newer Logs Ingestion API (DCE / DCR / service principal)
+      — for tenants that have switched off the Data Collector API or want
+      DCR-side transformations.
+- [ ] Streaming-failure email alert via the existing health-alert path
+      (currently surfaced only in `siem.last_error` and the UI).
+
+### Multi-instance HA slice 2
+- [ ] Document Postgres standby setup (logical replication or pgBackRest)
+      — needs real failover testing, not just docs.
+- [ ] Multi-replica api: confirm session storage is Redis-backed
+      (currently cookie-signed — already stateless, mostly a verification task).
+- [ ] Multi-replica worker: document the scaling pattern + queue-vs-replica
+      sizing recommendation table.
+- [ ] Health probe that detects "Beat is alive somewhere" via the RedBeat
+      lock key in Redis — surface in `/health` so a load balancer can alert
+      when no Beat is running.
+
+### Conditional approval rules slice 3
+- [ ] Visual editor for deeply-nested compounds (today's UI flattens to
+      1 level + warning).
+- [ ] Per-bucket reminder optimisation: stop nagging approvers in a bucket
+      whose quorum is already met but whose siblings are still pending.
+- [ ] Escalation v2: optionally **assign** the escalated approval to the
+      contact (creating a new approval row with their email) so they can
+      decide directly via the existing token URL.
+
+### Per-classification approval routing
+- [ ] Approval routing: orders containing PII/PHI/PCI fields automatically
+      include an extra approval step (e.g. compliance officer). The
+      conditional-approval-rules engine already covers this with
+      `has_pii / has_phi / has_pci` fields — slice is more about defaults
+      and discoverability than mechanism.
+- [ ] Settings: per-classification policy switches ("PII fields always
+      trigger manager approval", "PHI requires owner-of-record
+      acknowledgement").
+
+---
+
 ## Strategic — Enterprise-class roadmap
 
 These are the gaps that block ipSolis from being drop-in for a 5,000-seat regulated
 enterprise. Order = priority (procurement-blocker first).
 
-### [partial] Admin RBAC — Prio 0 (show-stopper)
+### [done] Admin RBAC — Prio 0 (show-stopper)
 Slice 1 — per-user accounts, role ladder, first-run setup, role-gated
 admin user CRUD — **shipped 2026-04-26**. Comprehensive role-gating
 across the rest of `/admin/*`, per-asset-type ACLs, and SoD
@@ -245,20 +332,9 @@ enforcement (configurer ≠ approver) split into follow-up slices.
   * Helper unit-checks: matches `alice@xenpool.local`, matches `alice`
     (no @), correctly rejects `bob@example.com` and `ciso@example.com`.
 
-**Still to do — RBAC slice 4:**
-- [ ] Forced password rotation policy + lockout-on-N-failed-attempts.
-- [ ] Auditor read paths for endpoints currently gated at `admin`
-      (e.g. `GET /admin/maintenance/backups` shouldn't need write
-      authority to view the backup list).
-- [ ] SoD on per-rule approvers — today the rule path runs through
-      the same `apply_approval_decision` flow so the check fires,
-      but admins might want a per-rule opt-out (e.g. "this rule's
-      approver is a static compliance officer, never a configurer").
-- [ ] Token-role-aware mint guard relaxation — once slice 4 relaxes
-      the router gate so admins can mint their own narrow tokens,
-      the existing mint guard becomes the operative defense.
+**Slice-4 enrichments → tracked in *Deferred Enterprise Backlog* (top of file).**
 
-### [partial] External secret management — Prio 0 (show-stopper)
+### [done] External secret management — Prio 0 (show-stopper)
 Slice 1 — Vault + CyberArk CCP/AIM, on-read resolution, no plaintext
 removal — **shipped 2026-04-26**. Conjur, AWS Secrets Manager, Azure
 Key Vault, and the one-shot migration tool stay queued.
@@ -337,26 +413,9 @@ Key Vault, and the one-shot migration tool stay queued.
     re-reading via `GET /admin/config/ad.password` returns the
     reference in clear (not `***`) — masking exception works.
 
-**Still to do — secrets slice 2:**
-- [ ] CyberArk Conjur adapter (REST + token auth, similar shape to
-      Vault). Same dispatcher framework — slot in alongside vault://
-      with a new `conjur://` scheme.
-- [ ] AWS Secrets Manager adapter.
-- [ ] Azure Key Vault adapter (Entra-bound auth via the same MSAL
-      app already used for portal SSO).
-- [ ] Vault AppRole + Kubernetes-JWT auth methods (slice 1 ships
-      static-token only).
-- [ ] CCP: dedicated mTLS bootstrap UX (today operators paste the
-      PEM; a future slice could fetch from the host's keystore).
-- [ ] One-shot migration tool: walk every `is_secret=true` row in
-      `app_config`, write the value into the chosen backend, replace
-      the row's value with the matching reference, audit.
-- [ ] Make all remaining secret-bearing config keys go through the
-      resolver — slice 1 covered the high-value ones (AD, Entra,
-      SMTP, vSphere/XenServer); SCCM password and the various
-      webhook tokens still read raw.
+**Slice-2 enrichments (Conjur, AWS SM, Azure KV, AppRole/JWT, migration tool, residual key coverage) → tracked in *Deferred Enterprise Backlog* (top of file).**
 
-### [partial] API tokens with scopes — Prio 0
+### [done] API tokens with scopes — Prio 0
 Slice 1 — table + ORM + bearer auth + Admin UI — **shipped 2026-04-26**.
 Scope decorators and the ServiceNow webhook migration are split into
 follow-up slices.
@@ -545,12 +604,9 @@ follow-up slices.
   * `portal_actor_by()` produces the right strings for all five
     cases (real user / anonymous / no email / None / mixed-case).
 
-**Still to do — separate slices:**
-- [ ] Optional: hard-delete vs. soft-delete policy (today everything
-      is soft-deleted; some tenants will want a "purge revoked tokens
-      older than 90 days" Beat task).
+**Hard-delete-vs-soft-delete policy → tracked in *Deferred Enterprise Backlog* (top of file).**
 
-### [partial] Tamper-evident audit + SIEM export — Prio 0
+### [done] Tamper-evident audit + SIEM export — Prio 0
 SIEM streaming side **shipped 2026-04-26** (Splunk HEC + Microsoft
 Sentinel adapters). Tamper-evident DB-grant revocation on `audit_log`
 is split into a separate slice because it touches role grants on a
@@ -695,14 +751,9 @@ live table and is best paired with the RBAC work.
   * Switched format back to `splunk_hec` mid-test → no regression on
     the existing adapters.
 
-**Still to do — separate slice:**
-- [ ] Sentinel via the newer Logs Ingestion API (DCE / DCR / service
-      principal) — mainly for tenants that have already switched off
-      the Data Collector API or who want enriched DCR transformations.
-- [ ] Streaming-failure email alert via the existing health-alert path
-      (currently surfaced only in `siem.last_error` and the UI).
+**Sentinel Logs Ingestion API + streaming-failure email alert → tracked in *Deferred Enterprise Backlog* (top of file).**
 
-### [partial] Multi-instance HA — Prio 0 (show-stopper)
+### [done] Multi-instance HA — Prio 0 (show-stopper)
 Beat slice — **shipped 2026-04-26**. The remaining HA work
 (api/worker replicas, Postgres standby, dedicated Beat-alive health
 probe) stays queued — each carries its own risk surface and is best
@@ -753,19 +804,7 @@ sliced independently rather than bundled.
     one, schedule keys still in Redis, dispatch resumed without
     re-seed.
 
-**Still to do — HA slice 2:**
-- [ ] Document Postgres standby setup (logical replication or
-      pgBackRest) — separate slice; needs real failover testing,
-      not just docs.
-- [ ] Multi-replica api: confirm session storage is Redis-backed
-      (currently cookie-signed via itsdangerous — already stateless,
-      so this is mostly a verification task).
-- [ ] Multi-replica worker: prefork already supports N concurrent
-      consumers on the same queues; document the scaling pattern
-      and add a recommendation table for queue-vs-replica sizing.
-- [ ] Health probe that detects "Beat is alive somewhere" via the
-      RedBeat lock key in Redis — surface in `/health` so a load
-      balancer can alert when no Beat is running.
+**Slice-2 enrichments (Postgres standby docs, multi-replica api/worker, "Beat is alive" health probe) → tracked in *Deferred Enterprise Backlog* (top of file).**
 
 ---
 
@@ -779,7 +818,7 @@ reminders, escalation, auto-revoke on no-response. Hard requirement for ISO27001
 - [ ] Manager portal page: list pending reviews with one-click confirm/revoke
 - [ ] Email reminders T-7d / T-1d / overdue; escalation to manager's manager
 
-### [partial] Approval-flow sophistication — Prio 1
+### [done] Approval-flow sophistication — Prio 1
 Reminder slice **shipped 2026-04-26**. The bigger pieces (escalation,
 delegation, N-of-M, conditional rules) remain.
 
@@ -990,19 +1029,7 @@ delegation, N-of-M, conditional rules) remain.
   * Admin UI form renders the card structure, datalist with attr
     fields, combinator + quorum inputs.
 
-**Still to do — slice 3 (deferred):**
-- [ ] Visual editor for deeply-nested compounds (today's UI flattens
-      to 1 level + warning; tree editor would close the gap for
-      power users).
-- [ ] Per-bucket reminder optimisation: stop nagging approvers in a
-      bucket whose quorum is already met but whose siblings are still
-      pending (today they get reminders until the *whole* order
-      crosses the line).
-- [ ] Escalation v2: optionally **assign** the escalated approval
-      to the contact (creating a new approval row with their email)
-      so they can decide directly via the existing token URL —
-      currently they get a heads-up only and have to intervene
-      operationally.
+**Slice-3 enrichments (tree editor for nested compounds, per-bucket reminder optimisation, escalation v2 with assigned approval) → tracked in *Deferred Enterprise Backlog* (top of file).**
 **Done — self-service portal delegation (2026-04-26):**
 - New router `app.routes.portal_delegations` exposes
   `GET /portal/delegations` (HTML page),
@@ -1369,10 +1396,11 @@ overkill for the value delta over the link-to-confirmation-page UX.
   `<at>...</at>` placeholder so the body renders gracefully even when
   a Workflow template strips entities.
 
-### [partial] Field-level data classification — Prio 3
+### [done] Field-level data classification — Prio 3
 Slice 1 — schema (in JSON), admin UI tagging, portal badges, audit
-trail capture — **shipped 2026-04-26**. Approval routing and
-retention-policy enforcement remain.
+trail capture — **shipped 2026-04-26**. Slice 2 — per-classification
+retention windows + audit-log classification column — **shipped
+2026-04-26**. Approval-routing UX (slice 3) deferred to backlog.
 
 **Done — classification tagging (2026-04-26):**
 - `asset_types.config` per-attribute JSON gains a new optional
@@ -1470,15 +1498,7 @@ retention-policy enforcement remain.
     transaction — direct DELETE/UPDATE without the GUC bypass
     raises the original error.
 
-**Still to do — slice 3 (out of scope here):**
-- [ ] Approval routing: orders containing PII/PHI/PCI fields
-      automatically include an extra approval step (e.g. compliance
-      officer). The conditional-approval-rules engine already covers
-      this with `has_pii / has_phi / has_pci` fields — slice is more
-      about defaults / discoverability than mechanism.
-- [ ] Settings: per-classification policy switches (e.g. "PII fields
-      always trigger manager approval", "PHI requires owner-of-record
-      acknowledgement").
+**Per-classification approval routing UX → tracked in *Deferred Enterprise Backlog* (top of file).**
 
 ### [done] Catalog search & filter in the portal — Prio 3 (2026-04-25)
 Pure client-side filter on `/portal/orders/new`: a search input matches
