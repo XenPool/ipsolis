@@ -1,0 +1,132 @@
+# ipSolis testlab — lightweight stand-ins for SIEM / secrets / webhook
+# integrations so you can smoke-test enterprise features without paying
+# the resource bill of full Splunk / Sentinel / CyberArk lab installs.
+#
+# Run independently of the main app stack:
+#
+#     docker compose -f docker-compose.testlab.yml up -d
+#     docker compose -f docker-compose.testlab.yml --profile splunk up -d   # adds Splunk
+#     docker compose -f docker-compose.testlab.yml down -v                  # tear down + volumes
+#
+# Connectivity from the main app (running in the ipSolis compose stack):
+#   The app/worker containers reach these services via host ports using
+#   ``host.docker.internal`` — Docker Desktop on Windows/Mac maps that to
+#   the host. On Linux add ``--add-host=host.docker.internal:host-gateway``
+#   to the api/worker services in docker-compose.yml, or join the same
+#   external network and address by container name.
+#
+# Settings to plug into Admin UI → Settings (or .env):
+#   Vault URL          : http://host.docker.internal:8200
+#   Vault token        : testlab-root-token
+#   Splunk HEC URL     : http://host.docker.internal:8088/services/collector
+#   Splunk HEC token   : 11111111-1111-1111-1111-111111111111
+#   Generic SIEM URL   : http://host.docker.internal:9000/generic
+#   Mock Sentinel URL  : http://host.docker.internal:9000/sentinel
+#   Syslog endpoint    : host.docker.internal:5140 (TCP or UDP)
+#   Teams webhook (mock): http://host.docker.internal:9000/teams
+#
+# What this lab does NOT replace:
+#   - Real Microsoft Sentinel — get a free Azure trial + Log Analytics
+#     workspace; the HMAC signing and log type semantics are worth
+#     verifying against the real API at least once before shipping.
+#   - Real Entra ID — MSAL flows need real tenant + app registration.
+#   - AD / SCCM / vSphere / XenServer — the project's "no mock mode"
+#     rule still applies for those (CLAUDE.md).
+
+# Separate project name so the testlab containers don't show up as orphans
+# of the main ``ipsolis`` compose project (and vice versa). With this set,
+# ``docker compose -f docker-compose.testlab.yml ps`` only shows lab services.
+name: ipsolis_testlab
+
+services:
+  # ──────────────────────────────────────────────────────────────────
+  # HashiCorp Vault — dev mode, predictable root token, KV v2 at secret/
+  # Use this to smoke-test the ``vault`` adapter in app/utils/secrets.py
+  # without spinning up a full HA Vault cluster.
+  # ──────────────────────────────────────────────────────────────────
+  vault:
+    image: hashicorp/vault:1.18
+    container_name: testlab_vault
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK            # Vault wants mlock; harmless in dev mode but quieter logs.
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: testlab-root-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    healthcheck:
+      # The hashicorp/vault image is alpine-minimal — no wget/curl. Use the
+      # built-in vault CLI; ``vault status`` exits 0 when unsealed and active.
+      test: ["CMD", "vault", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ──────────────────────────────────────────────────────────────────
+  # rsyslog — TCP/UDP 5140 listener, writes to a host volume so you can
+  # tail /testlab/syslog-data/all.log during a test.
+  # ──────────────────────────────────────────────────────────────────
+  rsyslog:
+    build:
+      context: ./testlab/rsyslog
+      dockerfile: Dockerfile
+    container_name: testlab_rsyslog
+    restart: unless-stopped
+    ports:
+      - "5140:5140/tcp"
+      - "5140:5140/udp"
+    volumes:
+      - ./testlab/syslog-data:/var/log/testlab
+
+  # ──────────────────────────────────────────────────────────────────
+  # Mock receiver — records every POST so smoke tests can verify the
+  # exact body and headers ipSolis sent. Endpoints: /sentinel /splunk
+  # /generic /teams /servicenow. Inspect via GET /recent and /count.
+  # ──────────────────────────────────────────────────────────────────
+  mock-receiver:
+    build:
+      context: ./testlab/mock-receiver
+      dockerfile: Dockerfile
+    container_name: testlab_mock_receiver
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health').read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # ──────────────────────────────────────────────────────────────────
+  # Splunk Free — ~2 GB image, ~1 GB RAM at idle. Profile-gated so the
+  # default ``up`` stays light. Bring it up with:
+  #     docker compose -f docker-compose.testlab.yml --profile splunk up -d
+  #
+  # First boot takes 60–120s. Web UI: http://localhost:8001 (admin /
+  # SPLUNK_PASSWORD). HEC token below is fixed for repeatable tests.
+  # ──────────────────────────────────────────────────────────────────
+  splunk:
+    image: splunk/splunk:9.3
+    container_name: testlab_splunk
+    profiles: ["splunk"]
+    restart: unless-stopped
+    environment:
+      SPLUNK_START_ARGS: --accept-license
+      SPLUNK_PASSWORD: ChangeMe-Splunk-123!
+      SPLUNK_HEC_TOKEN: 11111111-1111-1111-1111-111111111111
+    ports:
+      - "8001:8000"        # Splunk Web — host port 8001 to avoid clash with ipSolis api on 8000
+      - "8088:8088"        # Splunk HEC
+    healthcheck:
+      test: ["CMD", "curl", "-fk", "http://localhost:8000/en-US/account/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+# No named volumes — rsyslog uses a bind mount, mock-receiver is stateless,
+# Vault dev mode is in-memory (intentional: each ``up`` starts clean).
