@@ -41,6 +41,18 @@ class AdminUser(Base):
         DateTime(timezone=True), nullable=True,
     )
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    # ── RBAC slice 4: password rotation + lockout-on-N-failed-attempts ───
+    # NULL on rows pre-dating slice 4 is treated as "never expires" for
+    # back-compat — the migration backfills with ``created_at``.
+    password_set_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    failed_login_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    locked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
 
     def __repr__(self) -> str:
         return (

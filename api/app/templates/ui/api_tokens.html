@@ -51,7 +51,9 @@
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Name</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Prefix</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Scopes</th>
+        {% if is_enterprise %}
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Role</th>
+        {% endif %}
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Status</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Last used</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Expires</th>
@@ -92,6 +94,7 @@
         <p class="text-[11px] text-muted/60 mt-1">Pick a horizon that matches your rotation policy.</p>
       </div>
 
+      {% if is_enterprise %}
       <div>
         <label class="block text-xs font-medium text-muted mb-1">Role</label>
         <select id="new-token-role"
@@ -108,6 +111,13 @@
           on top of the scopes below. You can only mint tokens at or below your own role.
         </p>
       </div>
+      {% else %}
+      {# Role-bound tokens are an Enterprise feature; community gets
+         scope-only authz which is still meaningful (admin:*,
+         audit_log:read, config:read, etc.). The hidden input keeps the
+         submit handler's ``fields.role`` lookup working without branching. #}
+      <input type="hidden" id="new-token-role" value="">
+      {% endif %}
 
       <div>
         <label class="block text-xs font-medium text-muted mb-1">Scopes</label>
@@ -183,6 +193,10 @@ function renderScopeGrid() {
   }).join('');
 }
 
+// Role-bound API tokens are an Enterprise feature; suppress the role
+// column on community so the table shape matches the gated header.
+const IS_ENTERPRISE = {{ 'true' if is_enterprise else 'false' }};
+
 function roleBadge(role) {
   if (!role) {
     return '<span class="text-muted/50 text-xs italic">unbound</span>';
@@ -223,7 +237,7 @@ async function loadTokens() {
       + '<td class="px-4 py-3"><div class="font-medium text-heading">' + escapeHtml(r.name) + '</div><div class="text-[11px] text-muted/60">created by ' + escapeHtml(r.created_by) + ' · ' + fmtDate(r.created_at) + '</div></td>'
       + '<td class="px-4 py-3"><span class="font-mono text-xs text-muted">' + escapeHtml(r.token_prefix) + '…</span></td>'
       + '<td class="px-4 py-3">' + scopeBadges(r.scopes) + '</td>'
-      + '<td class="px-4 py-3">' + roleBadge(r.role) + '</td>'
+      + (IS_ENTERPRISE ? '<td class="px-4 py-3">' + roleBadge(r.role) + '</td>' : '')
       + '<td class="px-4 py-3">' + statusBadge(r.status) + '</td>'
       + '<td class="px-4 py-3 text-xs text-muted">' + fmtDate(r.last_used_at) + '</td>'
       + '<td class="px-4 py-3 text-xs text-muted">' + (r.expires_at ? fmtDate(r.expires_at) : 'never') + '</td>'

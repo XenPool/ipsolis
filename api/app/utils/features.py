@@ -31,6 +31,15 @@ ENTERPRISE_FEATURES: dict[str, str] = {
     "change_log_viewer":        "Order Change Log Viewer",
     "advanced_maintenance":     "Advanced Maintenance",
     "custom_deprovision":       "Custom Deprovision Policy",
+    # ── RBAC compliance extensions ─────────────────────────────────────
+    # Community ships the core role ladder + per-user accounts free of
+    # charge. Enterprise adds the auditor-grade extensions: scoped
+    # grants, role-bound integration tokens, separation-of-duties
+    # enforcement, and (slice-4 backlog) password rotation policies.
+    "rbac_asset_type_grants":   "Per-Asset-Type ACL Grants",
+    "rbac_token_role_binding":  "Role-Bound API Tokens",
+    "rbac_sod_enforcement":     "Separation-of-Duties Enforcement",
+    "password_policy":          "Password Rotation & Lockout Policy",
 }
 
 

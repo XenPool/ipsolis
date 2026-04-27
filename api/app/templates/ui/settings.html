@@ -174,6 +174,67 @@
   ) }}
   {% endif %}
 
+  <!-- Update Notifier (opt-in; off by default for air-gapped tenants) -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mt-4">
+    <h2 class="text-sm font-semibold text-body mb-1">Update Notifier</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Daily check against the configured GitHub releases endpoint. When a newer
+      version is available a banner appears at the top of every admin page;
+      click through for release notes. <strong>Off by default</strong> so
+      air-gapped installs don't make outbound calls without explicit consent.
+      ipSolis never auto-updates — operators control upgrades via
+      <code class="font-mono bg-surface-raised px-1 rounded">docker compose pull &amp;&amp; docker compose up -d</code>.
+    </p>
+    <div class="space-y-3">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Mode</label>
+        <select id="updates-enabled"
+                class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          {% set _ue = (updates_config.get('updates.check_enabled', 'false') if updates_config else 'false').lower() %}
+          <option value="false" {% if _ue != 'true' %}selected{% endif %}>Disabled — no outbound calls</option>
+          <option value="true"  {% if _ue == 'true' %}selected{% endif %}>Enabled — check daily and show banner if outdated</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Repository (GitHub API)</label>
+        <input type="text" id="updates-repo-url"
+               value="{{ updates_config.get('updates.repo_url', 'https://api.github.com/repos/XenPool/ipSolis') if updates_config else 'https://api.github.com/repos/XenPool/ipSolis' }}"
+               placeholder="https://api.github.com/repos/<owner>/<repo>"
+               class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <p class="text-[11px] text-muted/60 mt-1">
+          Repoint at a private fork if you ship internal patches. The Beat task appends
+          <code class="font-mono">/releases/latest</code> automatically.
+        </p>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">GitHub token (optional)</label>
+        <input type="password" id="updates-github-token" value=""
+               placeholder="{% if updates_config and updates_config.get('updates.github_token') == '***' %}(configured — leave blank to keep current){% else %}required for private repos{% endif %}"
+               class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <p class="text-[11px] text-muted/60 mt-1">
+          Personal Access Token (classic with <code class="font-mono">repo</code> scope, or
+          fine-grained with read-only Metadata + Contents on this repo). Required when the
+          target repo is private. Stored as a secret.
+        </p>
+      </div>
+    </div>
+    <div class="flex gap-3 mt-5 items-center">
+      <button onclick="saveUpdateNotifier()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save
+      </button>
+      <span class="text-xs text-muted/70">
+        Last check: <span class="font-mono">{{ updates_config.get('updates.checked_at', '—') or '—' if updates_config else '—' }}</span>
+        {% if updates_config and updates_config.get('updates.latest_version') %}
+          · Latest seen: <span class="font-mono">{{ updates_config.get('updates.latest_version') }}</span>
+        {% endif %}
+        {% if updates_config and updates_config.get('updates.check_error') %}
+          · <span class="text-red-600 dark:text-red-400">Error: {{ updates_config.get('updates.check_error') }}</span>
+        {% endif %}
+      </span>
+    </div>
+  </div>
+
   <!-- Order Settings -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mt-4">
     <h2 class="text-sm font-semibold text-body mb-1">Order Settings</h2>
@@ -821,6 +882,59 @@
 <!-- ── Tab: Compliance ─────────────────────────────────────────────────── -->
 <div id="tab-compliance" class="hidden">
   <div id="compliance-banner" class="hidden mb-4 px-4 py-3 rounded text-sm font-medium"></div>
+
+  <!-- ── RBAC Password Policy (slice 4) ─────────────────────────────────── -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
+    <div class="flex items-start justify-between mb-1">
+      <h2 class="text-sm font-semibold text-body">RBAC — Password Policy</h2>
+      {% if not is_enterprise %}
+      <span class="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
+        Enterprise
+      </span>
+      {% endif %}
+    </div>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Force admin password rotation and lock accounts after repeated bad logins. Both
+      knobs are off by default ({{ "0" }} = disabled). Enforcement requires an Enterprise
+      license — community installs can configure the values but they're inert until a
+      license is uploaded. Lockouts auto-expire after the configured window so a brief
+      flurry of bad attempts doesn't require admin intervention.
+    </p>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Rotation (days)</label>
+        <input type="number" id="rbac-rotation-days" min="0" max="3650"
+               value="{{ password_policy.get('rbac.password_rotation_days', '0') if password_policy else '0' }}"
+               class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <p class="text-[11px] text-muted/60 mt-1">Force change every N days. <code>0</code> disables.</p>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Lockout threshold</label>
+        <input type="number" id="rbac-lockout-threshold" min="0" max="100"
+               value="{{ password_policy.get('rbac.lockout_threshold', '0') if password_policy else '0' }}"
+               class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <p class="text-[11px] text-muted/60 mt-1">Lock after N bad attempts. <code>0</code> disables.</p>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Lockout duration (min)</label>
+        <input type="number" id="rbac-lockout-duration" min="1" max="1440"
+               value="{{ password_policy.get('rbac.lockout_duration_minutes', '30') if password_policy else '30' }}"
+               class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <p class="text-[11px] text-muted/60 mt-1">Auto-unlock after this many minutes.</p>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-5 items-center">
+      <button onclick="savePasswordPolicy()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save Policy
+      </button>
+      <span class="text-xs text-muted/70">
+        A superadmin password reset on the Admin Users page also unlocks the affected account.
+      </span>
+    </div>
+  </div>
 
   <!-- SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel + Generic Webhook) -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
@@ -1522,6 +1636,42 @@ async function saveAppTitle() {
 }
 
 // ── Order Settings ────────────────────────────────────────────────────────────
+async function saveUpdateNotifier() {
+  // Update notifier — opt-in toggle + repository URL + optional token.
+  // The toggle drives both the daily Beat task (which short-circuits
+  // when off) and the banner partial (which only renders when on AND
+  // outdated). Token is only sent when the operator typed something —
+  // a blank field preserves the existing value (matches the
+  // SMTP / AD / SCCM password handling pattern).
+  var fields = {
+    'updates.check_enabled': document.getElementById('updates-enabled').value,
+    'updates.repo_url':      document.getElementById('updates-repo-url').value.trim() ||
+                             'https://api.github.com/repos/XenPool/ipSolis',
+  };
+  var token = document.getElementById('updates-github-token').value;
+  if (token) fields['updates.github_token'] = token;
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  var banner = document.getElementById('general-banner');
+  if (errors.length === 0) {
+    banner.className = 'mb-4 px-4 py-3 rounded-lg text-sm font-medium bg-green-50 text-green-800 border border-green-200 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/30';
+    banner.textContent = fields['updates.check_enabled'] === 'true'
+      ? 'Update notifier enabled. First check runs at the next daily Beat tick (04:30 Europe/Berlin).'
+      : 'Update notifier disabled. No outbound calls will be made.';
+  } else {
+    banner.className = 'mb-4 px-4 py-3 rounded-lg text-sm font-medium bg-red-50 text-red-800 border border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30';
+    banner.textContent = 'Failed to save: ' + errors.join(', ');
+  }
+  banner.classList.remove('hidden');
+}
+
 async function saveOrderSettings() {
   var val = document.getElementById('cfg-max-advance-days').value.trim() || '30';
   var resp = await fetch('/admin/config/portal.max_advance_days', {
@@ -1957,6 +2107,29 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // ── SIEM Settings ───────────────────────────────────────────────────────────────
+async function savePasswordPolicy() {
+  // RBAC slice 4 — write the three policy keys; the API stores them as
+  // strings so we coerce-to-int upstream. Negative numbers are clamped
+  // by the input ``min``; bigger values are clamped server-side too.
+  var fields = {
+    'rbac.password_rotation_days':   document.getElementById('rbac-rotation-days').value.trim() || '0',
+    'rbac.lockout_threshold':        document.getElementById('rbac-lockout-threshold').value.trim() || '0',
+    'rbac.lockout_duration_minutes': document.getElementById('rbac-lockout-duration').value.trim() || '30',
+  };
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showComplianceBanner(errors.length === 0
+    ? {ok: true,  message: 'Password policy saved. Enforcement requires an Enterprise license.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
+
 async function saveRetentionConfig() {
   var fields = {
     'retention.audit_log_days': document.getElementById('retention-days').value.trim() || '0',

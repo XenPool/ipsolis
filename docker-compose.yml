@@ -49,7 +49,11 @@ services:
       context: ./api
       dockerfile: Dockerfile
       args:
-        APP_VERSION: ${APP_VERSION:-1.0.0}
+        # Bake APP_VERSION into the image as a fallback. Runtime prefers
+        # /app/VERSION (bind-mounted below) so the canonical VERSION
+        # file is the single source of truth — bump it once and every
+        # restart picks up the new number without a rebuild.
+        APP_VERSION: ${APP_VERSION:-unknown-build}
     container_name: xp_api
     restart: unless-stopped
     env_file: .env
@@ -64,6 +68,7 @@ services:
       - ./backups:/app/backups      # Local DB backups (shared with worker)
       - ./licenses:/app/license     # Signed .lic file (read-write: api handles uploads)
       - ./locales:/app/locales:ro   # Portal i18n JSON (served via /locales/*.json)
+      - ./VERSION:/app/VERSION:ro   # Single source of truth for the running version
     depends_on:
       postgres:
         condition: service_healthy

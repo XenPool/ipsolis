@@ -17,6 +17,7 @@ from app.models.approval import OrderApproval
 from app.models.asset import AssetType
 from app.models.order import Order, OrderStatus
 from app.utils.audit import _order_snap, aaudit, classify_asset_type
+from app.utils.license import is_feature_enabled
 from app.utils.sod import is_configurer_of_asset_type
 
 logger = logging.getLogger(__name__)
@@ -84,12 +85,30 @@ async def apply_approval_decision(
     # different approver). Only fires on ``approve`` — declines are
     # always allowed since "I can't approve my own work" doesn't
     # apply when the user is rejecting it.
-    if decision == "approve":
+    #
+    # Slice 4 of RBAC adds a per-rule opt-out: when the rule that
+    # produced this approval row had ``sod_exempt: true``, this
+    # specific approval is exempt from the SoD block (typical use:
+    # a static compliance officer who is also an admin).
+    #
+    # SoD *enforcement* is itself an Enterprise feature; community
+    # installs get the audit-trail breadcrumb (warning log) but the
+    # decision is allowed to proceed. This keeps small/single-team
+    # installs unblocked while still letting auditors see "this
+    # approver was also the configurer".
+    if decision == "approve" and not getattr(approval, "sod_exempt", False):
         is_config, excerpt = await is_configurer_of_asset_type(
             db, order.asset_type_id, approval.approver_email,
         )
         if is_config:
-            raise SoDViolation(approval.approver_email, order.asset_type_id, excerpt)
+            if is_feature_enabled("rbac_sod_enforcement"):
+                raise SoDViolation(approval.approver_email, order.asset_type_id, excerpt)
+            logger.warning(
+                "SoD informational (community license — not blocking): "
+                "approver=%s configured asset_type_id=%s "
+                "(upgrade to Enterprise to enforce)",
+                approval.approver_email, order.asset_type_id,
+            )
 
     norm = "approved" if decision == "approve" else "declined"
     approval.status = norm

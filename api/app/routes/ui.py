@@ -653,6 +653,12 @@ async def runbook_editor(
         select(ScriptModule).where(ScriptModule.is_active.is_(True)).order_by(ScriptModule.name)
     )
     script_modules = mod_result.scalars().all()
+    # Group modules by category for the runbook editor's <optgroup> rendering.
+    # Names in the seed follow the convention ``"<CATEGORY> - <Short name>"``
+    # (mirrors the on-disk ``scripts/modules/<category>/<Name>.<ext>`` layout).
+    # Modules without a recognisable prefix fall under ``Other`` so the
+    # dropdown stays exhaustive.
+    script_modules_grouped = _group_script_modules_by_category(script_modules)
 
     # Serialize steps to plain dicts so Jinja2 tojson works
     steps_data = [
@@ -677,9 +683,38 @@ async def runbook_editor(
             "steps": steps_data,
             "asset_type": at,
             "script_modules": script_modules,
+            "script_modules_grouped": script_modules_grouped,
             "active_page": "runbooks",
         },
     )
+
+
+def _group_script_modules_by_category(modules: list) -> list[tuple[str, list]]:
+    """Bucket modules into categories derived from the ``"CAT - Name"`` prefix.
+
+    Returns a list of ``(category, [modules])`` tuples sorted by category
+    name, with ``Other`` (unprefixed) appended last so the dropdown reads
+    top-down from the cleanly-namespaced groups to the misc bucket. Each
+    bucket preserves the input ordering — callers pass the modules already
+    sorted by display name.
+    """
+    buckets: dict[str, list] = {}
+    for m in modules:
+        name = (m.name or "").strip()
+        # Accept both ASCII hyphen and en-dash separators just in case a
+        # human-written module slipped through with the typographic dash.
+        category = "Other"
+        for sep in (" - ", " – "):
+            if sep in name:
+                category = name.split(sep, 1)[0].strip() or "Other"
+                break
+        buckets.setdefault(category, []).append(m)
+
+    other = buckets.pop("Other", [])
+    grouped = sorted(buckets.items(), key=lambda kv: kv[0].lower())
+    if other:
+        grouped.append(("Other", other))
+    return grouped
 
 
 @router.get("/_module-params", response_class=HTMLResponse)
@@ -760,13 +795,23 @@ async def standalone_runbooks_list(request: Request) -> HTMLResponse:
 
 
 @router.get("/standalone-runbooks/new", response_class=HTMLResponse)
-async def standalone_runbook_new(request: Request) -> HTMLResponse:
+async def standalone_runbook_new(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    # Even on the empty/new path we want the dropdown populated, otherwise
+    # the operator has to save first and then re-open to pick a module.
+    mod_result = await db.execute(
+        select(ScriptModule).where(ScriptModule.is_active.is_(True)).order_by(ScriptModule.name)
+    )
+    script_modules = mod_result.scalars().all()
     return templates.TemplateResponse(
         request, "ui/standalone_runbook_editor.html",
         {
             "runbook": None,
             "steps": [],
-            "script_modules": [],
+            "script_modules": script_modules,
+            "script_modules_grouped": _group_script_modules_by_category(script_modules),
             "active_page": "standalone-runbooks",
         },
     )
@@ -817,6 +862,7 @@ async def standalone_runbook_edit(
             "runbook": rb,
             "steps": steps_data,
             "script_modules": script_modules,
+            "script_modules_grouped": _group_script_modules_by_category(script_modules),
             "active_page": "standalone-runbooks",
         },
     )
@@ -929,6 +975,24 @@ async def settings_page(
     retention_rows = retention_result.scalars().all()
     retention_config = {r.key: (r.value or "") for r in retention_rows}
 
+    # Load rbac.* config keys (RBAC slice 4 — password policy + lockout)
+    password_policy_rows = (await db.execute(
+        select(AppConfig).where(AppConfig.key.like("rbac.%")).order_by(AppConfig.key)
+    )).scalars().all()
+    password_policy = {r.key: (r.value or "") for r in password_policy_rows}
+
+    # Load updates.* config keys (opt-in update notifier — General tab).
+    # Secret values get masked so the rendered HTML doesn't leak the
+    # GitHub token; the placeholder logic in the template uses the
+    # mask-marker to render "(configured — leave blank to keep current)".
+    updates_rows = (await db.execute(
+        select(AppConfig).where(AppConfig.key.like("updates.%")).order_by(AppConfig.key)
+    )).scalars().all()
+    updates_config = {
+        r.key: (_MASK if (r.is_secret and r.value) else (r.value or ""))
+        for r in updates_rows
+    }
+
     # Load secret.* config keys (external secret backends — Vault / CCP).
     # Reference-shaped values stay in clear (the path is non-sensitive);
     # genuine secrets (vault token, CCP client cert PEM) get masked.
@@ -977,6 +1041,8 @@ async def settings_page(
          "approval_config": approval_config,
          "otel_config": otel_config,
          "retention_config": retention_config,
+         "password_policy": password_policy,
+         "updates_config": updates_config,
          "secret_config": secret_config,
          "hosting_vsphere": hosting_vsphere, "hosting_xenserver": hosting_xenserver,
          "hosting_sccm": hosting_sccm,

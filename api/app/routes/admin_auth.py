@@ -23,6 +23,13 @@ from app.database import get_db
 from app.models.admin_user import AdminUser
 from app.templates_instance import templates
 from app.utils.password import hash_password, verify_password
+from app.utils.password_policy import (
+    is_locked,
+    password_must_be_changed,
+    read_policy,
+    record_failed_login,
+    record_successful_login,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,22 +85,60 @@ async def admin_login_submit(
             logger.info("Admin login: legacy key (back-compat)")
             return RedirectResponse(url=next_url, status_code=303)
 
-    # Per-user path
+    # Per-user path — RBAC slice 4 adds rotation + lockout checks on top
+    # of the slice-1 username/password match.
     if username_norm:
         result = await db.execute(
             select(AdminUser).where(AdminUser.username == username_norm)
         )
         user = result.scalar_one_or_none()
-        if user and user.is_active and verify_password(password, user.password_hash):
-            user.last_login_at = datetime.now(timezone.utc)
-            await db.commit()
-            next_url = request.session.pop("admin_next", "/ui/")
-            request.session["admin_authenticated"] = True
-            request.session["admin_user"] = user.username
-            request.session["admin_role"] = user.role
-            request.session["admin_via"] = "user"
-            logger.info("Admin login: user=%s role=%s", user.username, user.role)
-            return RedirectResponse(url=next_url, status_code=303)
+        now = datetime.now(timezone.utc)
+        policy = await read_policy(db)
+
+        if user and user.is_active:
+            # Lockout takes precedence over password verification so a
+            # locked account doesn't get to keep guessing — the answer
+            # is always "locked, try again later".
+            locked, unlock_at = is_locked(user, policy, now)
+            if locked:
+                first_run = (await _admin_users_count(db)) == 0
+                msg = "Account is locked. Try again after {}.".format(
+                    unlock_at.strftime("%Y-%m-%d %H:%M UTC") if unlock_at else "the lockout window"
+                )
+                logger.info("Admin login refused (locked): user=%s", user.username)
+                return templates.TemplateResponse("admin/login.html", {
+                    "request": request,
+                    "error": msg,
+                    "first_run": first_run,
+                }, status_code=423)
+
+            if verify_password(password, user.password_hash):
+                # Successful login — reset bad-password counter, stamp
+                # last_login_at, then check whether the password has
+                # aged out and we need to push the user to /my-account.
+                await record_successful_login(db, user, now)
+                next_url = request.session.pop("admin_next", "/ui/")
+                request.session["admin_authenticated"] = True
+                request.session["admin_user"] = user.username
+                request.session["admin_role"] = user.role
+                request.session["admin_via"] = "user"
+                if password_must_be_changed(user, policy, now):
+                    request.session["must_change_password"] = True
+                    logger.info("Admin login: user=%s rotation due", user.username)
+                    return RedirectResponse(url="/ui/my-account?rotate=1", status_code=303)
+                logger.info("Admin login: user=%s role=%s", user.username, user.role)
+                return RedirectResponse(url=next_url, status_code=303)
+
+            # Bad password — increment counter (which may now lock the
+            # account) and re-render with a generic error. We don't tell
+            # the user "your account just got locked" on this exact
+            # response: the next attempt will see the lockout banner.
+            just_locked = await record_failed_login(db, user, policy, now)
+            if just_locked:
+                logger.warning(
+                    "Admin login: user=%s LOCKED after %d failed attempts",
+                    user.username, user.failed_login_count,
+                )
 
     # Fallback — re-render with error and first-run flag refreshed.
     first_run = (await _admin_users_count(db)) == 0
@@ -156,6 +201,11 @@ async def admin_first_run_setup(
         role="superadmin",
         is_active=True,
         created_by="first-run-setup",
+        # RBAC slice 4: stamp the rotation clock at create time so the
+        # admin doesn't get force-expired the first time a rotation
+        # policy is enabled (without this the column would be NULL and
+        # ``password_must_be_changed`` would treat that as "never").
+        password_set_at=datetime.now(timezone.utc),
     )
     db.add(user)
     await db.commit()

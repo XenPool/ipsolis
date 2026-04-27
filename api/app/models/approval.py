@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -55,6 +55,14 @@ class OrderApproval(Base):
     # approvals.
     rule_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     rule_threshold: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Slice 4 of RBAC: when the rule that produced this approval row had
+    # ``sod_exempt: true`` set, the SoD self-approval check in
+    # ``apply_approval_decision`` is skipped. Frozen at order-creation
+    # time (same reason ``rule_name`` / ``rule_threshold`` are persisted —
+    # the rule definition can change after the order was created).
+    sod_exempt: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
 
     # Relationships
     order: Mapped["Order"] = relationship("Order", back_populates="approvals")  # noqa: F821

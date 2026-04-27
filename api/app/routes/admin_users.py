@@ -19,7 +19,7 @@ Out of scope (slice 2):
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
@@ -33,7 +33,9 @@ from app.models.admin_user_grant import AdminUserAssetTypeGrant
 from app.models.asset import AssetType
 from app.utils.audit import aaudit, actor_by
 from app.utils.auth import require_admin_key
+from app.utils.features import require_enterprise
 from app.utils.password import hash_password, verify_password
+from app.utils.password_policy import record_password_change
 from app.utils.rbac import VALID_ROLES, require_role
 
 logger = logging.getLogger(__name__)
@@ -151,6 +153,9 @@ async def create_admin_user(
         role=payload.role,
         is_active=True,
         created_by=actor_by(request, "create_admin_user"),
+        # RBAC slice 4: stamp the rotation clock at create time so the
+        # rotation policy treats a freshly-minted user as "just rotated".
+        password_set_at=datetime.now(timezone.utc),
     )
     db.add(user)
     await db.flush()
@@ -223,6 +228,10 @@ async def update_admin_user(
 
     if payload.new_password:
         user.password_hash = hash_password(payload.new_password)
+        # RBAC slice 4: a superadmin password reset doubles as an
+        # account unlock + rotation-clock reset, so the target user can
+        # sign in immediately with their fresh credentials.
+        await record_password_change(db, user, datetime.now(timezone.utc))
         # Don't audit password contents; just record that a rotation happened.
         changes["password_changed"] = True
 
@@ -317,7 +326,11 @@ class GrantSet(BaseModel):
     asset_type_ids: list[int]
 
 
-@router.get("/{user_id}/grants", response_model=list[GrantRow])
+@router.get(
+    "/{user_id}/grants",
+    response_model=list[GrantRow],
+    dependencies=[require_enterprise("rbac_asset_type_grants")],
+)
 async def list_user_grants(
     user_id: int,
     db: AsyncSession = Depends(get_db),
@@ -348,7 +361,11 @@ async def list_user_grants(
     ]
 
 
-@router.put("/{user_id}/grants", response_model=list[GrantRow])
+@router.put(
+    "/{user_id}/grants",
+    response_model=list[GrantRow],
+    dependencies=[require_enterprise("rbac_asset_type_grants")],
+)
 async def set_user_grants(
     request: Request,
     user_id: int,

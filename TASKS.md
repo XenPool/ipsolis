@@ -23,16 +23,47 @@ Items here are **not actively planned** — they're the slices we deliberately
 deferred from the 2026-04-26 enterprise push. Each is independently slice-able;
 pull one when there's a procurement need or a quiet week.
 
-### RBAC slice 4
+### RBAC slice 4 — **shipped 2026-04-27**
 *(originating section: [`Admin RBAC`](#done-admin-rbac--prio-0-show-stopper) further down)*
-- [ ] Forced password rotation policy + lockout-on-N-failed-attempts.
-- [ ] Auditor read paths for endpoints currently gated at `admin`
-      (e.g. `GET /admin/maintenance/backups` shouldn't require write authority).
-- [ ] SoD on per-rule approvers — admins might want a per-rule opt-out
-      ("this rule's approver is a static compliance officer, never a configurer").
-- [ ] Token-role-aware mint guard relaxation — once the router gate is
-      relaxed so admins can mint their own narrow tokens, the existing
-      mint guard becomes the operative defense.
+- [x] **Forced password rotation policy + lockout-on-N-failed-attempts.**
+      Migration `0073_rbac_slice4` adds `admin_users.password_set_at`,
+      `failed_login_count`, `locked_at`. Three new config keys
+      (`rbac.password_rotation_days`, `rbac.lockout_threshold`,
+      `rbac.lockout_duration_minutes`) — 0 disables each, defaults
+      ship "off" so existing installs are unchanged. `app.utils.password_policy`
+      provides `read_policy()` / `is_locked()` / `password_must_be_changed()` /
+      `record_failed_login()` / `record_successful_login()` /
+      `record_password_change()`. Wired into `admin_auth.py` (login flow),
+      `admin_self.py` (self-service password change), `admin_users.py`
+      (superadmin reset = unlock + clock reset). Lockout responses use
+      HTTP 423 with an "unlock at <UTC>" hint. Auto-unlock fires on the
+      next attempt past the duration window so brief flurries clear
+      themselves. Settings UI section in the Compliance tab; values
+      writable on community but enforcement gated on the
+      `password_policy` Enterprise feature key.
+- [x] **Auditor read paths on `admin/maintenance/*`.** Router floor
+      relaxed from `admin` to `auditor`; every write/trigger route
+      (`POST /backups`, `DELETE /backups/{id}`, `PUT /retention`,
+      `POST /cleanup`, `POST /queue/purge`, `PUT /schedule`,
+      `PUT /alerts`, `POST /alerts/test`) carries an explicit
+      `_WRITE_GATE = require_role("admin")`. Backup *download*
+      (`GET /backups/{id}/download`) keeps the admin gate — backup
+      files contain the full DB and aren't a "read" the way the listing is.
+- [x] **SoD per-rule approver opt-out.** Backend plumbing complete:
+      `approval_rules` JSON entries accept `sod_exempt: true`; matched
+      approvers carry the flag through `evaluate_rules()`; new
+      `order_approvals.sod_exempt` column captures it at
+      order-creation time so subsequent rule edits don't shift past
+      orders' SoD logic. `apply_approval_decision()` skips the SoD
+      check when the flag is set. UI checkbox in the asset-type form's
+      rules editor is deferred polish (admins can set it via direct
+      JSON edit of `approval_rules` for now).
+- [x] **Token-role-aware mint guard relaxation.** Router gate on
+      `admin_api_tokens` dropped from `superadmin` to `admin`. Mint
+      guard (creator role ≥ requested token role) is now the operative
+      defense — an `admin` cannot forge a superadmin-bound token, so
+      the worst they can do is mint a token at-or-below their own
+      privilege, which they already have anyway.
 
 ### External secret management slice 2
 *(originating section: [`External secret management`](#done-external-secret-management--prio-0-show-stopper) further down)*

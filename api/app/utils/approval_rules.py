@@ -257,6 +257,11 @@ def evaluate_rules(
                 rule_threshold = t if t > 0 else None
             except (TypeError, ValueError):
                 rule_threshold = None
+        # RBAC slice 4: per-rule SoD opt-out. When set on the rule, every
+        # approver this rule contributes is exempt from the configurer-
+        # as-approver SoD block. Typical use: a static compliance officer
+        # who is also an admin and so would otherwise hit the SoD block.
+        sod_exempt = bool(rule.get("sod_exempt"))
         for approver in rule.get("approvers") or []:
             if not isinstance(approver, dict):
                 continue
@@ -272,9 +277,10 @@ def evaluate_rules(
                 "name": (approver.get("name") or email).strip(),
                 "rule_name": rule_name,
                 "rule_threshold": rule_threshold,
+                "sod_exempt": sod_exempt,
             })
             logger.info(
-                "approval_rules: rule %r matched → adding %s (threshold=%s)",
-                rule_name, email, rule_threshold,
+                "approval_rules: rule %r matched → adding %s (threshold=%s, sod_exempt=%s)",
+                rule_name, email, rule_threshold, sod_exempt,
             )
     return matched

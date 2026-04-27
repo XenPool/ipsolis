@@ -28,6 +28,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 
+from app.templates_instance import set_license_globals
 from app.utils import license as license_utils
 from app.utils.auth import require_admin_key
 from app.utils.rbac import require_role
@@ -46,8 +47,16 @@ MAX_LICENSE_BYTES = 64 * 1024  # 64 KiB — a signed license is a few hundred by
 
 
 def _license_info_dict() -> dict[str, Any]:
-    """Fresh snapshot of the current license state, suitable for JSON."""
+    """Fresh snapshot of the current license state, suitable for JSON.
+
+    Side effect: also refreshes the Jinja2 template globals
+    (``edition`` / ``is_enterprise`` / ``license_info``) so the Dashboard
+    and enterprise-feature gates reflect the new state without an api
+    restart. Without this the file changes but every rendered template
+    keeps the startup-frozen edition forever.
+    """
     info = license_utils.load_license(force_reload=True)
+    set_license_globals(info)
     return {
         "license_id": info.license_id,
         "licensee": info.licensee,
@@ -209,6 +218,9 @@ async def license_remove() -> Response:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Could not remove license file: {exc}",
             )
-        license_utils.load_license(force_reload=True)
+        # Reload the license cache AND push the now-Community edition into
+        # the Jinja2 globals — without this the Dashboard / nav locks stay
+        # showing Enterprise until the api restarts.
+        set_license_globals(license_utils.load_license(force_reload=True))
         logger.info("admin: license removed — instance is now Community edition")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

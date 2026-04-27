@@ -31,12 +31,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/admin/maintenance",
     tags=["admin-maintenance"],
-    # Backups, queue inspection, retention, alerts — operational
-    # surfaces that an ``admin`` runs day-to-day. Auditor read access
-    # to maintenance status (without trigger buttons) is slice-3
-    # polish; today the whole router is admin+.
-    dependencies=[Depends(require_admin_key), require_role("admin")],
+    # RBAC slice 4: relaxed router floor from ``admin`` to ``auditor`` so
+    # read endpoints (list backups, view retention config, queue depth,
+    # schedule, alerts, health) are visible to auditors for compliance
+    # review. Every write/trigger route below adds an explicit
+    # ``require_role("admin")`` so audit access stays read-only.
+    # ``GET /backups/{id}/download`` keeps the admin gate — backup files
+    # contain the full DB and aren't a "read" the way the listing is.
+    dependencies=[Depends(require_admin_key), require_role("auditor")],
 )
+
+# Per-route write gate — keeps the slice-4 read relaxation from
+# accidentally letting auditors trigger backups, purge queues, etc.
+_WRITE_GATE = require_role("admin")
 
 BACKUP_DIR = Path("/app/backups")
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
@@ -84,7 +91,7 @@ async def list_backups(db: AsyncSession = Depends(get_db)) -> list[dict]:
     return out
 
 
-@router.post("/backups", dependencies=[_ENT])
+@router.post("/backups", dependencies=[_ENT, _WRITE_GATE])
 async def create_backup(
     request: Request,
     payload: BackupCreate,
@@ -121,7 +128,7 @@ async def create_backup(
     }
 
 
-@router.get("/backups/{backup_id}/download", dependencies=[_ENT])
+@router.get("/backups/{backup_id}/download", dependencies=[_ENT, _WRITE_GATE])
 async def download_backup(
     backup_id: int, db: AsyncSession = Depends(get_db)
 ) -> FileResponse:
@@ -148,7 +155,7 @@ async def download_backup(
     )
 
 
-@router.delete("/backups/{backup_id}", dependencies=[_ENT])
+@router.delete("/backups/{backup_id}", dependencies=[_ENT, _WRITE_GATE])
 async def delete_backup(
     backup_id: int, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -214,7 +221,7 @@ async def get_retention(db: AsyncSession = Depends(get_db)) -> dict:
     return out
 
 
-@router.put("/retention", dependencies=[_ENT])
+@router.put("/retention", dependencies=[_ENT, _WRITE_GATE])
 async def set_retention(
     payload: RetentionUpdate, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -241,7 +248,7 @@ async def set_retention(
     return {"success": True}
 
 
-@router.post("/cleanup")
+@router.post("/cleanup", dependencies=[_WRITE_GATE])
 async def run_cleanup(
     dry_run: bool = False,
     db: AsyncSession = Depends(get_db),
@@ -454,7 +461,7 @@ class QueuePurge(BaseModel):
     queue: str
 
 
-@router.post("/queue/purge", dependencies=[_ENT])
+@router.post("/queue/purge", dependencies=[_ENT, _WRITE_GATE])
 async def purge_queue(payload: QueuePurge) -> dict:
     if payload.queue not in _KNOWN_QUEUES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown queue: {payload.queue}")
@@ -510,7 +517,7 @@ async def get_schedule(db: AsyncSession = Depends(get_db)) -> dict:
     }
 
 
-@router.put("/schedule", dependencies=[_ENT])
+@router.put("/schedule", dependencies=[_ENT, _WRITE_GATE])
 async def set_schedule(
     payload: ScheduleUpdate, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -553,7 +560,7 @@ async def get_alerts(db: AsyncSession = Depends(get_db)) -> dict:
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-@router.put("/alerts", dependencies=[_ENT])
+@router.put("/alerts", dependencies=[_ENT, _WRITE_GATE])
 async def set_alerts(
     payload: AlertUpdate, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -572,7 +579,7 @@ async def set_alerts(
     return {"success": True}
 
 
-@router.post("/alerts/test", dependencies=[_ENT])
+@router.post("/alerts/test", dependencies=[_ENT, _WRITE_GATE])
 async def test_alert(db: AsyncSession = Depends(get_db)) -> dict:
     """Sends a test email to the configured alert recipient."""
     row = await db.execute(

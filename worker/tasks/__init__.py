@@ -21,6 +21,7 @@ app = Celery(
         "tasks.workflows.siem_streamer",
         "tasks.workflows.approval_reminders",
         "tasks.workflows.audit_retention",
+        "tasks.workflows.update_checker",
         "tasks.modules.maintenance",
     ],
 )
@@ -71,6 +72,7 @@ app.conf.update(
         "tasks.workflows.license_check.*": {"queue": "default"},
         "tasks.workflows.siem_streamer.*": {"queue": "default"},
         "tasks.workflows.audit_retention.*": {"queue": "default"},
+        "tasks.workflows.update_checker.*": {"queue": "default"},
         "tasks.workflows.approval_reminders.*": {"queue": "notifications"},
         "tasks.modules.notifications.*": {"queue": "notifications"},
         "tasks.modules.maintenance.*": {"queue": "default"},
@@ -129,6 +131,15 @@ app.conf.update(
             "task": "tasks.workflows.approval_reminders.scan_and_remind",
             "schedule": crontab(minute=15),  # Hourly at :15 to spread Beat load
             "options": {"queue": "notifications"},
+        },
+        # Daily check for newer ipSolis releases — opt-in via the
+        # ``updates.check_enabled`` config toggle. The task short-circuits
+        # itself when the toggle is off, so this Beat entry is cheap on
+        # disabled installs (one DB read, no outbound call).
+        "update-notifier-daily": {
+            "task": "tasks.workflows.update_checker.check_for_updates",
+            "schedule": crontab(hour=4, minute=30),  # Daily at 04:30 Europe/Berlin
+            "options": {"queue": "default"},
         },
     },
 )

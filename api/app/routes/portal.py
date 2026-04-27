@@ -604,6 +604,7 @@ async def portal_create_order(
             *,
             rule_name: str | None = None,
             rule_threshold: int | None = None,
+            sod_exempt: bool = False,
         ) -> OrderApproval:
             d = await resolve_active_delegate(db, email)
             if d is None:
@@ -611,6 +612,7 @@ async def portal_create_order(
                     order_id=order.id, approver_type=approver_type,
                     approver_email=email, approver_name=name,
                     rule_name=rule_name, rule_threshold=rule_threshold,
+                    sod_exempt=sod_exempt,
                 )
             # Active delegation — route to the deputy. The original
             # assignee is captured in the audit trail via the
@@ -625,6 +627,7 @@ async def portal_create_order(
                 approver_email=d.delegate_email,
                 approver_name=d.delegate_name or d.delegate_email,
                 rule_name=rule_name, rule_threshold=rule_threshold,
+                sod_exempt=sod_exempt,
             )
 
         # Track which emails are already covered so the rule loop
@@ -657,6 +660,7 @@ async def portal_create_order(
                 ra["name"],
                 rule_name=ra["rule_name"],          # full, untruncated for grouping
                 rule_threshold=ra.get("rule_threshold"),
+                sod_exempt=ra.get("sod_exempt", False),
             ))
             seen_emails.add(ra["email"].lower())
 

@@ -14,6 +14,7 @@ descriptive 409 instead of silently failing.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
@@ -26,6 +27,7 @@ from app.models.admin_user import AdminUser
 from app.utils.audit import aaudit, actor_by
 from app.utils.auth import require_admin_key
 from app.utils.password import hash_password, verify_password
+from app.utils.password_policy import record_password_change
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -149,6 +151,14 @@ async def change_my_password(
         )
 
     user.password_hash = hash_password(payload.new_password)
+    # RBAC slice 4: reset the rotation clock + lockout state in the same
+    # transaction so the operator doesn't immediately hit "must change
+    # password" again with their freshly-set credential.
+    await record_password_change(db, user, datetime.now(timezone.utc))
+    # Clear the must-change flag if the user landed here via the
+    # rotation prompt — the session pickup happens on the next request.
+    if request.session.get("must_change_password"):
+        request.session.pop("must_change_password", None)
     # Audit trail without leaking either password — record only that a
     # rotation happened, not the values.
     await aaudit(
