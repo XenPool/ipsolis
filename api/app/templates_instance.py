@@ -20,6 +20,31 @@ templates = Jinja2Templates(directory="/app/app/templates")
 from app.utils.markdown_render import render_markdown as _render_markdown  # noqa: E402
 templates.env.filters["markdown"] = _render_markdown
 
+# Role helpers — let any template ask "is the signed-in admin at least
+# role X?" without re-implementing the rank table inline. Mirrors
+# ``app.utils.rbac.role_at_least`` but operates against the request session
+# (the UI-facing identity). A missing/unknown role returns the most-privileged
+# default so unauthenticated render paths (e.g. error pages) don't silently
+# elevate — but the UI router guarantees a session is present anyway.
+from app.utils.rbac import role_at_least as _role_at_least  # noqa: E402
+
+
+def _current_admin_role(request) -> str:
+    if request is None:
+        return "superadmin"
+    try:
+        return request.session.get("admin_role") or "superadmin"
+    except Exception:
+        return "superadmin"
+
+
+def _admin_role_at_least(request, required: str) -> bool:
+    return _role_at_least(_current_admin_role(request), required)
+
+
+templates.env.globals["current_admin_role"] = _current_admin_role
+templates.env.globals["admin_role_at_least"] = _admin_role_at_least
+
 templates.env.globals["app_title"] = APP_TITLE_DEFAULT
 templates.env.globals["app_version"] = os.environ.get("APP_VERSION", "0.0.0")
 templates.env.globals["app_logo"] = False          # bool: whether a logo is configured

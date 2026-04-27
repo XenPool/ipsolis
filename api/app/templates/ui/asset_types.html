@@ -3,12 +3,20 @@
 {% block title %}Asset Definitions – {{ app_title }}{% endblock %}
 
 {% block content %}
+{% set _can_write_asset_types = admin_role_at_least(request, 'admin') %}
 <div class="mb-6 flex items-center justify-between">
   <h1 class="text-lg font-semibold text-heading">Asset Definitions</h1>
+  {% if _can_write_asset_types %}
   <a href="/ui/asset-types/new"
      class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
     + New Asset Definition
   </a>
+  {% else %}
+  <span class="text-xs text-muted italic"
+        title="Your role ({{ current_admin_role(request) }}) is read-only here. Ask a superadmin to grant the 'admin' role to make changes.">
+    read-only
+  </span>
+  {% endif %}
 </div>
 
 <div class="bg-surface rounded-lg border border-token-border overflow-hidden">
@@ -121,19 +129,23 @@
         </td>
         <td class="px-4 py-3 text-right text-xs whitespace-nowrap">
           <a href="/ui/asset-types/{{ t.id }}/edit"
-             class="text-muted hover:text-blue-600 mr-3">Edit</a>
+             class="text-muted hover:text-blue-600 mr-3">{% if _can_write_asset_types %}Edit{% else %}View{% endif %}</a>
+          {% if _can_write_asset_types %}
           <button onclick="cloneAssetType({{ t.id }}, '{{ t.name | replace("'", "\\'") }}')"
                   class="text-muted hover:text-blue-600 mr-3"
                   title="Duplicate this definition (shallow — runbooks not copied)">Clone</button>
           <button onclick="deleteAssetType({{ t.id }}, '{{ t.name | replace("'", "\\'") }}')"
                   class="text-red-400 hover:text-red-600">Delete</button>
+          {% endif %}
         </td>
       </tr>
       {% else %}
       <tr>
         <td colspan="9" class="px-4 py-12 text-center text-muted/70 text-sm">
           No asset definitions yet.
+          {% if _can_write_asset_types %}
           <a href="/ui/asset-types/new" class="ml-1 text-blue-600 hover:underline">Create one →</a>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}

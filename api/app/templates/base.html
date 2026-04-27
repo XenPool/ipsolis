@@ -34,10 +34,18 @@
     </div>
 
     <!-- Navigation -->
+    {# RBAC nav gating: every link below is wrapped in admin_role_at_least()
+       so each role only sees what it can actually reach (or read). The list
+       is ordered so each section moves up the privilege ladder:
+         everyone (helpdesk+) → admin+ → auditor+ → superadmin → personal.
+       Mismatch with the API gate would mean a user sees a link they 403 on,
+       so when changing role mins here, mirror the change on the API route. #}
+    {% set _admin_role = current_admin_role(request) %}
     {# min-h-0 + overflow-y-auto is the flexbox idiom for "shrink past
        content height and scroll instead". Without min-h-0 the flex child
        refuses to shrink below its intrinsic content height. #}
     <nav class="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-0.5">
+      {# ── Operational visibility — visible to every signed-in admin ──── #}
       <a href="/ui/"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'dashboard' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -74,6 +82,9 @@
         </svg>
         Asset Pool
       </a>
+
+      {# ── Configuration — admin+ ──────────────────────────────────────── #}
+      {% if admin_role_at_least(request, 'admin') %}
       <a href="/ui/modules"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'modules' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -125,6 +136,10 @@
         </svg>
         Maintenance
       </a>
+      {% endif %}
+
+      {# ── Oversight (read-only) — auditor+ ────────────────────────────── #}
+      {% if admin_role_at_least(request, 'auditor') %}
       <a href="/ui/cost-report"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'cost-report' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -134,6 +149,19 @@
         </svg>
         Cost Report
       </a>
+      <a href="/ui/audit-log"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'audit-log' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        Audit Log
+      </a>
+      {% endif %}
+
+      {# ── Authority-level — superadmin only ───────────────────────────── #}
+      {% if admin_role_at_least(request, 'superadmin') %}
       <a href="/ui/license"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'license' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -152,22 +180,6 @@
         </svg>
         API Tokens
       </a>
-      {# RBAC slice 1: nav items hide for roles that can't reach them. #}
-      {% set _admin_role = request.session.get('admin_role', 'superadmin') if request else 'superadmin' %}
-      {% set _role_rank = {'superadmin': 0, 'admin': 1, 'approver': 2, 'auditor': 3, 'helpdesk': 4} %}
-      {% set _my_rank = _role_rank.get(_admin_role, 0) %}
-      {% if _my_rank <= _role_rank['auditor'] %}
-      <a href="/ui/audit-log"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'audit-log' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-        </svg>
-        Audit Log
-      </a>
-      {% endif %}
-      {% if _my_rank <= _role_rank['superadmin'] %}
       <a href="/ui/admin-users"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'admin-users' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -178,6 +190,11 @@
         Admin Users
       </a>
       {% endif %}
+
+      {# Approval Delegations — admin+ since the API endpoint is the
+         "admin manages delegations on behalf of users" flow, not
+         self-service. Mirrors the gate in admin_approval_delegations.py. #}
+      {% if admin_role_at_least(request, 'admin') %}
       <a href="/ui/approval-delegations"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'approval-delegations' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -187,6 +204,9 @@
         </svg>
         Approval Delegations
       </a>
+      {% endif %}
+
+      {# ── Personal — visible to everyone ──────────────────────────────── #}
       <a href="/ui/my-account"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'my-account' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">

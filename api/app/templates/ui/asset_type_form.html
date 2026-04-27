@@ -4,13 +4,21 @@
 {% block title %}{% if asset_type %}Edit Asset Definition{% else %}New Asset Definition{% endif %} – {{ app_title }}{% endblock %}
 
 {% block content %}
+{% set _can_write_asset_types = admin_role_at_least(request, 'admin') %}
 <div class="mb-6">
   <a href="/ui/asset-types" class="text-sm text-muted hover:text-heading">← Asset Definitions</a>
 </div>
 
 <h1 class="text-lg font-semibold text-heading mb-6">
-  {% if asset_type %}Edit Asset Definition: {{ asset_type.name }}{% else %}New Asset Definition{% endif %}
+  {% if asset_type %}{% if _can_write_asset_types %}Edit{% else %}View{% endif %} Asset Definition: {{ asset_type.name }}{% else %}New Asset Definition{% endif %}
 </h1>
+
+{% if not _can_write_asset_types %}
+<div class="mb-4 max-w-2xl text-sm rounded px-4 py-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300">
+  <strong>Read-only.</strong> Your role (<code>{{ current_admin_role(request) }}</code>) can view asset definitions but not change them.
+  Ask a superadmin to grant the <code>admin</code> role to enable Save.
+</div>
+{% endif %}
 
 <div class="flex gap-6 items-start">
 <div class="bg-surface rounded-lg border border-token-border p-6 max-w-2xl flex-1">
@@ -900,18 +908,29 @@
       <div id="dp-constraint-banner" class="hidden mt-2 text-xs rounded px-3 py-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-300"></div>
     </div>
 
+    {# Result/error banner sits ABOVE the sticky save bar so 4xx responses
+       (validation, role mismatch) are visible without scrolling past the
+       bar that's pinned to the viewport bottom. #}
+    <div id="form-result" class="mt-6"></div>
+
     <!-- Save bar (sticky to the bottom of the viewport so it's always reachable on this long form) -->
     <div class="sticky bottom-0 z-10 -mx-6 px-6 mt-6 py-3 bg-surface border-t border-token-border flex items-center justify-between shadow-[0_-4px_12px_-8px_rgba(0,0,0,0.15)]">
       <a href="/ui/asset-types" class="text-sm text-muted hover:text-heading">Cancel</a>
+      {% if _can_write_asset_types %}
       <button type="button" onclick="submitForm()"
               class="px-6 py-2.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
         {% if asset_type %}Save{% else %}Create{% endif %} →
       </button>
+      {% else %}
+      <button type="button" disabled
+              title="Your role ({{ current_admin_role(request) }}) cannot save asset definitions."
+              class="px-6 py-2.5 bg-surface-raised text-muted text-sm font-medium rounded cursor-not-allowed border border-token-border">
+        Save (insufficient role)
+      </button>
+      {% endif %}
     </div>
 
   </form>
-
-  <div id="form-result" class="mt-4"></div>
 </div>
 
 <!-- Section nav rail. Hidden below xl breakpoint to avoid cramping the form.
