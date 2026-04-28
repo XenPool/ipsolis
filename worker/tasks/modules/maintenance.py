@@ -190,6 +190,202 @@ def run_backup(self, backup_id: int, trigger: str = "manual") -> dict:
         db.close()
 
 
+@shared_task(name="tasks.modules.maintenance.run_restore", bind=True)
+def run_restore(self, backup_id: int, safety_backup_id: int) -> dict:
+    """Restore the DB from a previously-taken backup.
+
+    Workflow:
+      1. Run pg_dump for ``safety_backup_id`` so the operator can
+         roll back this restore if the result is wrong.
+      2. Connect to the maintenance DB (``postgres``) as a separate
+         psycopg2 connection, terminate every session on the target
+         DB, DROP and re-CREATE it.
+      3. Pipe ``gunzip -c <file> | psql`` to load the dump.
+      4. Mark the target backup row as ``restored`` (with
+         ``restored_at`` audit-trail data via the ``error`` field —
+         the column doesn't exist as a dedicated timestamp yet, so
+         we stash a short marker there for now).
+
+    The api can't run alembic ``upgrade head`` from inside this task
+    (worker image has no alembic config), so when a dump is older
+    than the current code's schema head the operator still has to
+    run ``docker compose exec -T api alembic upgrade head`` manually.
+    Documented in the UI banner.
+    """
+    db = _db()
+    try:
+        row = db.execute(
+            text("SELECT filename FROM db_backups WHERE id = :i"),
+            {"i": backup_id},
+        ).first()
+        if not row:
+            return {"success": False, "error": f"backup row {backup_id} not found"}
+        target_filename = row[0]
+        target_path = BACKUP_DIR / target_filename
+        if not target_path.exists():
+            db.execute(
+                text(
+                    "UPDATE db_backups SET status='restore_failed', "
+                    "error=:e WHERE id = :i"
+                ),
+                {"i": backup_id, "e": f"backup file {target_filename} not on disk"},
+            )
+            db.commit()
+            return {"success": False, "error": "backup file missing"}
+
+        # ── 1. Pre-restore safety backup ──────────────────────────────
+        # Re-use ``run_backup`` synchronously so the safety dump is
+        # captured BEFORE we touch the target DB. ``apply()`` runs
+        # the task in this worker process, no broker round-trip.
+        safety_result = run_backup.apply(
+            args=[safety_backup_id],
+            kwargs={"trigger": "pre_restore"},
+        ).get()
+        if not safety_result.get("success"):
+            db.execute(
+                text(
+                    "UPDATE db_backups SET status='restore_failed', "
+                    "error=:e WHERE id = :i"
+                ),
+                {
+                    "i": backup_id,
+                    "e": "Pre-restore safety backup failed: "
+                         + (safety_result.get("error") or "unknown"),
+                },
+            )
+            db.commit()
+            return {"success": False, "error": "safety backup failed"}
+
+        # Mark target row as restoring.
+        db.execute(
+            text("UPDATE db_backups SET status='restoring' WHERE id = :i"),
+            {"i": backup_id},
+        )
+        db.commit()
+        # Drop our session on the soon-to-be-dropped DB so it doesn't
+        # get terminated mid-flight in step 2.
+        db.close()
+        db = None  # we'll re-open after the restore
+
+        # ── 2. DROP + CREATE the target DB via maintenance connection ──
+        import psycopg2  # noqa: PLC0415 — only needed during restore
+        pg = _parse_pg_url()
+        target_dbname = pg["dbname"]
+
+        # Connect to the postgres maintenance DB. autocommit because
+        # DROP/CREATE DATABASE can't run inside a transaction.
+        maint = psycopg2.connect(
+            host=pg["host"], port=int(pg["port"]),
+            user=pg["user"], password=pg["password"],
+            dbname="postgres",
+        )
+        maint.set_session(autocommit=True)
+        try:
+            cur = maint.cursor()
+            # Kick everyone off the target DB (api, beat, worker, …).
+            # SQLAlchemy pool_pre_ping + reconnect handles the api/worker
+            # losing their connections — they pick up fresh ones once the
+            # new DB is in place.
+            cur.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = %s AND pid <> pg_backend_pid()",
+                (target_dbname,),
+            )
+            # Quote the dbname with format() — no user input flows into
+            # the dbname (it comes from DATABASE_URL), but we still
+            # validate to be defensive against weird env values.
+            if not target_dbname.replace("_", "").replace("-", "").isalnum():
+                raise RuntimeError(f"refusing to DROP non-alphanumeric dbname: {target_dbname!r}")
+            cur.execute(f'DROP DATABASE IF EXISTS "{target_dbname}"')
+            cur.execute(f'CREATE DATABASE "{target_dbname}" OWNER "{pg["user"]}"')
+        finally:
+            maint.close()
+
+        # ── 3. Pipe gunzip into psql ─────────────────────────────────
+        env = os.environ.copy()
+        if pg["password"]:
+            env["PGPASSWORD"] = pg["password"]
+        # bash -c keeps the pipeline simple; both binaries are guaranteed
+        # to exist in the worker image (debian + apt postgres-client).
+        proc = subprocess.run(
+            [
+                "bash", "-c",
+                f"gunzip -c '{target_path}' | psql "
+                f"--host '{pg['host']}' --port '{pg['port']}' "
+                f"--username '{pg['user']}' --dbname '{target_dbname}' "
+                f"--quiet --set ON_ERROR_STOP=1",
+            ],
+            env=env,
+            capture_output=True,
+            timeout=3600,
+        )
+
+        # ── 4. Mark restored / failed ────────────────────────────────
+        # Re-open db session — note that this connects to the freshly-
+        # restored DB, which now contains the row we're updating.
+        db = _db()
+        if proc.returncode != 0:
+            err = (proc.stderr or b"").decode("utf-8", errors="replace")[:4000]
+            try:
+                db.execute(
+                    text(
+                        "UPDATE db_backups SET status='restore_failed', error=:e "
+                        "WHERE id = :i"
+                    ),
+                    {"i": backup_id, "e": err or "psql exited non-zero"},
+                )
+                db.commit()
+            except Exception:
+                # The freshly-restored DB doesn't have the row yet if the
+                # dump was empty; ignore and let the outer return surface
+                # the error.
+                pass
+            logger.error("Restore %s failed: %s", target_filename, err[:200])
+            return {"success": False, "error": "psql restore failed", "stderr": err}
+
+        try:
+            db.execute(
+                text(
+                    "UPDATE db_backups SET status='restored', "
+                    "error=concat('restored_at=', NOW()::text) WHERE id = :i"
+                ),
+                {"i": backup_id},
+            )
+            db.commit()
+        except Exception:
+            # Backup row may not exist in the restored DB (if the dump
+            # pre-dates this backup's row). That's fine — the operator's
+            # action is recorded in audit_log via the api endpoint.
+            pass
+
+        logger.info("Restore %s completed from %s", target_filename, target_path)
+        return {
+            "success": True,
+            "backup_id": backup_id,
+            "safety_backup_id": safety_backup_id,
+            "filename": target_filename,
+        }
+    except Exception as exc:
+        logger.exception("Restore failed for id=%s: %s", backup_id, exc)
+        try:
+            if db is None:
+                db = _db()
+            db.execute(
+                text(
+                    "UPDATE db_backups SET status='restore_failed', error=:e "
+                    "WHERE id = :i"
+                ),
+                {"i": backup_id, "e": str(exc)[:4000]},
+            )
+            db.commit()
+        except Exception:
+            pass
+        return {"success": False, "error": str(exc)}
+    finally:
+        if db is not None:
+            db.close()
+
+
 # ── Retention cleanup ─────────────────────────────────────────────────────────
 
 

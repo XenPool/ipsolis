@@ -703,6 +703,11 @@
       <p class="mt-2 text-xs text-muted/70">
         Provision/revoke runs automatically via these targets — no runbook editor needed.
       </p>
+      <p class="mt-1 text-xs text-muted/70">
+        Use <code class="font-mono bg-surface-raised px-1 rounded">{asset_name}</code> in the identifier
+        to insert the assigned asset's name at provision time
+        (e.g. <code class="font-mono bg-surface-raised px-1 rounded">CN=XenPool-VDI-{asset_name}-RDP-Users,OU=…</code>).
+      </p>
       <div class="mt-2 text-xs rounded px-3 py-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 leading-snug">
         <strong>Note — domain groups only.</strong> Targets must be <em>domain</em> groups (AD or Entra),
         not local groups on member servers. Linking a domain group to a local group on the asset

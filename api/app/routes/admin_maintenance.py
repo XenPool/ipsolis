@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -153,6 +153,118 @@ async def download_backup(
         media_type="application/gzip",
         filename=backup.filename,
     )
+
+
+class RestoreRequest(BaseModel):
+    """Body for ``POST /admin/maintenance/backups/{id}/restore``.
+
+    ``confirm_filename`` must equal the backup's filename verbatim — a
+    typed confirmation that defeats accidental clicks. Operators see
+    the filename in the backups table; the UI's modal sends whatever
+    they type back here.
+    """
+    confirm_filename: str = Field(min_length=1, max_length=255)
+
+
+@router.post("/backups/{backup_id}/restore", dependencies=[_ENT, _WRITE_GATE])
+async def restore_backup(
+    backup_id: int,
+    payload: RestoreRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Restore the DB from a previously-taken backup.
+
+    Workflow (most logic lives in
+    ``tasks.modules.maintenance.run_restore`` — the api here only
+    validates the request, takes the safety-backup row reservation,
+    and enqueues):
+
+      1. Verify the typed confirmation matches the backup's filename.
+      2. Refuse if any restore is currently in progress.
+      3. Insert a "pre-restore" db_backups row reserved for the
+         worker to fill — gives the operator a same-tick rollback
+         path if the restored data turns out to be wrong.
+      4. Mark the target backup row as ``restoring`` so the UI can
+         poll status.
+      5. Enqueue ``run_restore`` and return 202 with both ids.
+    """
+    backup = await db.get(DbBackup, backup_id)
+    if not backup:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Backup not found")
+    if backup.status not in ("success",):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Cannot restore from a backup with status {backup.status!r}; "
+            "only completed backups (status='success') are valid sources.",
+        )
+    if not (BACKUP_DIR / backup.filename).exists():
+        raise HTTPException(
+            status.HTTP_410_GONE,
+            f"Backup file {backup.filename} is no longer on disk — "
+            "cannot restore.",
+        )
+    # Typed-filename confirmation. Any mismatch (including stray
+    # whitespace) refuses with the same generic message so the UI
+    # can show "type the filename exactly" without leaking which
+    # part the operator got wrong.
+    if payload.confirm_filename != backup.filename:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "confirm_filename does not match the backup filename — "
+            "type it exactly to confirm.",
+        )
+
+    # Single-flight: refuse if any other backup is in mid-restore.
+    in_flight = await db.execute(
+        select(DbBackup).where(DbBackup.status == "restoring").limit(1)
+    )
+    if in_flight.scalar_one_or_none():
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Another restore is already in progress; wait for it to finish.",
+        )
+
+    # Reserve the safety-backup row before kicking the worker.
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    safety = DbBackup(
+        filename=f"xp_backup_pre_restore_{ts}.sql.gz",
+        status="pending",
+        trigger="pre_restore",
+        created_by=_session_user(request),
+        note=f"Auto-taken before restoring backup #{backup.id} ({backup.filename})",
+    )
+    db.add(safety)
+    # Mark target as restoring atomically with the safety insertion.
+    backup.status = "restoring"
+    await db.commit()
+    await db.refresh(safety)
+    await db.refresh(backup)
+
+    celery = _get_celery()
+    task = celery.send_task(
+        "tasks.modules.maintenance.run_restore",
+        args=[backup.id, safety.id],
+        queue="default",
+    )
+    logger.warning(
+        "Enqueued RESTORE backup id=%s (safety id=%s) task=%s by=%s",
+        backup.id, safety.id, task.id, _session_user(request),
+    )
+    return {
+        "status":              202,
+        "target_backup_id":    backup.id,
+        "target_filename":     backup.filename,
+        "safety_backup_id":    safety.id,
+        "safety_filename":     safety.filename,
+        "task_id":             task.id,
+        "message": (
+            "Restore enqueued. Poll the backups list and watch this row's "
+            "status flip from 'restoring' → 'restored' (success) or "
+            "'restore_failed' (failure). The pre-restore safety backup is "
+            "available for rollback at any time."
+        ),
+    }
 
 
 @router.delete("/backups/{backup_id}", dependencies=[_ENT, _WRITE_GATE])
