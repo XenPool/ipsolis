@@ -639,7 +639,8 @@
       <div class="grid grid-cols-12 gap-2 mb-1 text-xs text-muted/70 px-0.5">
         <span class="col-span-3">Type</span>
         <span class="col-span-5">Identifier (DN / ObjectId)</span>
-        <span class="col-span-3">Assigned to</span>
+        <span class="col-span-2">Assigned to</span>
+        <span class="col-span-1 text-center" title="When checked, the provision workflow tries to create the group if it doesn't yet exist (AD groups only).">Create?</span>
       </div>
       <div id="target-rows" class="space-y-2">
         {% if asset_type and asset_type.targets %}
@@ -655,12 +656,17 @@
             <input type="text" name="target_identifier[]" value="{{ tgt.identifier }}" placeholder="CN=Group,OU=..."
                    class="col-span-5 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
             <select name="target_principal_source[]"
-                    class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
+                    class="col-span-2 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
               <option value="requester" {% if tgt.principal_source == 'requester' %}selected{% endif %}>Requester</option>
               <option value="rdp_users" {% if tgt.principal_source == 'rdp_users' %}selected{% endif %}>RDP users</option>
               <option value="admin_users" {% if tgt.principal_source == 'admin_users' %}selected{% endif %}>Admin users</option>
               <option value="all_users" {% if tgt.principal_source == 'all_users' %}selected{% endif %}>All users</option>
             </select>
+            <label class="col-span-1 flex items-center justify-center"
+                   title="When checked, the provision workflow tries to create the group if it doesn't yet exist (AD groups only).">
+              <input type="checkbox" name="target_create[]" value="1" class="w-4 h-4 accent-green-600"
+                     {% if tgt.create_if_missing %}checked{% endif %}>
+            </label>
             <button type="button" onclick="this.closest('.target-row').remove()"
                     class="col-span-1 text-red-400 hover:text-red-600 text-lg leading-none text-center">×</button>
           </div>
@@ -677,12 +683,16 @@
             <input type="text" name="target_identifier[]" placeholder="CN=Group,OU=..."
                    class="col-span-5 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
             <select name="target_principal_source[]"
-                    class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
+                    class="col-span-2 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
               <option value="requester">Requester</option>
               <option value="rdp_users">RDP users</option>
               <option value="admin_users">Admin users</option>
               <option value="all_users">All users</option>
             </select>
+            <label class="col-span-1 flex items-center justify-center"
+                   title="When checked, the provision workflow tries to create the group if it doesn't yet exist (AD groups only).">
+              <input type="checkbox" name="target_create[]" value="1" class="w-4 h-4 accent-green-600">
+            </label>
             <button type="button" onclick="this.closest('.target-row').remove()"
                     class="col-span-1 text-red-400 hover:text-red-600 text-lg leading-none text-center">×</button>
           </div>
@@ -691,8 +701,15 @@
       <button type="button" onclick="addTargetRow()"
               class="mt-2 text-xs text-green-600 hover:underline">+ Add Target</button>
       <p class="mt-2 text-xs text-muted/70">
-        Provision/revoke runs automatically via these targets – no runbook editor needed.
+        Provision/revoke runs automatically via these targets — no runbook editor needed.
       </p>
+      <div class="mt-2 text-xs rounded px-3 py-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 leading-snug">
+        <strong>Note — domain groups only.</strong> Targets must be <em>domain</em> groups (AD or Entra),
+        not local groups on member servers. Linking a domain group to a local group on the asset
+        (e.g. <code class="font-mono">Remote Desktop Users</code> on the host) is <strong>not</strong>
+        part of the standard provision workflow — wire it up separately via a custom runbook step
+        or via Group Policy.
+      </div>
     </div>
 
     <!-- Runbook slots (Provision / Modify / Deprovision) -->
@@ -1364,9 +1381,13 @@ function addTargetRow() {
     + '<input type="text" name="target_identifier[]" placeholder="CN=Group,OU=..."'
     + ' class="col-span-5 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">'
     + '<select name="target_principal_source[]"'
-    + ' class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">'
+    + ' class="col-span-2 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">'
     + _buildPrincipalOptions('requester')
     + '</select>'
+    + '<label class="col-span-1 flex items-center justify-center"'
+    + ' title="When checked, the provision workflow tries to create the group if it doesn\'t yet exist (AD groups only).">'
+    + '<input type="checkbox" name="target_create[]" value="1" class="w-4 h-4 accent-green-600">'
+    + '</label>'
     + '<button type="button" onclick="this.closest(\'.target-row\').remove()"'
     + ' class="col-span-1 text-red-400 hover:text-red-600 text-lg leading-none text-center">\xd7</button>';
   document.getElementById('target-rows').appendChild(row);
@@ -1506,10 +1527,17 @@ async function submitForm() {
   var tTypes   = Array.from(form.querySelectorAll('[name="target_type[]"]')).map(function(s) { return s.value; });
   var tIdents  = Array.from(form.querySelectorAll('[name="target_identifier[]"]')).map(function(i) { return i.value.trim(); });
   var tSources = Array.from(form.querySelectorAll('[name="target_principal_source[]"]')).map(function(s) { return s.value; });
+  // querySelectorAll returns all checkbox elements regardless of checked
+  // state, so the array stays index-aligned with the others above.
+  var tCreates = Array.from(form.querySelectorAll('[name="target_create[]"]')).map(function(c) { return !!c.checked; });
   var targets = [];
   tTypes.forEach(function(t, i) {
     if (!tIdents[i]) return;
-    targets.push({ type: t, identifier: tIdents[i], principal_source: tSources[i] || 'requester' });
+    var entry = { type: t, identifier: tIdents[i], principal_source: tSources[i] || 'requester' };
+    // Only persist the flag when set, so older asset_types stay byte-identical
+    // to their pre-feature shape on a no-op edit.
+    if (tCreates[i]) entry.create_if_missing = true;
+    targets.push(entry);
   });
 
   // Attributes
