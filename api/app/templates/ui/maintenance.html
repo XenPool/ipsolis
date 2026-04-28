@@ -567,8 +567,14 @@
         // ``restoring`` rows are mid-flight, ``failed`` ones are no
         // good source.
         var canRestore = (b.status === 'success' || b.status === 'restored');
+        // ``JSON.stringify`` emits literal double quotes around the
+        // filename, which collide with the surrounding onclick="..."
+        // attribute quotes and the resulting attribute is unparseable.
+        // ``&quot;`` is decoded by the browser back to ``"`` before the
+        // attribute value reaches JS, so the JSON parses correctly.
+        var fnameAttr = JSON.stringify(b.filename).replace(/"/g, '&quot;');
         var restore = canRestore
-          ? '<button onclick="openRestoreModal(' + b.id + ', ' + JSON.stringify(b.filename) + ')" '
+          ? '<button onclick="openRestoreModal(' + b.id + ', ' + fnameAttr + ')" '
             + 'class="ml-3 text-xs text-amber-600 hover:underline">Restore</button>'
           : '';
         var err = b.error
