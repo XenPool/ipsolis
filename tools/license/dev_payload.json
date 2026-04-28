@@ -1,0 +1,10 @@
+{
+  "license_id": "ipsolis-dev-local",
+  "licensee": "XenPool GmbH - Dev Branch",
+  "edition": "enterprise",
+  "max_users": 0,
+  "max_asset_types": 0,
+  "issued_at": "2026-04-23T00:00:00Z",
+  "expires_at": "2027-04-23T00:00:00Z",
+  "features": ["all"]
+}
