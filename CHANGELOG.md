@@ -14,7 +14,17 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased] 
 
+## [0.4.2] — 2026-04-28
 
+### Added
+
+- Implement update notifier and password policy features (`30afc66`)
+- add PowerShell and bash scripts for release management (`ecd252b`)
+- refresh license globals on config refresh (`6d600fe`)
+
+### Changed
+
+- update project name to 'ip·Solis' across documentation and code (`0fa6328`)
 
 ## [0.4.1] — 2026-04-27
 
