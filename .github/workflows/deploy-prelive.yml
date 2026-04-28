@@ -20,6 +20,17 @@ jobs:
           git fetch --prune origin
           git reset --hard origin/prelive
 
+      - name: Bootstrap TLS certs if missing
+        # Idempotent: no-op when certs/ already exists. On a brand-new box
+        # (or after wiping certs/ as part of a clean reinstall) generates a
+        # 1-year self-signed cert with the right SubjectAltNames so nginx
+        # boots cleanly instead of crash-looping on the missing file.
+        # Operators replace certs/cert.pem + key.pem with a real CA cert
+        # post-install — same paths, same config.
+        run: |
+          cd ${{ secrets.PRELIVE_PATH }}
+          bash tools/install/bootstrap-certs.sh
+
       - name: Rebuild and restart containers
         run: |
           cd ${{ secrets.PRELIVE_PATH }}
