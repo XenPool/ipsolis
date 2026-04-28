@@ -210,10 +210,54 @@
               class="px-3 py-1.5 text-xs font-medium rounded bg-blue-600 text-white hover:bg-blue-700">
         Create backup now
       </button>
+      <button onclick="openUploadModal()"
+              class="px-3 py-1.5 text-xs font-medium rounded border border-token-border text-body hover:bg-surface-raised"
+              title="Register a .sql.gz dump previously downloaded from another instance — useful for migrations between dev / prelive / prod.">
+        Upload backup…
+      </button>
       <button onclick="loadBackups()"
               class="px-3 py-1.5 text-xs font-medium rounded border border-token-border text-body hover:bg-surface-raised">
         Refresh
       </button>
+    </div>
+  </div>
+
+  <!-- Upload backup modal -->
+  <div id="upload-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div class="bg-surface rounded-lg border border-token-border shadow-xl w-full max-w-lg p-6">
+      <h2 class="text-base font-semibold text-heading mb-1">Upload backup</h2>
+      <p class="text-xs text-muted/70 mt-1 leading-snug">
+        Register a <code>.sql.gz</code> dump that was previously downloaded
+        from another instance. After upload it appears in the list below
+        with status <em>success</em> and can be restored like any other
+        backup. Up to 2 GB.
+      </p>
+      <div class="mt-4 space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">File (.sql.gz)</label>
+          <input id="upload-file" type="file" accept=".gz,application/gzip,application/x-gzip"
+                 class="block w-full text-sm text-body file:px-3 file:py-1.5 file:mr-3 file:text-xs file:font-medium file:rounded file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700">
+          <p id="upload-file-meta" class="text-[11px] text-muted/60 mt-1"></p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Note (optional)</label>
+          <input id="upload-note" type="text" autocomplete="off"
+                 placeholder="e.g. snapshot from production 2026-04-28"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2">
+        </div>
+      </div>
+      <p id="upload-error" class="hidden text-xs text-red-600 mt-2"></p>
+      <p id="upload-progress" class="hidden text-xs text-muted/70 mt-2"></p>
+      <div class="mt-5 flex justify-end gap-2">
+        <button onclick="closeUploadModal()"
+                class="px-3 py-2 text-sm rounded border border-token-border bg-surface-raised text-body hover:bg-surface">
+          Cancel
+        </button>
+        <button id="upload-submit-btn" onclick="confirmUpload()"
+                class="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60">
+          Upload
+        </button>
+      </div>
     </div>
   </div>
   <div class="bg-surface rounded-lg border border-token-border overflow-hidden">
@@ -643,6 +687,94 @@
       errEl.classList.remove('hidden');
       btn.disabled = false;
       btn.textContent = 'Restore';
+    }
+  }
+
+  // ── Upload backup (existing dump from another instance) ───────────────
+  // The api streams the body to disk in 1 MiB chunks and validates magic
+  // bytes after the full transfer. Using fetch() here means the browser
+  // shows a generic spinner; XMLHttpRequest would let us wire a progress
+  // bar — worth doing later if customers complain about silent uploads.
+  function openUploadModal() {
+    document.getElementById('upload-file').value = '';
+    document.getElementById('upload-file-meta').textContent = '';
+    document.getElementById('upload-note').value = '';
+    document.getElementById('upload-error').classList.add('hidden');
+    document.getElementById('upload-progress').classList.add('hidden');
+    document.getElementById('upload-submit-btn').disabled = false;
+    document.getElementById('upload-submit-btn').textContent = 'Upload';
+    document.getElementById('upload-modal').classList.remove('hidden');
+  }
+  function closeUploadModal() {
+    document.getElementById('upload-modal').classList.add('hidden');
+  }
+  // Show file size + name as a sanity check before the operator clicks Upload.
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'upload-file') {
+      var f = e.target.files && e.target.files[0];
+      var meta = document.getElementById('upload-file-meta');
+      if (!f) { meta.textContent = ''; return; }
+      var mb = (f.size / (1024 * 1024)).toFixed(1);
+      meta.textContent = f.name + ' — ' + mb + ' MiB';
+    }
+  });
+  async function confirmUpload() {
+    var f = document.getElementById('upload-file').files[0];
+    var errEl = document.getElementById('upload-error');
+    var progEl = document.getElementById('upload-progress');
+    var btn = document.getElementById('upload-submit-btn');
+    errEl.classList.add('hidden');
+    if (!f) {
+      errEl.textContent = 'Pick a .sql.gz file first.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    if (!/\.gz$/i.test(f.name)) {
+      errEl.textContent = 'File must be a .gz / .sql.gz dump.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+
+    var fd = new FormData();
+    fd.append('file', f);
+    var note = document.getElementById('upload-note').value.trim();
+    if (note) fd.append('note', note);
+
+    btn.disabled = true;
+    btn.textContent = 'Uploading…';
+    progEl.textContent = 'Uploading ' + f.name + ' (' + (f.size / (1024 * 1024)).toFixed(1) + ' MiB)…';
+    progEl.classList.remove('hidden');
+
+    try {
+      var resp = await fetch('/admin/maintenance/backups/upload', {
+        method: 'POST',
+        body: fd,
+      });
+      if (resp.ok) {
+        var data = await resp.json();
+        banner('Upload accepted: ' + data.filename + ' (' + (data.size_bytes / (1024 * 1024)).toFixed(1) + ' MiB).', 'ok');
+        closeUploadModal();
+        loadBackups();
+      } else {
+        var msg = 'Upload failed.';
+        try {
+          var j = await resp.json();
+          msg = j.detail || msg;
+        } catch (_) {
+          try { msg = await resp.text(); } catch (__) {}
+        }
+        errEl.textContent = msg;
+        errEl.classList.remove('hidden');
+        btn.disabled = false;
+        btn.textContent = 'Upload';
+        progEl.classList.add('hidden');
+      }
+    } catch (netErr) {
+      errEl.textContent = 'Network error: ' + netErr;
+      errEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Upload';
+      progEl.classList.add('hidden');
     }
   }
 

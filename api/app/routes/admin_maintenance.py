@@ -11,7 +11,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
@@ -89,6 +89,146 @@ async def list_backups(db: AsyncSession = Depends(get_db)) -> list[dict]:
             "finished_at": b.finished_at.isoformat() if b.finished_at else None,
         })
     return out
+
+
+_MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024   # 2 GB — matches nginx client_max_body_size
+_GZIP_MAGIC = b"\x1f\x8b"
+
+
+def _safe_upload_filename(orig: str) -> str:
+    """Derive a safe on-disk filename from the operator's upload.
+
+    Strips any path components (defence against directory-traversal in
+    the client-supplied name), keeps the basename, and prefixes a
+    timestamp so two uploads with the same name don't clobber each
+    other. The result always ends in ``.sql.gz``.
+    """
+    base = os.path.basename(orig or "").strip()
+    # Reject empty or pathological names — fall back to a generic stem.
+    if not base or base in (".", "..") or any(c in base for c in "/\\"):
+        base = "upload.sql.gz"
+    if not base.lower().endswith(".sql.gz"):
+        # Attach the right extension rather than reject; some operators
+        # transfer files via tools that strip / rename extensions.
+        base = base + ".sql.gz" if not base.lower().endswith(".gz") else base.rsplit(".", 1)[0] + ".sql.gz"
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    # Final shape: xp_backup_uploaded_<ts>_<original-base>.sql.gz
+    # so it's still recognisable in `ls ./backups/` but doesn't collide.
+    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", base[: -len(".sql.gz")])
+    return f"xp_backup_uploaded_{ts}_{cleaned}.sql.gz"
+
+
+@router.post("/backups/upload", dependencies=[_ENT, _WRITE_GATE])
+async def upload_backup(
+    request: Request,
+    file: UploadFile = File(..., description="The .sql.gz dump previously downloaded from another instance."),
+    note: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Accept a previously-downloaded .sql.gz dump and register it.
+
+    The uploaded file is streamed to ``./backups/<safe>.part`` to keep
+    memory bounded for large dumps, then atomically renamed once the
+    transfer completes and validation passes. Validations:
+
+    * Filename ends in ``.sql.gz`` (or is rewritten to)
+    * Size cap (matches the nginx ``client_max_body_size``)
+    * Gzip magic bytes (``1f 8b``) at offset 0
+
+    On success a ``db_backups`` row is created with ``trigger='upload'``
+    and ``status='success'`` so the file shows up in the standard list
+    and can be restored via the normal Restore button.
+    """
+    if not file or not file.filename:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No file provided.")
+
+    safe_filename = _safe_upload_filename(file.filename)
+    target = BACKUP_DIR / safe_filename
+    tmp = target.with_suffix(target.suffix + ".part")
+
+    # Stream the upload to ``.part``. Reading in 1 MiB chunks keeps the
+    # api process from holding the whole upload in memory at once.
+    chunk_size = 1024 * 1024
+    total = 0
+    head = b""
+    try:
+        with open(tmp, "wb") as out:
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                if not head:
+                    # Capture the first few bytes for magic-number sniffing
+                    # before committing to the file.
+                    head = chunk[:4]
+                total += len(chunk)
+                if total > _MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        f"Upload exceeds {_MAX_UPLOAD_BYTES // (1024*1024)} MiB limit.",
+                    )
+                out.write(chunk)
+    except HTTPException:
+        tmp.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        tmp.unlink(missing_ok=True)
+        logger.exception("Backup upload write failed: %s", exc)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            f"Failed to write upload to disk: {exc}",
+        )
+
+    # Validate AFTER the full transfer so the client gets one clean error
+    # rather than mid-stream truncation.
+    if total == 0:
+        tmp.unlink(missing_ok=True)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Uploaded file is empty.")
+    if not head.startswith(_GZIP_MAGIC):
+        tmp.unlink(missing_ok=True)
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "File is not gzip-compressed (missing magic bytes 1f 8b). "
+            "Expected a .sql.gz dump produced by ip·Solis or `pg_dump | gzip`.",
+        )
+
+    # Atomic move into place. Same pattern as the worker's pg_dump path.
+    try:
+        tmp.rename(target)
+    except OSError as exc:
+        tmp.unlink(missing_ok=True)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            f"Could not finalize upload to {target}: {exc}",
+        )
+
+    # Register in db_backups so it appears in the listing and is
+    # eligible for restore.
+    backup = DbBackup(
+        filename=safe_filename,
+        status="success",                 # file is already complete + validated
+        trigger="upload",
+        created_by=_session_user(request),
+        size_bytes=total,
+        finished_at=datetime.now(timezone.utc),
+        note=(note or f"Uploaded from {os.path.basename(file.filename)}")[:500],
+    )
+    db.add(backup)
+    await db.commit()
+    await db.refresh(backup)
+
+    logger.info(
+        "Backup uploaded: id=%s filename=%s size=%s by=%s",
+        backup.id, safe_filename, total, _session_user(request),
+    )
+    return {
+        "id":         backup.id,
+        "filename":   safe_filename,
+        "size_bytes": total,
+        "status":     "success",
+        "trigger":    "upload",
+        "message":    "Upload accepted. Use the Restore button to apply it.",
+    }
 
 
 @router.post("/backups", dependencies=[_ENT, _WRITE_GATE])
