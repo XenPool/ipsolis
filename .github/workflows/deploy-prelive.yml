@@ -10,9 +10,15 @@ jobs:
     runs-on: self-hosted
     steps:
       - name: Pull latest code
+        # Treat the deploy directory as a deployment artifact (always exactly
+        # what's on origin/prelive) rather than a working clone — `git pull`
+        # refuses divergent history (e.g. after a force-push promoting dev →
+        # prelive) and 128's the action. fetch+reset is idempotent and
+        # force-push tolerant.
         run: |
           cd ${{ secrets.PRELIVE_PATH }}
-          git pull origin prelive
+          git fetch --prune origin
+          git reset --hard origin/prelive
 
       - name: Rebuild and restart containers
         run: |
@@ -20,9 +26,33 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.nginx.yml up --build -d
 
       - name: Run database migrations
+        # Wait for the api container's healthcheck before exec'ing — exec on
+        # a still-starting container can return 0 with empty output, which
+        # is exactly what masked the missing-migration silent failure on
+        # 2026-04-28 (DB stuck at 0044, prelive UI 500'd despite a green
+        # action). The drift check at the end fails the job if the
+        # in-DB head doesn't match the on-disk head, so future regressions
+        # of this kind block the deploy instead of going to production.
         run: |
           cd ${{ secrets.PRELIVE_PATH }}
+          echo "Waiting for API container health before running migrations..."
+          for i in $(seq 1 18); do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' xp_api 2>/dev/null || echo "missing")
+            echo "  Attempt $i: container=$STATUS"
+            if [ "$STATUS" = "healthy" ]; then break; fi
+            sleep 5
+          done
           docker compose exec -T api alembic upgrade head
+          # Sanity: in-DB revision must match the current code's head.
+          DB_HEAD=$(docker compose exec -T api alembic current 2>/dev/null | grep -oE '^[0-9]{4}' | head -1)
+          FS_HEAD=$(docker compose exec -T api alembic heads  2>/dev/null | grep -oE '^[0-9]{4}' | head -1)
+          echo "DB head: ${DB_HEAD:-<unknown>}"
+          echo "FS head: ${FS_HEAD:-<unknown>}"
+          if [ -z "$DB_HEAD" ] || [ -z "$FS_HEAD" ] || [ "$DB_HEAD" != "$FS_HEAD" ]; then
+            echo "Migration drift detected — refusing to mark deploy successful."
+            docker compose logs api --tail=50
+            exit 1
+          fi
 
       - name: Reload nginx (pick up new upstream IPs)
         run: |
