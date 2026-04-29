@@ -160,6 +160,8 @@
       "awaiting_approval": "En attente d'approbation",
       "rejected": "Commande refusée",
       "error_label": "Erreur",
+      "error_friendly_message": "L'accès n'a pas pu être provisionné. Veuillez contacter le support IT.",
+      "step_failed_generic": "Cette étape a échoué — contactez le support IT pour plus de détails.",
       "section_requester": "Demandeur",
       "section_access_duration": "Accès & durée",
       "field_name": "Nom",

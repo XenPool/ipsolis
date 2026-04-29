@@ -160,6 +160,8 @@
       "awaiting_approval": "In attesa di approvazione",
       "rejected": "Ordine rifiutato",
       "error_label": "Errore",
+      "error_friendly_message": "Non è stato possibile effettuare il provisioning dell'accesso. Contatta il supporto IT.",
+      "step_failed_generic": "Questo passaggio non è riuscito — contatta l'IT per i dettagli.",
       "section_requester": "Richiedente",
       "section_access_duration": "Accesso e durata",
       "field_name": "Nome",

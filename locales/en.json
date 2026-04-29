@@ -160,6 +160,8 @@
       "awaiting_approval": "Awaiting Approval",
       "rejected": "Order Rejected",
       "error_label": "Error",
+      "error_friendly_message": "Access could not be provisioned. Please contact IT support.",
+      "step_failed_generic": "This step failed — contact IT for details.",
       "section_requester": "Requester",
       "section_access_duration": "Access & Duration",
       "field_name": "Name",

@@ -779,8 +779,12 @@ async def portal_order_detail(
     for step in sorted(order.steps, key=lambda s: s.id):
         duration = None
         if step.started_at and step.finished_at:
-            secs = (step.finished_at - step.started_at).total_seconds()
-            duration = f"{secs:.1f}s"
+            start = step.started_at
+            if step.finished_at.tzinfo and not start.tzinfo:
+                start = start.replace(tzinfo=step.finished_at.tzinfo)
+            # Clamp clock-skew negatives so we don't render "-0.0s".
+            secs = max(0.0, (step.finished_at - start).total_seconds())
+            duration = "< 1s" if secs < 0.05 else f"{secs:.1f}s"
         steps_with_duration.append({"step": step, "duration": duration})
 
     # Load approval records (if any)

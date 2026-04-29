@@ -31,13 +31,25 @@ router = APIRouter(
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+# OrderStatus enum has 13 values; every one needs a color so badges
+# never render unstyled (cf. QA report 2026-04-29 A4). Status display
+# text is intentionally kept English across locales (decision N1) but
+# the templates apply ``| replace('_', ' ') | title`` so the user sees
+# "Pending Approval" instead of the raw enum value ``pending_approval``.
 _STATUS_COLORS = {
-    "pending":    "bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-200",
-    "processing": "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
-    "delivered":  "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
-    "failed":     "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
-    "expired":    "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
-    "cancelled":  "bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400",
+    "pending":          "bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-200",
+    "pending_approval": "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+    "scheduled":        "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
+    "processing":       "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+    "provisioning":     "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+    "provisioned":      "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+    "delivered":        "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+    "revoking":         "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
+    "revoked":          "bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400",
+    "failed":           "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+    "expired":          "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
+    "cancelled":        "bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400",
+    "rejected":         "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
 }
 
 _STEP_COLORS = {
@@ -357,17 +369,18 @@ async def order_detail(
     # Asset type (for allow_user_lists flag in admin actions)
     asset_type = await db.get(AssetType, order.asset_type_id) if order.asset_type_id else None
 
-    # Compute step durations
+    # Compute step durations. Clock skew between API and worker hosts can
+    # produce a tiny-negative delta on instant-fail / instant-skip steps —
+    # without the clamp the formatter prints "-0.0s".
     steps_with_duration = []
     for step in sorted(order.steps, key=lambda s: s.id):
         duration = None
         if step.started_at and step.finished_at:
-            delta = step.finished_at - step.started_at.replace(
-                tzinfo=step.finished_at.tzinfo
-            ) if step.finished_at.tzinfo and not step.started_at.tzinfo else (
-                step.finished_at - step.started_at
-            )
-            duration = f"{delta.total_seconds():.1f}s"
+            start = step.started_at
+            if step.finished_at.tzinfo and not start.tzinfo:
+                start = start.replace(tzinfo=step.finished_at.tzinfo)
+            secs = max(0.0, (step.finished_at - start).total_seconds())
+            duration = "< 1s" if secs < 0.05 else f"{secs:.1f}s"
         steps_with_duration.append({"step": step, "duration": duration})
 
     return templates.TemplateResponse(

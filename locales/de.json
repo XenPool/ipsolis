@@ -160,6 +160,8 @@
       "awaiting_approval": "Warten auf Freigabe",
       "rejected": "Bestellung abgelehnt",
       "error_label": "Fehler",
+      "error_friendly_message": "Der Zugang konnte nicht eingerichtet werden. Bitte wenden Sie sich an den IT-Support.",
+      "step_failed_generic": "Dieser Schritt ist fehlgeschlagen – bitte wenden Sie sich an die IT.",
       "section_requester": "Antragsteller",
       "section_access_duration": "Zugang & Zeitraum",
       "field_name": "Name",

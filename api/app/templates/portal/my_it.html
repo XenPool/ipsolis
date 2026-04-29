@@ -54,7 +54,7 @@
         <td class="px-4 py-3">
           <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold {{ status_colors.get(order.status.value, 'bg-slate-100 dark:bg-slate-700 text-body') }}">
             <span class="w-1.5 h-1.5 rounded-full bg-current opacity-70"></span>
-            {{ order.status.value }}
+            {{ order.status.value | replace('_', ' ') | title }}
           </span>
         </td>
         <td class="px-4 py-3 text-right">

@@ -160,6 +160,8 @@
       "awaiting_approval": "Esperando aprobación",
       "rejected": "Pedido rechazado",
       "error_label": "Error",
+      "error_friendly_message": "No se pudo aprovisionar el acceso. Por favor, póngase en contacto con el soporte de TI.",
+      "step_failed_generic": "Este paso falló — póngase en contacto con TI para más detalles.",
       "section_requester": "Solicitante",
       "section_access_duration": "Acceso y duración",
       "field_name": "Nombre",

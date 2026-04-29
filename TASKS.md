@@ -1296,6 +1296,182 @@ order detail page and threshold-based alerts deferred.
 
 ## Polish & smaller gaps (Prio 2)
 
+### [open] QA regression sweep — Prio 2 (2026-04-29)
+Findings from a Claude-Code browser QA pass over `/portal/` and `/ui/`
+(report: `ipsolis-agent-prompt.md`). Walked through all 26 items;
+the survivors below are the ones with verified root causes. False
+flags and items rooted in data (not code) are recorded in the
+decision block underneath rather than as work items.
+
+**Bugs (real defects):**
+- [x] **B2 — Step duration shows `-0.0s`.** *(2026-04-29)* Both the
+      admin (`ui.py`) and portal (`portal.py`) duration builders now
+      clamp via `max(0.0, …)` and render `< 1s` for sub-second deltas
+      so clock-skew negatives never leak to the template formatter.
+- [x] **A4 — Order status badges missing colors for half the enum.**
+      *(2026-04-29)* `_STATUS_COLORS` extended from 6 → 13 entries
+      (every `OrderStatus` value: `pending_approval`, `scheduled`,
+      `provisioning`, `provisioned`, `revoking`, `revoked`, `rejected`
+      added with appropriate amber/sky/blue/green/orange/gray/red
+      hues + dark variants). All 6 templates that render the badge
+      (`orders.html`, `order_detail.html`, `portal/index.html`,
+      `portal/my_it.html`, `portal/my_it_detail.html`,
+      `portal/order_detail.html`) now display values via
+      `| replace('_', ' ') | title` so users see "Pending Approval"
+      instead of `pending_approval`.
+- [x] **A5 — Rejected orders show red "Error" box.** *(2026-04-29)*
+      Admin `order_detail.html` now branches on
+      `order.status.value == 'rejected'` and renders an amber
+      "Rejection reason" box; technical failures keep the red Error
+      banner. Portal `order_detail.html` keeps its dedicated rejection
+      block (with approver comments) and suppresses the generic Error
+      banner when status is `rejected` so only one rejection-related
+      element appears.
+- [x] **U2 — Raw LDAP error to end-users.** *(2026-04-29)* Portal
+      `order_detail.html` now shows `portal.order_detail.error_friendly_message`
+      ("Access could not be provisioned. Please contact IT support.")
+      instead of the raw `order.error_message`, and per-step errors
+      render `portal.order_detail.step_failed_generic`
+      ("This step failed — contact IT for details.") instead of the
+      raw `step.error` (LDAP DN paths no longer leak). Admin view
+      retains full diagnostic text. New i18n keys added in all 5
+      locales; `validate_locales.py` reports OK at 169 keys/locale.
+- [x] **U8 — Tag chips break dark-mode contrast.** *(2026-04-29)*
+      Both Jinja-rendered chips (lines around 79 / 99) and the
+      JS-built ones in `my_it_detail.html`'s tag-editor now carry
+      `dark:bg-{blue|purple}-500/15 dark:text-{blue|purple}-300` and
+      matching dark hover states.
+
+      *Bonus while in the same templates:* dropped `| upper` on
+      `order.action.value` in admin + portal order detail (covers
+      U7/N2 — readable "Provision" instead of shouty "PROVISION",
+      consistent with the N1/N2 keep-English decision).
+
+**Polish (small, contained):**
+- [ ] **A3 — HTML 404 page for `/ui/*`.** Currently FastAPI's default
+      JSON 404 leaks into the browser whenever a user types an unknown
+      `/ui/...` path. Add an exception handler / catch-all for the
+      `/ui/` prefix that renders a styled HTML 404 using the admin
+      base template. Subsumes A1 (`/ui/runbooks` 404) and A2
+      (`/ui/asset-definitions` 404) since both stem from the same
+      JSON-leak symptom.
+- [ ] **A6 — Update Notifier error placement.** [`ui/settings.html`](api/app/templates/ui/settings.html)
+      around the Update Notifier "Last check" line renders raw
+      `updates.check_error` next to the Save button. Move it to a
+      dedicated status line below the form, format friendly
+      ("Last check failed — token may be missing or invalid"), keep
+      the raw exception in server logs only.
+- [ ] **U3 — Delegations duplicate "revoked" text.**
+      [`portal/delegations.html`](api/app/templates/portal/delegations.html)
+      around the row builder renders the status word in the **action**
+      column when the row is revoked/expired, while the status badge
+      is already in the status column. Replace the action-column text
+      with `—` (em-dash) for terminal rows so the action cell reads as
+      "no action available".
+- [x] **U7 / N2 — Drop `| upper` on action labels.** *(2026-04-29
+      — bundled with the U2/A5 template pass.)* Both
+      `portal/order_detail.html` and admin `order_detail.html` now
+      use `| capitalize` so `provision` renders as "Provision"
+      instead of "PROVISION".
+- [ ] **N4 — Standalone Runbooks page heading.** Sidebar nav says
+      "Runbooks", page heading says "Standalone Runbooks". Change the
+      page heading to "Runbooks" in
+      [`ui/standalone_runbooks.html`](api/app/templates/ui/standalone_runbooks.html);
+      keep the URL slug as-is so we don't break bookmarks. (The
+      `Standalone` qualifier was historical disambiguation from
+      asset-type-bound runbooks; users don't need to see that.)
+- [ ] **A7 — Shorten admin login placeholder.**
+      [`admin/login.html`](api/app/templates/admin/login.html) → change
+      `Username (or leave blank for legacy admin key)` to
+      `Username (or legacy admin key)`. Trivial, low priority.
+- [ ] **P1 — STEPS column tooltip.** Order list "STEPS" column
+      shows e.g. `4/8`; add `title="Completed steps / Total steps"` on
+      the column header.
+- [ ] **P2 — Approval Delegations admin column header.** Move the
+      `(who set this up)` parenthetical from the `SOURCE` header into
+      a `title=` tooltip on a small info icon next to the header text.
+- [ ] **P3 — Dashboard "Updated:" timestamp lacks date.**
+      [`api/app/templates/dashboard.html`](api/app/templates/dashboard.html)
+      currently formats `now.strftime("%H:%M:%S")`. Include the date
+      so a tab left open >24h isn't ambiguous.
+- [ ] **P5 — Asset Pool action icons need a11y labels.** Three
+      action glyphs (→, ×, ⊙) in
+      [`ui/asset_pool.html`](api/app/templates/ui/asset_pool.html) — add
+      `aria-label` and `title` ("Edit", "Remove from pool", "Deprovision").
+- [ ] **P6 — Empty-state polish on portal "Meine Freigaben".**
+      Add an icon + slightly larger text so the empty message reads
+      as intentional empty state rather than a loading skeleton.
+
+**Needs a visual look-see before triaging:**
+- [ ] **P4 — Cost Report row hierarchy.** "VDI Test Client" appears
+      to render as a sub-row of VDI Business Client with an "L"
+      connector and no cost-center label. Either tighten the deliberate
+      grouping styling or fix the missing CC. Open the page first.
+
+### [decision] QA regression sweep — recorded 2026-04-29
+Items below were raised in `ipsolis-agent-prompt.md` but are
+deliberately *not* work items. Logged here so future QA rounds don't
+re-raise them and so the rationale stays alongside the survivors.
+
+- **N1 — Status badge values stay English in all locales.** IT pros
+  recognise `pending_approval` / `failed` / `provisioned` across
+  languages; localising introduces translation drift on
+  ops-critical labels. Reference in code wherever the badge map
+  lives so future contributors don't accidentally translate.
+- **N2 — Action labels (`provision`, `delete`) stay English.**
+  Same rationale as N1; combine with the U7 capitalize fix.
+- **A8 — Admin Console stays English-only.** Audience is a small
+  number of IT admins for whom English is the lingua franca;
+  translating the admin UI would balloon i18n surface ~10× vs. the
+  portal for negligible benefit. Document at the top of the admin
+  templates so it isn't accidentally i18n-converted later.
+- **B3 — "Stefan" vs "Stefan van Boxmer-Fischer" on legacy orders.**
+  Historical data only. Today the portal captures `user_name` from
+  the Entra `name` claim ([`utils/entra.py`](api/app/utils/entra.py))
+  which is `displayName` — consistently full. New orders are
+  correct; no migration warranted. If a one-time hygiene pass is
+  desired, a SQL `UPDATE orders SET user_name = … FROM ad_lookup`
+  is enough — no schema change.
+- **A1 / A2 — `/ui/runbooks`, `/ui/asset-definitions` JSON 404.**
+  Sidebar navs link to the correct URLs; user-typed URL guesses
+  hit a 404. Right fix is **A3** (HTML 404 page), not renaming
+  routes to match labels.
+- **N3 — Sidebar phrasing variants.** "Zugang anfordern" /
+  "Neuen Zugang anfordern" / "Bestellung abschicken →" serve
+  different UI roles (terse nav / page heading / submit verb).
+  Standardising would *worsen* UX. Skip.
+- **U4 — "unscoped now" subtitle on Shared Remote Desktop tile.**
+  Whatever the operator typed into the asset-type description —
+  it's data, not code. Tell the admin to update.
+- **U5 — Order-flow phrasing.** Same as N3; the variants are
+  intentional and correct.
+- **U6 — Hostname monospace.** Verified consistent across portal
+  orders list, order detail, and my_it_detail. The convention the
+  QA reporter recommended as preferred is the convention already in
+  use.
+- **N5 — "(slice 2)" suffix in column header.** Verified absent;
+  the QA reporter likely confused a help-text aside in
+  `ui/settings.html` with a column header.
+- **N6 — `ip·Solis` brand consistency.** All user-facing strings
+  use the middle dot. Plain `ipSolis` only appears in dev-only
+  compose-file comments and the repo folder name. No churn needed.
+
+**Optional — only revisit if architecture choice changes:**
+- **B1 — Language preference not persisted server-side.** Premise
+  is wrong: portal i18n is fully client-side via `localStorage.portal_lang`
+  + `data-i18n` attributes ([`static/js/i18n.js`](api/app/static/js/i18n.js)).
+  No server cookie/session involved. The QA reporter likely saw
+  flash-of-untranslated-content (FOUT) before `i18n.js` applies.
+  If FOUT becomes a real complaint, the fix is a tiny pre-paint
+  inline script that hides body until locale loads — *not* a
+  server-side language read.
+- **U1 — Browser tab titles hardcoded English.** Same root cause
+  as B1: `<title>` sits in `<head>` and renders before `i18n.js`.
+  Could be addressed by a `data-i18n-title` hook that updates
+  `document.title` after locale apply. Low value (internal tool —
+  nobody reads tab titles). Mirror the N1/N2 keep-English decision
+  unless a user complains.
+
 ### [done] `max_per_user` for pooled types — Prio 2 (2026-04-25)
 Per-user quota now enforced everywhere a PROVISION order can be created
 (public API, ServiceNow webhook, self-service portal). Quota covers personal
