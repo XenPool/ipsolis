@@ -21,6 +21,7 @@ explicit *Enterprise license* note appears.
 - [Approval delegation (admin + portal self-service)](#approval-delegation-admin--portal-self-service)
 - [N-of-M approvals + conditional rules](#n-of-m-approvals--conditional-rules)
 - [Auto-decline on extended inactivity](#auto-decline-on-extended-inactivity)
+- [Access certification campaigns](#access-certification-campaigns)
 
 **Observability**
 
@@ -1269,6 +1270,250 @@ Day 14 — Auto-decline fires; order → rejected; requester emailed.
 Tune `reminder_after_hours`, `max_reminders`,
 `escalation_email`, and `auto_decline_after_days` to match your
 internal SLA policy.
+
+---
+
+## Access certification campaigns
+
+Quarterly "managers re-confirm their team's access" workflow.
+Required for **ISO 27001 / SOX / PCI** compliance audits — auditors
+expect documentary evidence that every active access grant was
+re-validated by an authorised reviewer within the last quarter.
+
+### What you get end-to-end
+
+- **Schema + admin UI** for campaigns and review rows (slice 1).
+- **Signed-token review URLs** so reviewers can decide via email
+  with no portal login required (slice 2).
+- **Manager portal page** (`/portal/certifications`) for SSO users
+  who want to see their full pending queue (slice 2).
+- **Daily Beat task** that drives reminders at configurable offsets,
+  an overdue nag email, an escalation summary to a contact list,
+  and optional **auto-revoke on overdue** (slice 2).
+- **Optional Teams card** alongside the kickoff email when
+  `teams.mode=enabled` (slice 2).
+- **Audit trail** — every state transition + every notification
+  writes an `audit_log` row attributed to the actor that triggered
+  it. Auditors filter on `entity_type='certification_campaign'` to
+  pull the full lifecycle of any cycle.
+
+### Campaign lifecycle
+
+```
+draft  ──[start]──▶  running  ──[close]──▶  closed
+                     │
+                     └─[cancel]───────────▶ cancelled
+```
+
+- **draft** — newly created. Editable (name, description, scope,
+  due_at). Deletable. Status counts are zero. The status is what
+  you save before the kickoff button is pressed.
+- **running** — kickoff materialised review rows. Only `due_at` is
+  editable from here on (changing the scope mid-cycle would break
+  the audit trail since reviews are already created against a
+  specific filter snapshot). Reviews can be decided.
+- **closed** — manual wrap-up. Pending reviews stay pending and
+  retain their audit trail. Slice 2 will use this as the
+  "auto-revoke trigger window has ended" signal.
+- **cancelled** — operator abort. Distinct from `closed` in the
+  audit trail so auditors can tell "we wrapped it up" from "we
+  abandoned it".
+
+### Scope filter
+
+Each campaign carries a JSON scope filter applied at kickoff to
+select active orders. Empty / missing fields are wildcards;
+**AND across keys, OR within each list**:
+
+```json
+{
+  "asset_type_ids": [16, 27],
+  "cost_centers": ["CC-IT-2100"],
+  "departments": ["Engineering"],
+  "requester_emails": ["alice@example.com"]
+}
+```
+
+Active orders match the same status set the cost report and
+capacity enforcement use: `pending`, `pending_approval`,
+`scheduled`, `processing`, `provisioning`, `provisioned`,
+`delivered`. Cancelled / rejected / expired / revoked / failed
+orders never match.
+
+### Reviewer resolution
+
+When the kickoff materialises a review row, the reviewer is
+captured at that moment so subsequent manager changes don't shift
+the audit trail. Resolution priority:
+
+1. The first `manager` approver row on the order — captured at
+   order-creation time, so this is the manager who originally
+   approved access. (Most common.)
+2. The order's `owner_email` (deputy-ordering case).
+3. The order's `user_email` (degenerate fallback when no manager
+   is on file — user reviews their own access).
+
+Reviewer emails are lower-cased so case-insensitive matching works
+cleanly in slice 2's notification code.
+
+### Decisions
+
+Two outcomes:
+
+- **confirmed** — review row only, no order side-effects. The
+  user keeps their access, the audit trail records the decision.
+- **revoked** — admin-recorded decision sets the review row to
+  `revoked` AND triggers the asset's deprovision runbook
+  (`order.status → REVOKING`, `order.action → DELETE`, dispatched
+  via the same `dynamic_runner` path approval-decline uses). So a
+  revoke through the certification workflow has the **same
+  effect** as a manager revoke through the orders API — access is
+  actually pulled, not just flagged.
+
+A third terminal status, **auto_revoked**, is reserved for slice 2's
+overdue auto-revoke Beat task; today it never appears.
+
+### RBAC
+
+| Role | Campaigns: read | Reviews: read | Campaigns: write | Reviews: decide |
+|---|---|---|---|---|
+| `superadmin` | ✓ | ✓ | ✓ | ✓ |
+| `admin` | ✓ | ✓ | ✓ | ✓ |
+| `auditor` | ✓ | ✓ | — | — |
+| `helpdesk` | — | — | — | — |
+
+Reads are gated at `auditor` so finance / audit roles can monitor
+campaign progress without the ability to create or decide.
+Bearer-token writes additionally require the `approvals:write`
+scope.
+
+### Where to use it
+
+Admin UI → **Certifications** in the left nav.
+
+1. Click **+ New campaign**, fill in name + due date, choose a
+   scope (or leave fields blank for "all active orders"). Save.
+2. The new row lands in `draft` with empty review counts.
+3. Click **Start** on the row. The kickoff scans active orders
+   matching the scope, creates one review row per matched
+   `(order, reviewer)`, and the campaign moves to `running`.
+4. Click **Reviews →** on any campaign to drill down. Filter by
+   reviewer / status / order id; click **Confirm** or **Revoke**
+   per pending row to record the decision.
+5. When done, click **Close** on the campaign row to flip it to
+   `closed`. Pending reviews stay pending in the audit trail.
+
+### Reviewer experience
+
+Three paths into a decision, all routing to the same helper:
+
+1. **Email kickoff link** — kickoff dispatches a per-reviewer email
+   with one link to `/review-queue/{signed_token}`. Reviewer sees
+   their full pending list and clicks a row to confirm or revoke
+   on the per-row `/review/{signed_token}` page. **No portal
+   session required.**
+2. **Manager portal page** — at `/portal/certifications`, SSO users
+   see all reviews addressed to them split into "Pending" + "Recent
+   decisions". Per-row Confirm / Revoke buttons + decision modal.
+3. **Admin stand-in** — admins can record decisions on behalf of
+   reviewers via the `/ui/certifications` drill-down (slice 1
+   path). Useful when a reviewer is on long leave.
+
+All three paths produce the same audit row shape — only the
+`triggered_by` actor differs (`api:certification_token (reviewer:…)`,
+`api:decide_certification_review (portal:user:…)`, or
+`api:decide_certification_review (admin:session:…)`).
+
+### Signed-token URLs
+
+Per-row HMAC-SHA256 tokens, signed with `API_SECRET_KEY`. 14-day
+TTL. Distinct `kind: "cert_review"` field so an approval token
+can't be replayed against a review row. Rotating the signing key
+invalidates all outstanding tokens — usually the right thing on
+incident response.
+
+The kickoff email links to `/review-queue/<token>` (one token per
+reviewer pointing at one of their pending rows; the queue page
+expands it to show every pending row for the same reviewer email
+with per-row tokens). Per-row tokens make individual revocation
+easy if a reviewer leaves the company before deciding.
+
+### Reminders, overdue, escalation, auto-revoke
+
+A daily Beat task at **04:30 Europe/Berlin** drives every running
+campaign through four stages, each gated on its own config flag.
+
+| Stage | When | Config key | Default | Effect |
+|---|---|---|---|---|
+| Reminder | T-N days before due | `certification.reminder_days` | `7,1` | One email per reviewer per offset |
+| Overdue | After due_at | `certification.overdue_reminder_enabled` | `true` | One email per reviewer with pending rows |
+| Escalation | After due_at | `certification.escalation_email` | `""` (off) | One summary email to the contact list |
+| Auto-revoke | After due_at | `certification.auto_revoke_on_overdue` | `false` | Pending rows → `auto_revoked`; runbook deprovisions |
+
+Dedup keys off audit-log rows — every notification writes a
+campaign-scoped audit row with a stable action string
+(`reminder_7d`, `overdue`, `escalation`, `auto_revoke_review`),
+and the next tick checks for an existing row before re-firing.
+No extra schema, no per-row "last_reminded_at" column.
+
+**Auto-revoke is off by default** because it yanks live access.
+When enabled, the runbook side-effect is the same as a manual
+revoke: order moves to `revoking`, the deprovision runbook fires,
+and the user gets the standard "your access has been revoked"
+email. Each auto-revoked row carries a `decided_by:
+'system:certification_auto_revoke'` audit attribution so it's
+distinguishable from a human revoke.
+
+### Optional Teams card on kickoff
+
+When `teams.mode = enabled` and `teams.webhook_url` is set, the
+kickoff dispatch also posts an Adaptive Card with a Teams
+`@mention` of the reviewer (so the channel post fires a real
+banner notification, not just a silent feed entry). The card
+links to the same `/review-queue/<token>` URL as the email.
+
+### Stored config keys / tables
+
+| Table | Purpose |
+|---|---|
+| `certification_campaigns` | Header per audit cycle (name, scope, due, status) |
+| `certification_reviews` | One row per (campaign, order) pair generated at kickoff |
+
+| Config key | Purpose | Default |
+|---|---|---|
+| `certification.reminder_days` | Comma-separated days-before-due offsets at which reminders fire | `7,1` |
+| `certification.overdue_reminder_enabled` | Send a per-reviewer nag email past `due_at` | `true` |
+| `certification.auto_revoke_on_overdue` | Auto-revoke pending rows past `due_at` | `false` |
+| `certification.escalation_email` | Comma-separated contact list for the once-per-campaign overdue summary | `""` |
+
+| Email template event_key | Sent when |
+|---|---|
+| `certification_kickoff` | Campaign starts — one per unique reviewer |
+| `certification_reminder` | T-N days before due, gated on `reminder_days` |
+| `certification_overdue` | Past due, gated on `overdue_reminder_enabled` |
+| `certification_escalation` | Past due, once per campaign, to `escalation_email` |
+
+All four templates customisable via *Settings → Email Templates*
+(Enterprise license).
+
+### Audit trail
+
+Every state transition + every notification writes an `audit_log`
+row. The `triggered_by` field carries the actor:
+
+| Actor | Driven by |
+|---|---|
+| `api:create_certification_campaign (admin:session:…)` | Admin UI form |
+| `api:start_certification_campaign (admin:session:…)` | Kickoff button |
+| `api:certification_token (reviewer:<email>)` | Signed-token decision |
+| `api:decide_certification_review (portal:user:<email>)` | Portal decision |
+| `api:decide_certification_review (admin:session:…)` | Admin stand-in decision |
+| `system:certification_reminders` | Reminder / overdue / escalation Beat task |
+| `system:certification_auto_revoke` | Auto-revoke Beat task |
+
+Auditors filter on `entity_type='certification_campaign'` or
+`entity_type='certification_review'` to pull the full lifecycle of
+any cycle.
 
 ---
 

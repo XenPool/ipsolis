@@ -1153,6 +1153,16 @@ async def approval_delegations_page(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/certifications", response_class=HTMLResponse)
+async def certifications_page(request: Request) -> HTMLResponse:
+    """Access certification campaigns — list + per-campaign drill-down."""
+    return templates.TemplateResponse(
+        request,
+        "ui/certifications.html",
+        {"active_page": "certifications"},
+    )
+
+
 @router.get("/my-account", response_class=HTMLResponse)
 async def my_account_page(request: Request) -> HTMLResponse:
     """Self-service account page: identity snapshot + password change."""

@@ -14,7 +14,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.config import AppConfig
-from app.routes import admin, admin_api_tokens, admin_approval_delegations, admin_auth, admin_cost_report, admin_license, admin_maintenance, admin_modules, admin_runbooks, admin_seed_export, admin_self, admin_setup, admin_standalone_runbooks, admin_users, approvals_external, assets, auth, health, metrics as metrics_route, orders, portal, portal_delegations, ui, webhook
+from app.routes import admin, admin_api_tokens, admin_approval_delegations, admin_auth, admin_certifications, admin_cost_report, admin_license, admin_maintenance, admin_modules, admin_runbooks, admin_seed_export, admin_self, admin_setup, admin_standalone_runbooks, admin_users, approvals_external, assets, auth, certifications_external, health, metrics as metrics_route, orders, portal, portal_certifications, portal_delegations, ui, webhook
 from app.utils import metrics as metrics_util
 from app.templates_instance import set_app_title, set_app_logo_config, set_license_globals, refresh_app_config_if_stale
 from app.utils.license import load_license
@@ -189,6 +189,9 @@ app.include_router(admin_api_tokens.router)
 app.include_router(admin_users.router)
 app.include_router(admin_self.router)
 app.include_router(admin_cost_report.router)
+app.include_router(admin_certifications.router)
+app.include_router(certifications_external.router)
+app.include_router(portal_certifications.router)
 app.include_router(admin_setup.router)
 app.include_router(admin_approval_delegations.router)
 app.include_router(admin_seed_export.router)

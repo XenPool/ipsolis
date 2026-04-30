@@ -23,6 +23,8 @@ app = Celery(
         "tasks.workflows.approval_auto_decline",
         "tasks.workflows.cost_threshold_alerter",
         "tasks.workflows.cost_report_snapshot",
+        "tasks.workflows.certification_notifications",
+        "tasks.workflows.certification_reminders",
         "tasks.workflows.audit_retention",
         "tasks.workflows.update_checker",
         "tasks.modules.maintenance",
@@ -80,6 +82,8 @@ app.conf.update(
         "tasks.workflows.approval_auto_decline.*": {"queue": "notifications"},
         "tasks.workflows.cost_threshold_alerter.*": {"queue": "notifications"},
         "tasks.workflows.cost_report_snapshot.*": {"queue": "default"},
+        "tasks.workflows.certification_notifications.*": {"queue": "notifications"},
+        "tasks.workflows.certification_reminders.*": {"queue": "notifications"},
         "tasks.modules.notifications.*": {"queue": "notifications"},
         "tasks.modules.maintenance.*": {"queue": "default"},
     },
@@ -164,6 +168,15 @@ app.conf.update(
             "task": "tasks.workflows.cost_report_snapshot.capture_daily_snapshot",
             "schedule": crontab(hour=2, minute=0),  # Daily at 02:00 Europe/Berlin
             "options": {"queue": "default"},
+        },
+        # Certification campaigns: reminders + overdue + escalation +
+        # auto-revoke (each gated on its own config flag). Daily cadence
+        # at 04:30 Europe/Berlin so it runs after the audit prune (03:00)
+        # and the threshold alerter (04:00) have settled.
+        "certification-reminder-scan": {
+            "task": "tasks.workflows.certification_reminders.scan_and_remind",
+            "schedule": crontab(hour=4, minute=30),  # Daily at 04:30 Europe/Berlin
+            "options": {"queue": "notifications"},
         },
         # Daily check for newer ipSolis releases — opt-in via the
         # ``updates.check_enabled`` config toggle. The task short-circuits

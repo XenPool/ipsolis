@@ -73,6 +73,9 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 - Toggleable via the `metrics.enabled` config flag
 - **OpenTelemetry tracing** — auto-instrumented FastAPI requests, SQLAlchemy queries, and Celery tasks flow through an OTLP HTTP exporter to any standard collector (Jaeger, Tempo, SigNoz, Honeycomb); a request that dispatches a runbook produces a single trace spanning api + worker; a console exporter mode is available for local verification without a collector
 
+### Access Reviews & Certifications
+- **Access certification campaigns** — required for ISO 27001 / SOX / PCI compliance audits. Create a campaign with a scope filter (asset types / cost centers / departments / requester emails), kick it off to materialise one review row per (matching order, reviewer = the order's manager). Reviewers get a kickoff email + Teams card with a signed-token URL that opens a no-login review queue. Per row they pick **Confirm** (user keeps access) or **Revoke** (ip·Solis pulls access immediately via the deprovision runbook). Daily Beat task fires reminders at configurable offsets (default T-7d / T-1d), an overdue email past due, an escalation summary to a contact list, and **auto-revoke on overdue** (opt-in) so unreviewed access is pulled automatically. Manager portal page at `/portal/certifications` for SSO users; admin drill-down at `/ui/certifications` with per-status counts and inline confirm/revoke for stand-in scenarios
+
 ### Compliance & Audit
 - **SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel + generic HMAC-signed webhook)** — every `audit_log` row is forwarded once a minute to one of three back-ends: Splunk HTTP Event Collector, Sentinel Log Analytics workspace (Azure Monitor Data Collector API), or a generic JSON webhook with HMAC-SHA256 body signing in a GitHub-compatible `X-Hub-Signature-256: sha256=<hex>` header (configurable header name + extra headers for receivers like Datadog, Sumo, Loki, Elastic). Persistent cursor, automatic retry on transient failure, and a "Send Test Event" button verifies connectivity before enabling
 - **Tamper-evident audit log** — BEFORE-statement triggers on the `audit_log` table block DELETE / UPDATE / TRUNCATE by default; a documented `SET LOCAL ipsolis.allow_audit_mutation = 'true'` escape hatch exists for legitimate retention maintenance
@@ -338,7 +341,7 @@ Operators are responsible for maintaining their own records of processing activi
 
 **Open**
 
-- [ ] Access certification campaigns (quarterly manager re-confirmation workflow)
+- [x] Access certification campaigns — slice 1 + slice 2 (admin CRUD + kickoff + manager portal page + signed-token review URLs + email reminders / overdue / escalation + auto-revoke on overdue)
 - [ ] HR feed + SCIM 2.0 (Workday/SAP leaver events, Okta / Ping / SailPoint integration)
 - [x] Cost report: threshold alerting (per-`cost_center`/currency monthly limits with email + optional Teams-card alerts and hysteresis)
 - [x] Cost report: historical view via daily snapshot table + `?as_of=` query

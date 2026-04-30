@@ -470,6 +470,188 @@ def send_cost_threshold_breach(
     return _send_html_email_multi(db, addrs, bcc, mail_from, subject, html)
 
 
+def send_certification_kickoff(
+    db: "Session",
+    *,
+    reviewer_email: str,
+    reviewer_name: str | None,
+    campaign_name: str,
+    campaign_id: int,
+    review_count: int,
+    due_date: str,
+    review_url: str,
+) -> dict:
+    """Email the reviewer at campaign kickoff with a link to their queue."""
+    from tasks.modules.config_reader import get_config
+
+    if not reviewer_email or not reviewer_email.strip():
+        return {"success": True, "skipped": True, "reason": "no reviewer_email"}
+
+    company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    variables = {
+        "company_name": company_name,
+        "app_title": app_title,
+        "reviewer_name": reviewer_name or reviewer_email,
+        "reviewer_email": reviewer_email,
+        "campaign_name": campaign_name,
+        "campaign_id": campaign_id,
+        "review_count": review_count,
+        "due_date": due_date,
+        "review_url": review_url,
+    }
+    subject, body = _render_template(db, "certification_kickoff", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, [reviewer_email], bcc, mail_from, subject, html)
+
+
+def send_certification_reminder(
+    db: "Session",
+    *,
+    reviewer_email: str,
+    reviewer_name: str | None,
+    campaign_name: str,
+    campaign_id: int,
+    pending_count: int,
+    days_left: int,
+    due_date: str,
+    review_url: str,
+) -> dict:
+    """Day-N-before-due reminder to a reviewer with pending decisions."""
+    from tasks.modules.config_reader import get_config
+
+    if not reviewer_email or not reviewer_email.strip():
+        return {"success": True, "skipped": True, "reason": "no reviewer_email"}
+
+    company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    variables = {
+        "company_name": company_name,
+        "app_title": app_title,
+        "reviewer_name": reviewer_name or reviewer_email,
+        "reviewer_email": reviewer_email,
+        "campaign_name": campaign_name,
+        "campaign_id": campaign_id,
+        "pending_count": pending_count,
+        "days_left": days_left,
+        "due_date": due_date,
+        "review_url": review_url,
+    }
+    subject, body = _render_template(db, "certification_reminder", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, [reviewer_email], bcc, mail_from, subject, html)
+
+
+def send_certification_overdue(
+    db: "Session",
+    *,
+    reviewer_email: str,
+    reviewer_name: str | None,
+    campaign_name: str,
+    campaign_id: int,
+    pending_count: int,
+    due_date: str,
+    review_url: str,
+    auto_revoke_enabled: bool,
+) -> dict:
+    """Past-due nag email to a reviewer with pending decisions."""
+    from tasks.modules.config_reader import get_config
+
+    if not reviewer_email or not reviewer_email.strip():
+        return {"success": True, "skipped": True, "reason": "no reviewer_email"}
+
+    company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    if auto_revoke_enabled:
+        warn = (
+            '<p style="color:#BB0A30;"><strong>Heads up:</strong> auto-revoke is '
+            'enabled for this tenant — pending reviews will be revoked '
+            'automatically by the daily Beat task. Decide now to keep the '
+            'access; otherwise it will be pulled.</p>'
+        )
+    else:
+        warn = (
+            '<p>Auto-revoke is not enabled for this tenant. Pending reviews '
+            'will not be acted on automatically — please decide soon to '
+            'satisfy the audit cycle.</p>'
+        )
+
+    variables = {
+        "company_name": company_name,
+        "app_title": app_title,
+        "reviewer_name": reviewer_name or reviewer_email,
+        "reviewer_email": reviewer_email,
+        "campaign_name": campaign_name,
+        "campaign_id": campaign_id,
+        "pending_count": pending_count,
+        "due_date": due_date,
+        "review_url": review_url,
+        "auto_revoke_warning": warn,
+    }
+    subject, body = _render_template(db, "certification_overdue", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, [reviewer_email], bcc, mail_from, subject, html)
+
+
+def send_certification_escalation(
+    db: "Session",
+    *,
+    escalation_emails: list[str],
+    campaign_name: str,
+    campaign_id: int,
+    due_date: str,
+    pending_count: int,
+    reviewer_count: int,
+    reviewer_summary: str,
+    campaign_url: str,
+    auto_revoke_status: str,
+) -> dict:
+    """One-shot escalation to the configured contact list when a campaign goes overdue."""
+    from tasks.modules.config_reader import get_config
+
+    addrs = [a.strip() for a in (escalation_emails or []) if a and a.strip()]
+    if not addrs:
+        return {"success": True, "skipped": True, "reason": "no escalation_email configured"}
+
+    company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    variables = {
+        "company_name": company_name,
+        "app_title": app_title,
+        "campaign_name": campaign_name,
+        "campaign_id": campaign_id,
+        "due_date": due_date,
+        "pending_count": pending_count,
+        "reviewer_count": reviewer_count,
+        "reviewer_summary": reviewer_summary,
+        "campaign_url": campaign_url,
+        "auto_revoke_status": auto_revoke_status,
+    }
+    subject, body = _render_template(db, "certification_escalation", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, addrs, bcc, mail_from, subject, html)
+
+
 def send_approval_result(
     db: "Session",
     user_email: str,

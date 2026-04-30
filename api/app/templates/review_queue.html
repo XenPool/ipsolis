@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My access reviews – {{ app_title }}</title>
+  {% include "_partials/theme_head.html" %}
+</head>
+<body class="bg-surface-raised text-body min-h-screen">
+  <div class="max-w-2xl mx-auto px-4 py-8 sm:py-12">
+    <header class="mb-6 flex items-center gap-3">
+      {% if app_logo %}
+      <img src="/portal/logo" alt="" style="max-height: 32px; max-width: 120px;">
+      {% endif %}
+      <h1 class="text-base font-semibold text-heading">{{ app_title }} — My access reviews</h1>
+    </header>
+
+    <p class="text-sm text-muted mb-4">
+      Hi <span class="text-body font-medium">{{ reviewer_name or reviewer_email }}</span>,
+      you have <strong>{{ rows | length }} pending review(s)</strong>. Click any row to record
+      your decision (Confirm or Revoke).
+    </p>
+
+    {% if not rows %}
+    <div class="bg-surface rounded-lg border border-token-border p-6 text-center text-sm text-muted">
+      No pending reviews — thank you!
+    </div>
+    {% else %}
+    <ul class="bg-surface rounded-lg border border-token-border divide-y divide-token-border">
+      {% for r in rows %}
+      <li>
+        <a href="/review/{{ r.token }}" class="block px-5 py-3 hover:bg-surface-raised transition-colors">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-medium text-heading truncate">{{ r.user_name }} &lt;{{ r.user_email }}&gt;</div>
+              <div class="text-xs text-muted/70 mt-0.5">
+                {{ r.asset_type_name }} · order #{{ r.order_id }} · campaign #{{ r.campaign_id }}
+              </div>
+            </div>
+            <span class="text-blue-600 text-sm font-medium whitespace-nowrap">Review →</span>
+          </div>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    <p class="text-xs text-muted/70 mt-4 text-center">
+      Each link is signed and valid for 14 days. No portal login required.
+    </p>
+  </div>
+</body>
+</html>

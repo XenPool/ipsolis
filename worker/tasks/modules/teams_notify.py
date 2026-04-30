@@ -48,6 +48,27 @@ def make_approval_token(approval_id: int, ttl_seconds: int | None = None) -> str
     return f"{body}.{sig}"
 
 
+# ── Certification review token (cross-image mirror of api side) ────────────────
+# Same signing key as approval tokens (rotating API_SECRET_KEY invalidates
+# both kinds in lockstep). Distinct ``kind`` field so an approval token
+# can't be replayed against a review row.
+
+_CERT_REVIEW_KIND = "cert_review"
+
+
+def make_review_token(review_id: int, ttl_seconds: int | None = None) -> str:
+    payload: dict[str, Any] = {
+        "rid": int(review_id),
+        "exp": int(time.time()) + int(ttl_seconds or _DEFAULT_TTL_SECONDS),
+        "v": 1,
+        "kind": _CERT_REVIEW_KIND,
+    }
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    body = _b64url_encode(raw)
+    sig = hmac.new(_signing_key(), body.encode("ascii"), hashlib.sha256).hexdigest()
+    return f"{body}.{sig}"
+
+
 # ── Teams Workflow webhook sender ──────────────────────────────────────────────
 
 def post_adaptive_card(webhook_url: str, card: dict[str, Any]) -> tuple[bool, str]:
@@ -180,6 +201,66 @@ def build_approval_card(
             {
                 "type": "Action.OpenUrl",
                 "title": "Review request →",
+                "url": review_url,
+                "style": "positive",
+            }
+        ],
+    }
+
+
+def build_certification_kickoff_card(
+    *,
+    reviewer_name: str,
+    reviewer_email: str,
+    campaign_name: str,
+    review_count: int,
+    due_date: str,
+    review_url: str,
+    app_title: str = "ip·Solis",
+) -> dict[str, Any]:
+    """Adaptive Card for the access-certification kickoff notification."""
+    safe_name = "".join(c for c in (reviewer_name or "") if c not in "<>&").strip()
+    msteams: dict[str, Any] = {"width": "Full"}
+    if reviewer_email and safe_name:
+        greeting = f"Hi <at>{safe_name}</at>,"
+        msteams["entities"] = [{
+            "type": "mention",
+            "text": f"<at>{safe_name}</at>",
+            "mentioned": {"id": reviewer_email.strip(), "name": safe_name},
+        }]
+    else:
+        greeting = f"Hi {reviewer_name}," if reviewer_name else "Hi,"
+
+    return {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "msteams": msteams,
+        "body": [
+            {
+                "type": "TextBlock",
+                "text": f"{app_title} — Access certification: {review_count} review(s) due",
+                "weight": "Bolder", "size": "Medium", "wrap": True,
+            },
+            {"type": "TextBlock", "text": greeting, "wrap": True, "spacing": "Small"},
+            {
+                "type": "FactSet",
+                "facts": [
+                    {"title": "Campaign", "value": campaign_name},
+                    {"title": "Reviews assigned", "value": str(review_count)},
+                    {"title": "Due", "value": due_date},
+                ],
+            },
+            {
+                "type": "TextBlock",
+                "text": "Open the queue to confirm or revoke each grant. The link is signed and works without portal login.",
+                "wrap": True, "size": "Small", "isSubtle": True, "spacing": "Medium",
+            },
+        ],
+        "actions": [
+            {
+                "type": "Action.OpenUrl",
+                "title": "Open my review queue →",
                 "url": review_url,
                 "style": "positive",
             }

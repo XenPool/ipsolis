@@ -841,13 +841,194 @@ sliced independently rather than bundled.
 
 ## Differentiators (Prio 1) — table-stakes for upper-mid market
 
-### [open] Access certification campaigns — Prio 1
+### [done] Access certification campaigns — Prio 1
 Quarterly "managers must re-confirm their team's access" workflow with email
 reminders, escalation, auto-revoke on no-response. Hard requirement for ISO27001 / SOX / PCI audits.
-- [ ] `certification_campaigns` table (created_at, scope, due_at, status)
-- [ ] Beat task: scan active orders matching campaign scope, create review tasks
-- [ ] Manager portal page: list pending reviews with one-click confirm/revoke
-- [ ] Email reminders T-7d / T-1d / overdue; escalation to manager's manager
+**Slice 1 shipped 2026-04-30** (schema + admin CRUD + kickoff +
+admin-side decision recording). **Slice 2 shipped 2026-04-30**
+(signed-token review URL, kickoff emails + Teams card, reminder /
+overdue / escalation / auto-revoke Beat task, manager portal page).
+
+**Done — slice 1 (2026-04-30):**
+- Migration `0081_certification_campaigns.py` adds two tables:
+  * `certification_campaigns` — header per audit cycle. Fields:
+    name, description, scope (JSONB filter — `asset_type_ids`,
+    `cost_centers`, `departments`, `requester_emails` — empty
+    fields are wildcards, AND across keys, OR within), due_at,
+    status (`draft` → `running` → `closed` | `cancelled`),
+    started_at, closed_at, created_by, created_at, updated_at.
+  * `certification_reviews` — one row per (campaign, order) generated
+    at kickoff. Reviewer is captured per row at kickoff time so
+    later manager changes don't shift the audit trail. Status:
+    `pending` → `confirmed` | `revoked` (manager decision) |
+    `auto_revoked` (slice 2 — overdue with no decision).
+  * Indexes: `(campaign_id, status)` and `(reviewer_email, status)`
+    so the dashboard tile queries the UI fires stay O(rows-per-status).
+  * Composite UNIQUE on `(campaign_id, order_id)` so re-running the
+    kickoff or a Beat-HA edge can't double-create review rows.
+- ORM `CertificationCampaign` + `CertificationReview` mapped, with
+  the campaign↔reviews relationship for selectinload.
+- New admin router `routes/admin_certifications.py` (mounted under
+  `/admin/certifications`):
+  * Read floor `auditor`+ via the router-level guard, so oversight
+    roles can see campaigns + counts without being able to mutate.
+  * Per-route `_WRITE_GATE = require_role("admin")` +
+    `require_scopes("approvals:write")` on every write endpoint.
+  * Endpoints: `GET /` (list with per-status review counts),
+    `GET /{id}`, `GET /{id}/reviews`, `POST /` (create draft),
+    `PUT /{id}` (edit — only due_at on running campaigns),
+    `DELETE /{id}` (only on draft / closed / cancelled),
+    `POST /{id}/start`, `POST /{id}/close`, `POST /{id}/cancel`,
+    `POST /{id}/reviews/{rid}/decide` (admin-side decision recording).
+  * Reviewer resolution at kickoff: prefers the order's first
+    `manager` approval row, falls back to `owner_email`, then
+    `user_email`. Reviewer email lower-cased so case-insensitive
+    matching works cleanly in slice 2's notification code.
+  * Revoke decision dispatches the asset's deprovision runbook
+    (sets `order.status = REVOKING`, `order.action = DELETE`,
+    enqueues via `dynamic_runner` — same path approval-decline uses)
+    so access is actually pulled, not just flagged in the review row.
+  * Defensive 409 guards: editing/deleting wrong-status campaigns,
+    deciding reviews on non-running campaigns, kickoff on a
+    non-draft campaign all return descriptive errors.
+  * Audit trail: every state transition records a row attributed to
+    the actor that drove it (`actor_by(request, "<route>")`).
+- Admin UI `/ui/certifications` (template `ui/certifications.html`):
+  * Campaign list with per-status counters (Reviews / Pending /
+    Confirmed / Revoked) and inline action buttons (Start / Edit /
+    Delete on draft, Close / Cancel on running, Reviews → drill-down
+    always).
+  * Create / Edit modal with name + description + due-date picker
+    plus a "Scope filter" fieldset (four CSV inputs — asset type
+    IDs, cost centers, departments, requester emails). Default due
+    date = 14 days out at 17:00 local.
+  * Drill-down panel below the list shows reviews for a chosen
+    campaign with a quick filter input (reviewer / status / order
+    id substring), per-row Confirm + Revoke buttons (admin only,
+    visible only on running campaigns and pending rows), and a
+    decision modal that surfaces the runbook side-effect of revoke
+    so admins know what they're triggering.
+  * Nav entry under "Approval Delegations", visible to `auditor`+
+    so finance/audit roles can monitor without admin privileges.
+- Verified end-to-end live:
+  * `POST /admin/certifications` with scope `{cost_centers:["CC-IT-2100"]}`
+    → 201, campaign id 1 in `draft` with empty review counts.
+  * `POST /admin/certifications/1/start` → 200, `reviews_created: 3`,
+    matched the 3 active orders against CC-IT-2100, reviewers
+    resolved correctly from existing manager approvals
+    (`jupp@xenpool.de` + `stefan@xenpool.de`).
+  * `POST /admin/certifications/1/reviews/1/decide` with
+    `{decision: confirmed, comment: "Stefan still uses VDI daily."}`
+    → 200, review status flipped to `confirmed`, audit row attributed
+    to `api:decide_certification_review (admin:legacy_key)`.
+  * `DELETE /admin/certifications/1` → 409 with the descriptive
+    "Cannot delete a running campaign — cancel it first" message.
+  * Cancel → delete cleared the synthetic test rows; audit rows
+    cleaned up via the documented `SET LOCAL` bypass.
+
+**Done — slice 2 (2026-04-30):**
+- Migration `0082_certification_slice2.py` — pure config-only.
+  Seeds 4 `certification.*` config keys (reminder offsets,
+  overdue toggle, auto-revoke toggle, escalation contacts) and 4
+  email templates (`certification_kickoff`, `certification_reminder`,
+  `certification_overdue`, `certification_escalation`) with sane
+  HTML defaults customisable via *Settings → Email Templates*.
+- Signed-token URLs: HMAC-SHA256 signed using
+  `API_SECRET_KEY` (rotating it invalidates all outstanding links —
+  same posture as approval tokens). 14-day TTL. Distinct
+  `kind: "cert_review"` field so an approval token can't be
+  replayed against a review row. API helper in
+  `app.utils.certification_token`; worker mirror in
+  `tasks.modules.teams_notify` so reviewer URLs minted on either
+  side validate identically.
+- New router `routes/certifications_external.py` (mounted at
+  module root, no auth):
+  * `GET /review/{token}` — render the single-row confirmation
+    page with full asset / order / due-date context.
+  * `POST /review/{token}` — record the decision (`confirm` /
+    `revoke`). Revoke triggers the deprovision runbook via the
+    existing `dynamic_runner` path so access is actually pulled.
+  * `GET /review-queue/{token}` — same-reviewer expansion: list
+    every pending row for the token's reviewer email and link
+    each to its own per-row confirmation page. Per-row tokens
+    keep individual revocation simple if a reviewer leaves.
+  * Status pages: bad token (410), missing review (404),
+    already-decided (200), campaign-not-running (409).
+- Standalone templates: `review_confirm.html`,
+  `review_status.html`, `review_queue.html` (branded, dark-mode
+  aware, no portal SSO required so the link works from any client).
+- Worker notification helpers in
+  `worker/tasks/modules/notifications.py`:
+  `send_certification_kickoff` / `_reminder` / `_overdue` /
+  `_escalation`, all reading the seeded templates with the right
+  variable maps.
+- Teams card builder
+  `worker/tasks/modules/teams_notify.build_certification_kickoff_card`
+  with the same `@mention` pattern the approval cards use so
+  Teams fires a real banner notification on the reviewer's client.
+- Kickoff dispatch wired into `admin_certifications.start_campaign`:
+  per-reviewer aggregation (one email/card per unique reviewer with
+  the count, not N separate ones), enqueued via Celery
+  (`certification_notifications.send_kickoff_email` task on the
+  `notifications` queue) so the start endpoint returns immediately.
+  Result dict reports `kickoff_emailed` + `kickoff_teams_sent` so
+  the UI can confirm dispatch.
+- New Beat task
+  `worker/tasks/workflows/certification_reminders.scan_and_remind`
+  runs daily at 04:30 Europe/Berlin (after audit prune at 03:00
+  and threshold alerter at 04:00). Per running campaign:
+  * **Reminders**: for each configured day-offset
+    (`certification.reminder_days` default `7,1`), email pending
+    reviewers once. Dedup keys off `audit_log` rows the helper
+    writes — no extra schema, no per-row "last_reminded_at"
+    column. Fires the latest applicable offset per reviewer per
+    tick so a missed Beat day still nudges.
+  * **Overdue email**: once past `due_at`, one nag email per
+    reviewer with pending rows. Same once-per-(campaign, reviewer)
+    semantics. Body adapts based on whether auto-revoke is enabled.
+  * **Escalation**: one summary email to
+    `certification.escalation_email` listing every reviewer with
+    pending rows. At most once per campaign.
+  * **Auto-revoke**: when `certification.auto_revoke_on_overdue=true`,
+    transitions remaining pending rows to `auto_revoked` and
+    dispatches the deprovision runbook for each underlying order
+    via the existing `dynamic_runner` path. Off by default —
+    yanking live access should be explicit opt-in.
+- Manager portal page `/portal/certifications` (template
+  `portal/certifications.html`) + JSON API
+  (`/portal/api/certifications/reviews`,
+  `/portal/api/certifications/reviews/{id}/decide`):
+  * Lists every review row addressed to the SSO-authenticated
+    user, split into "Pending reviews" + "Recent decisions".
+  * Per-row Confirm/Revoke buttons + decision modal explaining
+    the runbook side-effect of revoke.
+  * Identity enforced server-side: `reviewer_email` must match
+    the SSO user; cross-user attempts return 404 (not 403) so
+    someone else's review row can't be enumerated.
+  * Nav entry under "Delegations" in the portal sidebar.
+- Verified end-to-end live:
+  * Kickoff: `POST /admin/certifications/{id}/start` returned
+    `{reviews_created: 3, kickoff_emailed: 2, kickoff_teams_sent: 2}`
+    (3 reviews split between 2 reviewers — per-reviewer
+    aggregation). Worker logs confirmed both emails delivered with
+    correct subject lines including review count and due date.
+  * Signed-token URL: `GET /review/{token}` → 200 with
+    confirmation page, `GET /review-queue/{token}` → 200 with
+    full pending list, `GET /review/garbage` → 410.
+    `POST /review/{token}` with `decision=confirm` → 200, review
+    row flipped to `confirmed` with attribution
+    `api:certification_token (reviewer:jupp@xenpool.de)`.
+  * Beat task on a backdated campaign with auto-revoke enabled +
+    escalation configured: returned
+    `{overdue_emails: 2, escalations: 1, auto_revoked: 2}`.
+    Worker logs confirmed all three email types delivered, both
+    auto-revoked rows triggered the deprovision runbook, and
+    downstream "your access has been revoked" emails landed at
+    the requesters.
+  * Re-running the same Beat task immediately returned
+    `{0,0,0,0}` — audit-log dedup correctly suppressed the
+    duplicate notifications, and the no-longer-pending rows are
+    invisible to the auto-revoke pass.
 
 ### [done] Approval-flow sophistication — Prio 1
 Reminder slice **shipped 2026-04-26**. The bigger pieces (escalation,

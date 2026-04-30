@@ -6,6 +6,7 @@ from .order import Order, OrderStep
 from .approval import OrderApproval
 from .approval_delegation import ApprovalDelegation
 from .audit import AuditLog
+from .certification import CertificationCampaign, CertificationReview
 from .config import AppConfig
 from .cost_report_snapshot import CostReportSnapshot
 from .cost_threshold import CostThreshold
@@ -28,6 +29,8 @@ __all__ = [
     "ApprovalDelegation",
     "AuditLog",
     "AppConfig",
+    "CertificationCampaign",
+    "CertificationReview",
     "CostReportSnapshot",
     "CostThreshold",
     "StandaloneRunbook",
