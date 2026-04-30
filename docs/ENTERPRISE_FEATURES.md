@@ -13,6 +13,10 @@ explicit *Enterprise license* note appears.
 - [Field-level data classification](#field-level-data-classification)
 - [Per-order cost projection on the portal](#per-order-cost-projection-on-the-portal)
 
+**Identity & lifecycle**
+
+- [HR leaver webhook + SCIM 2.0 deprovisioning](#hr-leaver-webhook--scim-20-deprovisioning)
+
 **Approvals**
 
 - [Microsoft Teams approval cards](#microsoft-teams-approval-cards)
@@ -143,6 +147,142 @@ be submitted.
 
 Search placeholder, category labels, "no match" empty state, and
 "Clear" link are all localized. Available in en/de/fr/es/it.
+
+---
+
+## HR leaver webhook + SCIM 2.0 deprovisioning
+
+When a user leaves the organisation, ip·Solis pulls their active
+access automatically. Two complementary entry points feed a single
+unified **leaver flow** so the downstream behaviour is identical no
+matter how the signal arrives:
+
+* **HR webhook** at `POST /hr/leaver` — purpose-built for Workday /
+  SAP / Microsoft Graph leaver events, with vendor adapters that
+  translate native payload shapes to a normalised form.
+* **SCIM 2.0 endpoint** at `/scim/v2/*` — drop-in target for Okta /
+  SailPoint / Ping deprovisioning workflows. SCIM `DELETE
+  /Users/{id}` or `PATCH active=false` triggers the leaver flow.
+
+Both paths run the same `process_leaver()` helper, which:
+
+1. **Revokes every active order** owned by the user. Same path
+   approval-decline + certification auto-revoke use: order →
+   `REVOKING` + action `DELETE`, deprovision runbook dispatched
+   via `dynamic_runner`. Active set =
+   `pending` / `pending_approval` / `scheduled` / `processing` /
+   `provisioning` / `provisioned` / `delivered`.
+2. **Supersedes pending approvals** where the leaver was the
+   approver — so an order's quorum logic doesn't stall forever
+   waiting on someone who's gone.
+3. **Supersedes pending certification reviews** where the leaver
+   was the reviewer — campaigns then run their normal overdue +
+   auto-revoke cycle without manual reassignment.
+
+Every event is captured in the `hr_leaver_events` audit table with
+received / processed timestamps, the raw vendor payload, and
+per-action counts (`orders_revoked`, `approvals_superseded`,
+`reviews_superseded`).
+
+### HR webhook setup
+
+Authentication mirrors the ServiceNow webhook — pick one:
+
+* **Bearer token** (preferred): mint an API token with the
+  `hr:leaver` scope from Admin UI → API Tokens. Paste it into your
+  HR system's webhook config as `Authorization: Bearer xpat_…`.
+  Revocable from the Admin UI without touching the running
+  container.
+* **HMAC fallback**: sign the raw body with `WEBHOOK_SECRET_TOKEN`
+  using HMAC-SHA256 and send as `X-Hub-Signature-256: sha256=<hex>`.
+  GitHub-compatible signature — most HR systems can do this with
+  their built-in shared-secret signing.
+
+Supported payload shapes (all `POST /hr/leaver`):
+
+| Vendor | Recognised shape |
+|---|---|
+| ip·Solis-native | `{"email": "alice@example.com"}` (with optional `external_id`, `source`) |
+| Workday | `{"workerId": "WD-…", "eventType": "terminated", "primaryEmail": "…"}` |
+| SAP SuccessFactors | `{"PERSON": {"PERNR": "…", "email": "…"}}` |
+| Microsoft Graph | `{"value": [{"resourceData": {"userPrincipalName": "…", "id": "…"}}]}` |
+
+Unrecognised shapes return HTTP 400 with a descriptive error so the
+HR-system integration test surfaces the mismatch immediately. New
+vendor shapes go in the `_normalise()` function in
+`api/app/routes/hr_webhook.py` rather than spreading vendor quirks
+elsewhere in the app.
+
+### SCIM 2.0 setup
+
+ip·Solis exposes a leaver-focused subset of RFC 7644 — enough for
+modern IDPs (Okta / SailPoint / Ping) to integrate ip·Solis as a
+**deprovision target**. Provisioning + Update are acknowledged but
+no-op (users live in Entra ID / AD; SCIM Create from Okta is
+accepted to keep the IDP's "user is provisioned in ipSolis" status
+clean, but we don't actually create anything — the user becomes
+real in ip·Solis when they make their first order).
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/scim/v2/ServiceProviderConfig` | GET | RFC-compliant capabilities advertisement |
+| `/scim/v2/ResourceTypes` | GET | Lists `User` resource type |
+| `/scim/v2/Schemas` | GET | Lists the `User` schema |
+| `/scim/v2/Users` | GET | List users (distinct order requesters) |
+| `/scim/v2/Users` | POST | Acknowledge create (no-op storage) |
+| `/scim/v2/Users/{id}` | GET | Single user lookup by email |
+| `/scim/v2/Users/{id}` | PUT | Acknowledge replace (`active=false` triggers leaver) |
+| `/scim/v2/Users/{id}` | PATCH | Modify (RFC 7644 §3.5.2 — `active=false` triggers leaver) |
+| `/scim/v2/Users/{id}` | DELETE | **Trigger leaver flow** → 204 |
+
+**Authentication**: bearer-only (no HMAC fallback — modern SCIM
+clients all use OAuth-style tokens). Mint a token with `scim:read`
++ `scim:write` scopes from Admin UI → API Tokens; paste into your
+IDP's connector config.
+
+**Filter syntax**: slice 1 understands `userName eq "<email>"` and
+`emails eq "<email>"`. Anything else is silently ignored and the
+unfiltered list is returned. Full RFC 7644 §3.4.2 grammar (`co`,
+`sw`, `pr`, compound `and` / `or` / `not`) is queued for slice 2.
+
+**Out of scope for slice 1**: `/scim/v2/Groups` (ip·Solis doesn't
+model user-group membership; groups live in AD and are managed by
+the `target_executor` runbook), and SCIM `Bulk` operations. Most
+IDPs gracefully fall back to per-resource ops when bulk isn't
+advertised.
+
+### Where to monitor
+
+Admin UI → **Leaver Events** in the left nav (visible to
+`auditor`+). Recent events with substring filter on email,
+status badge (received / processed / failed), per-event counts of
+what was revoked / superseded, and the audit-attribution
+`triggered_by` so you can trace each event back to a specific
+SCIM connector or HR-webhook source.
+
+Cross-link any event's `user_email` to the Audit Log viewer
+(`entity_type='hr_leaver_event'`) for the full per-action history.
+
+### Stored config + tables
+
+| Table / scope | Purpose |
+|---|---|
+| `hr_leaver_events` | Per-event audit row (source, status, counts, raw payload) |
+| `hr:leaver` token scope | Authorises `POST /hr/leaver` |
+| `scim:read` token scope | Authorises SCIM `GET` operations |
+| `scim:write` token scope | Authorises SCIM `POST` / `PUT` / `PATCH` / `DELETE` |
+| `WEBHOOK_SECRET_TOKEN` env var | Shared HMAC secret for the HR webhook fallback path |
+
+Both endpoints are **Enterprise-gated** (feature keys `hr_webhook`
+and `scim`); community installs see HTTP 403 on access.
+
+### Idempotency
+
+The leaver flow is idempotent. Re-firing for the same email is
+harmless — orders revoked on the first call are no longer in the
+active set on the second, so the count just goes to 0. This
+matters because IDPs commonly retry on network failure; ip·Solis
+won't double-revoke or double-supersede.
 
 ---
 

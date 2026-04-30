@@ -73,6 +73,11 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 - Toggleable via the `metrics.enabled` config flag
 - **OpenTelemetry tracing** — auto-instrumented FastAPI requests, SQLAlchemy queries, and Celery tasks flow through an OTLP HTTP exporter to any standard collector (Jaeger, Tempo, SigNoz, Honeycomb); a request that dispatches a runbook produces a single trace spanning api + worker; a console exporter mode is available for local verification without a collector
 
+### HR Feed & SCIM 2.0
+- **Unified leaver flow** — when a user leaves, ip·Solis revokes every active order owned by them, supersedes their pending approvals (so quorum logic doesn't stall), and supersedes any pending certification reviews assigned to them. Same code path regardless of how the signal arrives. Audit trail in `hr_leaver_events` with per-action counts; admin viewer at `/ui/leaver-events`
+- **HR webhook** at `POST /hr/leaver` with HMAC fallback or scoped bearer token (`hr:leaver`). Adapters for ipSolis-native, Workday (`workerId` + `eventType: terminated`), SAP SuccessFactors (`PERSON.PERNR`), and Microsoft Graph subscription notifications (`resourceData.userPrincipalName`)
+- **SCIM 2.0 endpoint** at `/scim/v2/*` — leaver-focused subset of RFC 7644 (ServiceProviderConfig, ResourceTypes, Schemas, Users CRUD). DELETE and PATCH `active=false` trigger the leaver flow. Bearer-only auth via `scim:read` / `scim:write` scopes — drop-in target for Okta / SailPoint / Ping deprovisioning workflows
+
 ### Access Reviews & Certifications
 - **Access certification campaigns** — required for ISO 27001 / SOX / PCI compliance audits. Create a campaign with a scope filter (asset types / cost centers / departments / requester emails), kick it off to materialise one review row per (matching order, reviewer = the order's manager). Reviewers get a kickoff email + Teams card with a signed-token URL that opens a no-login review queue. Per row they pick **Confirm** (user keeps access) or **Revoke** (ip·Solis pulls access immediately via the deprovision runbook). Daily Beat task fires reminders at configurable offsets (default T-7d / T-1d), an overdue email past due, an escalation summary to a contact list, and **auto-revoke on overdue** (opt-in) so unreviewed access is pulled automatically. Manager portal page at `/portal/certifications` for SSO users; admin drill-down at `/ui/certifications` with per-status counts and inline confirm/revoke for stand-in scenarios
 
@@ -342,7 +347,8 @@ Operators are responsible for maintaining their own records of processing activi
 **Open**
 
 - [x] Access certification campaigns — slice 1 + slice 2 (admin CRUD + kickoff + manager portal page + signed-token review URLs + email reminders / overdue / escalation + auto-revoke on overdue)
-- [ ] HR feed + SCIM 2.0 (Workday/SAP leaver events, Okta / Ping / SailPoint integration)
+- [x] HR feed + SCIM 2.0 — slice 1 (unified leaver flow, HR webhook with Workday/SAP/MS-Graph adapters, SCIM 2.0 leaver subset)
+- [ ] HR feed + SCIM — slice 2 (full SCIM filter grammar, /Groups shim, bulk operations)
 - [x] Cost report: threshold alerting (per-`cost_center`/currency monthly limits with email + optional Teams-card alerts and hysteresis)
 - [x] Cost report: historical view via daily snapshot table + `?as_of=` query
 - [x] Cost report: FX conversion across mixed-currency cost centers via configurable rate map

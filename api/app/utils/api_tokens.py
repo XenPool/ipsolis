@@ -48,6 +48,9 @@ AVAILABLE_SCOPES: dict[str, str] = {
     "config:write":      "Modify application settings.",
     "metrics:read":      "Scrape the /metrics Prometheus endpoint.",
     "webhook:in":        "Inbound webhook receiver (ServiceNow et al.).",
+    "scim:read":         "SCIM 2.0: list / read users + groups.",
+    "scim:write":        "SCIM 2.0: create / update / delete users (triggers leaver flow on delete + active=false).",
+    "hr:leaver":         "HR webhook: post leaver events that revoke the user's access.",
 }
 
 

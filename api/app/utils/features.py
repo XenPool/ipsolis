@@ -20,6 +20,8 @@ ENTERPRISE_FEATURES: dict[str, str] = {
     "app_owner_approval":       "Application Owner Approval",
     "reapproval_on_modify":     "Re-approval on Modify",
     "servicenow_webhook":       "ServiceNow Webhook",
+    "hr_webhook":               "HR Leaver Webhook",
+    "scim":                     "SCIM 2.0 Provisioning",
     "vsphere_integration":      "VMware vSphere Integration",
     "xenserver_integration":    "XenServer / XCP-ng Integration",
     "sccm_integration":         "SCCM Integration",

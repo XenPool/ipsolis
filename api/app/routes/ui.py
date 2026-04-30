@@ -1163,6 +1163,16 @@ async def certifications_page(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/leaver-events", response_class=HTMLResponse)
+async def leaver_events_page(request: Request) -> HTMLResponse:
+    """HR leaver events — audit list of SCIM + HR-webhook deprovisions."""
+    return templates.TemplateResponse(
+        request,
+        "ui/leaver_events.html",
+        {"active_page": "leaver-events"},
+    )
+
+
 @router.get("/my-account", response_class=HTMLResponse)
 async def my_account_page(request: Request) -> HTMLResponse:
     """Self-service account page: identity snapshot + password change."""

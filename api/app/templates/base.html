@@ -219,6 +219,15 @@
         </svg>
         Certifications
       </a>
+      <a href="/ui/leaver-events"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'leaver-events' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M13 7H7v6h6V7z M9 1v6m6-6v6M1 9h6m6-6v6M9 13v8m6-8v8m-6-4h6m-6 4h6M1 17h6"/>
+        </svg>
+        Leaver Events
+      </a>
       {% endif %}
 
       {# ── Personal — visible to everyone ──────────────────────────────── #}

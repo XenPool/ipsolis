@@ -10,6 +10,7 @@ from .certification import CertificationCampaign, CertificationReview
 from .config import AppConfig
 from .cost_report_snapshot import CostReportSnapshot
 from .cost_threshold import CostThreshold
+from .hr_leaver_event import HrLeaverEvent
 from .standalone_runbook import (
     StandaloneRunbook,
     StandaloneRunbookStep,
@@ -33,6 +34,7 @@ __all__ = [
     "CertificationReview",
     "CostReportSnapshot",
     "CostThreshold",
+    "HrLeaverEvent",
     "StandaloneRunbook",
     "StandaloneRunbookStep",
     "StandaloneRunbookRun",

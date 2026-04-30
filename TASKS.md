@@ -1321,12 +1321,127 @@ delegation, N-of-M, conditional rules) remain.
     bypass; tamper-evident triggers from migration 0062
     correctly blocked the initial DELETE before the bypass.
 
-### [open] HR feed + SCIM — Prio 1
+### [partial] HR feed + SCIM — Prio 1
 Auto-deprovision on `LeaverEvent` from Workday/SAP HR; SCIM in/out so Okta /
 Ping / SailPoint can drive ipSolis as an authoritative target.
-- [ ] SCIM 2.0 endpoint (`/scim/v2/Users`, `/scim/v2/Groups`)
-- [ ] HR webhook receiver with vendor-specific adapters
-- [ ] Leaver flow: revoke all active orders for the user, audit
+**Slice 1 shipped 2026-04-30**: unified leaver flow + HR webhook +
+SCIM 2.0 leaver-focused subset + admin UI. Slice 2 (full SCIM filter
+grammar, /Groups, bulk operations) queued.
+
+**Done — slice 1 (2026-04-30):**
+- Migration `0083_hr_leaver_events.py` adds `hr_leaver_events`
+  table — audit trail of every received leaver event with received
+  /processed timestamps, raw payload (JSONB), and per-action counts
+  (`orders_revoked`, `approvals_superseded`, `reviews_superseded`).
+  Reverse-lookup indexes on `(user_email)` and
+  `(status, received_at)` so the admin list page is O(rows-per-page).
+- ORM `app.models.hr_leaver_event.HrLeaverEvent` mapped.
+- New api token scopes: `scim:read`, `scim:write`, `hr:leaver`.
+- Three new feature flags: `hr_webhook`, `scim` (both already
+  enabled in dev licenses; production tenants need the Enterprise
+  edition).
+- Unified leaver helper `app.utils.leaver.process_leaver(...)` — the
+  meat of the slice. For a given email it:
+  * Marks every active order owned by the user as `revoking` and
+    dispatches the deprovision runbook via the existing
+    `dynamic_runner` path (same code path as approval-decline
+    revoke + certification auto-revoke). Status set covers
+    `pending` / `pending_approval` / `scheduled` / `processing` /
+    `provisioning` / `provisioned` / `delivered`.
+  * Marks every pending approval where the leaver was the approver
+    as `superseded` so the order's quorum logic doesn't stall
+    forever waiting on someone who's gone.
+  * Marks every pending certification review where the leaver was
+    the reviewer as `superseded` so the campaign's overdue +
+    auto-revoke flow can complete naturally.
+  * Audit row per transition + a campaign-scoped `processed` row
+    on the `hr_leaver_event` itself.
+  * Idempotent — re-firing for the same user is harmless because
+    the previously revoked orders are no longer active.
+  * Best-effort: failures during processing mark the event row
+    `failed` with the exception text but the API still returns
+    500 so the IDP retries on its cadence.
+- HR webhook route `/hr/leaver` (`POST`) with HMAC fallback and
+  bearer-token auth (`hr:leaver` scope). Generic JSON shape with
+  `_normalise()` adapters for:
+  * **ipSolis-native**: `{email, external_id?, source?}`
+  * **Workday**: `{workerId, primaryEmail | workEmail | email,
+    eventType: "terminated" | "termination" | "leaver"}`
+  * **SAP SuccessFactors**: `{PERSON: {PERNR, email}}`
+  * **Microsoft Graph subscriptions**:
+    `{value: [{resourceData: {userPrincipalName | mail, id}}]}`
+  * Unrecognised payloads return 400 with a descriptive message.
+- SCIM 2.0 router `/scim/v2/*` — leaver-focused subset of RFC 7644:
+  * `GET /ServiceProviderConfig`, `/ResourceTypes`, `/Schemas`
+    (RFC-compliant discovery so Okta / SailPoint can introspect us).
+  * `GET /Users` (list, with naive `userName eq "<email>"` filter
+    + `startIndex` / `count` paging) — returns distinct
+    `orders.user_email` values as SCIM User resources.
+  * `GET /Users/{id}` returns the matching user or
+    SCIM-error 404.
+  * `POST /Users` and `PUT /Users/{id}` are acknowledged but no-op
+    (ip·Solis users live in Entra ID / AD; SCIM Create from Okta
+    just marks the user as "provisioned in ipSolis" on Okta's
+    side without us writing anything).
+  * `PATCH /Users/{id}` recognises `{op: replace, path: "active",
+    value: false}` and the `{op: replace, value: {active: false}}`
+    shape — both trigger the leaver flow.
+  * `DELETE /Users/{id}` triggers the leaver flow → 204.
+  * Bearer-token auth only (no HMAC fallback — modern SCIM clients
+    all use OAuth bearer). Required scope is `scim:read` for GET,
+    `scim:write` for everything else.
+- Admin UI `/ui/leaver-events` (template `ui/leaver_events.html`)
+  + read endpoint `GET /hr/admin/leaver-events` (auditor+ floor,
+  admin scope `audit:read`) for monitoring incoming leaver events
+  with substring filter on email. Nav entry next to "Certifications"
+  in the sidebar.
+- Verified end-to-end live:
+  * `POST /admin/api-tokens` mints scope-only tokens for SCIM and
+    HR independently — `scim:read,scim:write` and `hr:leaver`
+    scope both gate per-route as expected (401 without token,
+    403 with wrong scope).
+  * SCIM `GET /scim/v2/ServiceProviderConfig` → 200 with the
+    canonical RFC-7644 envelope (`patch.supported=true`,
+    `filter.supported=true`, `oauthbearertoken` auth scheme).
+  * `GET /scim/v2/Users` → 200, `totalResults: 4` (the dev DB's
+    distinct order requesters). With `filter=userName eq
+    "stefan@xenpool.de"` → 200 with one matching Resource.
+  * `DELETE /scim/v2/Users/leaver-test@example.local` against a
+    synthetic test order → 204, the order moved to `revoking` with
+    `Leaver flow #1: user … marked as having left` reason, and a
+    new `hr_leaver_events` row recorded `orders_revoked: 1`,
+    `status: processed`.
+  * `POST /hr/leaver` with a Workday-shaped payload
+    (`{workerId, eventType: terminated, primaryEmail}`) → 200 with
+    `source: workday`, `external_id: WD-EMP-12345`, leaver flow
+    revoked the matching order. SAP and MS Graph adapter shapes
+    also smoke-tested cleanly. Unrecognised payload → 400.
+  * `GET /hr/admin/leaver-events` lists the captured events with
+    paging + email-substring filter.
+  * Synthetic test data + tokens cleaned up via the documented
+    `SET LOCAL ipsolis.allow_audit_mutation = 'true'` bypass +
+    `DELETE /admin/api-tokens/{id}`.
+
+**Slice 2 — queued:**
+- [ ] Full SCIM filter grammar (RFC 7644 §3.4.2 — `eq`, `ne`,
+      `co`, `sw`, `pr`, `gt`, `ge`, `lt`, `le` + `and` / `or`
+      / `not` composition). Slice 1 only handles `userName eq
+      "..."` which covers the most-common Okta / SailPoint pattern.
+- [ ] `/scim/v2/Groups` — ipSolis doesn't model user-group
+      membership (groups live in AD), so this is genuinely "not
+      applicable". A consumer-driven shim returning empty
+      `Resources: []` for Okta-style "you must respond to /Groups"
+      health checks would be enough.
+- [ ] SCIM `Bulk` operations (RFC 7644 §3.7) for batch
+      provisioning. Most IDPs fall back to per-resource ops when
+      bulk isn't advertised, so this is a polish slice.
+- [ ] HR webhook: kickoff dispatch of a leaver-completion
+      summary email to the original requester's manager (so they
+      know access was pulled, useful for handover documentation).
+- [ ] Reviewer reassignment on supersede — instead of just marking
+      pending certification reviews as `superseded`, reassign to
+      the leaver's manager (lookup via AD). Today admins handle
+      reassignment manually.
 
 ### [done] Observability — Prometheus `/metrics` — Prio 1 (2026-04-26)
 Standard Prometheus text-format endpoint at `/metrics`. OpenTelemetry tracing
