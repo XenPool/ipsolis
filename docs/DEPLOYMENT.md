@@ -17,7 +17,8 @@ This guide walks you through setting up the ip·Solis platform on a fresh on-pre
 9. [Verify the Deployment](#9-verify-the-deployment)
 10. [Backup & Maintenance](#10-backup--maintenance)
 11. [Updating to a New Version](#11-updating-to-a-new-version)
-12. [Troubleshooting](#12-troubleshooting)
+12. [High-Availability Deployments](#12-high-availability-deployments)
+13. [Troubleshooting](#13-troubleshooting)
 
 ---
 
@@ -559,7 +560,359 @@ are minutes / hours.
 
 ---
 
-## 12. Troubleshooting
+## 12. High-Availability Deployments
+
+ip·Solis is built to scale horizontally on every layer except Postgres
+(single-writer by design). The Beat scheduler shipped multi-replica in
+slice 1 — see
+[ENTERPRISE_FEATURES.md → HA Beat scheduler](ENTERPRISE_FEATURES.md#ha-beat-scheduler-multi-replica-with-celery-redbeat)
+— and this section covers the remaining three layers: API replicas
+behind a load balancer, worker replicas per Celery queue, and a
+Postgres read-replica + failover plan.
+
+> **Status note**: the patterns in this section have been verified
+> against single-host stacks and the codebase's stateless contracts
+> (cookie-signed sessions, RedBeat-locked Beat, queue-routed Celery).
+> The Postgres standby + failover plan **needs real failover testing
+> in a staging environment before production roll-out** — the docs
+> are accurate but the operational runbook (read-replica promotion,
+> connection-string flip, Celery worker reconnect) hasn't been
+> drilled end-to-end on the project's own stack. Treat the Postgres
+> guidance as a reference architecture rather than a battle-tested
+> playbook.
+
+### 12.1 Multi-replica API
+
+The API is **stateless** by design — every replica handles every
+request equally and there's no need for sticky-session affinity at
+the load balancer.
+
+**What makes it stateless**:
+
+* Sessions use Starlette's
+  [`SessionMiddleware`](https://www.starlette.io/middleware/#sessionmiddleware)
+  in cookie-signed mode (`api/app/main.py`): the entire session
+  payload (admin user id, role, csrf token) lives in the
+  `xp_session` cookie itself, signed with `API_SECRET_KEY`. No
+  server-side session table.
+* Tokenized URLs (`/approve/<token>`,
+  `/portal/certifications/review/<token>`, etc.) are HMAC-signed
+  with the same `API_SECRET_KEY` and verify-only. No replay table.
+* All request state lives in Postgres or Redis — both shared
+  across replicas.
+
+**What every replica MUST share**:
+
+| What | Why | How |
+|---|---|---|
+| `API_SECRET_KEY` | Signs session cookies + approval tokens. Different keys per replica = clients see "session invalid" / "approval link expired" half the time. | Pin in `.env`; load via `env_file:` in compose so every replica reads the same file. |
+| `DATABASE_URL` / `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` | Shared Postgres + Redis backplane. | Same as above. |
+| Shared filesystem mounts | `licenses/`, `scripts/`, `backups/` are bind-mounted; replicas reading the same paths must see the same content. On a single host, that's automatic. On multiple hosts, use NFS / GlusterFS / a shared volume driver — or migrate the relevant content to S3-compatible object storage (a deferred slice). | Single-host deployments don't need any extra plumbing. |
+
+**Scaling commands**:
+
+```bash
+# Single-host: bump the api replica count via compose
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  up -d --scale api=3
+
+# Verify each replica is reachable through the load balancer
+for i in 1 2 3; do
+  curl -fsk https://selfservice.yourcompany.com/health \
+    -H 'X-Replica-Probe: '$i
+done
+```
+
+**Load-balancer config notes**:
+
+* **No sticky sessions required**. Round-robin or least-connections
+  is fine.
+* **Health check**: `GET /health` (unauthenticated). Returns
+  `{status: ok | degraded}` aggregating database, redis, and beat
+  liveness — see the *Beat-alive health probe* in
+  ENTERPRISE_FEATURES. The endpoint is fast (one Redis ping + one
+  DB SELECT 1) so a 5–10s LB check interval is safe.
+* **TLS termination**: keep on the load balancer (or the existing
+  nginx sidecar from section 5). Replicas serve plain HTTP
+  internally; the
+  [`https_only=True`](https://www.starlette.io/middleware/#sessionmiddleware)
+  flag on `SessionMiddleware` guards the cookie's `Secure` bit
+  irrespective of where TLS terminates.
+
+**Rolling restart during upgrades**: the upgrade flow in section 11
+stops and restarts every replica together, which is fine for small
+fleets where ~30s of API downtime is acceptable. For zero-downtime
+rolls, fold the `up --build -d` step into a per-replica loop:
+
+```bash
+for i in 1 2 3; do
+  docker compose stop api-$i
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+    up --build -d --no-deps api-$i
+  # Wait for the new container to pass health
+  until curl -fsk http://localhost/health > /dev/null 2>&1; do
+    sleep 2
+  done
+done
+```
+
+This requires an LB that can drain one backend at a time; with the
+default round-robin nginx upstream, in-flight requests on the
+restarting replica drop. The drain logic is your LB's responsibility.
+
+### 12.2 Multi-replica worker
+
+Celery workers are stateless consumers — they pull from the named
+Redis queues and process tasks. Adding more workers is a one-line
+scale-up; the worker code itself doesn't change.
+
+**Queue topology** (defined in `worker/tasks/__init__.py`):
+
+| Queue | Tasks | Why a separate queue |
+|---|---|---|
+| `provision` | Order workflows (`dynamic_runner`, `standalone_runner`, `ps_module_installer`, `sccm_probe`) — anything that touches AD / SCCM / vSphere / XenServer. | Provisioning steps shell out to PowerShell (~5–60s/step) and hold connections to external systems. Isolating them keeps a slow vSphere call from blocking quick housekeeping tasks. |
+| `notifications` | Email senders, Teams card delivery, approval reminders, certification reminders, cost alerts. | I/O-bound, latency-sensitive (a stuck SMTP server shouldn't queue up behind a 30s SCCM probe). |
+| `default` | Audit retention prune, SIEM streaming, license check, update checker, cost-report snapshot, DB backup, **api token purge**. | Background housekeeping. Mostly cron-driven, low-frequency. |
+| `reclaim` | Asset-expiry checks (`check_expiring_assets`). | Hourly Beat task; small but isolated so the hourly tick doesn't compete with order workflows for a worker slot. |
+
+**Sizing recommendations** (per-queue concurrency × replica count):
+
+| Pool size | Recommended config | Reasoning |
+|---|---|---|
+| Lab / single-team (≤50 users) | 1 worker replica, `--concurrency=4 -Q provision,notifications,default,reclaim` | All queues on one process; concurrency 4 is plenty for the typical 1–2 orders/hour. |
+| Mid (≤500 users, ≤20 orders/hour) | 2 worker replicas split by queue: replica A `-Q provision --concurrency=4`, replica B `-Q notifications,default,reclaim --concurrency=2` | Provisioning latency stays bounded by replica A; replica B handles housekeeping + reminders without queue-head-of-line blocking. |
+| Enterprise (≥500 users, ≥50 orders/hour, regulated SLAs) | 3+ worker replicas: dedicated `provision` workers (`--concurrency=8` × 2 replicas), one `notifications` replica (`--concurrency=4`), one `default,reclaim` replica (`--concurrency=2`) | Per-queue scaling matches actual load shape. |
+
+**Scaling command** (single-host, all queues on each replica):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  up -d --scale worker=3
+```
+
+**Per-queue dedicated replicas** require either separate compose
+service definitions (e.g. `worker-provision`, `worker-notifications`)
+each with its own `command:` overriding the default queue list, or
+a runtime `command:` override:
+
+```yaml
+# docker-compose.prod.yml — per-queue split
+services:
+  worker-provision:
+    image: ipsolis-worker
+    command: celery -A tasks worker -Q provision --concurrency=8 -l info
+    deploy: { replicas: 2 }
+    env_file: .env
+
+  worker-notifications:
+    image: ipsolis-worker
+    command: celery -A tasks worker -Q notifications --concurrency=4 -l info
+    deploy: { replicas: 1 }
+    env_file: .env
+
+  worker-housekeeping:
+    image: ipsolis-worker
+    command: celery -A tasks worker -Q default,reclaim --concurrency=2 -l info
+    deploy: { replicas: 1 }
+    env_file: .env
+```
+
+**Liveness**: each worker registers with Celery's mingle-on-startup,
+which means a fresh worker is visible to Beat / other workers within
+a couple of seconds. There's no separate health check to wire — if
+the worker container is `Up`, it's consuming.
+
+**Visibility**: Flower (the existing `flower` service in the dev
+compose; see `docker-compose.yml`) shows live worker registration,
+queue depth, and task-by-task duration breakdown. For production,
+front it with the same nginx auth as the admin UI; Flower has no
+built-in authn beyond HTTP basic.
+
+### 12.3 Postgres standby + failover
+
+> **Read this twice**: ip·Solis is single-primary against Postgres.
+> A standby is for **disaster recovery / read scale-out**, not for
+> active-active writes. Promoting a standby is a manual operation
+> (or scripted via Patroni / repmgr / pg_auto_failover); the
+> application's connection string must be flipped to point at the
+> new primary, and every API + worker + Beat replica restarted to
+> drop stale connections from the asyncpg / psycopg2 pools.
+
+**Two complementary tools**:
+
+| Tool | What it does | Where it fits |
+|---|---|---|
+| **Streaming replication** (built into Postgres) | Continuous WAL stream from primary → standby. Standby is read-only and lags behind primary by 10ms–seconds depending on load. | Daily operations: hot read replica, near-zero RPO failover candidate. |
+| **pgBackRest** | Backup + PITR + standby bootstrap. Stores compressed encrypted backups in object storage (S3 / Azure Blob / on-prem object store). | Disaster recovery: cold backup, can restore to any point in time within retention, used to bootstrap fresh standbys without touching the primary. |
+
+Production deployments typically use **both**: pgBackRest for
+backups + standby bootstrap, streaming replication for the live
+standby. The patterns below assume that combination.
+
+#### 12.3.1 Streaming replication setup
+
+On the **primary** (`xp_postgres` container — bind-mount the config
+overlay so it survives image rebuilds):
+
+```ini
+# postgresql.conf overlay (mount as /etc/postgresql/conf.d/replication.conf)
+wal_level = replica
+max_wal_senders = 10
+max_replication_slots = 10
+hot_standby = on
+synchronous_commit = on   # async-only ('off') saves a few ms per write
+                          # at the cost of unbounded lag on the standby —
+                          # leave at 'on' unless you have a dedicated
+                          # WAL-relay replica and accept the trade-off.
+```
+
+```ini
+# pg_hba.conf — allow the standby host to authenticate as a replication user
+# (CIDR matches your standby's network)
+host  replication  ipsolis_repl  10.0.0.0/24  scram-sha-256
+```
+
+Create the replication user once (on the primary):
+
+```sql
+CREATE ROLE ipsolis_repl WITH REPLICATION LOGIN PASSWORD '<rotate-me>';
+SELECT pg_create_physical_replication_slot('ipsolis_standby_1');
+```
+
+On the **standby** host (separate VM / container, not `xp_postgres`):
+
+```bash
+# Bootstrap the standby's data dir from the primary
+pg_basebackup \
+  -h <primary_host> -U ipsolis_repl -W \
+  -D /var/lib/postgresql/data \
+  -X stream -R --slot=ipsolis_standby_1 \
+  -P
+```
+
+`-R` writes `standby.signal` + connection info into
+`postgresql.auto.conf` so the standby starts in hot-standby mode
+on next boot. Restart the standby's Postgres process and verify:
+
+```sql
+-- On the standby
+SELECT pg_is_in_recovery();           -- → t
+SELECT now() - pg_last_xact_replay_timestamp();  -- replication lag
+```
+
+#### 12.3.2 pgBackRest backup + bootstrap
+
+```ini
+# pgbackrest.conf on the primary
+[global]
+repo1-type=s3
+repo1-s3-bucket=ipsolis-backups
+repo1-s3-region=eu-central-1
+repo1-s3-key=AKIA…
+repo1-s3-key-secret=…
+repo1-cipher-type=aes-256-cbc
+repo1-cipher-pass=<rotate-me>
+repo1-retention-full=14
+repo1-retention-diff=7
+
+[ipsolis]
+pg1-path=/var/lib/postgresql/data
+```
+
+Daily full backup + hourly differentials via cron / systemd timer:
+
+```bash
+# Weekly full
+pgbackrest --stanza=ipsolis backup --type=full
+
+# Daily incremental + WAL archive
+pgbackrest --stanza=ipsolis backup --type=incr
+```
+
+Restore (PITR) for DR:
+
+```bash
+pgbackrest --stanza=ipsolis --type=time \
+  --target='2026-04-30 14:30:00+02' \
+  restore
+```
+
+This is also how a fresh standby is bootstrapped without touching
+the primary — `pgbackrest restore` to the standby's data dir
+(replacing the `pg_basebackup` step above), then start Postgres
+in standby mode with the same `standby.signal` + replication slot
+config.
+
+#### 12.3.3 Failover plan
+
+Manual failover (no Patroni / repmgr — keep it simple):
+
+1. **Verify the standby is current** —
+   `SELECT now() - pg_last_xact_replay_timestamp()` should be < 1s
+   under typical load. Anything over that means in-flight
+   transactions might be lost.
+2. **Stop writes** — bring the API + worker + Beat replicas down
+   so nothing is hammering the primary while the cutover happens.
+3. **Promote the standby** — on the standby host:
+
+   ```bash
+   pg_ctl promote -D /var/lib/postgresql/data
+   ```
+
+   The standby exits recovery mode and becomes a read-write primary.
+4. **Flip the connection string** — update `DATABASE_URL` in `.env`
+   to point at the new primary. All replicas must be updated; on a
+   single-host stack this is one file edit.
+5. **Restart everything**:
+
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+     restart api worker beat
+   ```
+
+   The old asyncpg / psycopg2 pools drop stale connections during
+   restart; new pools authenticate against the freshly-promoted
+   primary.
+6. **Rebuild the dead primary as a new standby** — once the failed
+   primary is recovered, run the standby bootstrap (12.3.1) against
+   the *new* primary so the topology has a hot replica again.
+
+**RPO / RTO realistic targets**:
+
+| Metric | Streaming replication only | + pgBackRest |
+|---|---|---|
+| Recovery Point Objective (data loss) | ≤ 1s under normal load | Same (streaming replication is the live data path) |
+| Recovery Time Objective (downtime) | 5–15 minutes (manual promotion + restart) | Same — pgBackRest doesn't accelerate live failover; it accelerates *cold* recovery from a deleted DB |
+
+**Automation**: the manual flip is fine for stacks where 5–15
+minutes of downtime per year is acceptable. Patroni
+(<https://patroni.readthedocs.io/>) automates the
+quorum/promotion/connection-string cutover and can drop RTO to
+under a minute, at the cost of a Consul / etcd / Zookeeper
+control plane to run alongside Postgres.
+
+#### 12.3.4 Verification before going live
+
+Treat Postgres HA as **untested until you've drilled it on staging**:
+
+1. Bootstrap the standby from a primary copy of staging data.
+2. Verify `pg_is_in_recovery()` returns `t` and replication lag
+   sits under 1s under simulated load.
+3. Stop the primary container; promote the standby; flip
+   `DATABASE_URL`; restart the api/worker/beat replicas.
+4. Verify the API answers `/health` against the new primary,
+   create a test order through the portal, observe it land in the
+   new primary's `orders` table.
+5. Rebuild the dead primary as a new standby and re-run the lag
+   check.
+
+**Until that drill has been done end-to-end on your stack**, the
+HA story is "we have backups + a read replica" — not "we have
+verified failover." Document the difference in your DR plan.
+
+---
+
+## 13. Troubleshooting
 
 ### Container won't start
 

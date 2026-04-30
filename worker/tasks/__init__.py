@@ -26,6 +26,7 @@ app = Celery(
         "tasks.workflows.certification_notifications",
         "tasks.workflows.certification_reminders",
         "tasks.workflows.audit_retention",
+        "tasks.workflows.api_token_purge",
         "tasks.workflows.update_checker",
         "tasks.modules.maintenance",
     ],
@@ -77,6 +78,7 @@ app.conf.update(
         "tasks.workflows.license_check.*": {"queue": "default"},
         "tasks.workflows.siem_streamer.*": {"queue": "default"},
         "tasks.workflows.audit_retention.*": {"queue": "default"},
+        "tasks.workflows.api_token_purge.*": {"queue": "default"},
         "tasks.workflows.update_checker.*": {"queue": "default"},
         "tasks.workflows.approval_reminders.*": {"queue": "notifications"},
         "tasks.workflows.approval_auto_decline.*": {"queue": "notifications"},
@@ -134,6 +136,16 @@ app.conf.update(
         "audit-retention-prune": {
             "task": "tasks.workflows.audit_retention.prune_old_rows",
             "schedule": crontab(hour=3, minute=0),  # Daily at 03:00 Europe/Berlin
+            "options": {"queue": "default"},
+        },
+        # Hard-delete revoked / expired API tokens past the configured
+        # window (api_tokens.purge_after_days). Opt-in — no-op when 0.
+        # Slot at :15 sits between audit retention (03:00) and approval
+        # auto-decline (03:30) so the daily housekeeping window stays
+        # contained.
+        "api-token-purge-daily": {
+            "task": "tasks.workflows.api_token_purge.purge_old_tokens",
+            "schedule": crontab(hour=3, minute=15),  # Daily at 03:15 Europe/Berlin
             "options": {"queue": "default"},
         },
         # Re-notify approvers who have not yet decided on stale requests

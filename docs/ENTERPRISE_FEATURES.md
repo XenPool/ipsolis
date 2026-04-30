@@ -932,6 +932,53 @@ id  | action  | triggered_by
   endpoints carry them today; the rest still accept any authenticated
   bearer token regardless of scope).
 
+### Retention policy — hard-delete revoked / expired tokens
+
+Slice 1 keeps revoked and expired tokens in `api_tokens` indefinitely
+so the audit trail of "we used to have token X" stays intact (the
+hash is gone the moment a token is revoked, so there's no replay
+surface — the row is just a name-and-prefix marker). Tenants under
+strict record-retention rules can opt in to **hard-delete** via the
+`api_tokens.purge_after_days` config knob.
+
+| Value | Behaviour |
+|---|---|
+| `0` (default) | Disabled — slice-1 retain-forever behaviour. Revoked / expired rows accumulate. |
+| `N > 0` | Daily Beat task at 03:15 Europe/Berlin DELETEs every row whose `revoked_at` OR `expires_at` is older than `N` days. Each deletion writes one `api_token / hard_deleted` audit row capturing name + prefix + reason (`revoked` / `expired`). |
+
+**Scope of the delete**: the Beat task evaluates two conditions
+against the same window:
+
+1. `revoked_at IS NOT NULL AND revoked_at < cutoff` — admin-revoked
+   tokens.
+2. `expires_at IS NOT NULL AND expires_at < cutoff` — naturally
+   expired tokens that were never explicitly revoked.
+
+Tokens with `revoked_at IS NULL AND (expires_at IS NULL OR expires_at
+> NOW())` are **active** and never touched.
+
+**Audit shape**: one row per deletion, attributed to
+`celery:api_token_purge`. The row carries the token's `name`,
+`token_prefix`, `scopes`, `revoked_at` / `expires_at` snapshots in
+`old_value`, and `reason` + `purged_after_days` + `cutoff_iso` in
+`new_value`. The `token_hash` itself is *not* recorded — once the
+row is gone no replay attempt is possible, and the audit trail's
+job is to identify which integration the token belonged to, not
+to reconstruct the credential.
+
+**Manual run**: Admin UI → API Tokens → *Purge now* (in the
+Retention policy card at the top). Useful for incident response —
+rotate everything, then immediately purge instead of waiting for
+the next 03:15 tick. Synchronous; the response envelope reports
+`{deleted_revoked, deleted_expired, cutoff_iso}` so the operator
+sees exactly what happened. Endpoint is `POST /admin/api-tokens/purge`.
+
+**Stored config keys**:
+
+| Key | Purpose |
+|---|---|
+| `api_tokens.purge_after_days` | Hard-delete cutoff in days. `0` = disabled, default. Range 0–3650. |
+
 ---
 
 ## Cost report / chargeback

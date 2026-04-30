@@ -312,9 +312,51 @@ pull one when there's a procurement need or a quiet week.
       through unchanged so partial migrations remain safe.
 
 ### API tokens — residuals
-- [ ] Optional: hard-delete vs. soft-delete policy (today everything is
-      soft-deleted; some tenants will want a "purge revoked tokens older
-      than 90 days" Beat task).
+- [x] **Hard-delete purge for revoked / expired tokens** *(2026-04-30)*.
+      Slice 1 (migration `0054_api_tokens`) soft-deletes via
+      `revoked_at` and leaves rows in `api_tokens` indefinitely —
+      good for the "we used to have token X" audit trail, bad for
+      tenants under regulated-record-retention policies who must
+      not retain dead credentials past a defined window. New
+      `api_tokens.purge_after_days` config key (default `0`,
+      disabled) seeded by migration `0093` controls the policy.
+      New worker Beat task
+      `worker/tasks/workflows/api_token_purge.py:purge_old_tokens`
+      runs daily at 03:15 Europe/Berlin (slot between audit
+      retention at 03:00 and approval auto-decline at 03:30).
+      Single SELECT identifies rows where `revoked_at < cutoff`
+      OR `expires_at < cutoff` with a `CASE` to attribute each
+      to a `'revoked'` or `'expired'` reason (revoked wins when
+      both apply — explicit operator intent over clock-driven).
+      Per-row audit (`api_token / hard_deleted`, `triggered_by =
+      celery:api_token_purge`) captures `name`, `token_prefix`,
+      `scopes`, `revoked_at` / `expires_at` snapshots in
+      `old_value`, plus `reason`, `purged_after_days`, `cutoff_iso`
+      in `new_value`. The `token_hash` is *not* preserved — the
+      forensic role of the audit trail is to identify which
+      integration owned the token, not to reconstruct the
+      credential. Single bulk DELETE after the per-row audit is
+      written so audit-row IDs precede the deletion in monotonic
+      order (clean SIEM replay). New manual-trigger endpoint
+      `POST /admin/api-tokens/purge` dispatches the Beat task
+      synchronously (30s timeout) and returns
+      `{deleted_revoked, deleted_expired, cutoff_iso}` —
+      operator sees exactly what happened. `admin`+ gated. Settings
+      UI gets a *Retention policy* card at the top of the API
+      tokens page with the `purge_after_days` input + *Save policy*
+      + *Purge now* (with a confirm dialog naming the irreversibility
+      of hard-delete and pointing at DB backup as the recovery path).
+      Status badge above the input shows the currently-active state
+      ("Active — hard-delete after N days" / "Disabled — slice-1
+      retain-forever behaviour"). Smoke-tested live: created token
+      id=20, revoked it, backdated `revoked_at` to 5 days ago, set
+      window to 1 day, fired manual purge → `{deleted_revoked: 16,
+      deleted_expired: 0, cutoff_iso: ...}` (id=20 plus 15 other
+      previously-revoked tokens accumulated during testing); row
+      gone from `api_tokens`; audit row written with `name='Smoke
+      purge test' reason='revoked' triggered_by=celery:api_token_purge`.
+      All 16 deletions attributed to the single Beat tick — clean
+      bulk-purge semantics.
 
 ### Audit + SIEM — residuals
 - [x] **Sentinel via the Logs Ingestion API** *(2026-04-30)*. Microsoft
@@ -372,12 +414,62 @@ pull one when there's a procurement need or a quiet week.
       unconfigured tenant doesn't generate false-positive alerts.
 
 ### Multi-instance HA slice 2
-- [ ] Document Postgres standby setup (logical replication or pgBackRest)
-      — needs real failover testing, not just docs.
-- [ ] Multi-replica api: confirm session storage is Redis-backed
-      (currently cookie-signed — already stateless, mostly a verification task).
-- [ ] Multi-replica worker: document the scaling pattern + queue-vs-replica
-      sizing recommendation table.
+- [x] **Postgres standby setup docs** *(2026-04-30)*. New section
+      `12.3 Postgres standby + failover` in `docs/DEPLOYMENT.md`
+      covers streaming replication + pgBackRest as complementary
+      tools (live read replica + DR backups), with explicit
+      `postgresql.conf` / `pg_hba.conf` snippets, replication-slot
+      creation, `pg_basebackup` bootstrap commands, pgBackRest
+      stanza config + cron schedule, manual failover playbook
+      (verify lag → stop writes → `pg_ctl promote` → flip
+      `DATABASE_URL` → restart api/worker/beat replicas), realistic
+      RPO/RTO targets, and a Patroni pointer for tenants who
+      need < 1-minute RTO. Wraps with an explicit
+      "**Verification before going live**" subsection that frames
+      the docs as a *reference architecture* rather than a
+      battle-tested playbook — the upgrade-time prose is honest
+      that the failover drill hasn't been run end-to-end on this
+      project's own stack yet, and lists the five concrete steps
+      operators must drill on staging before committing to the HA
+      story. Picks the same tone as the existing `## HA Beat
+      scheduler` ENTERPRISE_FEATURES section (which *is* battle
+      tested). The companion HA Beat scheduler from slice 1 stays
+      cross-linked at the top of section 12.
+- [x] **Multi-replica API docs** *(2026-04-30)*. New section
+      `12.1 Multi-replica API` in `docs/DEPLOYMENT.md`. Verified
+      from `api/app/main.py` that the session middleware is
+      Starlette's cookie-signed `SessionMiddleware` (not
+      Redis-backed) — the entire session payload lives in the
+      `xp_session` cookie itself, signed with `API_SECRET_KEY`,
+      so every replica handles every request equally without any
+      sticky-session affinity at the LB. Docs name the four
+      stateless contracts (cookie sessions, HMAC-signed approval /
+      certification tokens, all request state in Postgres / Redis,
+      no in-process caches that survive across requests) and list
+      the three things every replica must share (`API_SECRET_KEY`,
+      `DATABASE_URL` / `CELERY_*`, bind-mount paths). Includes
+      `docker compose --scale api=3` scale-up command, LB config
+      notes (round-robin OK, `/health` for health checks, TLS
+      terminates upstream + `https_only=True` on the cookie), and
+      a per-replica rolling-restart loop for zero-downtime
+      upgrades on stacks with a draining LB.
+- [x] **Multi-replica worker docs + sizing table** *(2026-04-30)*.
+      New section `12.2 Multi-replica worker` in
+      `docs/DEPLOYMENT.md`. Documents the four-queue topology
+      (`provision`, `notifications`, `default`, `reclaim`) with a
+      "why a separate queue" justification per queue (e.g.
+      provision isolation keeps a 30s SCCM call from blocking the
+      cost-alerter), and a three-tier sizing table (Lab → single
+      worker; Mid → 2 workers split provision vs. housekeeping;
+      Enterprise → dedicated provision replicas + dedicated
+      notifications replica + housekeeping replica). Includes both
+      the simple `--scale worker=3` shape (every replica consumes
+      every queue) and the per-queue split via dedicated compose
+      services (`worker-provision`, `worker-notifications`,
+      `worker-housekeeping`) with example `docker-compose.prod.yml`
+      snippet. Wraps with liveness notes (Celery mingle on
+      startup, no separate health-check wiring) and a Flower
+      pointer for queue-depth visibility.
 - [x] **Beat-alive health probe** *(2026-04-30)*. `GET /health` now
       returns a `beat: "alive" | "stale"` field driven by the presence
       of the RedBeat distributed-lock key (`ipsolis:redbeat::lock`) in
@@ -1244,7 +1336,7 @@ sliced independently rather than bundled.
     one, schedule keys still in Redis, dispatch resumed without
     re-seed.
 
-**Slice-2 enrichments (Postgres standby docs, multi-replica api/worker, "Beat is alive" health probe) → tracked in *Deferred Enterprise Backlog* (top of file).**
+**Slice-2 enrichments all shipped (Postgres standby docs, multi-replica api docs, multi-replica worker docs + sizing table, Beat-alive health probe) — see *Deferred Enterprise Backlog* (top of file) for individual entries. The codebase HA story is now: api stateless cookie sessions + LB round-robin, workers per-queue scaling, Beat multi-replica with RedBeat lock, Postgres standby as a documented reference architecture awaiting a real failover drill on staging.**
 
 ---
 

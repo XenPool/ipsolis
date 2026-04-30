@@ -208,3 +208,47 @@ async def revoke_api_token(
         actor = getattr(request.state, "actor", "admin:unknown")
         logger.info("admin: revoked API token id=%s name=%r by=%s", token.id, token.name, actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/purge", dependencies=[require_role("admin")])
+async def purge_old_api_tokens(request: Request) -> dict:
+    """Manually fire the api_token_purge Beat task.
+
+    Useful as a one-off after an incident response (rotate everything,
+    immediately purge instead of waiting for the next 03:15 tick) and
+    as the *Purge now* button target in the Settings UI. The task
+    short-circuits to no-op when ``api_tokens.purge_after_days`` is 0,
+    so this endpoint is safe to call regardless of policy state — the
+    response envelope discloses whether anything was actually deleted.
+
+    Synchronous wait: the operation is bounded by the size of the
+    deleted set (one DELETE + one audit row each), so blocking the
+    HTTP request until the task returns is fine for typical fleet
+    sizes. 30-second timeout is more than enough headroom.
+    """
+    import asyncio
+    import os as _os
+
+    from celery import Celery
+
+    broker = _os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
+    backend = _os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/1")
+    client = Celery("api-client", broker=broker, backend=backend)
+
+    def _enqueue_and_wait() -> dict:
+        try:
+            async_result = client.send_task(
+                "tasks.workflows.api_token_purge.purge_old_tokens",
+                queue="default",
+            )
+            return async_result.get(timeout=30)
+        except Exception as exc:  # noqa: BLE001
+            return {"success": False, "error": str(exc)}
+
+    actor = getattr(request.state, "actor", "admin:unknown")
+    result = await asyncio.get_running_loop().run_in_executor(None, _enqueue_and_wait)
+    logger.info(
+        "admin: api-token purge triggered by=%s result=%s",
+        actor, result,
+    )
+    return result

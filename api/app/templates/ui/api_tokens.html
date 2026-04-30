@@ -43,6 +43,40 @@
   </div>
 </div>
 
+<!-- Retention policy card -->
+<div class="mb-6 bg-surface rounded-lg border border-token-border p-5">
+  <div class="flex items-center justify-between mb-2">
+    <h2 class="text-sm font-semibold text-heading">Retention policy</h2>
+    <span id="purge-status" class="text-xs text-muted/70 font-mono"></span>
+  </div>
+  <p class="text-xs text-muted/70 mb-3 leading-snug">
+    Slice 1 keeps revoked / expired tokens in the database forever — the audit trail of
+    "we used to have token X" stays intact. Tenants under strict record-retention rules
+    can opt in to <strong>hard-delete</strong>: rows with <code class="font-mono">revoked_at</code>
+    or <code class="font-mono">expires_at</code> older than the window below are removed by
+    a daily Beat task at 03:15 Europe/Berlin (and by <em>Purge now</em>). Each deletion writes
+    one <code class="font-mono">api_token / hard_deleted</code> audit row capturing the
+    name + prefix + reason. Default <code class="font-mono">0</code> = disabled (slice-1 behaviour).
+  </p>
+  <div class="flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-xs font-medium text-muted mb-1">Purge after (days)</label>
+      <input type="number" id="purge-after-days" min="0" max="3650"
+             value="0"
+             class="w-32 rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+    </div>
+    <button onclick="savePurgePolicy()"
+            class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+      Save policy
+    </button>
+    <button onclick="purgeNow()"
+            class="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded hover:bg-amber-700">
+      Purge now
+    </button>
+  </div>
+  <div id="purge-result" class="hidden mt-3 px-3 py-2 rounded text-xs"></div>
+</div>
+
 <!-- Token list -->
 <div class="bg-surface rounded-lg border border-token-border overflow-hidden">
   <table class="min-w-full divide-y divide-token-border text-sm">
@@ -339,9 +373,92 @@ async function revokeToken(id, name) {
   }
 }
 
+// ── Retention policy: purge_after_days ──────────────────────────────────────
+async function loadPurgePolicy() {
+  try {
+    var resp = await fetch('/admin/config/api_tokens.purge_after_days');
+    if (!resp.ok) return;
+    var data = await resp.json();
+    var days = parseInt(data.value || '0', 10) || 0;
+    document.getElementById('purge-after-days').value = days;
+    var status = document.getElementById('purge-status');
+    if (status) {
+      status.textContent = days > 0
+        ? 'Active — hard-delete after ' + days + ' day' + (days === 1 ? '' : 's')
+        : 'Disabled — slice-1 retain-forever behaviour';
+    }
+  } catch (e) { /* swallow */ }
+}
+
+async function savePurgePolicy() {
+  var raw = document.getElementById('purge-after-days').value.trim() || '0';
+  var n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0 || n > 3650) {
+    showPurgeResult({ok: false, message: 'Window must be an integer between 0 and 3650 days.'});
+    return;
+  }
+  var resp = await fetch('/admin/config/api_tokens.purge_after_days', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({value: String(n)}),
+  });
+  if (resp.ok) {
+    showPurgeResult({ok: true, message: 'Policy saved.'});
+    loadPurgePolicy();
+  } else {
+    showPurgeResult({ok: false, message: 'Failed to save (HTTP ' + resp.status + ').'});
+  }
+}
+
+async function purgeNow() {
+  if (!window.confirm(
+    'Run the API token purge now?\n\n' +
+    'Hard-deletes every revoked / expired token older than the configured window. ' +
+    'This is irreversible — restore from a database backup if you need to undo.'
+  )) return;
+  showPurgeResult({ok: null, message: 'Running purge…'});
+  var resp = await fetch('/admin/api-tokens/purge', {method: 'POST'});
+  var data = await resp.json().catch(function() { return {success: false, error: 'Bad response'}; });
+  if (data.skipped) {
+    showPurgeResult({ok: null, message: 'Skipped: ' + (data.reason || 'purge disabled')});
+    return;
+  }
+  if (data.success) {
+    var r = data.deleted_revoked || 0;
+    var x = data.deleted_expired || 0;
+    showPurgeResult({
+      ok: true,
+      message: 'Purge complete: ' + r + ' revoked + ' + x + ' expired = ' +
+               (r + x) + ' tokens hard-deleted.',
+    });
+    loadTokens();
+  } else {
+    showPurgeResult({ok: false, message: 'Purge failed: ' + (data.error || 'unknown')});
+  }
+}
+
+function showPurgeResult(state) {
+  var el = document.getElementById('purge-result');
+  if (!el) return;
+  el.className = 'mt-3 px-3 py-2 rounded text-xs';
+  if (state.ok === true) {
+    el.classList.add('bg-green-50', 'text-green-700', 'border', 'border-green-200',
+                     'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30');
+  } else if (state.ok === false) {
+    el.classList.add('bg-red-50', 'text-red-700', 'border', 'border-red-200',
+                     'dark:bg-red-500/10', 'dark:text-red-300', 'dark:border-red-500/30');
+  } else {
+    el.classList.add('bg-blue-50', 'text-blue-700', 'border', 'border-blue-200',
+                     'dark:bg-blue-500/10', 'dark:text-blue-300', 'dark:border-blue-500/30');
+  }
+  el.textContent = state.message;
+  el.classList.remove('hidden');
+}
+
 document.addEventListener('DOMContentLoaded', async function() {
   await loadScopes();
   await loadTokens();
+  await loadPurgePolicy();
 });
 </script>
 {% endblock %}
