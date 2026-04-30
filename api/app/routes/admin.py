@@ -392,13 +392,18 @@ async def test_siem_connection(db: AsyncSession = Depends(get_db)) -> dict:
     verify_tls = (rows.get("siem.verify_tls") or "true").strip().lower() not in ("false", "0", "no", "off")
     host = (rows.get("app.title") or "ipsolis").strip().replace(" ", "_").lower()
 
+    # The three is_secret keys (token, shared_key, webhook_secret) flow
+    # through resolve_secret_value so reference-shaped values point at
+    # Vault / Conjur / etc. and dereference at test time. Plain strings
+    # pass through unchanged.
+    from app.utils.secrets import resolve_secret_value
     endpoint = (rows.get("siem.endpoint_url") or "").strip()
-    token = (rows.get("siem.token") or "").strip()
+    token = (await resolve_secret_value(db, rows.get("siem.token") or "")).strip()
     workspace_id = (rows.get("siem.workspace_id") or "").strip()
-    shared_key = (rows.get("siem.shared_key") or "").strip()
+    shared_key = (await resolve_secret_value(db, rows.get("siem.shared_key") or "")).strip()
     log_type = (rows.get("siem.log_type") or "IpsolisAudit").strip() or "IpsolisAudit"
     webhook_url = (rows.get("siem.webhook_url") or "").strip()
-    webhook_secret = (rows.get("siem.webhook_secret") or "").strip()
+    webhook_secret = (await resolve_secret_value(db, rows.get("siem.webhook_secret") or "")).strip()
     webhook_sig_header = (rows.get("siem.webhook_signature_header") or "X-Hub-Signature-256").strip()
     webhook_extra = rows.get("siem.webhook_extra_headers") or ""
 
@@ -457,7 +462,10 @@ async def test_teams_webhook(db: AsyncSession = Depends(get_db)) -> dict:
     )
     rows = {r.key: (r.value or "") for r in cfg.scalars().all()}
     mode = (rows.get("teams.mode") or "disabled").strip()
-    url = (rows.get("teams.webhook_url") or "").strip()
+    # Teams webhook URL is is_secret=true so it can be stored as a
+    # secret-store reference; dereference here before posting.
+    from app.utils.secrets import resolve_secret_value
+    url = (await resolve_secret_value(db, rows.get("teams.webhook_url") or "")).strip()
     app_title = (rows.get("app.title") or "ip·Solis").strip()
 
     if mode == "disabled":

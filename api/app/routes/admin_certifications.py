@@ -510,8 +510,14 @@ async def _dispatch_kickoff_notifications(
         select(AppConfig).where(AppConfig.key.in_(("teams.mode", "teams.webhook_url", "app.title")))
     )
     cfg_map = {c.key: (c.value or "") for c in teams_cfg.scalars().all()}
+    # Resolve the webhook URL once here (it's is_secret=true and may be
+    # a vault://… / conjur://… reference) so the worker tasks receive a
+    # ready-to-POST URL — keeps notification workers free of resolver
+    # plumbing.
+    from app.utils.secrets import resolve_secret_value
+    teams_webhook_resolved = (await resolve_secret_value(db, cfg_map.get("teams.webhook_url", ""))).strip()
     teams_enabled = (cfg_map.get("teams.mode", "disabled").strip() == "enabled"
-                     and bool(cfg_map.get("teams.webhook_url", "").strip()))
+                     and bool(teams_webhook_resolved))
     app_title = cfg_map.get("app.title", "ip·Solis") or "ip·Solis"
 
     due_date = campaign.due_at.strftime("%Y-%m-%d") if campaign.due_at else ""
@@ -543,7 +549,7 @@ async def _dispatch_kickoff_notifications(
                 due_date,
                 review_url,
                 teams_enabled,
-                cfg_map.get("teams.webhook_url", ""),
+                teams_webhook_resolved,
                 app_title,
             ],
             queue="notifications",

@@ -1511,7 +1511,7 @@ def send_approval_requests(order_id: int) -> dict:
         # Teams notifications are best-effort — read config once, skip silently
         # when not enabled. Failure to deliver to Teams must not abort the order.
         teams_mode = (get_config(db, "teams.mode", "disabled") or "disabled").strip()
-        teams_webhook = (get_config(db, "teams.webhook_url") or "").strip()
+        teams_webhook = _get_secret_config(db, "teams.webhook_url").strip()
         app_title = get_config(db, "app.title", "ip·Solis") or "ip·Solis"
 
         sent = 0

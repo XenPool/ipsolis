@@ -1954,6 +1954,11 @@ conjur://prod/ipsolis/ad-creds#password      # Conjur variable, JSON-field extra
 | SMTP password | `smtp.password` | API |
 | vSphere admin password | `vsphere.password` | API + worker |
 | XenServer admin password | `xenserver.password` | API + worker |
+| SCCM service-account password | `sccm.password` | worker (probe + workflows) |
+| Teams Workflow webhook URL | `teams.webhook_url` | API (test, certifications) + worker (approval reminders, dynamic runner, cost alerter) |
+| SIEM Splunk HEC token | `siem.token` | API (test) + worker (streamer) |
+| SIEM Sentinel shared key | `siem.shared_key` | API (test) + worker (streamer) |
+| SIEM webhook HMAC secret | `siem.webhook_secret` | API (test) + worker (streamer) |
 
 The worker mirror at `worker/tasks/modules/secrets.py` is sync-only
 (same boundary as `audit_helper.py`) so the worker stays free of
@@ -2227,9 +2232,6 @@ Still queued:
 * **One-shot migration tool**: walk every `is_secret=true` row in
   `app_config`, write the value into the chosen backend, replace
   the row's value with the matching reference, audit the swap.
-* Make all remaining secret-bearing config keys go through the
-  resolver — slice 1 covered AD, Entra, SMTP, vSphere/XenServer;
-  SCCM password and the various webhook tokens still read raw.
 
 Track in *Deferred Enterprise Backlog* (top of `TASKS.md`).
 

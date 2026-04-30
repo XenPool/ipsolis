@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from tasks import app
 from tasks.modules.config_reader import get_config
+from tasks.modules.secrets import get_secret_config
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +61,16 @@ def stream_audit_log() -> dict:
             return {"success": True, "skipped": True, "reason": "siem.enabled is false"}
 
         endpoint = (get_config(db, "siem.endpoint_url", "") or "").strip()
-        token = (get_config(db, "siem.token", "") or "").strip()
+        # Three SIEM credentials are is_secret=true and must go through
+        # the resolver so vault://… / conjur://… references dereference
+        # before we sign / authorise outbound requests. The other keys
+        # (urls, header names, log type) stay raw — they're not secrets.
+        token = get_secret_config(db, "siem.token", "").strip()
         workspace_id = (get_config(db, "siem.workspace_id", "") or "").strip()
-        shared_key = (get_config(db, "siem.shared_key", "") or "").strip()
+        shared_key = get_secret_config(db, "siem.shared_key", "").strip()
         log_type = (get_config(db, "siem.log_type", "IpsolisAudit") or "IpsolisAudit").strip() or "IpsolisAudit"
         webhook_url = (get_config(db, "siem.webhook_url", "") or "").strip()
-        webhook_secret = (get_config(db, "siem.webhook_secret", "") or "").strip()
+        webhook_secret = get_secret_config(db, "siem.webhook_secret", "").strip()
         webhook_sig_header = (get_config(db, "siem.webhook_signature_header", "X-Hub-Signature-256") or "X-Hub-Signature-256").strip()
         webhook_extra_raw = get_config(db, "siem.webhook_extra_headers", "") or ""
         fmt = (get_config(db, "siem.format", "splunk_hec") or "splunk_hec").strip()

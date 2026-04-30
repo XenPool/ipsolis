@@ -151,9 +151,33 @@ pull one when there's a procurement need or a quiet week.
 - [ ] One-shot migration tool: walk every `is_secret=true` row in `app_config`,
       write the value into the chosen backend, replace the row's value with
       the matching reference, audit.
-- [ ] Make all remaining secret-bearing config keys go through the resolver —
-      slice 1 covered AD, Entra, SMTP, vSphere/XenServer; SCCM password
-      and the various webhook tokens still read raw.
+- [x] **Resolver coverage on residual is_secret keys** *(2026-04-30)*.
+      Five raw read sites wired through the existing async/sync
+      resolvers so reference values (`vault://…`, `conjur://…`,
+      `azurekv://…`, `awssm://…`, `ccp://…`) dereference at read
+      time. Sites: SCCM probe (`worker/tasks/workflows/sccm_probe.py`
+      `_load_sccm_config()` — switched from raw `psycopg2` to a
+      sync SQLAlchemy session so it can call `get_secret_config`),
+      Teams webhook URL (3 worker callers — `approval_reminders`,
+      `dynamic_runner`, `cost_threshold_alerter` — and 2 API
+      callers: the `/admin/config/teams/test` endpoint and the
+      certification-campaign kickoff that hands the resolved URL
+      to the notifications worker), and the three `is_secret` SIEM
+      keys (`siem.token` for Splunk HEC, `siem.shared_key` for
+      Sentinel, `siem.webhook_secret` for the generic webhook
+      adapter — both worker-side `siem_streamer.py` and API-side
+      `/admin/config/siem/test`). The certifications path resolves
+      once in the API and forwards the ready-to-POST URL to the
+      Celery task so notification workers stay free of resolver
+      plumbing. Smoke-tested live: setting
+      `teams.webhook_url=vault://teams/webhook` produced
+      `WARNING app.utils.secrets: secrets: resolution failed for
+      'vault://teams/webhook': HTTP 404 Not Found` in the API log
+      and the test endpoint correctly reported "Teams webhook URL
+      is not configured" — fail-closed-quiet contract intact, the
+      operator sees the underlying cause in the application log
+      without a crashed request. Plain string values still pass
+      through unchanged so partial migrations remain safe.
 
 ### API tokens — residuals
 - [ ] Optional: hard-delete vs. soft-delete policy (today everything is

@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from tasks import app
 from tasks.modules.config_reader import get_config
+from tasks.modules.secrets import get_secret_config
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ def scan_and_remind() -> dict:
         cutoff = datetime.now(timezone.utc) - timedelta(hours=after_hours)
         portal_base = get_config(db, "portal.base_url", "http://localhost:8000")
         teams_mode = (get_config(db, "teams.mode", "disabled") or "disabled").strip()
-        teams_webhook = (get_config(db, "teams.webhook_url") or "").strip()
+        teams_webhook = get_secret_config(db, "teams.webhook_url").strip()
         app_title = get_config(db, "app.title", "ip·Solis") or "ip·Solis"
         escalation_emails_raw = (get_config(db, "approval.escalation_email") or "").strip()
         escalation_emails = [a.strip() for a in escalation_emails_raw.split(",") if a.strip()]

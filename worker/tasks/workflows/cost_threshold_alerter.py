@@ -30,6 +30,7 @@ from tasks import app
 from tasks.modules import notifications as notif
 from tasks.modules import teams_notify
 from tasks.modules.config_reader import get_config
+from tasks.modules.secrets import get_secret_config
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ def scan_and_alert() -> dict:
         # outcome, so a Teams outage doesn't keep emails firing on the
         # same breach forever.
         teams_mode = (get_config(db, "teams.mode", "disabled") or "disabled").strip()
-        teams_webhook = (get_config(db, "teams.webhook_url") or "").strip()
+        teams_webhook = get_secret_config(db, "teams.webhook_url").strip()
         app_title = get_config(db, "app.title", "ip·Solis") or "ip·Solis"
         teams_enabled = teams_mode == "enabled" and bool(teams_webhook)
 
