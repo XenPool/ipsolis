@@ -7,6 +7,8 @@ from .approval import OrderApproval
 from .approval_delegation import ApprovalDelegation
 from .audit import AuditLog
 from .config import AppConfig
+from .cost_report_snapshot import CostReportSnapshot
+from .cost_threshold import CostThreshold
 from .standalone_runbook import (
     StandaloneRunbook,
     StandaloneRunbookStep,
@@ -26,6 +28,8 @@ __all__ = [
     "ApprovalDelegation",
     "AuditLog",
     "AppConfig",
+    "CostReportSnapshot",
+    "CostThreshold",
     "StandaloneRunbook",
     "StandaloneRunbookStep",
     "StandaloneRunbookRun",

@@ -47,6 +47,8 @@ explicit *Enterprise license* note appears.
 **Finance**
 
 - [Cost report / chargeback](#cost-report--chargeback)
+- [Cost report — historical view (daily snapshots)](#cost-report--historical-view-daily-snapshots)
+- [Cost report — FX conversion](#cost-report--fx-conversion)
 
 ---
 
@@ -794,6 +796,213 @@ by `Asset type`, by `Provider cost center`, or any combination.
   runs on **all three creation paths** — self-service portal, public
   `POST /orders/`, and the ServiceNow webhook — so externally-driven
   orders feed the same consumer-side rows the portal does.
+
+### Threshold alerts
+
+Set monthly spend ceilings per `(cost_center, currency)` and ip·Solis
+emails the configured recipients when projected spend crosses the
+limit. Composite-PK lets the same cost center hold separate
+thresholds per currency without forcing FX conversion (which is its
+own queued slice).
+
+#### Where to configure
+
+Admin UI → *Cost Report* → **Cost thresholds** card below the detail
+table. **+ Add threshold** opens a small modal:
+
+| Field | Notes |
+|---|---|
+| Cost center | Free-form label; matches the asset definition's `cost_center` exactly |
+| Currency | One of the supported ISO 4217 codes (uppercased) |
+| Monthly limit | Decimal; alert fires when provider-side projection > this value |
+| Recipients | Comma-separated email addresses |
+
+Each row has inline **Edit** and **Delete** buttons. The same card
+shows the live current projection alongside the configured limit so
+you can sanity-check at a glance whether a threshold is in breach.
+
+#### Behaviour
+
+- **Cadence**: daily Beat task at 04:00 Europe/Berlin
+  (`tasks.workflows.cost_threshold_alerter.scan_and_alert`).
+- **Selection**: provider-side projection per `(cost_center, currency)`
+  is computed in one indexed `GROUP BY` (mirroring the cost-report
+  API's "by provider" view), then joined against
+  `cost_thresholds`. Rows whose projection exceeds the limit are
+  alerted.
+- **Hysteresis**: `last_alerted_at` is stamped on every alert
+  (regardless of email outcome — a flaky SMTP relay can't lock the
+  alert into a re-fire loop). Subsequent ticks skip the row until
+  `cost.threshold_alert_quiet_hours` (default 24h) elapses.
+- **Edit clears the clock**: PUT on a threshold resets
+  `last_alerted_at` so a tightened limit / corrected recipient
+  list re-alerts immediately rather than waiting out the quiet
+  window with stale settings.
+- **Email**: rendered from the `cost_threshold_breach` template
+  (seeded by migration 0079, customisable via *Settings → Email
+  Templates*) — carries `cost_center`, `currency`, `monthly_limit`,
+  `projected_total`, `active_orders`, `asset_types`,
+  `cost_report_url`, and the configured `quiet_hours` so the
+  recipient knows when to expect the next nudge.
+
+#### Visual indicators on the Cost Report
+
+The *By provider (asset cost center)* totals cards render breached
+rows in red with a **⚠ over limit** subtext. The *Cost thresholds*
+table itself highlights breached rows in the same colour. Untracked
+combinations (no threshold or no active orders) render neutrally.
+
+#### Stored config keys + table
+
+| Key | Purpose |
+|---|---|
+| `cost.threshold_alert_quiet_hours` | Minimum hours between repeat breach alerts on the same row (default 24, 0 = alert every Beat tick) |
+
+| Column | Purpose |
+|---|---|
+| `cost_thresholds.cost_center` | PK part 1 — matches asset definition's cost_center |
+| `cost_thresholds.currency` | PK part 2 — ISO 4217 code |
+| `cost_thresholds.monthly_limit` | NUMERIC(14,2), the alert threshold |
+| `cost_thresholds.recipients` | Comma-separated email recipients |
+| `cost_thresholds.last_alerted_at` | Timestamp of the last sent alert (cleared on PUT) |
+| `cost_thresholds.last_alerted_amount` | Projected total at the moment of the last alert (audit breadcrumb) |
+
+#### Optional Teams card
+
+When `teams.mode = enabled` and `teams.webhook_url` is set (the same
+webhook that delivers approval cards), the alerter Beat task posts an
+Adaptive Card alongside the email. The card uses the
+*Attention*-coloured ⚠ header, a FactSet of cost-center / limit /
+projection / over-by / active-orders / asset-types, and an
+*Open Cost Report →* action when the portal base URL is configured.
+
+No `@mention` — breach alerts go to a finance / ops mailing list, not
+a single approver, so per-recipient targeted notification doesn't
+make sense at the card level. The hosting Teams channel's posting
+rules drive notification.
+
+Card delivery is best-effort and additive: a Teams failure doesn't
+roll back the email or keep us from stamping `last_alerted_at`.
+The result dict reports `teams_sent` separately from `alerted` so
+operators can see both counters.
+
+---
+
+## Cost report — historical view (daily snapshots)
+
+A daily Beat task captures all three cost-report views (provider,
+consumer cost-center, consumer department) into the
+`cost_report_snapshots` table so the report can render at any past
+date by reading the snapshot rather than re-querying live state.
+
+### Cadence + retention
+
+- **Capture**: daily at **02:00 Europe/Berlin** via
+  `tasks.workflows.cost_report_snapshot.capture_daily_snapshot`.
+  Runs before the audit-retention prune (03:00) and the
+  threshold alerter (04:00) so the day's final state is captured
+  before downstream tasks.
+- **Idempotent within a day**: the task DELETEs today's rows
+  before INSERTing, so manual re-trigger or Beat-HA edge cases
+  don't double-count.
+- **Retention**: `cost.snapshot_retention_days` config key
+  (default 365 days; 0 = keep forever). Daily prune happens in
+  the same task tick.
+
+### Reading historical data
+
+`GET /admin/cost-report?as_of=YYYY-MM-DD` reads from the snapshot
+table instead of running the live aggregation. The response's
+`meta.snapshot=true|false` reflects which path served the data —
+falls back to live when no snapshot exists for the date (typical
+for "today" before the daily Beat task has run).
+
+The Cost Report page gets an **As of** date picker; once set, a
+*Today* clear-link appears next to it. A blue meta banner notes
+when the response came from a snapshot, and warns that
+per-asset-type detail rows aren't stored in snapshots (the table
+shows empty in historical view; switch to today to see them).
+
+### Schema
+
+| Column | Purpose |
+|---|---|
+| `snapshot_date` | PK part 1 — the day the row represents |
+| `view` | PK part 2 — `provider` / `consumer_cc` / `consumer_dept` |
+| `dimension_key` | PK part 3 — cost-center label or department name |
+| `currency` | PK part 4 — ISO 4217 (snapshots keep mixed-currency separate) |
+| `projected_monthly_total` | NUMERIC(14,2) — the aggregated figure |
+| `active_orders` | Number of active orders contributing to this row |
+| `asset_types` | Number of distinct asset definitions in scope |
+| `captured_at` | Timestamp of the capture (always set to the task tick) |
+
+Composite PK + reverse-lookup index on `(view, snapshot_date)` keeps
+date-range queries fast even with multi-year retention.
+
+---
+
+## Cost report — FX conversion
+
+Admins set a canonical reporting currency and a static rate map; the
+Cost Report endpoint then accepts `?reporting_currency=` and converts
+mixed-currency totals on the fly so summary cards collapse to a
+single figure per cost center.
+
+### Configuration
+
+| Config key | Purpose | Default |
+|---|---|---|
+| `cost.fx.canonical` | ISO 4217 code of the canonical reporting currency | `EUR` |
+| `cost.fx.rates` | JSON object: currency → rate INTO canonical (e.g. `{"USD":0.92,"EUR":1.0}` when canonical=EUR means 1 USD → 0.92 EUR) | `{}` |
+
+Set under *Settings → Compliance → Finance* (or via
+`PUT /admin/config/cost.fx.rates`). Set `1.00` for the canonical
+currency itself; missing currencies are excluded from the converted
+view (they'd otherwise convert at an unknown rate).
+
+These are **admin-supplied reporting rates**, not transaction rates —
+changing them re-renders historical projections in the new view too.
+We deliberately don't snapshot rates per-order so admins can keep a
+consistent view as their finance team updates rates monthly.
+
+### Cross-rate conversion
+
+When a user requests `?reporting_currency=USD` and a row's source
+currency is `GBP`:
+
+```
+factor = rate(GBP) / rate(USD)
+       = 1.17 / 0.92
+projected_USD = projected_GBP * factor
+```
+
+This works even when the requested currency isn't the canonical one —
+both source and target rates pass through the configured map.
+Currencies without a configured rate end up in
+`meta.fx_excluded_currencies` so admins can spot which rows the view
+dropped.
+
+### UI
+
+The Cost Report page gets a **Show in** currency selector populated
+from `GET /admin/cost-report/fx-config` (so the dropdown only offers
+currencies the report can actually convert to). A blue meta banner
+notes when conversion is applied and lists any excluded currencies.
+
+### Composability with `as_of`
+
+Both query params compose: `?as_of=2026-04-15&reporting_currency=GBP`
+reads the 2026-04-15 snapshot then converts to GBP. Works because
+the snapshot rows store the source currency; FX is applied
+post-hoc on the read side.
+
+### Stored config keys (recap)
+
+| Key | Purpose |
+|---|---|
+| `cost.fx.canonical` | Canonical reporting currency (ISO 4217) |
+| `cost.fx.rates` | JSON map of rate-into-canonical |
+| `cost.snapshot_retention_days` | Days of `cost_report_snapshots` to retain |
 
 ---
 

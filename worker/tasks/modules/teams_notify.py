@@ -185,3 +185,87 @@ def build_approval_card(
             }
         ],
     }
+
+
+def build_cost_threshold_breach_card(
+    *,
+    cost_center: str,
+    currency: str,
+    monthly_limit: float,
+    projected_total: float,
+    active_orders: int,
+    asset_types: int,
+    quiet_hours: int,
+    cost_report_url: str = "",
+    app_title: str = "ip·Solis",
+) -> dict[str, Any]:
+    """Build an Adaptive Card for a cost-threshold breach alert.
+
+    No @mention — breach alerts go to a finance / ops mailing list,
+    not a single approver, so per-recipient targeted notification
+    doesn't make sense at the card level. The hosting Teams channel's
+    posting rules drive the notification.
+    """
+    delta = projected_total - monthly_limit
+    pct_over = (delta / monthly_limit * 100.0) if monthly_limit > 0 else 0.0
+
+    facts = [
+        {"title": "Cost center", "value": cost_center or "(unassigned)"},
+        {"title": "Configured limit", "value": f"{monthly_limit:.2f} {currency}"},
+        {"title": "Current projection", "value": f"{projected_total:.2f} {currency}"},
+        {"title": "Over by", "value": f"{delta:.2f} {currency} ({pct_over:.1f}%)"},
+        {"title": "Active orders", "value": str(active_orders)},
+        {"title": "Asset definitions", "value": str(asset_types)},
+    ]
+
+    body: list[dict[str, Any]] = [
+        {
+            "type": "TextBlock",
+            "text": f"⚠ {app_title} — Cost threshold breached",
+            "weight": "Bolder",
+            "size": "Medium",
+            "color": "Attention",
+            "wrap": True,
+        },
+        {
+            "type": "TextBlock",
+            "text": (
+                f"Projected monthly spend for **{cost_center}** has crossed "
+                f"the configured limit."
+            ),
+            "wrap": True,
+            "spacing": "Small",
+        },
+        {"type": "FactSet", "facts": facts},
+        {
+            "type": "TextBlock",
+            "text": (
+                f"Repeat alerts on this row are suppressed for {quiet_hours} h "
+                "unless the threshold is edited."
+            ),
+            "wrap": True,
+            "size": "Small",
+            "isSubtle": True,
+            "spacing": "Medium",
+        },
+    ]
+
+    actions: list[dict[str, Any]] = []
+    if cost_report_url:
+        actions.append({
+            "type": "Action.OpenUrl",
+            "title": "Open Cost Report →",
+            "url": cost_report_url,
+            "style": "positive",
+        })
+
+    card: dict[str, Any] = {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "msteams": {"width": "Full"},
+        "body": body,
+    }
+    if actions:
+        card["actions"] = actions
+    return card

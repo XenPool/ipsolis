@@ -92,6 +92,9 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 - **Cost / chargeback per asset definition** — set `monthly_cost`, `currency`, and `cost_center` on each definition; the Cost Report page aggregates active orders into projected monthly spend per cost center with CSV export
 - **AD-driven consumer breakdown** — at order creation we snapshot the requester's AD attributes (`department`, `cost_center`, `company`, `employeeID`, `title`; attribute names configurable in Settings) onto each order, so the Cost Report can also slice spend by consuming team / department, and the per-order CSV carries every requester's full HR identity for spreadsheet pivots. Snapshot runs on every creation path — portal, public `POST /orders/`, and the ServiceNow webhook — so externally-driven orders feed the same consumer-side rows
 - **Per-order cost projection** — the portal's order detail page renders the projected total (`monthly_cost × months_requested`) in the Access & Duration card whenever the asset definition is priced; users see what their request will cost before / after approval
+- **Cost-threshold alerts** — set monthly spend ceilings per `(cost_center, currency)` on the Cost Report page; a daily Beat task at 04:00 emails the configured recipients (and posts a Teams card when `teams.mode=enabled`) on breach. Hysteresis via `cost.threshold_alert_quiet_hours` (default 24h) suppresses repeats; edits to a threshold clear the alert clock so the next breach re-alerts immediately. Provider totals cards on the report flag breaches in red so the dashboard reads at a glance
+- **Historical view** — daily Beat task at 02:00 captures all three cost-report views into `cost_report_snapshots`. The Cost Report page gets an *As of* date picker that reads from the snapshot table for past dates (falls back to live data when no snapshot exists). Retention configurable via `cost.snapshot_retention_days` (default 365)
+- **FX conversion** — admins set a canonical reporting currency (`cost.fx.canonical`, default `EUR`) and a static rate map (`cost.fx.rates`); the Cost Report page gets a *Show in* currency selector that converts mixed-currency totals via cross-rates so summary cards collapse to a single figure per cost center. Currencies without configured rates surface in a meta banner
 
 ### Admin UI
 - Dashboard with live pool status tiles (auto-refreshing HTMX fragments)
@@ -337,7 +340,9 @@ Operators are responsible for maintaining their own records of processing activi
 
 - [ ] Access certification campaigns (quarterly manager re-confirmation workflow)
 - [ ] HR feed + SCIM 2.0 (Workday/SAP leaver events, Okta / Ping / SailPoint integration)
-- [ ] Cost report: threshold alerting, historical view, FX conversion
+- [x] Cost report: threshold alerting (per-`cost_center`/currency monthly limits with email + optional Teams-card alerts and hysteresis)
+- [x] Cost report: historical view via daily snapshot table + `?as_of=` query
+- [x] Cost report: FX conversion across mixed-currency cost centers via configurable rate map
 - [ ] Data retention and automatic cleanup (order history)
 - [ ] User data export and deletion (GDPR-style data portability)
 - [ ] Optional Sentry integration for error tracking

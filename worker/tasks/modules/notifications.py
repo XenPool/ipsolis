@@ -420,6 +420,56 @@ def send_approval_escalated(
     return _send_html_email_multi(db, addrs, bcc, mail_from, subject, html)
 
 
+def send_cost_threshold_breach(
+    db: "Session",
+    *,
+    recipients: list[str],
+    cost_center: str,
+    currency: str,
+    monthly_limit: float,
+    projected_total: float,
+    active_orders: int,
+    asset_types: int,
+    quiet_hours: int,
+    cost_report_url: str = "",
+) -> dict:
+    """Notify recipients that projected monthly spend on a (cost_center,
+    currency) crossed the configured limit. Best-effort and additive — the
+    Beat task records ``last_alerted_at`` regardless of email outcome so a
+    flaky SMTP relay doesn't lock the alert into a re-fire loop.
+    """
+    from tasks.modules.config_reader import get_config
+
+    addrs = [a.strip() for a in (recipients or []) if a and a.strip()]
+    if not addrs:
+        return {"success": True, "skipped": True, "reason": "no recipients"}
+
+    company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    variables = {
+        "company_name": company_name,
+        "app_title": app_title,
+        "cost_center": cost_center,
+        "currency": currency,
+        "monthly_limit": f"{monthly_limit:.2f}",
+        "projected_total": f"{projected_total:.2f}",
+        "active_orders": active_orders,
+        "asset_types": asset_types,
+        "cost_report_url": cost_report_url or "",
+        "quiet_hours": quiet_hours,
+    }
+
+    subject, body = _render_template(db, "cost_threshold_breach", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, addrs, bcc, mail_from, subject, html)
+
+
 def send_approval_result(
     db: "Session",
     user_email: str,

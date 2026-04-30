@@ -1269,11 +1269,13 @@ The full observability story (Prometheus metrics + business gauges +
 Celery queue depth + OpenTelemetry api/worker tracing + ready-to-import
 Grafana dashboard + Prometheus alert rules) is now end-to-end complete.
 
-### [partial] Cost / chargeback per asset type — Prio 1
+### [done] Cost / chargeback per asset type — Prio 1
 Reporting side **shipped 2026-04-26**. Per-order projection on the
 portal order detail page + AD snapshot on non-portal order paths
-**shipped 2026-04-30**. Threshold alerts, historical view, and FX
-conversion still queued.
+**shipped 2026-04-30**. **Threshold alerts** (with email + optional
+Teams card), **historical view** (daily snapshot table + `?as_of=`
+query), and **FX conversion** (static rate map +
+`?reporting_currency=` cross-rate conversion) all shipped 2026-04-30.
 
 **Done — schema + report (2026-04-26):**
 - Migration `0056_asset_type_cost.py` — adds `monthly_cost NUMERIC(12,2)`,
@@ -1368,13 +1370,134 @@ conversion still queued.
   its inline try/except — single source of truth for the snapshot
   shape, no behaviour change to the portal flow.
 
-**Still to do:**
-- [ ] Threshold alerting — email/Teams when projected monthly per
-      cost center crosses a configurable amount.
-- [ ] Historical view: report by date range, not just "currently
-      active" (would need a snapshot table or order-status time series).
-- [ ] FX conversion for mixed-currency cost centers (today the
-      summary cards keep currencies separate).
+**Done — threshold alerting (2026-04-30):**
+- Migration `0079_cost_thresholds.py` adds a `cost_thresholds` table
+  with composite PK `(cost_center, currency)`, `monthly_limit`,
+  `recipients`, plus `last_alerted_at` / `last_alerted_amount`
+  hysteresis fields. Same migration seeds the
+  `cost.threshold_alert_quiet_hours` config key (default 24h) and
+  the `cost_threshold_breach` email template (with a copy-pasteable
+  variable list, customisable via Settings → Email Templates).
+- ORM `app.models.cost_threshold.CostThreshold` mapped; admin CRUD
+  endpoints land on the existing `/admin/cost-report` router under
+  `/thresholds[/{cost_center}/{currency}]` so the audience and
+  scope guard match the report itself. Reads inherit the router
+  floor (`auditor`); writes carry an explicit `admin` role gate
+  plus `config:write` scope. Recipient validation rejoins on
+  whitespace and validates each address with a stdlib regex.
+- Beat task `worker/tasks/workflows/cost_threshold_alerter.py:
+  scan_and_alert` runs daily at 04:00 Europe/Berlin. Computes
+  provider-side projections in one indexed group-by (mirroring the
+  cost-report API), iterates configured thresholds, alerts on each
+  breach via the new `notif.send_cost_threshold_breach` helper, and
+  stamps `last_alerted_at` regardless of email outcome so a flaky
+  SMTP relay doesn't lock the alert into a re-fire loop. Hysteresis
+  via the quiet-window config key suppresses repeats; editing a
+  threshold clears the clock so subsequent breaches re-alert
+  immediately.
+- Cost Report UI gets an inline **Cost thresholds** card below the
+  detail table with a small modal for create/edit and per-row
+  Edit/Delete actions. Provider totals cards visually flag breached
+  rows (red border, ⚠ icon, "over limit" subtext) and the
+  thresholds row highlights breaches in the same colour so the
+  whole page reads at a glance.
+- Verified end-to-end:
+  * `POST /admin/cost-report/thresholds` creates rows; `GET` lists
+    them with the live projection joined client-side; `PUT` clears
+    `last_alerted_at` so an edit doesn't keep the row in quiet mode
+    with stale settings; `DELETE` returns 204.
+  * Beat task with two thresholds (one matching, one orphan):
+    `{checked: 2, alerted: 1, skipped_quiet: 0}`. Email dispatched
+    to both configured recipients; rendered template carries the
+    breach amounts and the cost-report URL.
+  * Re-running the same task without editing returned
+    `{alerted: 0, skipped_quiet: 1}` — quiet window holds.
+  * Edit raised the limit to clear the breach AND cleared the
+    `last_alerted_at` clock; subsequent runs returned 0 because
+    no breach. Synthetic test rows cleaned up.
+
+**Done — Teams card on threshold breach (2026-04-30):**
+- New `build_cost_threshold_breach_card()` in
+  `worker/tasks/modules/teams_notify.py` — Adaptive Card v1.4 with
+  ⚠ Attention-coloured header, FactSet of cost-center / limit /
+  projection / over-by / active-orders / asset-types, optional
+  *Open Cost Report →* action when the portal base URL is set.
+  No `@mention` (alerts go to a finance / ops mailing list, not a
+  single approver — channel-level notification rules drive it).
+- Wired into the existing `cost_threshold_alerter` Beat task: when
+  `teams.mode == enabled` and `teams.webhook_url` is set, the
+  alerter posts the card alongside the email. Best-effort and
+  additive — Teams failures don't roll back the email or keep us
+  from stamping `last_alerted_at`. Result dict gets a new
+  `teams_sent` counter.
+- Verified live with the dev environment's real Workflows webhook:
+  `{checked: 1, alerted: 1, teams_sent: 1, skipped_quiet: 0}` —
+  email + Teams card both delivered on the same breach.
+
+**Done — historical view + FX conversion (2026-04-30):**
+- Migration `0080_cost_fx_and_history.py` adds:
+  * `cost_report_snapshots` table (composite PK
+    `snapshot_date / view / dimension_key / currency`, with
+    `projected_monthly_total / active_orders / asset_types /
+    captured_at`). Reverse-lookup index on `(view, snapshot_date)`
+    for the date-range queries the UI fires.
+  * Three new config keys:
+    `cost.fx.canonical` (default `EUR`),
+    `cost.fx.rates` (JSON map of currency → rate-into-canonical,
+    default empty),
+    `cost.snapshot_retention_days` (default 365; 0 = keep forever).
+- ORM `app.models.cost_report_snapshot.CostReportSnapshot` mapped.
+- New Beat task
+  `worker/tasks/workflows/cost_report_snapshot.py:capture_daily_snapshot`
+  runs daily at 02:00 Europe/Berlin (before audit prune at 03:00 +
+  threshold alerter at 04:00). Captures all three views
+  (`provider`, `consumer_cc`, `consumer_dept`) in one tick;
+  idempotent within a day (DELETE today's rows then INSERT). Prunes
+  rows past `cost.snapshot_retention_days`.
+- API endpoint extended:
+  * `?reporting_currency=USD` — converts mixed-currency totals into
+    the requested currency using cross-rates derived from
+    `cost.fx.rates` (`rate_src / rate_target`). Re-aggregates the
+    summary cards so a cost center with EUR + USD orders collapses
+    to one figure. Currencies without configured rates surface in
+    `meta.fx_excluded_currencies`.
+  * `?as_of=YYYY-MM-DD` — reads from `cost_report_snapshots`
+    instead of running the live aggregation. Falls back to live
+    when no snapshot exists for the date (typical for "today"
+    before the daily Beat task has run); the response's
+    `meta.snapshot=true|false` reflects which path served the data.
+    Per-asset-type detail rows aren't stored in snapshots; the UI
+    notes this in a banner when reading historical data.
+  * Both params compose: `?as_of=2026-04-15&reporting_currency=GBP`
+    reads the 2026-04-15 snapshot then converts to GBP.
+  * New `GET /admin/cost-report/fx-config` endpoint exposes the
+    canonical currency + the configured rate map so the UI can
+    populate the currency selector with only currencies it can
+    actually convert to.
+- Cost Report UI gets two new view-knobs alongside the existing tab
+  bar: an **As of** date picker (with a *Today* clear-link that
+  appears once a date is set) and a **Show in** currency selector
+  populated from the FX config endpoint. A small blue meta banner
+  surfaces whether the response came from a snapshot, whether FX
+  was applied, and any excluded currencies.
+- Verified live end-to-end:
+  * Default `?reporting_currency=` empty → source-currency view
+    `[{key:CC-IT-2100, currency:EUR, projected:37.50}]`.
+  * `?reporting_currency=USD` with rates `{EUR:1.0, USD:0.92}` →
+    same row converted to `40.76 USD`. Math checks out:
+    37.50 × (1.0 / 0.92) = 40.76.
+  * `?reporting_currency=GBP` with rates `{EUR:1.0, GBP:1.17}` →
+    32.05 GBP. 37.50 × (1.0 / 1.17) = 32.05.
+  * Snapshot capture: `{rows_written: 5, per_view:{provider:1,
+    consumer_cc:2, consumer_dept:2}}` for current state.
+  * `?as_of=2026-04-30` (today, snapshot exists) →
+    `meta.snapshot=true`, totals match, detail rows empty.
+  * `?as_of=2026-04-29` (no snapshot) →
+    `meta.snapshot=false`, falls back to live with full detail rows.
+  * Combined `?as_of=2026-04-30&reporting_currency=GBP` →
+    snapshot data converted to GBP, both meta flags true.
+
+**Cost section now fully shipped** — no more Still-to-do items.
 
 ---
 

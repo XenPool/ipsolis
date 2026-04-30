@@ -21,6 +21,8 @@ app = Celery(
         "tasks.workflows.siem_streamer",
         "tasks.workflows.approval_reminders",
         "tasks.workflows.approval_auto_decline",
+        "tasks.workflows.cost_threshold_alerter",
+        "tasks.workflows.cost_report_snapshot",
         "tasks.workflows.audit_retention",
         "tasks.workflows.update_checker",
         "tasks.modules.maintenance",
@@ -76,6 +78,8 @@ app.conf.update(
         "tasks.workflows.update_checker.*": {"queue": "default"},
         "tasks.workflows.approval_reminders.*": {"queue": "notifications"},
         "tasks.workflows.approval_auto_decline.*": {"queue": "notifications"},
+        "tasks.workflows.cost_threshold_alerter.*": {"queue": "notifications"},
+        "tasks.workflows.cost_report_snapshot.*": {"queue": "default"},
         "tasks.modules.notifications.*": {"queue": "notifications"},
         "tasks.modules.maintenance.*": {"queue": "default"},
     },
@@ -141,6 +145,25 @@ app.conf.update(
             "task": "tasks.workflows.approval_auto_decline.scan_and_auto_decline",
             "schedule": crontab(hour=3, minute=30),  # Daily at 03:30 Europe/Berlin
             "options": {"queue": "notifications"},
+        },
+        # Alert when projected monthly spend per (cost_center, currency)
+        # crosses a configured threshold. No-op when no thresholds are
+        # configured. Hysteresis via cost.threshold_alert_quiet_hours
+        # keeps a hovering spend from spamming alerts.
+        "cost-threshold-alerter": {
+            "task": "tasks.workflows.cost_threshold_alerter.scan_and_alert",
+            "schedule": crontab(hour=4, minute=0),  # Daily at 04:00 Europe/Berlin
+            "options": {"queue": "notifications"},
+        },
+        # Snapshot the cost report views into cost_report_snapshots so the
+        # ``?as_of=`` query path on the API can render past dates without
+        # losing the active-order data that's only true "now". Runs at
+        # 02:00 Europe/Berlin so the day's final state is captured before
+        # downstream tasks (audit prune at 03:00, threshold alerter at 04:00).
+        "cost-report-snapshot-daily": {
+            "task": "tasks.workflows.cost_report_snapshot.capture_daily_snapshot",
+            "schedule": crontab(hour=2, minute=0),  # Daily at 02:00 Europe/Berlin
+            "options": {"queue": "default"},
         },
         # Daily check for newer ipSolis releases — opt-in via the
         # ``updates.check_enabled`` config toggle. The task short-circuits
