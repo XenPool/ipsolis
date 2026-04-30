@@ -51,6 +51,9 @@ _aad_token_cache: dict[str, tuple[float, str]] = {}
 # we cache for 7 to leave a 1-minute clock-skew safety margin.
 _CONJUR_TOKEN_TTL_SECONDS = 7 * 60
 _conjur_token_cache: dict[str, tuple[float, str]] = {}
+# Dynamically-acquired Vault tokens (AppRole / k8s).
+_vault_token_cache: dict[str, tuple[float, str]] = {}
+_VAULT_AUTH_REFRESH_MARGIN = 60
 
 
 def is_secret_reference(value: str | None) -> bool:
@@ -137,6 +140,112 @@ def _dispatch(raw_value: str, cfg: dict[str, str]) -> str:
     return value
 
 
+def _get_vault_token(cfg: dict[str, str]) -> str:
+    """Mirror of ``app.utils.secrets._get_vault_token`` — picks the
+    auth method (token / approle / kubernetes), mints + caches
+    short-lived tokens, returns the static value as-is for token mode."""
+    method = (cfg.get("vault.auth_method") or "token").strip().lower() or "token"
+    base = (cfg.get("vault.url") or "").strip().rstrip("/")
+    namespace = (cfg.get("vault.namespace") or "").strip()
+    if not base:
+        raise ValueError("vault.url is empty")
+
+    if method == "token":
+        token = (cfg.get("vault.token") or "").strip()
+        if not token:
+            raise ValueError(
+                "vault.token is empty (auth_method=token). Switch to AppRole "
+                "or Kubernetes auth, or set the static token."
+            )
+        return token
+
+    if method == "approle":
+        role_id = (cfg.get("vault.approle_role_id") or "").strip()
+        secret_id = (cfg.get("vault.approle_secret_id") or "").strip()
+        approle_path = (cfg.get("vault.approle_path") or "approle").strip().strip("/") or "approle"
+        if not (role_id and secret_id):
+            raise ValueError("vault.approle_role_id or vault.approle_secret_id is empty")
+        cache_key = f"approle::{base}::{role_id}"
+        cached = _vault_token_cache.get(cache_key)
+        if cached and cached[0] > time.time():
+            return cached[1]
+        token, ttl = _vault_post_login(
+            f"{base}/v1/auth/{approle_path}/login",
+            json.dumps({"role_id": role_id, "secret_id": secret_id}).encode("utf-8"),
+            namespace, "approle",
+        )
+        _vault_token_cache[cache_key] = (time.time() + max(60, ttl - _VAULT_AUTH_REFRESH_MARGIN), token)
+        return token
+
+    if method == "kubernetes":
+        k8s_role = (cfg.get("vault.k8s_role") or "").strip()
+        k8s_path = (cfg.get("vault.k8s_path") or "kubernetes").strip().strip("/") or "kubernetes"
+        jwt_path = (cfg.get("vault.k8s_jwt_path") or "/var/run/secrets/kubernetes.io/serviceaccount/token").strip()
+        if not k8s_role:
+            raise ValueError("vault.k8s_role is empty")
+        try:
+            with open(jwt_path, "r", encoding="utf-8") as fh:
+                jwt = fh.read().strip()
+        except OSError as exc:
+            raise RuntimeError(
+                f"vault: kubernetes JWT not readable at {jwt_path!r}: {exc}"
+            ) from exc
+        if not jwt:
+            raise RuntimeError(f"vault: kubernetes JWT at {jwt_path!r} is empty")
+        cache_key = f"kubernetes::{base}::{k8s_role}"
+        cached = _vault_token_cache.get(cache_key)
+        if cached and cached[0] > time.time():
+            return cached[1]
+        token, ttl = _vault_post_login(
+            f"{base}/v1/auth/{k8s_path}/login",
+            json.dumps({"role": k8s_role, "jwt": jwt}).encode("utf-8"),
+            namespace, "kubernetes",
+        )
+        _vault_token_cache[cache_key] = (time.time() + max(60, ttl - _VAULT_AUTH_REFRESH_MARGIN), token)
+        return token
+
+    raise ValueError(f"vault: unknown auth_method {method!r}")
+
+
+def _vault_invalidate_token(cfg: dict[str, str]) -> None:
+    method = (cfg.get("vault.auth_method") or "token").strip().lower() or "token"
+    if method == "token":
+        return
+    base = (cfg.get("vault.url") or "").strip().rstrip("/")
+    if method == "approle":
+        role_id = (cfg.get("vault.approle_role_id") or "").strip()
+        _vault_token_cache.pop(f"approle::{base}::{role_id}", None)
+    elif method == "kubernetes":
+        role = (cfg.get("vault.k8s_role") or "").strip()
+        _vault_token_cache.pop(f"kubernetes::{base}::{role}", None)
+
+
+def _vault_post_login(
+    url: str, body: bytes, namespace: str, method_label: str,
+) -> tuple[str, int]:
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    if namespace:
+        headers["X-Vault-Namespace"] = namespace
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:  # noqa: BLE001
+            detail = ""
+        raise RuntimeError(f"vault {method_label} login HTTP {e.code}: {detail}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"vault {method_label} login unreachable: {e.reason}") from e
+    auth = (payload or {}).get("auth") or {}
+    token = auth.get("client_token")
+    if not token:
+        raise RuntimeError(f"vault {method_label} login: response missing auth.client_token")
+    ttl = int(auth.get("lease_duration") or 3600)
+    return token, ttl
+
+
 def _resolve_vault(path: str, cfg: dict[str, str]) -> str:
     if "#" in path:
         path, field = path.split("#", 1)
@@ -147,18 +256,24 @@ def _resolve_vault(path: str, cfg: dict[str, str]) -> str:
         raise ValueError("empty vault path")
 
     base = (cfg.get("vault.url") or "").strip().rstrip("/")
-    token = (cfg.get("vault.token") or "").strip()
     mount = (cfg.get("vault.kv_mount") or "secret").strip().strip("/") or "secret"
     namespace = (cfg.get("vault.namespace") or "").strip()
-    if not base or not token:
-        raise ValueError("vault.url or vault.token is empty")
+    if not base:
+        raise ValueError("vault.url is empty")
+
+    token = _get_vault_token(cfg)
 
     url = f"{base}/v1/{mount}/data/{path}"
     headers = {"X-Vault-Token": token, "Accept": "application/json"}
     if namespace:
         headers["X-Vault-Namespace"] = namespace
 
-    body = _http_get_json(url, headers=headers)
+    try:
+        body = _http_get_json(url, headers=headers)
+    except RuntimeError as exc:
+        if "HTTP 403" in str(exc):
+            _vault_invalidate_token(cfg)
+        raise
     inner = (((body or {}).get("data") or {}).get("data") or {})
     if field not in inner:
         raise KeyError(f"vault: field {field!r} not present at {path!r}")
@@ -301,10 +416,14 @@ def _resolve_azurekv(reference: str, cfg: dict[str, str]) -> str:
 
 # ── AWS Secrets Manager adapter ──────────────────────────────────────────────
 # Mirror of ``app.utils.secrets._resolve_awssm`` — stdlib-only SigV4
-# signing so the worker image stays free of boto3.
+# signing so the worker image stays free of boto3. Includes native
+# AssumeRole support keyed off ``secret.awssm.auth_method``.
 
 _AWS_SERVICE = "secretsmanager"
 _AWS_CONTENT_TYPE = "application/x-amz-json-1.1"
+_STS_API_VERSION = "2011-06-15"
+_AWS_CREDS_REFRESH_MARGIN = 60
+_aws_creds_cache: dict[str, tuple[str, str, str, float]] = {}
 
 
 def _aws_sigv4_sign(
@@ -368,6 +487,155 @@ def _aws_sigv4_sign(
     return out
 
 
+def _aws_sts_assume_role(
+    *,
+    region: str,
+    boot_access_key: str, boot_secret_key: str, boot_session_token: str,
+    role_arn: str, session_name: str, duration_seconds: int, external_id: str,
+) -> tuple[str, str, str, float]:
+    """Mirror of ``app.utils.secrets._aws_sts_assume_role``: SigV4-sign
+    a Query-API POST to STS, parse the XML, return ``(ak, sk, st,
+    expires_at_epoch)``."""
+    import datetime as _dt
+    import xml.etree.ElementTree as ET
+
+    host = f"sts.{region}.amazonaws.com" if region else "sts.amazonaws.com"
+    body_pairs = [
+        ("Action", "AssumeRole"),
+        ("Version", _STS_API_VERSION),
+        ("RoleArn", role_arn),
+        ("RoleSessionName", session_name),
+        ("DurationSeconds", str(duration_seconds)),
+    ]
+    if external_id:
+        body_pairs.append(("ExternalId", external_id))
+    body = urllib.parse.urlencode(body_pairs).encode("utf-8")
+
+    now = _dt.datetime.now(_dt.timezone.utc)
+    amz_date = now.strftime("%Y%m%dT%H%M%SZ")
+    date_stamp = now.strftime("%Y%m%d")
+    payload_hash = hashlib.sha256(body).hexdigest()
+    content_type = "application/x-www-form-urlencoded; charset=utf-8"
+
+    headers_to_sign = [
+        ("content-type", content_type),
+        ("host", host),
+        ("x-amz-date", amz_date),
+    ]
+    if boot_session_token:
+        headers_to_sign.append(("x-amz-security-token", boot_session_token))
+    headers_to_sign.sort(key=lambda kv: kv[0])
+    canonical_headers = "".join(f"{k}:{v.strip()}\n" for k, v in headers_to_sign)
+    signed_headers = ";".join(k for k, _ in headers_to_sign)
+    canonical_request = f"POST\n/\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
+    credential_scope = f"{date_stamp}/{region or 'us-east-1'}/sts/aws4_request"
+    string_to_sign = (
+        f"AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n"
+        f"{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}"
+    )
+
+    def _sign(key: bytes, msg: str) -> bytes:
+        return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
+
+    k_date = _sign(("AWS4" + boot_secret_key).encode("utf-8"), date_stamp)
+    k_region = _sign(k_date, region or "us-east-1")
+    k_service = _sign(k_region, "sts")
+    k_signing = _sign(k_service, "aws4_request")
+    signature = hmac.new(k_signing, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    headers = {
+        "Content-Type": content_type,
+        "Host": host,
+        "X-Amz-Date": amz_date,
+        "Authorization": (
+            f"AWS4-HMAC-SHA256 Credential={boot_access_key}/{credential_scope}, "
+            f"SignedHeaders={signed_headers}, Signature={signature}"
+        ),
+    }
+    if boot_session_token:
+        headers["X-Amz-Security-Token"] = boot_session_token
+
+    req = urllib.request.Request(f"https://{host}/", data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS) as resp:
+            xml_bytes = resp.read()
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:400]
+        except Exception:  # noqa: BLE001
+            detail = ""
+        raise RuntimeError(f"sts AssumeRole HTTP {e.code}: {detail}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"sts unreachable: {e.reason}") from e
+
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError as exc:
+        raise RuntimeError(f"sts AssumeRole: malformed XML response: {exc}") from exc
+    creds: dict[str, str] = {}
+    for elem in root.iter():
+        name = elem.tag.rsplit("}", 1)[-1]
+        if name in ("AccessKeyId", "SecretAccessKey", "SessionToken", "Expiration"):
+            creds[name] = (elem.text or "").strip()
+    missing = [k for k in ("AccessKeyId", "SecretAccessKey", "SessionToken", "Expiration") if not creds.get(k)]
+    if missing:
+        raise RuntimeError(f"sts AssumeRole: response missing fields {missing!r}")
+    try:
+        exp_dt = _dt.datetime.strptime(creds["Expiration"], "%Y-%m-%dT%H:%M:%SZ")
+        exp_dt = exp_dt.replace(tzinfo=_dt.timezone.utc)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"sts AssumeRole: malformed Expiration {creds['Expiration']!r}"
+        ) from exc
+    return creds["AccessKeyId"], creds["SecretAccessKey"], creds["SessionToken"], exp_dt.timestamp()
+
+
+def _get_aws_creds(cfg: dict[str, str]) -> tuple[str, str, str]:
+    method = (cfg.get("awssm.auth_method") or "static").strip().lower() or "static"
+    region = (cfg.get("awssm.region") or "").strip()
+    boot_ak = (cfg.get("awssm.access_key_id") or "").strip()
+    boot_sk = (cfg.get("awssm.secret_access_key") or "").strip()
+    boot_st = (cfg.get("awssm.session_token") or "").strip()
+    if not (region and boot_ak and boot_sk):
+        raise ValueError(
+            "awssm: region / access_key_id / secret_access_key incomplete"
+        )
+    if method == "static":
+        return boot_ak, boot_sk, boot_st
+    if method == "assume_role":
+        role_arn = (cfg.get("awssm.role_arn") or "").strip()
+        session_name = (cfg.get("awssm.role_session_name") or "ipsolis").strip() or "ipsolis"
+        external_id = (cfg.get("awssm.role_external_id") or "").strip()
+        try:
+            duration = int((cfg.get("awssm.role_duration_seconds") or "3600").strip() or "3600")
+        except ValueError:
+            duration = 3600
+        if not role_arn:
+            raise ValueError("awssm: role_arn is empty (auth_method=assume_role)")
+        cache_key = f"{role_arn}::{session_name}"
+        cached = _aws_creds_cache.get(cache_key)
+        if cached and cached[3] > time.time() + _AWS_CREDS_REFRESH_MARGIN:
+            return cached[0], cached[1], cached[2]
+        ak, sk, st, exp_at = _aws_sts_assume_role(
+            region=region, boot_access_key=boot_ak, boot_secret_key=boot_sk,
+            boot_session_token=boot_st, role_arn=role_arn,
+            session_name=session_name, duration_seconds=duration,
+            external_id=external_id,
+        )
+        _aws_creds_cache[cache_key] = (ak, sk, st, exp_at)
+        return ak, sk, st
+    raise ValueError(f"awssm: unknown auth_method {method!r}")
+
+
+def _aws_invalidate_creds(cfg: dict[str, str]) -> None:
+    method = (cfg.get("awssm.auth_method") or "static").strip().lower() or "static"
+    if method != "assume_role":
+        return
+    role_arn = (cfg.get("awssm.role_arn") or "").strip()
+    session_name = (cfg.get("awssm.role_session_name") or "ipsolis").strip() or "ipsolis"
+    _aws_creds_cache.pop(f"{role_arn}::{session_name}", None)
+
+
 def _resolve_awssm(reference: str, cfg: dict[str, str]) -> str:
     """Resolve an ``awssm://<secret-id>[#<field>]`` reference."""
     import datetime as _dt
@@ -382,13 +650,9 @@ def _resolve_awssm(reference: str, cfg: dict[str, str]) -> str:
         raise ValueError("awssm: empty secret name")
 
     region = (cfg.get("awssm.region") or "").strip()
-    access_key = (cfg.get("awssm.access_key_id") or "").strip()
-    secret_key = (cfg.get("awssm.secret_access_key") or "").strip()
-    session_token = (cfg.get("awssm.session_token") or "").strip()
-    if not (region and access_key and secret_key):
-        raise ValueError(
-            "awssm: region / access_key_id / secret_access_key incomplete"
-        )
+    if not region:
+        raise ValueError("awssm: region is empty")
+    access_key, secret_key, session_token = _get_aws_creds(cfg)
 
     now = _dt.datetime.now(_dt.timezone.utc)
     amz_date = now.strftime("%Y%m%dT%H%M%SZ")
@@ -413,6 +677,10 @@ def _resolve_awssm(reference: str, cfg: dict[str, str]) -> str:
             detail = e.read().decode("utf-8", errors="replace")[:300]
         except Exception:  # noqa: BLE001
             detail = ""
+        # Drop cached STS creds on token expiry / signature failure
+        # so the next call re-mints; the failing call still raises.
+        if e.code == 403 or "ExpiredToken" in detail or "InvalidClientTokenId" in detail:
+            _aws_invalidate_creds(cfg)
         raise RuntimeError(f"awssm: HTTP {e.code}: {detail}") from e
     except urllib.error.URLError as e:
         raise RuntimeError(f"awssm: unreachable: {e.reason}") from e

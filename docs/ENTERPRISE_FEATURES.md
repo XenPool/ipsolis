@@ -34,7 +34,7 @@ explicit *Enterprise license* note appears.
 
 **Compliance & audit**
 
-- [SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel + Generic Webhook)](#siem-audit-log-streaming-splunk-hec--microsoft-sentinel--generic-webhook)
+- [SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel + Generic Webhook)](#siem-audit-log-streaming-splunk-hec--microsoft-sentinel--generic-webhook) — supports both legacy Sentinel Data Collector API and the newer Logs Ingestion API (DCE/DCR)
 - [Tamper-evident audit log + retention](#tamper-evident-audit-log--retention)
 
 **Authentication & access control**
@@ -522,19 +522,125 @@ in the streamer.
 
 ### Microsoft Sentinel setup
 
-ip·Solis uses the Azure Monitor **HTTP Data Collector API** (HMAC-signed
-shared key). It's the simpler ingestion path — no service principal, no
-Data Collection Endpoint / Data Collection Rule, no schema registration.
-The custom log table (`{Log-Type}_CL`, default `IpsolisAudit_CL`) is
-created in the Log Analytics workspace on first ingest. Microsoft
-supports the Data Collector API through September 2026; a future slice
-will add the newer Logs Ingestion API for installs that need it.
+ip·Solis supports **two** Sentinel ingestion paths:
+
+* **`sentinel`** — the legacy Azure Monitor **HTTP Data Collector
+  API**. HMAC-signed shared key, no service principal, no DCE/DCR
+  setup. Microsoft has announced the **2026-08-31 sunset** for this
+  API; configurations that target it will stop ingesting after that
+  date. Existing installs continue to work until then.
+* **`sentinel_log_ingestion`** *(recommended)* — the **Logs Ingestion
+  API** (DCE/DCR). AAD-authenticated via a service principal granted
+  *Monitoring Metrics Publisher* on the Data Collection Rule. More
+  setup but supported indefinitely; supports DCR-side
+  transformations (KQL projections, drops, etc.) for tenants that
+  want to filter / shape audit rows before they land in the table.
+
+#### Legacy Data Collector API (`sentinel`)
 
 1. Azure portal → your **Log Analytics workspace** → *Settings → Agents
    → Log Analytics agent instructions*.
 2. Copy **Workspace ID** and **Primary key** (or secondary key).
 3. Decide on a *Log Type* — letters/digits only, ≤100 chars. Default
    `IpsolisAudit` materialises as `IpsolisAudit_CL` in Sentinel/KQL.
+
+The custom log table is created on first ingest; no schema is declared
+ahead of time. Body is a JSON array signed with the shared key in an
+`Authorization: SharedKey <workspace>:<base64-hmac>` header.
+
+#### Logs Ingestion API (`sentinel_log_ingestion`)
+
+The replacement path. Microsoft's recommended migration target
+post-sunset.
+
+**Azure-side bootstrap**:
+
+1. Create (or reuse) a Log Analytics workspace + custom table.
+   The migration helper queries assume a column layout matching the
+   legacy `IpsolisAudit_CL` shape:
+   `id`, `entity_type`, `entity_id`, `action`, `old_value`,
+   `new_value`, `triggered_by`, `context`, `timestamp`. Custom-log
+   tables created via DCR need an explicit schema:
+
+   ```bash
+   az monitor log-analytics workspace table create \
+     --resource-group rg-ipsolis \
+     --workspace-name law-ipsolis \
+     --name IpsolisAudit_CL \
+     --columns id=int entity_type=string entity_id=int action=string \
+              old_value=dynamic new_value=dynamic triggered_by=string \
+              context=string timestamp=datetime TimeGenerated=datetime
+   ```
+
+   `TimeGenerated` is mandatory on every Logs Ingestion stream —
+   the DCR transform below copies it from `timestamp` so dashboards
+   can keep using either column name.
+
+2. Create a **Data Collection Endpoint** (DCE) in the same region as
+   the workspace. Note its **Logs ingestion** URI from the overview
+   blade — that's the value for `secret.sentinel_dce_endpoint`.
+
+3. Create a **Data Collection Rule** (DCR). Define one stream
+   `Custom-IpsolisAudit_CL` whose `transformKql` copies `timestamp`
+   to `TimeGenerated`:
+
+   ```json
+   {
+     "streamDeclarations": {
+       "Custom-IpsolisAudit_CL": {
+         "columns": [
+           {"name": "id", "type": "int"},
+           {"name": "entity_type", "type": "string"},
+           {"name": "entity_id", "type": "int"},
+           {"name": "action", "type": "string"},
+           {"name": "old_value", "type": "dynamic"},
+           {"name": "new_value", "type": "dynamic"},
+           {"name": "triggered_by", "type": "string"},
+           {"name": "context", "type": "string"},
+           {"name": "timestamp", "type": "datetime"}
+         ]
+       }
+     },
+     "dataFlows": [{
+       "streams": ["Custom-IpsolisAudit_CL"],
+       "destinations": ["la-ipsolis"],
+       "transformKql": "source | extend TimeGenerated = timestamp",
+       "outputStream": "Custom-IpsolisAudit_CL"
+     }]
+   }
+   ```
+
+   On the DCR's JSON view, copy `properties.immutableId` —
+   that's the value for `secret.sentinel_dcr_immutable_id`.
+
+4. Create (or reuse) an Azure AD app registration. **Grant the SPN
+   "Monitoring Metrics Publisher" on the DCR resource** (RBAC blade
+   on the DCR itself, not the workspace). That's the only permission
+   the SPN needs — narrower than the SSO SPN's `User.Read` and the
+   KV SPN's `Key Vault Secrets User`.
+
+5. Generate a client secret on the SPN. Copy the **Application (client)
+   ID**, **Directory (tenant) ID**, and **Client secret value** into
+   ip·Solis (`secret.sentinel_tenant_id` / `client_id` / `client_secret`).
+
+**Why a separate SPN from Entra ID SSO and Azure KV?** Same logic as
+elsewhere: the SSO SPN has `User.Read` (delegated, low privilege —
+fine for browser-side auth); the KV SPN has `Key Vault Secrets User`
+on the vault; the streaming SPN has `Monitoring Metrics Publisher`
+on the DCR. Cross-mixing escalates the blast radius of any
+compromised secret.
+
+**Token cache**: AAD bearer tokens for `https://monitor.azure.com/.default`
+are cached process-locally with a 60-second safety margin against
+clock skew, separately from the Azure KV token cache (different
+SPN, different scope). Process restart wipes both cleanly.
+
+**Ingestion URL** (built by ip·Solis, no operator config):
+`<dce>/dataCollectionRules/<dcr-immutable-id>/streams/<stream>?api-version=2023-01-01`.
+
+**Successful ingest**: HTTP 204 No Content. Errors come back as JSON
+with `error.code` / `error.message` — surfaced verbatim in the
+Settings UI's test-connection result.
 
 ### Generic webhook setup
 
@@ -598,12 +704,18 @@ Admin UI → *Settings* → *Compliance* tab → *SIEM — Audit Log Streaming*:
 | Key | Purpose | Stored as |
 |---|---|---|
 | `siem.enabled`          | `true`/`false` master switch | plain |
-| `siem.format`           | `splunk_hec`, `sentinel`, or `webhook` | plain |
+| `siem.format`           | `splunk_hec`, `sentinel` (legacy Data Collector API), `sentinel_log_ingestion` (Logs Ingestion API), or `webhook` | plain |
 | `siem.endpoint_url`     | Splunk HEC endpoint URL | plain |
 | `siem.token`            | Splunk HEC token | secret |
-| `siem.workspace_id`     | Sentinel: Log Analytics workspace GUID | plain |
-| `siem.shared_key`       | Sentinel: workspace shared key (base64) | secret |
-| `siem.log_type`         | Sentinel: custom log table name (no `_CL` suffix; default `IpsolisAudit`) | plain |
+| `siem.workspace_id`     | Sentinel (legacy): Log Analytics workspace GUID | plain |
+| `siem.shared_key`       | Sentinel (legacy): workspace shared key (base64) | secret |
+| `siem.log_type`         | Sentinel (legacy): custom log table name (no `_CL` suffix; default `IpsolisAudit`) | plain |
+| `siem.sentinel_dce_endpoint`     | Sentinel Logs Ingestion: DCE URI (e.g. `https://<name>.<region>-1.ingest.monitor.azure.com`) | plain |
+| `siem.sentinel_dcr_immutable_id` | Sentinel Logs Ingestion: DCR `properties.immutableId` (e.g. `dcr-abcd…`) | plain |
+| `siem.sentinel_stream_name`      | Sentinel Logs Ingestion: stream name from the DCR (default `Custom-IpsolisAudit_CL`) | plain |
+| `siem.sentinel_tenant_id`        | Sentinel Logs Ingestion: AAD tenant of the publishing SPN | plain |
+| `siem.sentinel_client_id`        | Sentinel Logs Ingestion: SPN application (client) id | plain |
+| `siem.sentinel_client_secret`    | Sentinel Logs Ingestion: SPN client secret | secret |
 | `siem.webhook_url`      | Webhook: HTTPS receiver URL | plain |
 | `siem.webhook_secret`   | Webhook: HMAC-SHA256 shared secret | secret |
 | `siem.webhook_signature_header` | Webhook: header name carrying `sha256=<hex>` (default `X-Hub-Signature-256`) | plain |
@@ -1958,6 +2070,7 @@ conjur://prod/ipsolis/ad-creds#password      # Conjur variable, JSON-field extra
 | Teams Workflow webhook URL | `teams.webhook_url` | API (test, certifications) + worker (approval reminders, dynamic runner, cost alerter) |
 | SIEM Splunk HEC token | `siem.token` | API (test) + worker (streamer) |
 | SIEM Sentinel shared key | `siem.shared_key` | API (test) + worker (streamer) |
+| SIEM Sentinel Logs Ingestion SPN secret | `siem.sentinel_client_secret` | API (test) + worker (streamer) |
 | SIEM webhook HMAC secret | `siem.webhook_secret` | API (test) + worker (streamer) |
 
 The worker mirror at `worker/tasks/modules/secrets.py` is sync-only
@@ -1978,11 +2091,103 @@ every config read.
 |---|---|
 | `secret.backend` | `vault` |
 | `secret.vault.url` | e.g. `https://vault.example.com:8200` |
-| `secret.vault.token` | Static token (slice 1) — AppRole/JWT in slice 2 |
+| `secret.vault.auth_method` | One of `token` (default), `approle`, `kubernetes` |
+| `secret.vault.token` | Static token (only consulted when `auth_method=token`) |
+| `secret.vault.approle_path` | AppRole mount path, default `approle` |
+| `secret.vault.approle_role_id` | AppRole role_id (treated as public-ish) |
+| `secret.vault.approle_secret_id` | AppRole secret_id (stored as `is_secret`) |
+| `secret.vault.k8s_path` | Kubernetes auth mount path, default `kubernetes` |
+| `secret.vault.k8s_role` | Vault role bound to the SA via `vault write auth/<mount>/role/<name>` |
+| `secret.vault.k8s_jwt_path` | Path to projected SA JWT inside the api / worker container, default `/var/run/secrets/kubernetes.io/serviceaccount/token` |
 | `secret.vault.kv_mount` | KV mount path, default `secret` |
 | `secret.vault.namespace` | Optional Vault Enterprise namespace |
 
 KV v2 envelope is unwrapped automatically (`data.data.<field>`).
+
+**Authentication methods**:
+
+* **Static token** (`auth_method=token`) — the legacy slice-1 path.
+  Operator pastes a long-lived Vault token into
+  `secret.vault.token` and ip·Solis sends it on every read /
+  write. Operationally brittle: tokens don't auto-renew, rotation
+  requires a config edit, and Vault Enterprise governance generally
+  bans them outside lab use. Kept as the default so existing
+  installs upgrade silently, but production deployments should
+  switch to one of the methods below.
+
+* **AppRole** (`auth_method=approle`) — the standard for non-Kubernetes
+  workloads. Operator runs `vault write auth/approle/role/ipsolis
+  policies=ipsolis-read,ipsolis-write` once on the Vault side, then
+  reads the resulting `role_id` and `secret_id` and pastes them into
+  ip·Solis. ip·Solis swaps them at `/v1/auth/<mount>/login` for a
+  short-lived token, caches the token until 60 seconds before its
+  lease expiry, and re-mints automatically. A 403 on a downstream
+  read invalidates the cached token immediately so the next call
+  re-mints — handles mid-flight policy revocations cleanly.
+
+  Vault response-wrapping (`vault write -wrap-ttl=...`) is *not*
+  supported for `secret_id` here; paste the unwrapped value.
+  Wrapping is mostly an issue for handing secret_ids to humans
+  via secure-by-default channels — automation pasting into an
+  admin form has no need for it.
+
+  Sample minimal policy:
+
+  ```hcl
+  path "secret/data/ipsolis/*" {
+    capabilities = ["read", "create", "update"]
+  }
+  path "auth/token/renew-self" {
+    capabilities = ["update"]
+  }
+  ```
+
+  Bind to the AppRole:
+
+  ```bash
+  vault write auth/approle/role/ipsolis \
+    token_policies=ipsolis-rw \
+    token_ttl=1h \
+    token_max_ttl=8h
+  ROLE_ID=$(vault read -field=role_id auth/approle/role/ipsolis/role-id)
+  SECRET_ID=$(vault write -f -field=secret_id auth/approle/role/ipsolis/secret-id)
+  ```
+
+* **Kubernetes JWT** (`auth_method=kubernetes`) — the standard for
+  in-cluster deployments. The pod's projected service-account JWT
+  serves as the credential — no long-lived secret on disk. ip·Solis
+  reads the JWT fresh from the configured path on every login
+  attempt so kubelet rotation (Kubernetes 1.21+ rotates the
+  projected token by default every ~hour) lands without a restart.
+  The cached Vault token is also re-minted automatically.
+
+  Vault-side bootstrap:
+
+  ```bash
+  vault auth enable kubernetes
+  vault write auth/kubernetes/config \
+    kubernetes_host="https://kubernetes.default.svc.cluster.local:443" \
+    token_reviewer_jwt="$(cat /var/run/secrets/.../sa-jwt)" \
+    kubernetes_ca_cert="@/var/run/secrets/.../ca.crt"
+  vault write auth/kubernetes/role/ipsolis \
+    bound_service_account_names=ipsolis \
+    bound_service_account_namespaces=ipsolis \
+    policies=ipsolis-rw \
+    ttl=1h
+  ```
+
+  Then on the ip·Solis side: pick `kubernetes` from the auth-method
+  dropdown, set the role to `ipsolis`. The default JWT path
+  (`/var/run/secrets/kubernetes.io/serviceaccount/token`) covers
+  standard ProjectedVolume mounts; override only for sidecar /
+  custom volume layouts.
+
+**Token cache**: dynamically-acquired tokens are cached process-locally
+keyed by `(method, identity)` (role_id for AppRole, role for k8s) so
+config drift can't cross-pollinate tokens. Process restart wipes the
+cache cleanly. The cache is separate from the value cache — token
+TTLs are auth-server-driven (Vault `lease_duration`) while value TTLs
+are operator-set (`secret.cache_ttl_seconds`).
 
 ### CyberArk CCP setup
 
@@ -2056,9 +2261,14 @@ clock skew. Process restart wipes the cache cleanly.
 |---|---|
 | `secret.backend` | `awssm` |
 | `secret.awssm.region` | AWS region of the Secrets Manager endpoint (e.g. `eu-central-1`) |
-| `secret.awssm.access_key_id` | IAM access key id |
+| `secret.awssm.auth_method` | `static` (default) or `assume_role` |
+| `secret.awssm.access_key_id` | IAM access key id (in `static` it signs SM calls directly; in `assume_role` it's the bootstrap identity that calls STS) |
 | `secret.awssm.secret_access_key` | IAM secret access key (stored as `is_secret`) |
-| `secret.awssm.session_token` | Optional STS session token (for AssumeRole / instance-profile creds) |
+| `secret.awssm.session_token` | Optional STS session token, *static-mode only* (assume_role mints its own session) |
+| `secret.awssm.role_arn` | AssumeRole target role (required when `auth_method=assume_role`) |
+| `secret.awssm.role_session_name` | AssumeRole session name (default `ipsolis`) — appears on the principal in CloudTrail |
+| `secret.awssm.role_external_id` | Optional external_id for third-party-IAM trust patterns |
+| `secret.awssm.role_duration_seconds` | Requested AssumeRole duration (default `3600`, capped by role's `MaxSessionDuration`) |
 
 **IAM policy**: the principal needs **both** of these actions —
 `secretsmanager:GetSecretValue` (called per resolution) and
@@ -2091,22 +2301,86 @@ Minimum-privilege policy template:
 `Resource: "*"` works too if you need to read secrets across multiple
 prefixes; tighten to the specific ARN list when you can.
 
-**Authentication options**:
+**Authentication methods** (selected via `secret.awssm.auth_method`):
 
-* **Long-lived IAM user** — create an IAM user, attach the policy
-  above, generate access keys (`AKIA…` + secret), paste into ipSolis.
-  Easiest for on-prem deployments where rotating keys via STS isn't
-  feasible. Rotate the key at your normal cadence.
-* **STS-issued temporary credentials** — use AssumeRole or instance
-  profile to mint short-lived `ASIA…` keys plus a session token.
-  Paste all three into ipSolis. STS keys typically last 1 hour to
-  12 hours; ipSolis will fail with `ExpiredToken` after expiry, at
-  which point your token-rotation automation needs to push a refreshed
-  trio. (Slice 2 will add native AssumeRole support so ipSolis can
-  refresh tokens itself.)
-* **EKS / IRSA / EC2 instance profile** — same as STS-issued
-  temporary credentials; whatever your container orchestration
-  injects into the env, paste into the three config keys.
+* **`static`** (default) — the configured access key signs every
+  Secrets Manager call directly. Two flavours:
+
+  * Long-lived IAM user keys (`AKIA…` + secret). Easiest for on-prem
+    deployments without an STS rotation pipeline; rotate the key on
+    your normal cadence. The IAM user policy must include both
+    `secretsmanager:GetSecretValue` (resolution) and
+    `secretsmanager:ListSecrets` (test-connection probe).
+  * Manually-pasted STS temporary credentials (`ASIA…` + secret +
+    session token). Set all three config keys including
+    `awssm.session_token`. ip·Solis will fail with `ExpiredToken`
+    after the STS expiry — your rotation automation needs to push
+    a refreshed trio before then. Use the **AssumeRole** method
+    below to avoid this entirely.
+
+* **`assume_role`** — ip·Solis itself calls `sts:AssumeRole`. The
+  configured access key becomes a *bootstrap identity* whose only
+  required permission is `sts:AssumeRole` on the target role; the
+  role itself carries the SM permissions. Derived session
+  credentials are cached process-locally keyed by
+  `(role_arn, session_name)` until ~60 seconds before the
+  `Expiration` returned by STS, then re-minted automatically. A
+  403 / `ExpiredToken` on a downstream SM call invalidates the
+  cache immediately so the next call re-mints.
+
+  Bootstrap IAM user policy:
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Sid": "AssumeIpsolisSecretsRole",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::123456789012:role/ipsolis-secrets-reader"
+    }]
+  }
+  ```
+
+  Target role permissions: same `secretsmanager:GetSecretValue` +
+  `secretsmanager:ListSecrets` policy from the static section above,
+  attached to the role rather than the user.
+
+  Trust policy on the target role (allowing the bootstrap user to
+  assume it):
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:user/ipsolis-bootstrap"
+      },
+      "Action": "sts:AssumeRole"
+    }]
+  }
+  ```
+
+  For cross-account / third-party-IAM patterns, add an
+  `sts:ExternalId` condition to the trust policy and set the same
+  value in `secret.awssm.role_external_id`.
+
+  Test-connection in this mode performs a real `sts:AssumeRole`
+  round-trip first (clearing any cached session so the probe
+  genuinely re-mints), then signs the standard `ListSecrets` probe
+  with the derived session credentials. A passing test means the
+  whole bootstrap → AssumeRole → SM auth chain works end-to-end.
+
+* **EKS / IRSA / EC2 instance profile** — for in-cluster /
+  in-cloud deployments, set `auth_method=static` and paste the
+  injected `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` /
+  `AWS_SESSION_TOKEN` from the orchestrator's env. The same
+  `ExpiredToken` rotation caveat applies as for manually-pasted
+  STS keys; for production EKS deployments, prefer
+  `auth_method=assume_role` with a role bound to the IRSA
+  service-account. (Direct IMDS / IRSA fetch from inside the
+  resolver is queued for a future slice.)
 
 **Reference shapes**:
 
@@ -2193,10 +2467,10 @@ in the *Settings → Compliance → External Secret Backend* card.
 
 | Backend | Probe |
 |---|---|
-| Vault | `/v1/sys/health` (no token needed) |
+| Vault | Token: `/v1/sys/health` (no token needed). AppRole / Kubernetes: exercises the configured login flow first (mints a fresh token), then `/v1/sys/health` *with* the new token to verify the policy actually attaches reads. |
 | CCP | `/api/Verify` (4xx counts as reachable since the path requires a body) |
 | Azure KV | AAD client_credentials token acquire against `https://vault.azure.net/.default` (verifies the SPN itself; doesn't probe a specific vault) |
-| AWS SM | SigV4-signed `ListSecrets` with `MaxResults=1` (verifies signing path + IAM principal; result content discarded) |
+| AWS SM | Static: SigV4-signed `ListSecrets` with `MaxResults=1` (verifies signing + IAM principal). AssumeRole: clears the cached session, calls real `sts:AssumeRole` first, then `ListSecrets` with the derived session — verifies bootstrap → STS → SM end to end. |
 | Conjur | Host API-key login against `/<account>/host/<host_id>/authn` (verifies the host credential by minting a fresh access token; doesn't probe a specific variable) |
 
 ### Failure semantics
@@ -2319,14 +2593,10 @@ policy update before they migrate.
 
 ### Remaining slice 2 work
 
-Five backends shipped (Vault + CCP + Azure KV + AWS SM + Conjur) plus
-the bulk-migration tool. Still queued:
+Five backends shipped (Vault + CCP + Azure KV + AWS SM + Conjur),
+plus the bulk-migration tool, plus Vault AppRole / Kubernetes-JWT
+auth, plus AWS native AssumeRole. Still queued:
 
-* **Vault AppRole + Kubernetes-JWT** auth methods (slice 1 ships
-  static-token only).
-* **AWS native AssumeRole** — today operators paste STS-issued
-  credentials, which expire and need rotation. Native AssumeRole
-  with cached refresh would let ipSolis manage the rotation itself.
 * **CCP mTLS bootstrap UX** — today operators paste the PEM blob;
   a guided "upload cert + key" form would be friendlier.
 

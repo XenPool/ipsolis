@@ -61,16 +61,24 @@ def stream_audit_log() -> dict:
             return {"success": True, "skipped": True, "reason": "siem.enabled is false"}
 
         endpoint = (get_config(db, "siem.endpoint_url", "") or "").strip()
-        # Three SIEM credentials are is_secret=true and must go through
+        # Four SIEM credentials are is_secret=true and must go through
         # the resolver so vault://… / conjur://… references dereference
         # before we sign / authorise outbound requests. The other keys
-        # (urls, header names, log type) stay raw — they're not secrets.
+        # (urls, header names, log type, DCE endpoint, DCR id, stream
+        # name, AAD tenant/client) stay raw — they're not secrets.
         token = get_secret_config(db, "siem.token", "").strip()
         workspace_id = (get_config(db, "siem.workspace_id", "") or "").strip()
         shared_key = get_secret_config(db, "siem.shared_key", "").strip()
         log_type = (get_config(db, "siem.log_type", "IpsolisAudit") or "IpsolisAudit").strip() or "IpsolisAudit"
         webhook_url = (get_config(db, "siem.webhook_url", "") or "").strip()
         webhook_secret = get_secret_config(db, "siem.webhook_secret", "").strip()
+        # Logs Ingestion API path (sentinel_log_ingestion).
+        sentinel_dce = (get_config(db, "siem.sentinel_dce_endpoint", "") or "").strip()
+        sentinel_dcr = (get_config(db, "siem.sentinel_dcr_immutable_id", "") or "").strip()
+        sentinel_stream = (get_config(db, "siem.sentinel_stream_name", "") or "").strip()
+        sentinel_tenant = (get_config(db, "siem.sentinel_tenant_id", "") or "").strip()
+        sentinel_client = (get_config(db, "siem.sentinel_client_id", "") or "").strip()
+        sentinel_client_secret = get_secret_config(db, "siem.sentinel_client_secret", "").strip()
         webhook_sig_header = (get_config(db, "siem.webhook_signature_header", "X-Hub-Signature-256") or "X-Hub-Signature-256").strip()
         webhook_extra_raw = get_config(db, "siem.webhook_extra_headers", "") or ""
         fmt = (get_config(db, "siem.format", "splunk_hec") or "splunk_hec").strip()
@@ -100,6 +108,12 @@ def stream_audit_log() -> dict:
                         f"Missing webhook_url or webhook_secret at {datetime.now(timezone.utc).isoformat()}")
             db.commit()
             return {"success": False, "reason": "missing webhook_url or webhook_secret"}
+        if fmt == "sentinel_log_ingestion" and not (sentinel_dce and sentinel_dcr and sentinel_stream):
+            _set_config(db, "siem.last_error",
+                        f"Missing DCE endpoint / DCR immutable id / stream name "
+                        f"at {datetime.now(timezone.utc).isoformat()}")
+            db.commit()
+            return {"success": False, "reason": "missing DCE / DCR / stream"}
 
         rows = db.execute(
             text("""
@@ -119,10 +133,12 @@ def stream_audit_log() -> dict:
         from tasks.modules.siem_export import (
             _parse_extra_headers,
             _row_to_event,
+            build_sentinel_log_ingestion_payload,
             build_sentinel_payload,
             build_splunk_hec_payload,
             build_webhook_payload,
             post_sentinel,
+            post_sentinel_log_ingestion,
             post_splunk_hec,
             post_webhook,
         )
@@ -138,6 +154,17 @@ def stream_audit_log() -> dict:
             ok, msg = post_sentinel(
                 workspace_id, shared_key, payload,
                 log_type=log_type, verify_tls=verify_tls,
+            )
+        elif fmt == "sentinel_log_ingestion":
+            payload = build_sentinel_log_ingestion_payload(events)
+            ok, msg = post_sentinel_log_ingestion(
+                dce_endpoint=sentinel_dce,
+                dcr_immutable_id=sentinel_dcr,
+                stream_name=sentinel_stream,
+                tenant_id=sentinel_tenant,
+                client_id=sentinel_client,
+                client_secret=sentinel_client_secret,
+                payload=payload, verify_tls=verify_tls,
             )
         elif fmt == "webhook":
             payload = build_webhook_payload(events)

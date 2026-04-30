@@ -4,9 +4,16 @@ Mirrors ``worker/tasks/modules/siem_export.py`` for the single-event test
 case. The real streaming loop runs in the worker's Beat task; this side
 only needs to verify connectivity from a button click.
 
-Two adapters today: ``splunk_hec`` (token in Authorization header) and
-``sentinel`` (Azure Monitor Data Collector API — workspace id + HMAC-
-SHA256 signed shared key).
+Adapters:
+
+* ``splunk_hec``               — Splunk HTTP Event Collector (token auth).
+* ``sentinel``                 — legacy Azure Monitor Data Collector API
+                                 (HMAC-signed shared key). Microsoft
+                                 sunsets this 2026-08-31.
+* ``sentinel_log_ingestion``   — the replacement: DCE/DCR + AAD bearer
+                                 token (SPN with "Monitoring Metrics
+                                 Publisher" on the DCR).
+* ``webhook``                  — generic HMAC-signed JSON POST.
 """
 from __future__ import annotations
 
@@ -16,7 +23,9 @@ import hashlib
 import hmac
 import json
 import ssl
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from email.utils import format_datetime
@@ -24,6 +33,12 @@ from typing import Any
 
 _TIMEOUT_SECONDS = 15
 _SENTINEL_API_VERSION = "2016-04-01"
+_SENTINEL_LOG_INGESTION_API_VERSION = "2023-01-01"
+
+# AAD token cache for the Logs Ingestion SPN. Separate from the Azure KV
+# token cache (different SPN, different scope) keyed by tenant+client
+# so config drift can't cross-contaminate. ``(expires_at, token)``.
+_aad_monitor_token_cache: dict[str, tuple[float, str]] = {}
 
 
 def _ssl_context(verify: bool) -> ssl.SSLContext | None:
@@ -152,6 +167,121 @@ def _send_sentinel(
         return False, f"{type(e).__name__}: {e}"
 
 
+def _aad_monitor_token(tenant_id: str, client_id: str, client_secret: str) -> str:
+    """Acquire (or reuse a cached) AAD bearer token scoped to
+    ``https://monitor.azure.com/.default``. Mirror of the Azure KV
+    helper but on a different scope — the SPN here only needs
+    Monitoring Metrics Publisher on the DCR, not Key Vault permissions.
+    """
+    if not (tenant_id and client_id and client_secret):
+        raise RuntimeError(
+            "sentinel_log_ingestion: tenant_id / client_id / client_secret incomplete"
+        )
+    cache_key = f"{tenant_id}::{client_id}"
+    entry = _aad_monitor_token_cache.get(cache_key)
+    if entry is not None and entry[0] > time.time():
+        return entry[1]
+
+    url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+    body = urllib.parse.urlencode({
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "grant_type": "client_credentials",
+        "scope": "https://monitor.azure.com/.default",
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:  # noqa: BLE001
+            detail = ""
+        raise RuntimeError(
+            f"sentinel_log_ingestion: AAD token endpoint HTTP {e.code}: {detail}"
+        ) from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(
+            f"sentinel_log_ingestion: AAD token endpoint unreachable: {e.reason}"
+        ) from e
+    token = payload.get("access_token")
+    expires_in = int(payload.get("expires_in") or 0)
+    if not token:
+        raise RuntimeError(
+            f"sentinel_log_ingestion: AAD response missing access_token (got {list(payload)!r})"
+        )
+    # 60s safety margin against clock skew at the wire — same convention
+    # as Azure KV.
+    _aad_monitor_token_cache[cache_key] = (time.time() + max(60, expires_in - 60), token)
+    return token
+
+
+def _send_sentinel_log_ingestion(
+    *,
+    dce_endpoint: str,
+    dcr_immutable_id: str,
+    stream_name: str,
+    tenant_id: str,
+    client_id: str,
+    client_secret: str,
+    verify_tls: bool,
+) -> tuple[bool, str]:
+    """POST a single-event JSON array to the DCE's stream endpoint.
+
+    The Logs Ingestion API's body shape is a JSON array of records
+    matching the schema declared on the DCR's stream — for the
+    standard ipSolis DCR, that's the audit-event shape used by all
+    other adapters. Authorization is an AAD bearer token; the SPN
+    needs **Monitoring Metrics Publisher** on the DCR resource.
+    """
+    if not (dce_endpoint.strip() and dcr_immutable_id.strip() and stream_name.strip()):
+        return False, "DCE endpoint / DCR immutable id / stream name is missing."
+
+    try:
+        token = _aad_monitor_token(tenant_id, client_id, client_secret)
+    except Exception as exc:  # noqa: BLE001
+        return False, f"AAD auth failed: {exc}"
+
+    payload = json.dumps([_test_event()], separators=(",", ":")).encode("utf-8")
+    url = (
+        f"{dce_endpoint.strip().rstrip('/')}/dataCollectionRules/"
+        f"{urllib.parse.quote(dcr_immutable_id.strip(), safe='')}/streams/"
+        f"{urllib.parse.quote(stream_name.strip(), safe='')}"
+        f"?api-version={_SENTINEL_LOG_INGESTION_API_VERSION}"
+    )
+    req = urllib.request.Request(
+        url, data=payload, method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(
+            req, timeout=_TIMEOUT_SECONDS, context=_ssl_context(verify_tls)
+        ) as resp:
+            status = resp.status
+            # The Logs Ingestion API returns 204 No Content on success;
+            # the legacy Data Collector returned 200. Both 2xx are fine.
+            if 200 <= status < 300:
+                return True, f"DCE accepted test event (HTTP {status})."
+            return False, f"DCE returned HTTP {status}."
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:  # noqa: BLE001
+            detail = ""
+        return False, f"HTTP {e.code}: {e.reason} {detail}".rstrip()
+    except urllib.error.URLError as e:
+        return False, f"Network error: {e.reason}"
+    except Exception as e:  # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}"
+
+
 _DEFAULT_SIGNATURE_HEADER = "X-Hub-Signature-256"
 
 
@@ -227,6 +357,12 @@ def send_test_event(
     webhook_secret: str = "",
     webhook_signature_header: str = _DEFAULT_SIGNATURE_HEADER,
     webhook_extra_headers: str = "",
+    sentinel_dce_endpoint: str = "",
+    sentinel_dcr_immutable_id: str = "",
+    sentinel_stream_name: str = "",
+    sentinel_tenant_id: str = "",
+    sentinel_client_id: str = "",
+    sentinel_client_secret: str = "",
 ) -> tuple[bool, str]:
     if fmt == "splunk_hec":
         return _send_splunk(endpoint_url, token, verify_tls=verify_tls, host=host)
@@ -234,6 +370,16 @@ def send_test_event(
         return _send_sentinel(
             workspace_id, shared_key,
             log_type=log_type, verify_tls=verify_tls,
+        )
+    if fmt == "sentinel_log_ingestion":
+        return _send_sentinel_log_ingestion(
+            dce_endpoint=sentinel_dce_endpoint,
+            dcr_immutable_id=sentinel_dcr_immutable_id,
+            stream_name=sentinel_stream_name,
+            tenant_id=sentinel_tenant_id,
+            client_id=sentinel_client_id,
+            client_secret=sentinel_client_secret,
+            verify_tls=verify_tls,
         )
     if fmt == "webhook":
         return _send_webhook(

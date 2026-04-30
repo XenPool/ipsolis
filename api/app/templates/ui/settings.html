@@ -1034,9 +1034,10 @@
         <select id="siem-format" onchange="onSiemFormatChange()"
                 class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
           {% set _sf = siem_config.get('siem.format', 'splunk_hec') %}
-          <option value="splunk_hec" {% if _sf == 'splunk_hec' %}selected{% endif %}>Splunk HEC</option>
-          <option value="sentinel"   {% if _sf == 'sentinel' %}selected{% endif %}>Microsoft Sentinel</option>
-          <option value="webhook"    {% if _sf == 'webhook' %}selected{% endif %}>Generic Webhook (HMAC-signed)</option>
+          <option value="splunk_hec"            {% if _sf == 'splunk_hec' %}selected{% endif %}>Splunk HEC</option>
+          <option value="sentinel"              {% if _sf == 'sentinel' %}selected{% endif %}>Microsoft Sentinel — Data Collector API (legacy, sunset 2026-08-31)</option>
+          <option value="sentinel_log_ingestion"{% if _sf == 'sentinel_log_ingestion' %}selected{% endif %}>Microsoft Sentinel — Logs Ingestion API (DCE/DCR)</option>
+          <option value="webhook"               {% if _sf == 'webhook' %}selected{% endif %}>Generic Webhook (HMAC-signed)</option>
         </select>
       </div>
 
@@ -1082,6 +1083,68 @@
                  placeholder="IpsolisAudit"
                  class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
           <p class="text-[11px] text-muted/60 mt-1">Custom table name without the <code class="font-mono">_CL</code> suffix. Sentinel will create <code class="font-mono">{value}_CL</code> on first ingest. Letters/digits only, ≤100 chars.</p>
+        </div>
+      </div>
+
+      <!-- ── Sentinel Logs Ingestion API fields ──────────────────────────── -->
+      <div id="siem-sentinel-log-ingestion-fields" class="hidden space-y-4">
+        <p class="text-[11px] text-muted/70 leading-snug">
+          Replacement for the legacy Data Collector API (Microsoft sunset: 2026-08-31).
+          Authenticates via an Azure AD service principal granted
+          <strong>Monitoring Metrics Publisher</strong> on the Data Collection Rule (DCR)
+          resource — independent from the Azure KV / Entra ID SSO SPNs so the streaming
+          credential carries minimum-necessary access. The DCR's stream schema declares
+          the column names; ip·Solis posts the same audit-row shape used by the legacy
+          adapter so existing dashboards continue to work after migrating.
+        </p>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">DCE endpoint URL</label>
+          <input type="text" id="siem-sentinel-dce-endpoint"
+                 value="{{ siem_config.get('siem.sentinel_dce_endpoint', '') }}"
+                 placeholder="https://ipsolis-dce-xxxx.westeurope-1.ingest.monitor.azure.com"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Read off the DCE's overview blade in Azure Portal. No trailing slash.</p>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">DCR immutable id</label>
+            <input type="text" id="siem-sentinel-dcr-immutable-id"
+                   value="{{ siem_config.get('siem.sentinel_dcr_immutable_id', '') }}"
+                   placeholder="dcr-abcd1234ef567890"
+                   class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+            <p class="text-[11px] text-muted/60 mt-1">DCR JSON view → <code class="font-mono">properties.immutableId</code>.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Stream name</label>
+            <input type="text" id="siem-sentinel-stream-name"
+                   value="{{ siem_config.get('siem.sentinel_stream_name', 'Custom-IpsolisAudit_CL') }}"
+                   placeholder="Custom-IpsolisAudit_CL"
+                   class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+            <p class="text-[11px] text-muted/60 mt-1"><code class="font-mono">Custom-</code> prefix + custom-table name with <code class="font-mono">_CL</code> suffix.</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Tenant ID</label>
+            <input type="text" id="siem-sentinel-tenant-id"
+                   value="{{ siem_config.get('siem.sentinel_tenant_id', '') }}"
+                   placeholder="00000000-0000-0000-0000-000000000000"
+                   class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Client ID</label>
+            <input type="text" id="siem-sentinel-client-id"
+                   value="{{ siem_config.get('siem.sentinel_client_id', '') }}"
+                   placeholder="00000000-0000-0000-0000-000000000000"
+                   class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Client Secret</label>
+          <input type="password" id="siem-sentinel-client-secret" value=""
+                 placeholder="{% if siem_config.get('siem.sentinel_client_secret') == '***' %}(configured — leave blank to keep current){% else %}service principal client secret{% endif %}"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Stored as a secret. The SPN needs only <strong>Monitoring Metrics Publisher</strong> on the DCR.</p>
         </div>
       </div>
 
@@ -1346,13 +1409,93 @@
                  placeholder="https://vault.example.com:8200"
                  class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
         </div>
+
         <div>
+          <label class="block text-xs font-medium text-muted mb-1">Authentication method</label>
+          {% set _vam = (secret_config.get('secret.vault.auth_method', 'token') if secret_config else 'token').lower() %}
+          <select id="secret-vault-auth-method" onchange="onVaultAuthMethodChange()"
+                  class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <option value="token"      {% if _vam == 'token' %}selected{% endif %}>Static token (legacy / lab)</option>
+            <option value="approle"    {% if _vam == 'approle' %}selected{% endif %}>AppRole (role_id + secret_id)</option>
+            <option value="kubernetes" {% if _vam == 'kubernetes' %}selected{% endif %}>Kubernetes (projected SA JWT)</option>
+          </select>
+          <p class="text-[11px] text-muted/60 mt-1">
+            Production installs should pick <strong>AppRole</strong> or
+            <strong>Kubernetes</strong> — static tokens don't auto-renew.
+          </p>
+        </div>
+
+        <!-- Method: static token -->
+        <div id="secret-vault-auth-token-fields" class="hidden">
           <label class="block text-xs font-medium text-muted mb-1">Vault Token</label>
           <input type="password" id="secret-vault-token" value=""
                  placeholder="{% if secret_config and secret_config.get('secret.vault.token') == '***' %}(configured — leave blank to keep current){% else %}static Vault token{% endif %}"
                  class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
-          <p class="text-[11px] text-muted/60 mt-1">Slice 1 supports static tokens. AppRole / k8s JWT planned for slice 2.</p>
+          <p class="text-[11px] text-muted/60 mt-1">Stored as a secret. Only consulted when the auth method is <strong>token</strong>.</p>
         </div>
+
+        <!-- Method: AppRole -->
+        <div id="secret-vault-auth-approle-fields" class="hidden space-y-3">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">role_id</label>
+            <input type="text" id="secret-vault-approle-role-id"
+                   value="{{ secret_config.get('secret.vault.approle_role_id', '') if secret_config else '' }}"
+                   placeholder="00000000-0000-0000-0000-000000000000"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">Identity (treated as public-ish) — pair with the secret_id below.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">secret_id</label>
+            <input type="password" id="secret-vault-approle-secret-id" value=""
+                   placeholder="{% if secret_config and secret_config.get('secret.vault.approle_secret_id') == '***' %}(configured — leave blank to keep current){% else %}AppRole secret_id{% endif %}"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">Stored as a secret. Vault response-wrapping is <em>not</em> supported here — paste an unwrapped secret_id.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">AppRole mount path</label>
+            <input type="text" id="secret-vault-approle-path"
+                   value="{{ secret_config.get('secret.vault.approle_path', 'approle') if secret_config else 'approle' }}"
+                   placeholder="approle"
+                   class="w-64 rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">Default <code class="font-mono">approle</code>; change only if the auth method was enabled at a non-default path.</p>
+          </div>
+        </div>
+
+        <!-- Method: Kubernetes JWT -->
+        <div id="secret-vault-auth-kubernetes-fields" class="hidden space-y-3">
+          <p class="text-[11px] text-muted/70 leading-snug">
+            Reads the projected service-account JWT from the configured path
+            inside the api / worker container and swaps it for a Vault token.
+            Standard for in-cluster deployments — no long-lived secret on disk.
+          </p>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Vault role</label>
+            <input type="text" id="secret-vault-k8s-role"
+                   value="{{ secret_config.get('secret.vault.k8s_role', '') if secret_config else '' }}"
+                   placeholder="ipsolis-prod"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">Bound on the Vault side via <code class="font-mono">vault write auth/&lt;mount&gt;/role/&lt;name&gt; ...</code>.</p>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">k8s mount path</label>
+              <input type="text" id="secret-vault-k8s-path"
+                     value="{{ secret_config.get('secret.vault.k8s_path', 'kubernetes') if secret_config else 'kubernetes' }}"
+                     placeholder="kubernetes"
+                     class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <p class="text-[11px] text-muted/60 mt-1">Default <code class="font-mono">kubernetes</code>.</p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">JWT path inside container</label>
+              <input type="text" id="secret-vault-k8s-jwt-path"
+                     value="{{ secret_config.get('secret.vault.k8s_jwt_path', '/var/run/secrets/kubernetes.io/serviceaccount/token') if secret_config else '/var/run/secrets/kubernetes.io/serviceaccount/token' }}"
+                     placeholder="/var/run/secrets/kubernetes.io/serviceaccount/token"
+                     class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <p class="text-[11px] text-muted/60 mt-1">Read fresh on every login so kubelet rotation lands without a restart.</p>
+            </div>
+          </div>
+        </div>
+
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-medium text-muted mb-1">KV mount</label>
@@ -1504,12 +1647,65 @@
           <p class="text-[11px] text-muted/60 mt-1">Stored as a secret. Mask <code class="font-mono">***</code> means "configured — leave blank to keep current".</p>
         </div>
         <div>
-          <label class="block text-xs font-medium text-muted mb-1">Session Token <span class="text-muted/50">(optional)</span></label>
+          <label class="block text-xs font-medium text-muted mb-1">Session Token <span class="text-muted/50">(optional, static mode only)</span></label>
           <input type="password" id="secret-awssm-session-token" value=""
                  placeholder="{% if secret_config and secret_config.get('secret.awssm.session_token') == '***' %}(configured — leave blank to keep current){% else %}STS session token (for AssumeRole / instance profile creds){% endif %}"
                  class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
-          <p class="text-[11px] text-muted/60 mt-1">Required when using STS temporary credentials; leave blank for long-lived IAM user keys.</p>
+          <p class="text-[11px] text-muted/60 mt-1">Required when using STS temporary credentials in <strong>static</strong> mode. Leave blank for long-lived IAM user keys, and ignored entirely in <strong>assume_role</strong> mode (ip·Solis mints its own session).</p>
         </div>
+
+        <div class="pt-1">
+          <label class="block text-xs font-medium text-muted mb-1">Authentication method</label>
+          {% set _aam = (secret_config.get('secret.awssm.auth_method', 'static') if secret_config else 'static').lower() %}
+          <select id="secret-awssm-auth-method" onchange="onAwsAuthMethodChange()"
+                  class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <option value="static"      {% if _aam == 'static' %}selected{% endif %}>Static IAM keys (lab / legacy)</option>
+            <option value="assume_role" {% if _aam == 'assume_role' %}selected{% endif %}>AssumeRole (auto-renewing session)</option>
+          </select>
+          <p class="text-[11px] text-muted/60 mt-1">
+            Production installs should pick <strong>AssumeRole</strong>: the keys above become a
+            bootstrap identity that only needs <code class="font-mono">sts:AssumeRole</code> on the
+            target role; ip·Solis refreshes the derived session credentials automatically.
+          </p>
+        </div>
+
+        <!-- AssumeRole sub-fields -->
+        <div id="secret-awssm-assume-role-fields" class="hidden space-y-3">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Role ARN</label>
+            <input type="text" id="secret-awssm-role-arn"
+                   value="{{ secret_config.get('secret.awssm.role_arn', '') if secret_config else '' }}"
+                   placeholder="arn:aws:iam::123456789012:role/ipsolis-secrets-reader"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">Target role; carries the Secrets Manager permissions ip·Solis actually uses.</p>
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">Role session name</label>
+              <input type="text" id="secret-awssm-role-session-name"
+                     value="{{ secret_config.get('secret.awssm.role_session_name', 'ipsolis') if secret_config else 'ipsolis' }}"
+                     placeholder="ipsolis"
+                     class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <p class="text-[11px] text-muted/60 mt-1">Appears in CloudTrail.</p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">External ID <span class="text-muted/50">(optional)</span></label>
+              <input type="text" id="secret-awssm-role-external-id"
+                     value="{{ secret_config.get('secret.awssm.role_external_id', '') if secret_config else '' }}"
+                     placeholder=""
+                     class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <p class="text-[11px] text-muted/60 mt-1">Third-party-IAM trust pattern.</p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">Session duration (s)</label>
+              <input type="number" id="secret-awssm-role-duration-seconds" min="900" max="43200"
+                     value="{{ secret_config.get('secret.awssm.role_duration_seconds', '3600') if secret_config else '3600' }}"
+                     class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <p class="text-[11px] text-muted/60 mt-1">Capped by role's MaxSessionDuration.</p>
+            </div>
+          </div>
+        </div>
+
         <p class="text-[11px] text-muted/70 leading-snug">
           Reference shapes:
           <code class="font-mono bg-surface-raised px-1 rounded">awssm://&lt;secret-name&gt;</code>
@@ -2312,11 +2508,47 @@ function onSecretBackendChange() {
   });
 }
 
+function onAwsAuthMethodChange() {
+  // Show the AssumeRole sub-fields only when auth_method = assume_role.
+  // Static mode uses the same access_key / secret_key / session_token
+  // fields rendered above the dropdown, so no toggle there.
+  var select = document.getElementById('secret-awssm-auth-method');
+  if (!select) return;
+  var assumeRoleFields = document.getElementById('secret-awssm-assume-role-fields');
+  if (!assumeRoleFields) return;
+  if (select.value === 'assume_role') assumeRoleFields.classList.remove('hidden');
+  else                                assumeRoleFields.classList.add('hidden');
+}
+
+function onVaultAuthMethodChange() {
+  // Inner show/hide for the Vault auth_method dropdown — same pattern
+  // as the outer backend dropdown but scoped to the Vault sub-card.
+  var select = document.getElementById('secret-vault-auth-method');
+  if (!select) return;
+  var m = select.value;
+  var groups = {
+    'token':      document.getElementById('secret-vault-auth-token-fields'),
+    'approle':    document.getElementById('secret-vault-auth-approle-fields'),
+    'kubernetes': document.getElementById('secret-vault-auth-kubernetes-fields'),
+  };
+  Object.keys(groups).forEach(function(key) {
+    var el = groups[key];
+    if (!el) return;
+    if (key === m) el.classList.remove('hidden'); else el.classList.add('hidden');
+  });
+}
+
 async function saveSecretBackend() {
   var fields = {
     'secret.backend':            document.getElementById('secret-backend').value,
     // Always persist all backend inputs so admins can flip between them without retyping.
     'secret.vault.url':          document.getElementById('secret-vault-url').value.trim(),
+    'secret.vault.auth_method':  document.getElementById('secret-vault-auth-method').value,
+    'secret.vault.approle_role_id': document.getElementById('secret-vault-approle-role-id').value.trim(),
+    'secret.vault.approle_path':    document.getElementById('secret-vault-approle-path').value.trim() || 'approle',
+    'secret.vault.k8s_role':        document.getElementById('secret-vault-k8s-role').value.trim(),
+    'secret.vault.k8s_path':        document.getElementById('secret-vault-k8s-path').value.trim() || 'kubernetes',
+    'secret.vault.k8s_jwt_path':    document.getElementById('secret-vault-k8s-jwt-path').value.trim() || '/var/run/secrets/kubernetes.io/serviceaccount/token',
     'secret.vault.kv_mount':     document.getElementById('secret-vault-kv-mount').value.trim() || 'secret',
     'secret.vault.namespace':    document.getElementById('secret-vault-namespace').value.trim(),
     'secret.ccp.url':            document.getElementById('secret-ccp-url').value.trim(),
@@ -2328,6 +2560,11 @@ async function saveSecretBackend() {
     'secret.azurekv.api_version': document.getElementById('secret-azurekv-api-version').value.trim() || '7.4',
     'secret.awssm.region':         document.getElementById('secret-awssm-region').value.trim() || 'us-east-1',
     'secret.awssm.access_key_id':  document.getElementById('secret-awssm-access-key-id').value.trim(),
+    'secret.awssm.auth_method':           document.getElementById('secret-awssm-auth-method').value,
+    'secret.awssm.role_arn':              document.getElementById('secret-awssm-role-arn').value.trim(),
+    'secret.awssm.role_session_name':     document.getElementById('secret-awssm-role-session-name').value.trim() || 'ipsolis',
+    'secret.awssm.role_external_id':      document.getElementById('secret-awssm-role-external-id').value.trim(),
+    'secret.awssm.role_duration_seconds': document.getElementById('secret-awssm-role-duration-seconds').value.trim() || '3600',
     'secret.conjur.url':           document.getElementById('secret-conjur-url').value.trim(),
     'secret.conjur.account':       document.getElementById('secret-conjur-account').value.trim(),
     'secret.conjur.host_id':       document.getElementById('secret-conjur-host-id').value.trim(),
@@ -2335,6 +2572,8 @@ async function saveSecretBackend() {
   };
   var vaultToken = document.getElementById('secret-vault-token').value;
   if (vaultToken) fields['secret.vault.token'] = vaultToken;
+  var vaultApproleSecret = document.getElementById('secret-vault-approle-secret-id').value;
+  if (vaultApproleSecret) fields['secret.vault.approle_secret_id'] = vaultApproleSecret;
   var ccpPem = document.getElementById('secret-ccp-client-cert-pem').value;
   if (ccpPem) fields['secret.ccp.client_cert_pem'] = ccpPem;
   var azClientSecret = document.getElementById('secret-azurekv-client-secret').value;
@@ -2372,6 +2611,8 @@ async function testSecretBackend() {
 
 document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('secret-backend')) onSecretBackendChange();
+  if (document.getElementById('secret-vault-auth-method')) onVaultAuthMethodChange();
+  if (document.getElementById('secret-awssm-auth-method')) onAwsAuthMethodChange();
 });
 
 // ── Secret-backend migration tool ─────────────────────────────────────────────
@@ -2543,9 +2784,10 @@ async function saveOtelConfig() {
 function onSiemFormatChange() {
   var fmt = document.getElementById('siem-format').value;
   var groups = {
-    splunk_hec: {fields: 'siem-splunk-fields',   help: 'siem-help-splunk'},
-    sentinel:   {fields: 'siem-sentinel-fields', help: 'siem-help-sentinel'},
-    webhook:    {fields: 'siem-webhook-fields',  help: 'siem-help-webhook'},
+    splunk_hec:             {fields: 'siem-splunk-fields',                  help: 'siem-help-splunk'},
+    sentinel:               {fields: 'siem-sentinel-fields',                help: 'siem-help-sentinel'},
+    sentinel_log_ingestion: {fields: 'siem-sentinel-log-ingestion-fields',  help: 'siem-help-sentinel-log-ingestion'},
+    webhook:                {fields: 'siem-webhook-fields',                 help: 'siem-help-webhook'},
   };
   Object.keys(groups).forEach(function(key) {
     var f = document.getElementById(groups[key].fields);
@@ -2577,6 +2819,17 @@ async function saveSiemConfig() {
     document.getElementById('siem-webhook-signature-header').value.trim() || 'X-Hub-Signature-256';
   fields['siem.webhook_extra_headers'] =
     document.getElementById('siem-webhook-extra-headers').value.trim();
+  // Sentinel Logs Ingestion API path.
+  fields['siem.sentinel_dce_endpoint'] =
+    document.getElementById('siem-sentinel-dce-endpoint').value.trim();
+  fields['siem.sentinel_dcr_immutable_id'] =
+    document.getElementById('siem-sentinel-dcr-immutable-id').value.trim();
+  fields['siem.sentinel_stream_name'] =
+    document.getElementById('siem-sentinel-stream-name').value.trim() || 'Custom-IpsolisAudit_CL';
+  fields['siem.sentinel_tenant_id'] =
+    document.getElementById('siem-sentinel-tenant-id').value.trim();
+  fields['siem.sentinel_client_id'] =
+    document.getElementById('siem-sentinel-client-id').value.trim();
 
   var splunkToken = document.getElementById('siem-token').value;
   if (splunkToken) fields['siem.token'] = splunkToken;
@@ -2584,6 +2837,8 @@ async function saveSiemConfig() {
   if (sentinelKey) fields['siem.shared_key'] = sentinelKey;
   var webhookSecret = document.getElementById('siem-webhook-secret').value;
   if (webhookSecret) fields['siem.webhook_secret'] = webhookSecret;
+  var sentinelClientSecret = document.getElementById('siem-sentinel-client-secret').value;
+  if (sentinelClientSecret) fields['siem.sentinel_client_secret'] = sentinelClientSecret;
 
   var errors = [];
   for (var key in fields) {

@@ -237,6 +237,174 @@ def _load_secret_cfg_sync() -> dict[str, str]:
 
 
 # ── Vault adapter ─────────────────────────────────────────────────────────────
+#
+# Three auth methods supported via ``secret.vault.auth_method``:
+#
+# * ``token``      — static X-Vault-Token (legacy slice-1 path).
+# * ``approle``    — POST role_id + secret_id to ``/v1/auth/<path>/login``;
+#                    cache the returned token until ~60s before expiry.
+# * ``kubernetes`` — POST role + projected SA JWT to
+#                    ``/v1/auth/<path>/login``; same cache shape as AppRole.
+#
+# Dynamically-acquired tokens live in ``_vault_token_cache`` keyed by
+# ``(method, identity)`` (role_id for AppRole, role for k8s) so a config
+# drift can't cross-pollinate tokens. Cache holds ``(expires_at, token)``;
+# we refresh ~60s before expiry to ride out clock skew at the wire.
+
+_vault_token_cache: dict[str, tuple[float, str]] = {}
+_VAULT_AUTH_REFRESH_MARGIN = 60  # seconds before lease expiry to re-mint
+
+
+def _get_vault_token(cfg: dict[str, str]) -> str:
+    """Return a usable Vault token, picking the configured auth method.
+
+    For ``token``: returns the static value as-is. For ``approle`` /
+    ``kubernetes``: returns a cached short-lived token if still valid,
+    otherwise mints a fresh one via the appropriate login endpoint.
+    """
+    method = (cfg.get("vault.auth_method") or "token").strip().lower() or "token"
+    base = (cfg.get("vault.url") or "").strip().rstrip("/")
+    namespace = (cfg.get("vault.namespace") or "").strip()
+    if not base:
+        raise ValueError("vault.url is empty")
+
+    if method == "token":
+        token = (cfg.get("vault.token") or "").strip()
+        if not token:
+            raise ValueError(
+                "vault.token is empty (auth_method=token). Set the static "
+                "token or switch to AppRole / Kubernetes auth."
+            )
+        return token
+
+    if method == "approle":
+        role_id = (cfg.get("vault.approle_role_id") or "").strip()
+        secret_id = (cfg.get("vault.approle_secret_id") or "").strip()
+        approle_path = (cfg.get("vault.approle_path") or "approle").strip().strip("/") or "approle"
+        if not (role_id and secret_id):
+            raise ValueError(
+                "vault.approle_role_id or vault.approle_secret_id is empty "
+                "(auth_method=approle)"
+            )
+        cache_key = f"approle::{base}::{role_id}"
+        cached = _vault_token_cache.get(cache_key)
+        if cached and cached[0] > time.time():
+            return cached[1]
+        token, ttl = _vault_login_approle(
+            base=base, namespace=namespace, mount_path=approle_path,
+            role_id=role_id, secret_id=secret_id,
+        )
+        _vault_token_cache[cache_key] = (time.time() + max(60, ttl - _VAULT_AUTH_REFRESH_MARGIN), token)
+        return token
+
+    if method == "kubernetes":
+        k8s_role = (cfg.get("vault.k8s_role") or "").strip()
+        k8s_path = (cfg.get("vault.k8s_path") or "kubernetes").strip().strip("/") or "kubernetes"
+        jwt_path = (cfg.get("vault.k8s_jwt_path") or "/var/run/secrets/kubernetes.io/serviceaccount/token").strip()
+        if not k8s_role:
+            raise ValueError("vault.k8s_role is empty (auth_method=kubernetes)")
+        # Read the JWT fresh on every login — kubelet rotation lands
+        # without a restart since the token cache below also expires.
+        try:
+            with open(jwt_path, "r", encoding="utf-8") as fh:
+                jwt = fh.read().strip()
+        except OSError as exc:
+            raise RuntimeError(
+                f"vault: kubernetes JWT not readable at {jwt_path!r}: {exc}"
+            ) from exc
+        if not jwt:
+            raise RuntimeError(f"vault: kubernetes JWT at {jwt_path!r} is empty")
+        cache_key = f"kubernetes::{base}::{k8s_role}"
+        cached = _vault_token_cache.get(cache_key)
+        if cached and cached[0] > time.time():
+            return cached[1]
+        token, ttl = _vault_login_k8s(
+            base=base, namespace=namespace, mount_path=k8s_path,
+            role=k8s_role, jwt=jwt,
+        )
+        _vault_token_cache[cache_key] = (time.time() + max(60, ttl - _VAULT_AUTH_REFRESH_MARGIN), token)
+        return token
+
+    raise ValueError(f"vault: unknown auth_method {method!r}")
+
+
+def _vault_invalidate_token(cfg: dict[str, str]) -> None:
+    """Drop any cached non-static Vault token. Called when a read/write
+    sees a 403 — the token may have been revoked or expired between
+    mint and use, so a re-mint on the next call should clear it."""
+    method = (cfg.get("vault.auth_method") or "token").strip().lower() or "token"
+    if method == "token":
+        return
+    base = (cfg.get("vault.url") or "").strip().rstrip("/")
+    if method == "approle":
+        role_id = (cfg.get("vault.approle_role_id") or "").strip()
+        _vault_token_cache.pop(f"approle::{base}::{role_id}", None)
+    elif method == "kubernetes":
+        role = (cfg.get("vault.k8s_role") or "").strip()
+        _vault_token_cache.pop(f"kubernetes::{base}::{role}", None)
+
+
+def _vault_login_approle(
+    *, base: str, namespace: str, mount_path: str, role_id: str, secret_id: str,
+) -> tuple[str, int]:
+    """POST role_id + secret_id; return ``(client_token, lease_seconds)``."""
+    url = f"{base}/v1/auth/{mount_path}/login"
+    body = json.dumps({"role_id": role_id, "secret_id": secret_id}).encode("utf-8")
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    if namespace:
+        headers["X-Vault-Namespace"] = namespace
+    return _vault_post_login(url, body, headers, "approle")
+
+
+def _vault_login_k8s(
+    *, base: str, namespace: str, mount_path: str, role: str, jwt: str,
+) -> tuple[str, int]:
+    """POST role + JWT; return ``(client_token, lease_seconds)``."""
+    url = f"{base}/v1/auth/{mount_path}/login"
+    body = json.dumps({"role": role, "jwt": jwt}).encode("utf-8")
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    if namespace:
+        headers["X-Vault-Namespace"] = namespace
+    return _vault_post_login(url, body, headers, "kubernetes")
+
+
+def _vault_post_login(
+    url: str, body: bytes, headers: dict[str, str], method_label: str,
+) -> tuple[str, int]:
+    """Shared POST + envelope unwrap for the AppRole / k8s login flows.
+
+    Vault's auth response shape:
+        {"auth": {"client_token": "...", "lease_duration": 3600,
+                  "renewable": true, "policies": [...], ...}, ...}
+    """
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:  # noqa: BLE001
+            detail = ""
+        raise RuntimeError(
+            f"vault {method_label} login HTTP {e.code}: {detail}"
+        ) from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"vault {method_label} login unreachable: {e.reason}") from e
+
+    auth = (payload or {}).get("auth") or {}
+    token = auth.get("client_token")
+    if not token:
+        raise RuntimeError(
+            f"vault {method_label} login: response missing auth.client_token"
+        )
+    # ``lease_duration`` is the token's TTL in seconds; use 3600 as a
+    # safe fallback if Vault omits it (shouldn't happen, but the
+    # cache logic has _REFRESH_MARGIN subtracted so a 0 here would
+    # immediately re-mint on every call — clamp to a sensible floor).
+    ttl = int(auth.get("lease_duration") or 3600)
+    return token, ttl
+
 
 def _resolve_vault(path: str, cfg: dict[str, str]) -> str:
     """Resolve a ``vault://<path>[#<field>]`` reference.
@@ -245,6 +413,12 @@ def _resolve_vault(path: str, cfg: dict[str, str]) -> str:
     ``#field`` fragment selects a single key from the secret's data
     dict; ``value`` is the default and matches the convention for
     "the secret is just a string under key 'value'".
+
+    Token comes from ``_get_vault_token(cfg)`` so the static-token,
+    AppRole, and Kubernetes auth methods all funnel through one path.
+    A 403 invalidates the cached token (if any) so the next call
+    re-mints — the call that hit 403 still fails, deliberately, so
+    the operator sees the underlying auth error.
     """
     if "#" in path:
         path, field = path.split("#", 1)
@@ -255,11 +429,12 @@ def _resolve_vault(path: str, cfg: dict[str, str]) -> str:
         raise ValueError("empty vault path")
 
     base = (cfg.get("vault.url") or "").strip().rstrip("/")
-    token = (cfg.get("vault.token") or "").strip()
     mount = (cfg.get("vault.kv_mount") or "secret").strip().strip("/") or "secret"
     namespace = (cfg.get("vault.namespace") or "").strip()
-    if not base or not token:
-        raise ValueError("vault.url or vault.token is empty")
+    if not base:
+        raise ValueError("vault.url is empty")
+
+    token = _get_vault_token(cfg)
 
     url = f"{base}/v1/{mount}/data/{path}"
     headers = {
@@ -269,7 +444,15 @@ def _resolve_vault(path: str, cfg: dict[str, str]) -> str:
     if namespace:
         headers["X-Vault-Namespace"] = namespace
 
-    body = _http_get_json(url, headers=headers)
+    try:
+        body = _http_get_json(url, headers=headers)
+    except RuntimeError as exc:
+        # Catch 403 specifically so we drop the cached token; the
+        # message naming convention from _http_get_json is
+        # ``HTTP <code> ...`` so the substring check is stable.
+        if "HTTP 403" in str(exc):
+            _vault_invalidate_token(cfg)
+        raise
     # KV v2 envelope: ``{"data": {"data": {...}, "metadata": {...}}}``.
     inner = (((body or {}).get("data") or {}).get("data") or {})
     if field not in inner:
@@ -472,6 +655,13 @@ def _resolve_azurekv(reference: str, cfg: dict[str, str]) -> str:
 
 _AWS_SERVICE = "secretsmanager"
 _AWS_CONTENT_TYPE = "application/x-amz-json-1.1"
+_STS_API_VERSION = "2011-06-15"
+_AWS_CREDS_REFRESH_MARGIN = 60  # seconds before STS Expiration to re-mint
+# Cache of STS-derived ``(access_key, secret_key, session_token, expires_at)``
+# keyed by ``(role_arn, role_session_name)`` so flipping between sessions
+# (rare in practice — most installs have one role) doesn't reuse a token
+# minted for another. Only consulted when auth_method = assume_role.
+_aws_creds_cache: dict[str, tuple[str, str, str, float]] = {}
 
 
 def _aws_sigv4_sign(
@@ -557,6 +747,247 @@ def _aws_sigv4_sign(
     return out_headers
 
 
+def _aws_sts_assume_role(
+    *,
+    region: str,
+    boot_access_key: str,
+    boot_secret_key: str,
+    boot_session_token: str,
+    role_arn: str,
+    session_name: str,
+    duration_seconds: int,
+    external_id: str,
+) -> tuple[str, str, str, float]:
+    """Call ``sts:AssumeRole`` and return ``(ak, sk, st, expires_at_epoch)``.
+
+    Uses the AWS STS Query API (the only API STS exposes — JSON 1.1
+    isn't an option here): form-encoded body, XML response, signed with
+    SigV4 against ``sts``. The bootstrap identity (``boot_*``) signs the
+    request; the response carries the new short-lived credentials.
+
+    Region selection: STS is global but can be regionalised. We hit
+    ``sts.<region>.amazonaws.com`` so the call lands in the same region
+    as the Secrets Manager calls — keeps one-region IAM policies tight
+    and avoids cross-region latency on the hot path. Falls back to
+    ``sts.amazonaws.com`` if the operator left region empty (very rare).
+    """
+    import datetime as _dt
+    host = f"sts.{region}.amazonaws.com" if region else "sts.amazonaws.com"
+
+    # Form-encoded body. Ordered keys not strictly required (SigV4 only
+    # needs sorted query-string keys for the *canonical* form), but a
+    # stable order makes the wire format easier to inspect in tcpdump.
+    body_pairs = [
+        ("Action", "AssumeRole"),
+        ("Version", _STS_API_VERSION),
+        ("RoleArn", role_arn),
+        ("RoleSessionName", session_name),
+        ("DurationSeconds", str(duration_seconds)),
+    ]
+    if external_id:
+        body_pairs.append(("ExternalId", external_id))
+    body_str = urllib.parse.urlencode(body_pairs)
+    body = body_str.encode("utf-8")
+
+    now = _dt.datetime.now(_dt.timezone.utc)
+    amz_date = now.strftime("%Y%m%dT%H%M%SZ")
+    date_stamp = now.strftime("%Y%m%d")
+    payload_hash = hashlib.sha256(body).hexdigest()
+    content_type = "application/x-www-form-urlencoded; charset=utf-8"
+
+    # SigV4 signing — same algorithm as the SM signer but service=sts and
+    # no x-amz-target. Inlined here to keep the SM signer's surface stable.
+    headers_to_sign: list[tuple[str, str]] = [
+        ("content-type", content_type),
+        ("host", host),
+        ("x-amz-date", amz_date),
+    ]
+    if boot_session_token:
+        headers_to_sign.append(("x-amz-security-token", boot_session_token))
+    headers_to_sign.sort(key=lambda kv: kv[0])
+    canonical_headers = "".join(f"{k}:{v.strip()}\n" for k, v in headers_to_sign)
+    signed_headers = ";".join(k for k, _ in headers_to_sign)
+    canonical_request = (
+        f"POST\n/\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
+    )
+    credential_scope = f"{date_stamp}/{region or 'us-east-1'}/sts/aws4_request"
+    string_to_sign = (
+        f"AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n"
+        f"{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}"
+    )
+
+    def _sign(key: bytes, msg: str) -> bytes:
+        return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
+
+    k_date = _sign(("AWS4" + boot_secret_key).encode("utf-8"), date_stamp)
+    k_region = _sign(k_date, region or "us-east-1")
+    k_service = _sign(k_region, "sts")
+    k_signing = _sign(k_service, "aws4_request")
+    signature = hmac.new(
+        k_signing, string_to_sign.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    auth = (
+        f"AWS4-HMAC-SHA256 "
+        f"Credential={boot_access_key}/{credential_scope}, "
+        f"SignedHeaders={signed_headers}, "
+        f"Signature={signature}"
+    )
+    headers = {
+        "Content-Type": content_type,
+        "Host": host,
+        "X-Amz-Date": amz_date,
+        "Authorization": auth,
+    }
+    if boot_session_token:
+        headers["X-Amz-Security-Token"] = boot_session_token
+
+    req = urllib.request.Request(f"https://{host}/", data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS) as resp:
+            xml_bytes = resp.read()
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:400]
+        except Exception:  # noqa: BLE001
+            detail = ""
+        # AWS embeds the error code in the XML envelope. The detail
+        # body itself is often the most actionable diagnostic
+        # (``AccessDenied``, ``InvalidClientTokenId``, ``ExpiredToken``,
+        # ``Forbidden`` from the role's trust policy, etc.) so surface
+        # it verbatim — boto3 does the same thing.
+        raise RuntimeError(f"sts AssumeRole HTTP {e.code}: {detail}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"sts unreachable: {e.reason}") from e
+
+    return _parse_assume_role_response(xml_bytes)
+
+
+def _parse_assume_role_response(xml_bytes: bytes) -> tuple[str, str, str, float]:
+    """Pull the Credentials block out of the AssumeRoleResponse XML.
+
+    The wire shape:
+
+        <AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+          <AssumeRoleResult>
+            <Credentials>
+              <AccessKeyId>ASIA...</AccessKeyId>
+              <SecretAccessKey>...</SecretAccessKey>
+              <SessionToken>...</SessionToken>
+              <Expiration>2026-04-30T15:30:00Z</Expiration>
+            </Credentials>
+            ...
+          </AssumeRoleResult>
+        </AssumeRoleResponse>
+
+    XML namespaces make element names like
+    ``{https://sts.amazonaws.com/doc/2011-06-15/}AccessKeyId`` —
+    we use ``iter()`` + a localname compare to keep the lookup
+    code free of namespace bookkeeping.
+    """
+    import datetime as _dt
+    import xml.etree.ElementTree as ET
+
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError as exc:
+        raise RuntimeError(f"sts AssumeRole: malformed XML response: {exc}") from exc
+
+    def _local(tag: str) -> str:
+        # Strip ``{namespace}`` prefix.
+        return tag.rsplit("}", 1)[-1]
+
+    creds: dict[str, str] = {}
+    for elem in root.iter():
+        name = _local(elem.tag)
+        if name in ("AccessKeyId", "SecretAccessKey", "SessionToken", "Expiration"):
+            creds[name] = (elem.text or "").strip()
+
+    missing = [k for k in ("AccessKeyId", "SecretAccessKey", "SessionToken", "Expiration") if not creds.get(k)]
+    if missing:
+        raise RuntimeError(
+            f"sts AssumeRole: response missing fields {missing!r}"
+        )
+
+    # Expiration is always ISO-8601 UTC ending in 'Z'.
+    try:
+        exp_dt = _dt.datetime.strptime(creds["Expiration"], "%Y-%m-%dT%H:%M:%SZ")
+        exp_dt = exp_dt.replace(tzinfo=_dt.timezone.utc)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"sts AssumeRole: malformed Expiration {creds['Expiration']!r}"
+        ) from exc
+    return creds["AccessKeyId"], creds["SecretAccessKey"], creds["SessionToken"], exp_dt.timestamp()
+
+
+def _get_aws_creds(cfg: dict[str, str]) -> tuple[str, str, str]:
+    """Return ``(access_key, secret_key, session_token)`` for the chosen method.
+
+    For ``static``: the configured keys, passed straight through. For
+    ``assume_role``: cached STS-derived credentials if still valid, else
+    a freshly-minted set via ``sts:AssumeRole`` using the same configured
+    keys as the bootstrap identity.
+
+    The bootstrap identity needs ``sts:AssumeRole`` on the target role
+    only — the role itself carries the SM permissions. This narrows the
+    blast radius of a leaked bootstrap key (it can switch into the role
+    but can't read secrets directly).
+    """
+    method = (cfg.get("awssm.auth_method") or "static").strip().lower() or "static"
+    region = (cfg.get("awssm.region") or "").strip()
+    boot_access_key = (cfg.get("awssm.access_key_id") or "").strip()
+    boot_secret_key = (cfg.get("awssm.secret_access_key") or "").strip()
+    boot_session_token = (cfg.get("awssm.session_token") or "").strip()
+
+    if not (region and boot_access_key and boot_secret_key):
+        raise ValueError(
+            "awssm: region / access_key_id / secret_access_key incomplete — "
+            "configure secret.awssm.* in Settings → Compliance"
+        )
+
+    if method == "static":
+        return boot_access_key, boot_secret_key, boot_session_token
+
+    if method == "assume_role":
+        role_arn = (cfg.get("awssm.role_arn") or "").strip()
+        session_name = (cfg.get("awssm.role_session_name") or "ipsolis").strip() or "ipsolis"
+        external_id = (cfg.get("awssm.role_external_id") or "").strip()
+        try:
+            duration = int((cfg.get("awssm.role_duration_seconds") or "3600").strip() or "3600")
+        except ValueError:
+            duration = 3600
+        if not role_arn:
+            raise ValueError("awssm: role_arn is empty (auth_method=assume_role)")
+
+        cache_key = f"{role_arn}::{session_name}"
+        cached = _aws_creds_cache.get(cache_key)
+        if cached and cached[3] > time.time() + _AWS_CREDS_REFRESH_MARGIN:
+            return cached[0], cached[1], cached[2]
+
+        ak, sk, st, exp_at = _aws_sts_assume_role(
+            region=region,
+            boot_access_key=boot_access_key,
+            boot_secret_key=boot_secret_key,
+            boot_session_token=boot_session_token,
+            role_arn=role_arn, session_name=session_name,
+            duration_seconds=duration, external_id=external_id,
+        )
+        _aws_creds_cache[cache_key] = (ak, sk, st, exp_at)
+        return ak, sk, st
+
+    raise ValueError(f"awssm: unknown auth_method {method!r}")
+
+
+def _aws_invalidate_creds(cfg: dict[str, str]) -> None:
+    """Drop cached STS-derived credentials. Called on ``ExpiredToken`` /
+    403 from a downstream SM call so the next call re-mints."""
+    method = (cfg.get("awssm.auth_method") or "static").strip().lower() or "static"
+    if method != "assume_role":
+        return
+    role_arn = (cfg.get("awssm.role_arn") or "").strip()
+    session_name = (cfg.get("awssm.role_session_name") or "ipsolis").strip() or "ipsolis"
+    _aws_creds_cache.pop(f"{role_arn}::{session_name}", None)
+
+
 def _aws_sm_get_secret(
     *,
     region: str,
@@ -630,22 +1061,26 @@ def _resolve_awssm(reference: str, cfg: dict[str, str]) -> str:
         raise ValueError("awssm: empty secret name")
 
     region = (cfg.get("awssm.region") or "").strip()
-    access_key = (cfg.get("awssm.access_key_id") or "").strip()
-    secret_key = (cfg.get("awssm.secret_access_key") or "").strip()
-    session_token = (cfg.get("awssm.session_token") or "").strip()
-    if not (region and access_key and secret_key):
-        raise ValueError(
-            "awssm: region / access_key_id / secret_access_key incomplete — "
-            "configure secret.awssm.* in Settings → Compliance"
-        )
+    access_key, secret_key, session_token = _get_aws_creds(cfg)
 
-    body = _aws_sm_get_secret(
-        region=region,
-        access_key=access_key,
-        secret_key=secret_key,
-        session_token=session_token,
-        secret_id=secret_id,
-    )
+    try:
+        body = _aws_sm_get_secret(
+            region=region,
+            access_key=access_key,
+            secret_key=secret_key,
+            session_token=session_token,
+            secret_id=secret_id,
+        )
+    except RuntimeError as exc:
+        # SM signals expired/revoked STS creds via ``ExpiredToken`` or
+        # ``InvalidClientTokenId`` in the error body, which surfaces in
+        # the message string. Drop the cached creds so the next call
+        # re-mints; the failing call still raises so the operator
+        # sees the underlying error.
+        msg = str(exc)
+        if "ExpiredToken" in msg or "InvalidClientTokenId" in msg or "HTTP 403" in msg:
+            _aws_invalidate_creds(cfg)
+        raise
 
     secret_string = body.get("SecretString")
     if not isinstance(secret_string, str):
@@ -932,6 +1367,36 @@ async def test_backend(db: AsyncSession) -> tuple[bool, str]:
         base = (cfg.get("vault.url") or "").strip().rstrip("/")
         if not base:
             return False, "vault.url is empty."
+        method = (cfg.get("vault.auth_method") or "token").strip().lower() or "token"
+        # For non-token methods, exercise the login flow first — that's
+        # the most common config error ("AppRole role doesn't exist",
+        # "k8s JWT not mounted") and the static-token reachability
+        # probe alone wouldn't catch it.
+        if method != "token":
+            try:
+                # Drop any cached token so the probe genuinely re-mints.
+                _vault_invalidate_token(cfg)
+                token = _get_vault_token(cfg)
+            except Exception as exc:  # noqa: BLE001
+                return False, f"Vault {method} login failed: {exc}"
+            try:
+                # Health check with the freshly-minted token to verify
+                # the path-policy actually attaches anything (an empty
+                # policy would mint a token that can't read sys/health,
+                # which is a useful canary).
+                _http_get_json(
+                    f"{base}/v1/sys/health",
+                    headers={"X-Vault-Token": token, "Accept": "application/json"},
+                )
+                return True, (
+                    f"Vault reachable, {method} login minted a token "
+                    f"(len={len(token)})."
+                )
+            except Exception as exc:  # noqa: BLE001
+                return False, f"Vault {method} token minted but sys/health failed: {exc}"
+        # Static-token path: hit sys/health unauthenticated (it doesn't
+        # require a token on standard installs) so we can verify
+        # reachability even before the token is set.
         try:
             _http_get_json(f"{base}/v1/sys/health", headers={"Accept": "application/json"})
             return True, "Vault reachable (sys/health responded)."
@@ -986,11 +1451,20 @@ async def test_backend(db: AsyncSession) -> tuple[bool, str]:
             return False, f"Azure KV auth failed: {exc}"
     if backend == "awssm":
         region = (cfg.get("awssm.region") or "").strip()
-        access_key = (cfg.get("awssm.access_key_id") or "").strip()
-        secret_key = (cfg.get("awssm.secret_access_key") or "").strip()
-        session_token = (cfg.get("awssm.session_token") or "").strip()
-        if not (region and access_key and secret_key):
-            return False, "awssm: region / access_key_id / secret_access_key incomplete."
+        method = (cfg.get("awssm.auth_method") or "static").strip().lower() or "static"
+        if not region:
+            return False, "awssm: region is empty."
+        if method == "assume_role" and not cfg.get("awssm.role_arn"):
+            return False, "awssm: role_arn is empty (auth_method=assume_role)."
+        # In assume_role mode, drop any cached STS creds first so the
+        # probe genuinely re-mints — otherwise a stale-but-valid cache
+        # would mask a freshly-broken trust policy.
+        if method == "assume_role":
+            _aws_invalidate_creds(cfg)
+        try:
+            access_key, secret_key, session_token = _get_aws_creds(cfg)
+        except Exception as exc:  # noqa: BLE001
+            return False, f"AWS auth failed: {exc}"
         # Probe by attempting to list secrets — the cheapest call that
         # exercises both SigV4 signing and the IAM principal's policy.
         # Empty result is fine; we only care about the auth success.
@@ -999,11 +1473,16 @@ async def test_backend(db: AsyncSession) -> tuple[bool, str]:
                 region=region, access_key=access_key,
                 secret_key=secret_key, session_token=session_token,
             )
-            return True, f"AWS Secrets Manager reachable in {region} (SigV4 OK)."
         except Exception as exc:  # noqa: BLE001
             # Surface AWS error codes (AccessDeniedException, InvalidSignatureException)
             # so config typos / missing IAM policy show up clearly.
             return False, f"AWS Secrets Manager auth failed: {exc}"
+        if method == "assume_role":
+            return True, (
+                f"AWS Secrets Manager reachable in {region} "
+                f"(AssumeRole derived a session, SigV4 OK)."
+            )
+        return True, f"AWS Secrets Manager reachable in {region} (SigV4 OK)."
     if backend == "conjur":
         url = (cfg.get("conjur.url") or "").strip().rstrip("/")
         account = (cfg.get("conjur.account") or "").strip()
@@ -1273,8 +1752,15 @@ def _migration_preflight(backend: str, cfg: dict[str, str]) -> str | None:
     "which vault to write to" hint that isn't required for reads.
     """
     if backend == "vault":
-        if not (cfg.get("vault.url") and cfg.get("vault.token")):
-            return "vault.url or vault.token is empty."
+        if not cfg.get("vault.url"):
+            return "vault.url is empty."
+        method = (cfg.get("vault.auth_method") or "token").strip().lower() or "token"
+        if method == "token" and not cfg.get("vault.token"):
+            return "vault.token is empty (auth_method=token)."
+        if method == "approle" and not (cfg.get("vault.approle_role_id") and cfg.get("vault.approle_secret_id")):
+            return "vault.approle_role_id or vault.approle_secret_id is empty (auth_method=approle)."
+        if method == "kubernetes" and not cfg.get("vault.k8s_role"):
+            return "vault.k8s_role is empty (auth_method=kubernetes)."
     elif backend == "azurekv":
         if not (cfg.get("azurekv.tenant_id") and cfg.get("azurekv.client_id") and cfg.get("azurekv.client_secret")):
             return "azurekv: tenant_id / client_id / client_secret incomplete."
@@ -1287,6 +1773,9 @@ def _migration_preflight(backend: str, cfg: dict[str, str]) -> str | None:
     elif backend == "awssm":
         if not (cfg.get("awssm.region") and cfg.get("awssm.access_key_id") and cfg.get("awssm.secret_access_key")):
             return "awssm: region / access_key_id / secret_access_key incomplete."
+        method = (cfg.get("awssm.auth_method") or "static").strip().lower() or "static"
+        if method == "assume_role" and not cfg.get("awssm.role_arn"):
+            return "awssm: role_arn is empty (auth_method=assume_role)."
     elif backend == "conjur":
         if not (cfg.get("conjur.url") and cfg.get("conjur.account") and cfg.get("conjur.host_id") and cfg.get("conjur.api_key")):
             return "conjur: url / account / host_id / api_key incomplete."
@@ -1336,12 +1825,14 @@ def _push_vault(path: str, value: str, cfg: dict[str, str]) -> None:
     """Write to Vault KV v2 at ``<mount>/<path>`` with ``data.value = <value>``.
 
     KV v2 wraps payloads in ``{"data": {...}}`` — the API otherwise
-    interprets top-level keys as version metadata.
+    interprets top-level keys as version metadata. Token comes from
+    ``_get_vault_token(cfg)`` so AppRole / Kubernetes auth work for
+    the migration tool the same way they work for resolution.
     """
     base = (cfg.get("vault.url") or "").strip().rstrip("/")
-    token = (cfg.get("vault.token") or "").strip()
     mount = (cfg.get("vault.kv_mount") or "secret").strip().strip("/") or "secret"
     namespace = (cfg.get("vault.namespace") or "").strip()
+    token = _get_vault_token(cfg)
     url = f"{base}/v1/{mount}/data/{path}"
     headers = {
         "X-Vault-Token": token,
@@ -1356,6 +1847,8 @@ def _push_vault(path: str, value: str, cfg: dict[str, str]) -> None:
         with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS) as resp:
             resp.read()
     except urllib.error.HTTPError as e:
+        if e.code == 403:
+            _vault_invalidate_token(cfg)
         try:
             detail = e.read().decode("utf-8", errors="replace")[:300]
         except Exception:  # noqa: BLE001
@@ -1411,9 +1904,9 @@ def _push_awssm(secret_id: str, value: str, cfg: dict[str, str]) -> None:
     """
     import datetime as _dt
     region = (cfg.get("awssm.region") or "").strip()
-    access_key = (cfg.get("awssm.access_key_id") or "").strip()
-    secret_key = (cfg.get("awssm.secret_access_key") or "").strip()
-    session_token = (cfg.get("awssm.session_token") or "").strip()
+    # Funnel through _get_aws_creds so AssumeRole works for the migration
+    # tool the same way it works for resolution.
+    access_key, secret_key, session_token = _get_aws_creds(cfg)
     host = f"{_AWS_SERVICE}.{region}.amazonaws.com"
 
     def _call(target: str, payload: dict) -> dict:

@@ -146,7 +146,101 @@ pull one when there's a procurement need or a quiet week.
       `AADSTS900021` from a fake tenant id confirms the round-trip
       works end-to-end; resolver follows the fail-closed-quiet contract
       (returns empty string + WARNING log on resolution failure).
-- [ ] Vault AppRole + Kubernetes-JWT auth methods (slice 1 ships static-token only).
+- [x] **Vault AppRole + Kubernetes-JWT auth methods** *(2026-04-30)*.
+      Slice 1 shipped static-token only — production Vault deployments
+      generally ban long-lived tokens. New `secret.vault.auth_method`
+      key picks `token` (default — back-compat) / `approle` / `kubernetes`.
+      Migration `0088` seeds the new keys: `auth_method` plus AppRole
+      (`approle_path`, `approle_role_id`, `approle_secret_id` (is_secret))
+      and Kubernetes (`k8s_path`, `k8s_role`, `k8s_jwt_path`) groups.
+      AppRole flow: POST role_id + secret_id to `/v1/auth/<mount>/login`,
+      receive `auth.client_token` + `auth.lease_duration`, cache the
+      token until 60s before expiry. Kubernetes flow: read the projected
+      service-account JWT fresh from disk on every login (kubelet
+      rotation lands without a restart), POST role + JWT to
+      `/v1/auth/<mount>/login`. Token cache keyed by
+      `(method, identity)` — role_id for AppRole, role for k8s — so
+      a config drift can't cross-pollinate tokens between tenants.
+      A 403 on a downstream KV read or write invalidates the cached
+      token immediately so the next call re-mints; the failing call
+      still surfaces, deliberately, so the operator sees the auth error.
+      Both `_resolve_vault()` (read path) and `_push_vault()` (migration
+      tool's write path) funnel through the new `_get_vault_token(cfg)`
+      so all three auth methods cover read + write + the bulk-migration
+      tool with one code path. Test-connection probe extended: token
+      mode keeps the existing unauth `sys/health` hit; AppRole and
+      Kubernetes mode mint a fresh token first (clearing any cached
+      one) and then call `sys/health` *with* the new token to verify
+      the role's policy actually attaches reads — catches the common
+      "AppRole role exists but is bound to an empty policy set" gotcha.
+      Worker mirror at `worker/tasks/modules/secrets.py` carries the
+      same logic, stdlib HTTP only — no `hvac` dependency. Settings UI
+      gets an inner auth-method dropdown that drives a config-driven
+      show/hide loop (token / AppRole / Kubernetes field groups);
+      page-load handler calls both `onSecretBackendChange()` and
+      `onVaultAuthMethodChange()` so the form lands in a consistent
+      state. Smoke-tested live: token mode against a real local Vault
+      reports `Vault reachable (sys/health responded)`; AppRole with
+      fake creds against the same real Vault produces
+      `Vault approle login failed: vault approle login HTTP 403:
+      {"errors":["permission denied"]}` — descriptive auth error
+      surfaces all the way through; kubernetes mode with no JWT file
+      produces `Vault kubernetes login failed: vault: kubernetes JWT
+      not readable at '<path>': [Errno 2] No such file or directory`
+      — pre-flight catches missing mount cleanly.
+- [x] **AWS native AssumeRole** *(2026-04-30)*. Slice 1 supported
+      static IAM keys plus manually-pasted STS temporary creds — the
+      latter expire on the AWS-decided clock and require operator
+      intervention before each rotation. New
+      `secret.awssm.auth_method` key picks `static` (default —
+      back-compat) or `assume_role`. Migration `0089` seeds the new
+      keys: `auth_method`, `role_arn`, `role_session_name` (default
+      `ipsolis`, surfaces in CloudTrail), `role_external_id`
+      (third-party-IAM trust pattern), `role_duration_seconds`
+      (default 3600, capped by the role's `MaxSessionDuration`).
+      In assume_role mode the configured access keys become a
+      *bootstrap identity* whose only required permission is
+      `sts:AssumeRole` on the target role; the role itself carries
+      the SM permissions, which narrows the blast radius of a
+      leaked bootstrap key. ip·Solis calls
+      `sts:AssumeRole` (SigV4-signed Query API POST to
+      `sts.<region>.amazonaws.com` — STS only exposes the Query API,
+      so the body is form-encoded and the response is XML; we parse
+      with `xml.etree.ElementTree`), caches the returned
+      `(AccessKeyId, SecretAccessKey, SessionToken, Expiration)` in
+      a process-local dict keyed by `(role_arn, session_name)`, and
+      re-mints automatically 60 seconds before the `Expiration`
+      timestamp. A 403 / `ExpiredToken` / `InvalidClientTokenId` on
+      a downstream SM call invalidates the cache immediately so the
+      next call re-mints; the failing call still raises so the
+      operator sees the auth error. Both `_resolve_awssm()` (read
+      path) and `_push_awssm()` (migration tool's write path) and
+      `_aws_sm_list()` (test-connection probe) funnel through the
+      new `_get_aws_creds(cfg)` helper so all three backend
+      operations cover both auth methods with one code path.
+      Test-connection probe in assume_role mode clears the cached
+      session first (otherwise a stale-but-valid cache could mask a
+      freshly-broken trust policy), then exercises the full
+      bootstrap → AssumeRole → SM `ListSecrets` chain. Worker mirror
+      at `worker/tasks/modules/secrets.py` carries the same logic,
+      stdlib HTTP + `xml.etree` only — no boto3 on the worker side.
+      Settings UI gets a sub-dropdown under the AWS SM card driving
+      a show/hide for the AssumeRole sub-fields; static mode
+      continues to render the existing access-key /
+      secret-access-key / session-token inputs unchanged.
+      Smoke-tested live: static mode with fake AKIA keys produces
+      the same `UnrecognizedClientException: The security token
+      included in the request is invalid` from real AWS as before
+      (regression intact); assume_role with no role_arn produces
+      `awssm: role_arn is empty (auth_method=assume_role)` from the
+      pre-flight; assume_role with a role_arn but fake bootstrap
+      creds round-trips to real AWS STS and surfaces the underlying
+      XML ErrorResponse: `sts AssumeRole HTTP 403:
+      <ErrorResponse>...<Code>InvalidClientTokenId</Code>...
+      </ErrorResponse>` — proving SigV4 signing for STS Query API +
+      form-encoded body + XML-response parsing all work end-to-end
+      (otherwise AWS would have rejected with
+      `InvalidSignatureException` / `SignatureDoesNotMatch`).
 - [ ] CCP: dedicated mTLS bootstrap UX (today operators paste the PEM).
 - [x] **One-shot plaintext → backend migration tool** *(2026-04-30)*.
       `POST /admin/config/secret-backend/migrate?dry_run=true|false`
@@ -223,9 +317,49 @@ pull one when there's a procurement need or a quiet week.
       than 90 days" Beat task).
 
 ### Audit + SIEM — residuals
-- [ ] Sentinel via the newer Logs Ingestion API (DCE / DCR / service principal)
-      — for tenants that have switched off the Data Collector API or want
-      DCR-side transformations.
+- [x] **Sentinel via the Logs Ingestion API** *(2026-04-30)*. Microsoft
+      announced 2026-08-31 sunset for the Azure Monitor Data Collector
+      API used by the legacy `siem.format=sentinel` path. New
+      `sentinel_log_ingestion` format value targets the replacement —
+      Data Collection Endpoint (DCE) + Data Collection Rule (DCR) +
+      named stream, signed with an AAD bearer token from a Service
+      Principal granted **Monitoring Metrics Publisher** on the DCR.
+      Migration `0090` seeds six new keys (`sentinel_dce_endpoint`,
+      `sentinel_dcr_immutable_id`, `sentinel_stream_name` defaulting
+      to `Custom-IpsolisAudit_CL`, `sentinel_tenant_id`,
+      `sentinel_client_id`, `sentinel_client_secret` (is_secret));
+      bumps the `siem.format` description to enumerate the new
+      option. Auth path: stdlib OAuth POST to
+      `login.microsoftonline.com/<tenant>/oauth2/v2.0/token` with
+      `scope=https://monitor.azure.com/.default` — separate from the
+      Azure KV / Entra ID SSO scopes so the streaming SPN's role
+      assignment stays narrow. AAD bearer tokens cached
+      process-locally with a 60-second safety margin (separate
+      cache from the Azure KV / Conjur / Vault token caches —
+      keyed by `(tenant, client)`). Body shape: same JSON-array of
+      audit-row dicts as the legacy adapter, so existing dashboards
+      built on `IpsolisAudit_CL` keep working after migration (the
+      DCR's `transformKql` copies `timestamp` to the mandatory
+      `TimeGenerated` column). Both the API single-event test
+      sender (`api/app/utils/siem_export.py`) and the worker batch
+      streamer (`worker/tasks/modules/siem_export.py` +
+      `worker/tasks/workflows/siem_streamer.py`) carry the new
+      format; `siem.sentinel_client_secret` flows through the
+      existing secret-resolver so a `vault://…` reference for it
+      dereferences before the AAD call. Test-connection probe
+      surfaces underlying failures verbatim:
+      `AAD auth failed: ... AADSTS700038: <id> is not a valid
+      application identifier` for bad SPN, the JSON `error.code` /
+      `error.message` shape for bad DCR / DCE / stream from the
+      Logs Ingestion side. Settings UI gets a new dropdown option
+      ("Microsoft Sentinel — Logs Ingestion API (DCE/DCR)") and a
+      dedicated field group for DCE endpoint / DCR immutable id /
+      stream name / tenant / client / client secret. Smoke-tested
+      live: empty-config preflight error, partial-config AAD-side
+      error, full-config real round-trip to
+      `login.microsoftonline.com` returning `AADSTS700038` (proving
+      OAuth POST + body shape are wire-correct), legacy `sentinel`
+      format regression intact.
 - [x] **Streaming-failure email alert via the existing health-alert path**
       *(2026-04-30)*. Added `siem` probe to `/admin/maintenance/health` —
       reads `siem.last_error` / `siem.last_success_at` from `app_config`
@@ -603,7 +737,7 @@ CCP mTLS bootstrap UX, and the one-shot migration tool stay queued
     re-reading via `GET /admin/config/ad.password` returns the
     reference in clear (not `***`) — masking exception works.
 
-**Slice-2 enrichments (Conjur, AWS SM, Azure KV, residual key coverage, and the one-shot migration tool all shipped; AppRole/JWT and AWS native AssumeRole still queued) → tracked in *Deferred Enterprise Backlog* (top of file).**
+**Slice-2 enrichments (Conjur, AWS SM, Azure KV, residual key coverage, the one-shot migration tool, Vault AppRole/JWT auth, and AWS native AssumeRole all shipped; CCP mTLS bootstrap UX still queued) → tracked in *Deferred Enterprise Backlog* (top of file).**
 
 ### [done] API tokens with scopes — Prio 0
 Slice 1 — table + ORM + bearer auth + Admin UI — **shipped 2026-04-26**.

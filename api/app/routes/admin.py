@@ -385,6 +385,9 @@ async def test_siem_connection(db: AsyncSession = Depends(get_db)) -> dict:
             "siem.workspace_id", "siem.shared_key", "siem.log_type",
             "siem.webhook_url", "siem.webhook_secret",
             "siem.webhook_signature_header", "siem.webhook_extra_headers",
+            "siem.sentinel_dce_endpoint", "siem.sentinel_dcr_immutable_id",
+            "siem.sentinel_stream_name", "siem.sentinel_tenant_id",
+            "siem.sentinel_client_id", "siem.sentinel_client_secret",
         ]))
     )
     rows = {r.key: (r.value or "") for r in cfg.scalars().all()}
@@ -406,6 +409,18 @@ async def test_siem_connection(db: AsyncSession = Depends(get_db)) -> dict:
     webhook_secret = (await resolve_secret_value(db, rows.get("siem.webhook_secret") or "")).strip()
     webhook_sig_header = (rows.get("siem.webhook_signature_header") or "X-Hub-Signature-256").strip()
     webhook_extra = rows.get("siem.webhook_extra_headers") or ""
+    # Logs Ingestion API path: DCE host + DCR + stream + SPN. The
+    # client_secret is is_secret=true so it flows through resolve_secret_value
+    # — operators with a vault://… reference for it want it dereferenced
+    # before we hand it to the AAD token endpoint.
+    sentinel_dce = (rows.get("siem.sentinel_dce_endpoint") or "").strip()
+    sentinel_dcr = (rows.get("siem.sentinel_dcr_immutable_id") or "").strip()
+    sentinel_stream = (rows.get("siem.sentinel_stream_name") or "").strip()
+    sentinel_tenant = (rows.get("siem.sentinel_tenant_id") or "").strip()
+    sentinel_client = (rows.get("siem.sentinel_client_id") or "").strip()
+    sentinel_client_secret = (await resolve_secret_value(
+        db, rows.get("siem.sentinel_client_secret") or ""
+    )).strip()
 
     # Per-format precondition check so admins get a tight error before
     # we round-trip out to a SIEM that would have rejected anyway.
@@ -413,6 +428,8 @@ async def test_siem_connection(db: AsyncSession = Depends(get_db)) -> dict:
         return {"ok": False, "message": "Endpoint URL or HEC token is missing."}
     if fmt == "sentinel" and (not workspace_id or not shared_key):
         return {"ok": False, "message": "Workspace ID or shared key is missing."}
+    if fmt == "sentinel_log_ingestion" and not (sentinel_dce and sentinel_dcr and sentinel_stream):
+        return {"ok": False, "message": "DCE endpoint / DCR immutable id / stream name is missing."}
     if fmt == "webhook" and (not webhook_url or not webhook_secret):
         return {"ok": False, "message": "Webhook URL or secret is missing."}
 
@@ -423,6 +440,12 @@ async def test_siem_connection(db: AsyncSession = Depends(get_db)) -> dict:
         webhook_url=webhook_url, webhook_secret=webhook_secret,
         webhook_signature_header=webhook_sig_header,
         webhook_extra_headers=webhook_extra,
+        sentinel_dce_endpoint=sentinel_dce,
+        sentinel_dcr_immutable_id=sentinel_dcr,
+        sentinel_stream_name=sentinel_stream,
+        sentinel_tenant_id=sentinel_tenant,
+        sentinel_client_id=sentinel_client,
+        sentinel_client_secret=sentinel_client_secret,
     )
     return {"ok": ok, "message": msg}
 
