@@ -1597,6 +1597,53 @@
         {% endif %}
       </span>
     </div>
+
+    <!-- One-shot migration tool — pushes plaintext is_secret=true rows
+         to the configured backend and replaces each value with the
+         matching reference. -->
+    <div class="mt-6 pt-5 border-t border-token-border/60">
+      <h3 class="text-xs font-semibold text-body mb-1">Migrate plaintext secrets to backend</h3>
+      <p class="text-[11px] text-muted/70 mb-3 leading-snug">
+        Walks every <code class="font-mono">is_secret=true</code> config row, pushes the plaintext
+        value to the active backend, and replaces the row with the matching reference
+        (<code class="font-mono">vault://…</code> / <code class="font-mono">azurekv://…</code> / <code class="font-mono">awssm://…</code> / <code class="font-mono">conjur://…</code>).
+        CCP is read-only by design — Safes are managed via PVWA, not the API. Always
+        run <strong>Dry run</strong> first to review the per-row plan before any backend writes happen.
+      </p>
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Migration prefix</label>
+          <input type="text" id="secret-migration-prefix"
+                 value="{{ secret_config.get('secret.migration_prefix', 'ipsolis') if secret_config else 'ipsolis' }}"
+                 placeholder="ipsolis"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <p class="text-[11px] text-muted/60 mt-1">Prepended to every key (e.g. <code class="font-mono">ipsolis/ad/password</code>).</p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Azure KV destination vault</label>
+          <input type="text" id="secret-azurekv-migration-vault"
+                 value="{{ secret_config.get('secret.azurekv.migration_vault', '') if secret_config else '' }}"
+                 placeholder="kv-prod-ipsolis"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <p class="text-[11px] text-muted/60 mt-1">Required when the backend is Azure KV (other backends ignore this).</p>
+        </div>
+      </div>
+      <div class="flex gap-3 items-center">
+        <button onclick="saveMigrationPrefix()"
+                class="px-4 py-1.5 bg-surface-raised text-body text-xs font-medium rounded hover:bg-surface border border-token-border">
+          Save prefix
+        </button>
+        <button onclick="migrateSecrets(true)"
+                class="px-4 py-1.5 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700">
+          Dry run
+        </button>
+        <button onclick="migrateSecrets(false)"
+                class="px-4 py-1.5 bg-amber-600 text-white text-xs font-medium rounded hover:bg-amber-700">
+          Migrate now
+        </button>
+      </div>
+      <div id="secret-migrate-result" class="hidden mt-4 text-xs"></div>
+    </div>
   </div>
 </div>
 
@@ -2326,6 +2373,102 @@ async function testSecretBackend() {
 document.addEventListener('DOMContentLoaded', function() {
   if (document.getElementById('secret-backend')) onSecretBackendChange();
 });
+
+// ── Secret-backend migration tool ─────────────────────────────────────────────
+async function saveMigrationPrefix() {
+  var fields = {
+    'secret.migration_prefix':         document.getElementById('secret-migration-prefix').value.trim() || 'ipsolis',
+    'secret.azurekv.migration_vault':  document.getElementById('secret-azurekv-migration-vault').value.trim(),
+  };
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showComplianceBanner(errors.length === 0
+    ? {ok: true,  message: 'Migration prefix saved.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
+
+async function migrateSecrets(dryRun) {
+  // Confirm dialog only for the destructive ("real") path. The plain
+  // dry-run is read-only-ish (it doesn't touch app_config or the
+  // backend) so it doesn't need a guard.
+  if (!dryRun) {
+    var ok = window.confirm(
+      'Migrate every is_secret=true row to the configured backend?\n\n' +
+      'Each plaintext row will be pushed to the backend and replaced ' +
+      'with a backend reference. This is reversible only by manually ' +
+      'restoring values from the backend or a database backup.'
+    );
+    if (!ok) return;
+  }
+  var panel = document.getElementById('secret-migrate-result');
+  panel.classList.remove('hidden');
+  panel.innerHTML = '<div class="text-muted">Running ' + (dryRun ? 'dry run' : 'migration') + '…</div>';
+
+  var resp = await fetch('/admin/config/secret-backend/migrate?dry_run=' + (dryRun ? 'true' : 'false'),
+                         {method: 'POST'});
+  var data = await resp.json();
+  renderMigrationResult(panel, data);
+}
+
+function renderMigrationResult(panel, data) {
+  var lines = [];
+  if (data.error) {
+    panel.innerHTML = '<div class="px-3 py-2 rounded bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300">' +
+      escapeHtml(data.error) + '</div>';
+    return;
+  }
+  var s = data.summary || {};
+  var head = 'Backend: <strong>' + escapeHtml(data.backend) + '</strong>';
+  if (data.prefix) head += ' · Prefix: <code class="font-mono">' + escapeHtml(data.prefix) + '</code>';
+  head += ' · Mode: <strong>' + (data.dry_run ? 'dry run' : 'live migration') + '</strong>';
+  lines.push('<div class="mb-2 text-muted/80">' + head + '</div>');
+
+  var summaryParts = [];
+  if (s.migrated)       summaryParts.push('<span class="text-green-700 dark:text-green-300">migrated: ' + s.migrated + '</span>');
+  if (s.would_migrate)  summaryParts.push('<span class="text-blue-700 dark:text-blue-300">would migrate: ' + s.would_migrate + '</span>');
+  if (s.skipped)        summaryParts.push('<span class="text-muted">skipped: ' + s.skipped + '</span>');
+  if (s.failed)         summaryParts.push('<span class="text-red-700 dark:text-red-300">failed: ' + s.failed + '</span>');
+  if (summaryParts.length) lines.push('<div class="mb-2">' + summaryParts.join(' · ') + '</div>');
+
+  if (data.items && data.items.length) {
+    lines.push('<table class="w-full text-[11px] font-mono"><thead><tr class="text-left text-muted/60 border-b border-token-border/50"><th class="py-1 pr-2">Key</th><th class="py-1 pr-2">Status</th><th class="py-1">Details</th></tr></thead><tbody>');
+    data.items.forEach(function(it) {
+      var color = (
+        it.status === 'migrated'      ? 'text-green-700 dark:text-green-300' :
+        it.status === 'would_migrate' ? 'text-blue-700 dark:text-blue-300'   :
+        it.status === 'failed'        ? 'text-red-700 dark:text-red-300'     :
+                                        'text-muted'
+      );
+      var detail = it.reference ? '<code>' + escapeHtml(it.reference) + '</code>'
+                  : it.reason   ? escapeHtml(it.reason)
+                  : '';
+      lines.push(
+        '<tr class="border-b border-token-border/30">' +
+        '<td class="py-1 pr-2">' + escapeHtml(it.key) + '</td>' +
+        '<td class="py-1 pr-2 ' + color + '">' + escapeHtml(it.status) + '</td>' +
+        '<td class="py-1 break-all">' + detail + '</td>' +
+        '</tr>'
+      );
+    });
+    lines.push('</tbody></table>');
+  } else {
+    lines.push('<div class="text-muted">No is_secret=true rows to migrate.</div>');
+  }
+  panel.innerHTML = lines.join('');
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
 // ── SIEM Settings ───────────────────────────────────────────────────────────────
 async function savePasswordPolicy() {

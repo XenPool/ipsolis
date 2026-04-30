@@ -148,9 +148,47 @@ pull one when there's a procurement need or a quiet week.
       (returns empty string + WARNING log on resolution failure).
 - [ ] Vault AppRole + Kubernetes-JWT auth methods (slice 1 ships static-token only).
 - [ ] CCP: dedicated mTLS bootstrap UX (today operators paste the PEM).
-- [ ] One-shot migration tool: walk every `is_secret=true` row in `app_config`,
-      write the value into the chosen backend, replace the row's value with
-      the matching reference, audit.
+- [x] **One-shot plaintext → backend migration tool** *(2026-04-30)*.
+      `POST /admin/config/secret-backend/migrate?dry_run=true|false`
+      walks every `is_secret=true` row in `app_config`, pushes each
+      plaintext value to the configured backend at a deterministic
+      address, and replaces the row's value with the matching
+      reference. Per-row status: `would_migrate` (dry-run),
+      `migrated`, `skipped` (empty / already a reference / `secret.*`
+      key), `failed` (carries the underlying error message — partial
+      failures don't roll back successful sibling rows). Address
+      convention driven by `secret.migration_prefix` (default
+      `ipsolis`): `ad.password` becomes `vault://ipsolis/ad/password`
+      / `azurekv://<vault>/ipsolis-ad-password` (KV names disallow
+      slashes — dots become hyphens) / `awssm://ipsolis/ad/password`
+      / `conjur://ipsolis/ad/password`. Migration `0087` seeds the
+      prefix key plus an Azure-specific
+      `secret.azurekv.migration_vault` (Azure KV references include
+      the vault name, so the tool needs to know the destination
+      vault). CCP is rejected with a clear error since Safes are
+      managed via PVWA, not the AIM API. Per-backend write helpers
+      are stdlib HTTP only: Vault KV-v2 POST with the wrapped
+      `{"data": {"value": …}}` envelope; Azure KV PUT
+      `/secrets/<name>` reusing the AAD token cache; AWS SM
+      `CreateSecret` with fallback to `PutSecretValue` on
+      `ResourceExistsException` (so re-runs overwrite cleanly);
+      Conjur `POST /secrets/<account>/variable/<id>` with a focused
+      404 hint when the variable isn't policy-declared. Pre-flight
+      check refuses to start when backend creds are incomplete or
+      Azure's destination vault is unset. Audit: one
+      `app_config / migrated_to_backend` row per swap (value content
+      elided — only key + resulting reference shape) plus a single
+      `secret_migration_run` summary row per real migration.
+      Settings UI gets a dedicated section with prefix /
+      destination-vault inputs, **Dry run** (read-only preview),
+      and **Migrate now** (with confirm dialog and per-row result
+      table). Smoke-tested live: dry-run against the Vault backend
+      classified all 18 `is_secret=true` rows correctly (8
+      `would_migrate`, 10 `skipped` — emptys + `secret.*` excludes,
+      0 `failed`); live migration against an unreachable Vault
+      surfaced 8 `failed` rows with `vault unreachable: [Errno -2]
+      Name or service not known` and zero partial commits, proving
+      the per-row error isolation contract.
 - [x] **Resolver coverage on residual is_secret keys** *(2026-04-30)*.
       Five raw read sites wired through the existing async/sync
       resolvers so reference values (`vault://…`, `conjur://…`,
@@ -565,7 +603,7 @@ CCP mTLS bootstrap UX, and the one-shot migration tool stay queued
     re-reading via `GET /admin/config/ad.password` returns the
     reference in clear (not `***`) — masking exception works.
 
-**Slice-2 enrichments (Conjur, AWS SM, Azure KV all shipped; AppRole/JWT, migration tool, residual key coverage still queued) → tracked in *Deferred Enterprise Backlog* (top of file).**
+**Slice-2 enrichments (Conjur, AWS SM, Azure KV, residual key coverage, and the one-shot migration tool all shipped; AppRole/JWT and AWS native AssumeRole still queued) → tracked in *Deferred Enterprise Backlog* (top of file).**
 
 ### [done] API tokens with scopes — Prio 0
 Slice 1 — table + ORM + bearer auth + Admin UI — **shipped 2026-04-26**.

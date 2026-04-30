@@ -541,6 +541,57 @@ async def test_secret_backend(db: AsyncSession = Depends(get_db)) -> dict:
     return {"ok": ok, "message": msg}
 
 
+@router.post("/config/secret-backend/migrate", dependencies=[require_role("admin")])
+async def migrate_secret_backend(
+    request: Request,
+    dry_run: bool = True,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Push every plaintext ``is_secret=true`` row to the configured backend.
+
+    Each row's value is written to the backend at a backend-specific
+    address derived from the row's key + ``secret.migration_prefix``,
+    then the row's value is replaced with the matching reference
+    (``vault://...``, ``azurekv://...``, ``awssm://...``, or
+    ``conjur://...``). CCP is read-only and is rejected with a clear
+    error — operators must populate Safes via PVWA, then point ip·Solis
+    rows at them with ``ccp://...`` references manually.
+
+    Defaults to ``dry_run=true`` so admins can review the per-row plan
+    before any backend writes happen. The dry-run report contains the
+    same shape as a real run minus the actual pushes / DB updates /
+    audit rows. Pass ``dry_run=false`` to actually migrate.
+
+    Per-row status:
+
+    * ``would_migrate`` (dry-run only) — would push to backend.
+    * ``migrated`` — pushed and row updated.
+    * ``skipped`` — empty value, already a reference, or excluded
+      (``secret.*`` keys).
+    * ``failed`` — backend write failed (network, auth, missing policy
+      on Conjur, …); message in ``reason``. Failures are per-row;
+      successful rows in the same run still commit so a partial
+      backend outage doesn't bin all the work.
+    """
+    from app.utils.secrets import migrate_to_backend
+
+    report = await migrate_to_backend(db, dry_run=dry_run)
+    # Aggregate audit row so the run shows up in the audit log even
+    # when the per-row pushes happened (or didn't, for dry-run).
+    if not dry_run and report.get("summary", {}).get("migrated", 0) > 0:
+        await aaudit(
+            db, "app_config", 0, "secret_migration_run",
+            new={
+                "backend": report.get("backend"),
+                "prefix": report.get("prefix"),
+                "summary": report.get("summary"),
+            },
+            by=actor_by(request, "secret_migrate"),
+        )
+        await db.commit()
+    return report
+
+
 @router.post("/config/sccm/test", dependencies=[require_enterprise("sccm_integration"), require_role("admin")])
 async def test_sccm_connection() -> dict:
     """Enqueues a Celery task that runs a pwsh+Kerberos probe inside the worker

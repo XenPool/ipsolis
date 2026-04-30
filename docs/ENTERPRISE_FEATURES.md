@@ -2217,10 +2217,110 @@ access. Genuine secrets (`secret.vault.token`,
 `secret.awssm.secret_access_key`, `secret.awssm.session_token`,
 `secret.conjur.api_key`) are still masked.
 
+### One-shot plaintext → backend migration
+
+After picking and configuring a backend, admins can bulk-migrate every
+existing plaintext secret in `app_config` to the backend in a single
+action. Settings → Compliance → External Secret Backend → **Migrate
+plaintext secrets to backend**.
+
+**Flow**:
+
+1. **Dry run** lists every `is_secret=true` row, marks each as
+   `would_migrate` / `skipped` / `failed`, and shows the reference each
+   row would be replaced with — no backend writes, no `app_config`
+   updates. Use this to spot-check the per-row plan before committing.
+2. **Migrate now** (after a confirm dialog) actually pushes each
+   plaintext value to the backend, replaces the row's value with the
+   matching reference, and writes one audit row per swap (`app_config /
+   migrated_to_backend`, value content elided — only the resulting
+   reference shape is recorded). Per-row failures don't roll back
+   sibling rows, so a partial backend outage leaves the successful
+   subset migrated and the failed subset still plaintext for retry.
+
+**Address convention** (driven by `secret.migration_prefix`, default
+`ipsolis`):
+
+| Backend | Reference shape | Example for `ad.password` |
+|---|---|---|
+| Vault | `vault://<prefix>/<key-with-dots-as-slashes>` | `vault://ipsolis/ad/password` |
+| Azure KV | `azurekv://<vault>/<prefix>-<key-with-dots-as-hyphens>` | `azurekv://kv-prod-ipsolis/ipsolis-ad-password` |
+| AWS SM | `awssm://<prefix>/<key-with-dots-as-slashes>` | `awssm://ipsolis/ad/password` |
+| Conjur | `conjur://<prefix>/<key-with-dots-as-slashes>` | `conjur://ipsolis/ad/password` |
+
+Azure KV needs an extra `secret.azurekv.migration_vault` config key
+because the vault name lives in the reference itself; the migration
+tool refuses to start until it's populated. The migration field shows
+up in the Settings card next to the prefix input.
+
+**Skipped automatically**:
+
+* Empty values — nothing to migrate.
+* Already-reference values (`vault://…`, `ccp://…`, `azurekv://…`,
+  `awssm://…`, `conjur://…`) — already migrated.
+* Every `secret.*` row — the backend's own config can't migrate to
+  itself.
+
+**CCP**: rejected with a clear error. CyberArk Safes are managed via
+PVWA / Privilege Cloud, not the AIM web service — the migration tool
+can't push to CCP, only read from it. After populating Safes manually,
+admins update each ip·Solis row's value to `ccp://<safe>/<object>` by
+hand (or via the `PUT /admin/config/<key>` API).
+
+**IAM / policy notes per backend**:
+
+* **Vault** — the configured token needs `update` capability on
+  `<mount>/data/<prefix>/*`. Read-only tokens are enough for resolution
+  but block migration.
+* **Azure KV** — the SPN needs **Key Vault Secrets Officer** (RBAC) or
+  the `Set` permission on Secrets (vault access policies). The slice-1
+  setup grants only `Get` (Secrets User), which is enough for reads but
+  not for writes.
+* **AWS SM** — the principal needs both `secretsmanager:CreateSecret`
+  (first migration) and `secretsmanager:PutSecretValue` (subsequent
+  re-runs / overwrites). The migration tool optimistically tries
+  CreateSecret and falls back to PutSecretValue on
+  `ResourceExistsException` — both actions are required for the full
+  flow.
+* **Conjur** — the host needs `update` privilege on every variable it
+  writes. Conjur's data plane doesn't auto-create variables on write,
+  so the variable resources must already be defined in policy. A 404
+  on write surfaces as `conjur write 404: variable <id> is not
+  declared in policy. Load a Conjur policy that defines this variable
+  (or a wildcard pattern covering it) before migrating.`
+
+**Sample Conjur wildcard policy** for the migration target space:
+
+```yaml
+- !policy
+  id: ipsolis
+  body:
+  - !variable ad/password
+  - !variable email/password
+  - !variable entra/client_secret
+  - !variable sccm/password
+  - !variable siem/token
+  - !variable siem/shared_key
+  - !variable siem/webhook_secret
+  - !variable teams/webhook_url
+  - !variable updates/github_token
+  - !variable vsphere/password
+  - !variable xenserver/password
+
+  - !permit
+    role: !host /ipsolis-prod
+    privileges: [ read, execute, update ]
+    resource: !variable
+```
+
+Loading this once with `conjur policy load` covers every
+`is_secret=true` row ipSolis ships today; future additions need a
+policy update before they migrate.
+
 ### Remaining slice 2 work
 
-Five backends shipped (Vault + CCP + Azure KV + AWS SM + Conjur).
-Still queued:
+Five backends shipped (Vault + CCP + Azure KV + AWS SM + Conjur) plus
+the bulk-migration tool. Still queued:
 
 * **Vault AppRole + Kubernetes-JWT** auth methods (slice 1 ships
   static-token only).
@@ -2229,9 +2329,6 @@ Still queued:
   with cached refresh would let ipSolis manage the rotation itself.
 * **CCP mTLS bootstrap UX** — today operators paste the PEM blob;
   a guided "upload cert + key" form would be friendlier.
-* **One-shot migration tool**: walk every `is_secret=true` row in
-  `app_config`, write the value into the chosen backend, replace
-  the row's value with the matching reference, audit the swap.
 
 Track in *Deferred Enterprise Backlog* (top of `TASKS.md`).
 

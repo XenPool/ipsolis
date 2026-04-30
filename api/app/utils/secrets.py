@@ -1075,3 +1075,444 @@ def _aws_sm_list(
         raise RuntimeError(f"HTTP {e.code} from Secrets Manager: {detail}") from e
     except urllib.error.URLError as e:
         raise RuntimeError(f"unreachable: {e.reason}") from e
+
+
+# ── One-shot plaintext → backend migration ───────────────────────────────────
+#
+# Walks every ``is_secret=true`` row in ``app_config`` whose value is plain
+# text (i.e. *not* already a reference and *not* empty), pushes the value to
+# the configured backend, and replaces the row's value with the matching
+# reference. CCP is intentionally skipped: it's read-only by design (Safes
+# are managed via PVWA / Privilege Cloud, not the AIM web service), so a
+# bulk push isn't a thing the CCP API supports.
+#
+# Path convention per backend:
+#
+# * Vault    — ``vault://<prefix>/<key-with-dots-as-slashes>``
+#              e.g. ``ad.password`` → ``vault://ipsolis/ad/password``
+# * Azure KV — ``azurekv://<vault>/<prefix>-<key-with-dots-as-hyphens>``
+#              (Azure KV secret names allow only ``[a-zA-Z0-9-]``, so dots
+#              and slashes both collapse to hyphens; the leading prefix is
+#              hyphenated rather than slashed for the same reason)
+# * AWS SM   — ``awssm://<prefix>/<key-with-dots-as-slashes>``
+#              (same shape as Vault — AWS SM allows ``/``)
+# * Conjur   — ``conjur://<prefix>/<key-with-dots-as-slashes>``
+#              (the operator must have policy already loaded that defines
+#              variables under this prefix; Conjur won't auto-create the
+#              variable resource — see _push_conjur for the failure shape)
+#
+# Excluded from migration: every ``secret.*`` key (the backend's own creds
+# obviously can't migrate to itself), and any row whose value is already
+# a known reference scheme or is empty.
+
+_MIGRATION_EXCLUDED_PREFIXES = ("secret.",)
+
+
+def _migration_skip_reason(key: str, value: str) -> str | None:
+    """Return None if the row should migrate, else a human-readable skip reason."""
+    if any(key.startswith(p) for p in _MIGRATION_EXCLUDED_PREFIXES):
+        return "excluded (secret.* keys are the backend's own configuration)"
+    if not value:
+        return "empty value — nothing to migrate"
+    if is_secret_reference(value):
+        return "already a backend reference"
+    return None
+
+
+def _ref_path_from_key(key: str) -> str:
+    """``ad.password`` → ``ad/password``. Used by Vault / AWS SM / Conjur."""
+    return key.replace(".", "/")
+
+
+async def migrate_to_backend(
+    db: AsyncSession,
+    *,
+    dry_run: bool,
+) -> dict:
+    """Orchestrate the plaintext → backend migration.
+
+    Returns a structured report:
+
+        {
+          "backend": "vault",
+          "dry_run": True,
+          "prefix": "ipsolis",
+          "items": [
+            {"key": "ad.password", "status": "would_migrate",
+             "reference": "vault://ipsolis/ad/password"},
+            {"key": "smtp.password", "status": "skipped",
+             "reason": "empty value — nothing to migrate"},
+            ...
+          ],
+          "summary": {"migrated": 0, "would_migrate": 7, "skipped": 12, "failed": 0}
+        }
+
+    On a real run (``dry_run=False``), each successful push also writes
+    an ``app_config / migrated_to_backend`` audit row capturing the key
+    and the resulting reference (no value content).
+    """
+    cfg = await _load_secret_cfg(db)
+    backend = (cfg.get("backend") or "db").strip().lower()
+    if backend == "db":
+        return {
+            "backend": "db",
+            "dry_run": dry_run,
+            "items": [],
+            "summary": {"migrated": 0, "would_migrate": 0, "skipped": 0, "failed": 0},
+            "error": "Backend is 'db' — pick Vault / Azure KV / AWS SM / Conjur first.",
+        }
+    if backend == "ccp":
+        return {
+            "backend": "ccp",
+            "dry_run": dry_run,
+            "items": [],
+            "summary": {"migrated": 0, "would_migrate": 0, "skipped": 0, "failed": 0},
+            "error": (
+                "CCP is read-only by design — credentials live in CyberArk Safes "
+                "managed via PVWA / Privilege Cloud, not the AIM web service. "
+                "Create the Safe entries manually, then write each "
+                "ip·Solis row's value as ccp://<safe>/<object>."
+            ),
+        }
+
+    prefix = (cfg.get("migration_prefix") or "ipsolis").strip().strip("/") or "ipsolis"
+
+    # Pre-flight per-backend config check so we fail before walking the
+    # rows when we know the push will fail every time anyway.
+    err = _migration_preflight(backend, cfg)
+    if err:
+        return {
+            "backend": backend,
+            "dry_run": dry_run,
+            "items": [],
+            "summary": {"migrated": 0, "would_migrate": 0, "skipped": 0, "failed": 0},
+            "error": err,
+        }
+
+    rows = (await db.execute(
+        select(AppConfig.id, AppConfig.key, AppConfig.value).where(AppConfig.is_secret.is_(True))
+    )).all()
+
+    items: list[dict] = []
+    migrated = would_migrate = skipped = failed = 0
+
+    for row_id, key, value in rows:
+        skip = _migration_skip_reason(key, value or "")
+        if skip:
+            items.append({"key": key, "status": "skipped", "reason": skip})
+            skipped += 1
+            continue
+
+        try:
+            reference = _build_reference(backend, prefix, key, cfg)
+        except Exception as exc:  # noqa: BLE001
+            items.append({"key": key, "status": "failed", "reason": str(exc)})
+            failed += 1
+            continue
+
+        if dry_run:
+            items.append({"key": key, "status": "would_migrate", "reference": reference})
+            would_migrate += 1
+            continue
+
+        try:
+            _push_to_backend(backend, prefix, key, value, cfg)
+        except Exception as exc:  # noqa: BLE001
+            items.append({"key": key, "status": "failed", "reason": str(exc)})
+            failed += 1
+            continue
+
+        # Push succeeded — replace row value with the reference and audit.
+        # We do this as a single UPDATE rather than ORM mutation so the
+        # audit row references the same row id consistently with how the
+        # config edit endpoints work.
+        from sqlalchemy import text as sa_text  # noqa: PLC0415
+        await db.execute(
+            sa_text("UPDATE app_config SET value = :v, updated_at = NOW() WHERE id = :id"),
+            {"v": reference, "id": row_id},
+        )
+        # Drop the resolver cache for this exact reference (rare but
+        # important: a value that was *just* migrated should not return
+        # a stale plaintext on the next read because of an earlier
+        # cache-warm path).
+        _cache.pop(reference, None)
+        # Audit. Old / new snapshots intentionally elide the actual
+        # secret value — only the key + the resulting reference shape.
+        from app.utils.audit import aaudit  # noqa: PLC0415
+        await aaudit(
+            db, "app_config", int(row_id), "migrated_to_backend",
+            old={"key": key, "value": "***"},
+            new={"key": key, "value": reference},
+            by="api:secret_migrate",
+        )
+        items.append({"key": key, "status": "migrated", "reference": reference})
+        migrated += 1
+
+    if not dry_run:
+        await db.commit()
+
+    return {
+        "backend": backend,
+        "dry_run": dry_run,
+        "prefix": prefix,
+        "items": items,
+        "summary": {
+            "migrated": migrated,
+            "would_migrate": would_migrate,
+            "skipped": skipped,
+            "failed": failed,
+        },
+    }
+
+
+def _migration_preflight(backend: str, cfg: dict[str, str]) -> str | None:
+    """Return an error string when backend config is incomplete for *writes*.
+
+    Read-side configs (e.g. Azure SPN credentials) are also write-side, so
+    we reuse the same check logic — but Azure KV needs an additional
+    "which vault to write to" hint that isn't required for reads.
+    """
+    if backend == "vault":
+        if not (cfg.get("vault.url") and cfg.get("vault.token")):
+            return "vault.url or vault.token is empty."
+    elif backend == "azurekv":
+        if not (cfg.get("azurekv.tenant_id") and cfg.get("azurekv.client_id") and cfg.get("azurekv.client_secret")):
+            return "azurekv: tenant_id / client_id / client_secret incomplete."
+        if not cfg.get("azurekv.migration_vault"):
+            return (
+                "azurekv: secret.azurekv.migration_vault is empty. "
+                "Set the destination vault name in Settings → Compliance → External "
+                "Secret Backend before migrating to Azure KV."
+            )
+    elif backend == "awssm":
+        if not (cfg.get("awssm.region") and cfg.get("awssm.access_key_id") and cfg.get("awssm.secret_access_key")):
+            return "awssm: region / access_key_id / secret_access_key incomplete."
+    elif backend == "conjur":
+        if not (cfg.get("conjur.url") and cfg.get("conjur.account") and cfg.get("conjur.host_id") and cfg.get("conjur.api_key")):
+            return "conjur: url / account / host_id / api_key incomplete."
+    return None
+
+
+def _build_reference(backend: str, prefix: str, key: str, cfg: dict[str, str]) -> str:
+    """Compute the ``<scheme>://...`` reference the row's value will be replaced with."""
+    if backend == "vault":
+        return f"vault://{prefix}/{_ref_path_from_key(key)}"
+    if backend == "awssm":
+        return f"awssm://{prefix}/{_ref_path_from_key(key)}"
+    if backend == "conjur":
+        return f"conjur://{prefix}/{_ref_path_from_key(key)}"
+    if backend == "azurekv":
+        # Azure KV names: [a-zA-Z0-9-] only. Hyphenate both the prefix
+        # and the key. We keep the leading prefix as a name segment
+        # (joined by ``-``) rather than as a path because Azure KV has
+        # no path namespace under a vault.
+        safe_prefix = prefix.replace("/", "-").replace(".", "-")
+        safe_key = key.replace(".", "-")
+        vault = (cfg.get("azurekv.migration_vault") or "").strip()
+        return f"azurekv://{vault}/{safe_prefix}-{safe_key}"
+    raise ValueError(f"unsupported backend for migration: {backend!r}")
+
+
+def _push_to_backend(backend: str, prefix: str, key: str, value: str, cfg: dict[str, str]) -> None:
+    """Dispatch to the per-backend write helper. Raises on failure."""
+    if backend == "vault":
+        _push_vault(f"{prefix}/{_ref_path_from_key(key)}", value, cfg)
+    elif backend == "azurekv":
+        safe_prefix = prefix.replace("/", "-").replace(".", "-")
+        safe_key = key.replace(".", "-")
+        vault = (cfg.get("azurekv.migration_vault") or "").strip()
+        _push_azurekv(vault, f"{safe_prefix}-{safe_key}", value, cfg)
+    elif backend == "awssm":
+        _push_awssm(f"{prefix}/{_ref_path_from_key(key)}", value, cfg)
+    elif backend == "conjur":
+        _push_conjur(f"{prefix}/{_ref_path_from_key(key)}", value, cfg)
+    else:
+        raise ValueError(f"unsupported backend for migration: {backend!r}")
+
+
+# ── Backend write helpers ────────────────────────────────────────────────────
+
+def _push_vault(path: str, value: str, cfg: dict[str, str]) -> None:
+    """Write to Vault KV v2 at ``<mount>/<path>`` with ``data.value = <value>``.
+
+    KV v2 wraps payloads in ``{"data": {...}}`` — the API otherwise
+    interprets top-level keys as version metadata.
+    """
+    base = (cfg.get("vault.url") or "").strip().rstrip("/")
+    token = (cfg.get("vault.token") or "").strip()
+    mount = (cfg.get("vault.kv_mount") or "secret").strip().strip("/") or "secret"
+    namespace = (cfg.get("vault.namespace") or "").strip()
+    url = f"{base}/v1/{mount}/data/{path}"
+    headers = {
+        "X-Vault-Token": token,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    if namespace:
+        headers["X-Vault-Namespace"] = namespace
+    body = json.dumps({"data": {"value": value}}).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS) as resp:
+            resp.read()
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:  # noqa: BLE001
+            detail = ""
+        raise RuntimeError(f"vault write HTTP {e.code}: {detail}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"vault unreachable: {e.reason}") from e
+
+
+def _push_azurekv(vault: str, secret_name: str, value: str, cfg: dict[str, str]) -> None:
+    """PUT ``/secrets/<name>`` on the configured Azure Key Vault."""
+    tenant = (cfg.get("azurekv.tenant_id") or "").strip()
+    client_id = (cfg.get("azurekv.client_id") or "").strip()
+    client_secret = (cfg.get("azurekv.client_secret") or "").strip()
+    api_version = (cfg.get("azurekv.api_version") or "7.4").strip() or "7.4"
+    token = _aad_token(tenant, client_id, client_secret)
+
+    url = (
+        f"https://{vault}.vault.azure.net/secrets/"
+        f"{urllib.parse.quote(secret_name, safe='')}?api-version={api_version}"
+    )
+    body = json.dumps({"value": value}).encode("utf-8")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    req = urllib.request.Request(url, data=body, headers=headers, method="PUT")
+    try:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS) as resp:
+            resp.read()
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:  # noqa: BLE001
+            detail = ""
+        raise RuntimeError(f"azurekv write HTTP {e.code}: {detail}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"azurekv unreachable: {e.reason}") from e
+
+
+def _push_awssm(secret_id: str, value: str, cfg: dict[str, str]) -> None:
+    """Try CreateSecret, fall back to PutSecretValue on ResourceExistsException.
+
+    AWS SM has two write actions: ``CreateSecret`` (must not exist) and
+    ``PutSecretValue`` (must exist — bumps the version). We optimistically
+    try CreateSecret; on the documented ``ResourceExistsException`` we
+    retry with PutSecretValue. Any other error is fatal for this row.
+
+    IAM policy needs both actions for the migration tool to work end to
+    end. The migration docs call this out so admins can pre-grant the
+    extra permission rather than discover it after a partial run.
+    """
+    import datetime as _dt
+    region = (cfg.get("awssm.region") or "").strip()
+    access_key = (cfg.get("awssm.access_key_id") or "").strip()
+    secret_key = (cfg.get("awssm.secret_access_key") or "").strip()
+    session_token = (cfg.get("awssm.session_token") or "").strip()
+    host = f"{_AWS_SERVICE}.{region}.amazonaws.com"
+
+    def _call(target: str, payload: dict) -> dict:
+        now = _dt.datetime.now(_dt.timezone.utc)
+        amz_date = now.strftime("%Y%m%dT%H%M%SZ")
+        date_stamp = now.strftime("%Y%m%d")
+        body = json.dumps(payload).encode("utf-8")
+        headers = _aws_sigv4_sign(
+            region=region, access_key=access_key, secret_key=secret_key,
+            session_token=session_token, body=body, host=host,
+            amz_date=amz_date, date_stamp=date_stamp, target=target,
+        )
+        req = urllib.request.Request(f"https://{host}/", data=body, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS) as resp:
+            return json.loads(resp.read().decode("utf-8") or "{}")
+
+    try:
+        _call("secretsmanager.CreateSecret", {"Name": secret_id, "SecretString": value})
+        return
+    except urllib.error.HTTPError as e:
+        try:
+            detail_raw = e.read().decode("utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            detail_raw = ""
+        # ResourceExistsException is the only retryable failure here —
+        # everything else (AccessDenied, InvalidParameter, …) means the
+        # caller has bigger problems than "secret already exists".
+        if "ResourceExistsException" not in detail_raw:
+            raise RuntimeError(
+                f"awssm CreateSecret HTTP {e.code}: {detail_raw[:300]}"
+            ) from e
+        # Fall through to PutSecretValue.
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"awssm unreachable: {e.reason}") from e
+
+    try:
+        _call("secretsmanager.PutSecretValue", {"SecretId": secret_id, "SecretString": value})
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:  # noqa: BLE001
+            detail = ""
+        raise RuntimeError(f"awssm PutSecretValue HTTP {e.code}: {detail}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"awssm unreachable: {e.reason}") from e
+
+
+def _push_conjur(identifier: str, value: str, cfg: dict[str, str]) -> None:
+    """Write to Conjur via ``POST /secrets/<account>/variable/<id>``.
+
+    The variable resource must already exist in policy — Conjur's data
+    plane doesn't auto-create variables on write. The migration docs
+    include a sample wildcard policy operators can load up front.
+    """
+    url = (cfg.get("conjur.url") or "").strip().rstrip("/")
+    account = (cfg.get("conjur.account") or "").strip()
+    host_id = (cfg.get("conjur.host_id") or "").strip()
+    api_key = (cfg.get("conjur.api_key") or "").strip()
+    verify_tls = (cfg.get("conjur.verify_tls") or "true").strip().lower() not in (
+        "false", "0", "no", "off",
+    )
+    token = _conjur_login(
+        url=url, account=account, host_id=host_id,
+        api_key=api_key, verify_tls=verify_tls,
+    )
+
+    encoded_account = urllib.parse.quote(account, safe='')
+    encoded_id = urllib.parse.quote(identifier, safe='')
+    write_url = f"{url}/secrets/{encoded_account}/variable/{encoded_id}"
+
+    ctx: ssl.SSLContext | None = None
+    if not verify_tls:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+    headers = {
+        "Authorization": f'Token token="{token}"',
+        "Content-Type": "text/plain",
+    }
+    req = urllib.request.Request(
+        write_url, data=value.encode("utf-8"), headers=headers, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT_SECONDS, context=ctx) as resp:
+            resp.read()
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:  # noqa: BLE001
+            detail = ""
+        # 404 specifically means "variable not declared in policy" — give
+        # the operator a focused hint rather than a bare HTTP code.
+        if e.code == 404:
+            raise RuntimeError(
+                f"conjur write 404: variable {identifier!r} is not declared "
+                "in policy. Load a Conjur policy that defines this variable "
+                "(or a wildcard pattern covering it) before migrating."
+            ) from e
+        raise RuntimeError(f"conjur write HTTP {e.code}: {detail}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"conjur unreachable: {e.reason}") from e
