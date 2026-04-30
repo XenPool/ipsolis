@@ -168,6 +168,22 @@
         <dd class="font-mono font-medium text-heading">{{ asset_name }}</dd>
       </div>
       {% endif %}
+      {% if cost_projection %}
+      <div class="pt-2 mt-2 border-t border-token-border space-y-1">
+        <div class="flex justify-between">
+          <dt class="text-muted" data-i18n="portal.order_detail.field_unit_cost">Monthly cost</dt>
+          <dd class="text-heading tabular-nums">
+            {{ "%.2f"|format(cost_projection.unit_monthly_cost) }} {{ cost_projection.currency }}
+          </dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-muted" data-i18n="portal.order_detail.field_projected_total">Projected total</dt>
+          <dd class="font-medium text-heading tabular-nums" title="{{ cost_projection.span_days }} days · {{ cost_projection.months_estimate }} months">
+            {{ "%.2f"|format(cost_projection.projected_total) }} {{ cost_projection.currency }}
+          </dd>
+        </div>
+      </div>
+      {% endif %}
     </dl>
   </div>
 </div>

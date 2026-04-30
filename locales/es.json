@@ -173,6 +173,8 @@
       "field_from": "Desde",
       "field_until": "Hasta",
       "field_hostname": "Nombre de host",
+      "field_unit_cost": "Coste mensual",
+      "field_projected_total": "Total proyectado",
       "execution_steps": "Pasos de ejecución",
       "no_steps": "Aún no hay pasos registrados.",
       "step_start": "Inicio:",

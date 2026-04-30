@@ -173,6 +173,8 @@
       "field_from": "Du",
       "field_until": "Jusqu'au",
       "field_hostname": "Nom d'hôte",
+      "field_unit_cost": "Coût mensuel",
+      "field_projected_total": "Total projeté",
       "execution_steps": "Étapes d'exécution",
       "no_steps": "Aucune étape enregistrée pour le moment.",
       "step_start": "Début :",

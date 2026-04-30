@@ -173,6 +173,8 @@
       "field_from": "Dal",
       "field_until": "Al",
       "field_hostname": "Hostname",
+      "field_unit_cost": "Costo mensile",
+      "field_projected_total": "Totale previsto",
       "execution_steps": "Passi di esecuzione",
       "no_steps": "Nessun passo ancora registrato.",
       "step_start": "Inizio:",

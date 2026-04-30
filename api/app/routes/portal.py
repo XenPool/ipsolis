@@ -21,7 +21,7 @@ from app.templates_instance import templates, get_app_logo
 from app.models.asset import AssetPool, AssetStatus, AssetType, AssignmentModel
 from app.models.config import AppConfig
 from app.models.order import Order, OrderAction, OrderStatus
-from app.utils.ad_lookup import lookup_user
+from app.utils.ad_lookup import lookup_user, snapshot_requester_attrs
 from app.utils.audit import (
     _order_snap, aaudit, classify_for_asset_type_id, portal_actor_by,
 )
@@ -546,24 +546,10 @@ async def portal_create_order(
     else:
         initial_status = OrderStatus.PENDING
 
-    # Snapshot the requester's HR attributes from AD so the cost / chargeback
-    # report can slice spend by consuming team without re-querying AD per
-    # report build. Best-effort: a stale/missing AD lookup must not block the
-    # order.
-    requester_attrs: dict = {}
-    try:
-        ad_lookup = lookup_user(user_email)
-        if ad_lookup.get("success"):
-            requester_attrs = {
-                "requester_sam_account": ad_lookup.get("sam_account") or None,
-                "requester_department": ad_lookup.get("department") or None,
-                "requester_cost_center": ad_lookup.get("cost_center") or None,
-                "requester_company": ad_lookup.get("company") or None,
-                "requester_employee_id": ad_lookup.get("employee_id") or None,
-                "requester_title": ad_lookup.get("title") or None,
-            }
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Could not snapshot requester AD attrs for %s: %s", user_email, exc)
+    # Chargeback snapshot — same helper used by the /orders API and the
+    # ServiceNow webhook so all three creation paths produce the same
+    # requester_* columns.
+    requester_attrs = snapshot_requester_attrs(user_email)
 
     order = Order(
         user_email=user_email,
@@ -796,6 +782,8 @@ async def portal_order_detail(
         )
         approvals = list(appr_result.scalars().all())
 
+    cost_projection = _compute_cost_projection(order, asset_type)
+
     return templates.TemplateResponse("portal/order_detail.html", {
         "request": request,
         "active_page": "overview",
@@ -806,10 +794,44 @@ async def portal_order_detail(
         "asset_name": asset_name,
         "steps_with_duration": steps_with_duration,
         "approvals": approvals,
+        "cost_projection": cost_projection,
         "status_colors": _STATUS_COLORS,
         "step_colors": _STEP_COLORS,
         "today": date.today().isoformat(),
     })
+
+
+# Average month length used to convert a request window in days to a
+# fractional cost over its monthly_cost. 30.4375 = 365.25 / 12 — close
+# enough for chargeback projections; the cost report's CSV uses the same
+# unit when finance pivots the per-order data.
+_AVG_DAYS_PER_MONTH = 30.4375
+
+
+def _compute_cost_projection(order: Order, asset_type: AssetType | None) -> dict | None:
+    """Estimate ``monthly_cost × months_requested`` for the order detail card.
+
+    Returns ``None`` when projection is meaningless — no priced asset
+    type, no requested-from/until window, or zero-day window. Operators
+    set ``monthly_cost`` (+ optional ``currency``) on the asset type;
+    untracked types render no cost block on the portal.
+    """
+    if asset_type is None or asset_type.monthly_cost is None:
+        return None
+    if not order.requested_from or not order.requested_until:
+        return None
+    span_days = max(0, (order.requested_until.date() - order.requested_from.date()).days)
+    if span_days == 0:
+        return None
+    unit = float(asset_type.monthly_cost)
+    months = span_days / _AVG_DAYS_PER_MONTH
+    return {
+        "unit_monthly_cost": round(unit, 2),
+        "currency": asset_type.currency or "EUR",
+        "span_days": span_days,
+        "months_estimate": round(months, 2),
+        "projected_total": round(unit * months, 2),
+    }
 
 
 # ── Modify Asset (combined: duration + user lists) ─────────────────────────────

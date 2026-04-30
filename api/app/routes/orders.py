@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models.asset import AssetType, AssignmentModel
 from app.models.order import Order, OrderAction, OrderStatus
 from app.schemas.order import OrderCreate, OrderRead, OrderUpdate
+from app.utils.ad_lookup import snapshot_requester_attrs
 from app.utils.audit import _order_snap, aaudit, actor_by, classify_for_asset_type_id
 from app.utils.auth import attribute_actor_if_present
 from app.utils.capacity import enforce_max_per_user, enforce_pool_capacity
@@ -127,6 +128,14 @@ async def create_order(
                 db, asset_type.id, str(payload.user_email), asset_type.max_per_user
             )
 
+    # Best-effort AD snapshot — chargeback report needs requester HR
+    # attributes for non-portal-driven orders too. lookup_user is sync;
+    # offload to a thread so we don't block the asyncio loop.
+    import asyncio as _asyncio
+    requester_attrs = await _asyncio.to_thread(
+        snapshot_requester_attrs, str(payload.user_email)
+    )
+
     order = Order(
         user_email=str(payload.user_email),
         user_name=payload.user_name,
@@ -141,6 +150,7 @@ async def create_order(
         action=payload.action,
         status=OrderStatus.PENDING,
         config=payload.config,
+        **requester_attrs,
     )
     db.add(order)
     await db.flush()

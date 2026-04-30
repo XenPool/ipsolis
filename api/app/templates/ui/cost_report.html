@@ -143,15 +143,13 @@ function renderRows(rows) {
     body.innerHTML = '<tr><td colspan="6" class="px-4 py-12 text-center text-muted/70 text-sm">No asset definitions have a <span class="font-mono">monthly_cost</span> set yet. <a href="/ui/asset-types" class="text-blue-600 hover:underline ml-1">Configure one →</a></td></tr>';
     return;
   }
-  // Group by cost center for visual separation
-  var lastCC = null;
+  // Always render the cost-center cell — earlier "↳" dedup looked like
+  // a parent/child hierarchy when consecutive rows shared a cost center
+  // (cf. QA report 2026-04-29 P4). Rows are sorted by cost_center
+  // server-side so the value naturally clusters visually.
   body.innerHTML = rows.map(function(r) {
-    var ccCell = (r.cost_center !== lastCC)
-      ? '<td class="px-4 py-3 text-xs font-medium text-heading whitespace-nowrap align-top">' + escapeHtml(r.cost_center) + '</td>'
-      : '<td class="px-4 py-3 text-xs text-muted/40 align-top">↳</td>';
-    lastCC = r.cost_center;
     return '<tr>'
-      + ccCell
+      + '<td class="px-4 py-3 text-xs font-medium text-heading whitespace-nowrap align-top">' + escapeHtml(r.cost_center) + '</td>'
       + '<td class="px-4 py-3"><a href="/ui/asset-types/' + r.asset_type_id + '/edit" class="text-blue-600 hover:underline">' + escapeHtml(r.asset_type_name) + '</a></td>'
       + '<td class="px-4 py-3 text-right text-sm tabular-nums">' + fmtMoney(r.unit_monthly_cost, r.currency) + '</td>'
       + '<td class="px-4 py-3 text-right text-sm tabular-nums">' + r.active_orders + '</td>'

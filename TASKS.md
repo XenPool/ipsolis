@@ -1218,8 +1218,10 @@ Celery queue depth + OpenTelemetry api/worker tracing + ready-to-import
 Grafana dashboard + Prometheus alert rules) is now end-to-end complete.
 
 ### [partial] Cost / chargeback per asset type — Prio 1
-Reporting side **shipped 2026-04-26**. Per-order cost projection on the
-order detail page and threshold-based alerts deferred.
+Reporting side **shipped 2026-04-26**. Per-order projection on the
+portal order detail page + AD snapshot on non-portal order paths
+**shipped 2026-04-30**. Threshold alerts, historical view, and FX
+conversion still queued.
 
 **Done — schema + report (2026-04-26):**
 - Migration `0056_asset_type_cost.py` — adds `monthly_cost NUMERIC(12,2)`,
@@ -1279,22 +1281,106 @@ order detail page and threshold-based alerts deferred.
   order, JSON shows by_consumer_cost_center and by_consumer_department
   populated correctly, CSV carries all requester fields per order.
 
+**Done — per-order projection on portal detail (2026-04-30):**
+- New `_compute_cost_projection(order, asset_type)` helper in
+  `routes/portal.py` returns `{unit_monthly_cost, currency,
+  span_days, months_estimate, projected_total}` or `None` when the
+  asset type has no `monthly_cost`, the order has no
+  `requested_from`/`until` window, or the window is zero days.
+  Months use the calendar average (30.4375 days/month) so a 90-day
+  request reads as ~2.96 months — same unit the cost report's CSV
+  uses when finance pivots per-order data.
+- Portal `order_detail.html` Access & Duration card gains two
+  trailing rows under a divider: **Monthly cost** (unit price) and
+  **Projected total** (unit × months); the total row carries a
+  hover title showing the day-count + months for transparency.
+  Block is hidden whenever the asset type isn't priced — untracked
+  types render no extra rows.
+- 5-locale i18n keys added: `portal.order_detail.field_unit_cost`
+  + `portal.order_detail.field_projected_total` (en/de/fr/es/it).
+  `validate_locales.py` reports OK at 171 keys/locale.
+
+**Done — AD snapshot on non-portal order paths (2026-04-30):**
+- New shared helper `app.utils.ad_lookup.snapshot_requester_attrs(email)`
+  returns the six `requester_*` columns from a single best-effort
+  AD lookup, or an empty dict when AD is unconfigured / lookup
+  fails / email is empty. Returning a dict means the caller can
+  splat `**` onto the `Order` constructor with no special-casing.
+- `routes/orders.py` (public `POST /orders/`) and
+  `routes/webhook.py` (`POST /webhook/servicenow`) now call the
+  helper before constructing the Order. Both use
+  `asyncio.to_thread` since the underlying msldap path is sync.
+  ServiceNow- and external-API-driven orders now produce the same
+  consumer-side chargeback rows the portal does.
+- `routes/portal.py` refactored to use the same helper instead of
+  its inline try/except — single source of truth for the snapshot
+  shape, no behaviour change to the portal flow.
+
 **Still to do:**
-- [ ] Per-order cost projection on the portal order detail page
-      (`monthly_cost × months_requested`).
 - [ ] Threshold alerting — email/Teams when projected monthly per
       cost center crosses a configurable amount.
 - [ ] Historical view: report by date range, not just "currently
       active" (would need a snapshot table or order-status time series).
 - [ ] FX conversion for mixed-currency cost centers (today the
       summary cards keep currencies separate).
-- [ ] Webhook / `/orders` API: also do AD lookup for non-portal
-      order creation paths so externally-driven orders get the same
-      snapshot.
 
 ---
 
 ## Polish & smaller gaps (Prio 2)
+
+### [done] PS Modules — Linux compatibility flag — Prio 2 (2026-04-30)
+The worker runs PowerShell 7 on Linux, but many PSGallery modules ship
+with `PSEdition_Desktop` (Windows 5.1) only and won't load. Operators
+now declare each module's compatibility when adding it; the modules
+table shows the flag and lets admins click any badge to cycle through
+`Unverified → Linux ✓ → Windows only ✕ → Unverified`.
+
+**Why no PSGallery probe / search:** most ip·Solis installs are
+air-gapped and have no outbound internet from the api/worker
+containers. We attempted a PSGallery search + tag-derived
+auto-detection slice but cloud PSGallery's `Search()` endpoint
+times out on popular modules (e.g. `VMware.PowerCLI` with `$top=20`
+exceeds the 12 s budget) and `IsLatestVersion` filters return zero
+results when combined with `searchTerm`. Manual operator declaration
+is faster, deterministic, and works in air-gapped deployments.
+
+**Components:**
+- Migration `0077_ps_module_compatibility.py` adds
+  `ps_modules.compatibility VARCHAR(20) NOT NULL DEFAULT 'unknown'`.
+  Existing rows backfill to `unknown` so installs upgrade cleanly.
+- ORM `PsModule.compatibility` (`api/app/models/ps_module.py`).
+- Pydantic `PsModuleCreate.compatibility` accepts
+  `core` / `desktop_only` / `unknown` (Literal-typed); defaults to
+  `unknown`. New `PsModuleCompatibilityUpdate` schema for the
+  dedicated PUT.
+- New endpoint `PUT /admin/ps-modules/{id}/compatibility` (gated by
+  the existing `_GATE_PS_MODULES` enterprise feature) flips just the
+  flag without re-queueing an install. Refreshes the ORM row after
+  commit so the response payload doesn't trip
+  `MissingGreenlet` on async lazy-load.
+- `_ps_module_dict` returns the field, so the existing list /
+  create / update endpoints carry it without further plumbing.
+- Stripped: the legacy `/admin/ps-modules/search` endpoint and the
+  unused `httpx` / `xml.etree.ElementTree` imports — keeping the
+  air-gap-friendly contract documented in the comment.
+- Frontend `ui/ps_modules.html` rewritten:
+  * Add-form has a new **Linux compatibility** dropdown for both
+    Gallery and Upload sources.
+  * Modules table gains a **Linux compat.** column with the same
+    three-state badge (green / red / amber).
+  * Each badge is a button that cycles compatibility on click —
+    optimistic UI, rolls back on failure with an alert.
+  * New page-level explainer banner: "the worker runs PowerShell 7
+    on Linux, modules tagged PSEdition_Desktop only won't load."
+  * Removed the previous PSGallery autocomplete dropdown wired
+    against the now-dead search endpoint.
+- Verified end-to-end:
+  * Migration applied to dev DB; existing rows show `unknown`.
+  * `PUT /admin/ps-modules/10/compatibility` `{"compatibility":"core"}`
+    returns 200 with the updated row; subsequent GET reflects the
+    change. Cycle-button on the page paints the next state and
+    persists.
+  * Page renders correctly with the new column + dropdown.
 
 ### [open] QA regression sweep — Prio 2 (2026-04-29)
 Findings from a Claude-Code browser QA pass over `/portal/` and `/ui/`
@@ -1412,10 +1498,15 @@ decision block underneath rather than as work items.
       apply without overwriting the icon.
 
 **Needs a visual look-see before triaging:**
-- [ ] **P4 — Cost Report row hierarchy.** "VDI Test Client" appears
-      to render as a sub-row of VDI Business Client with an "L"
-      connector and no cost-center label. Either tighten the deliberate
-      grouping styling or fix the missing CC. Open the page first.
+- [x] **P4 — Cost Report row hierarchy.** *(2026-04-30)* The "L-tree"
+      that the QA reporter spotted was the cost-center dedup logic:
+      consecutive rows sharing a cost center rendered "↳" instead of
+      repeating the value, which made two rows with `cost_center=null`
+      (both rendered as "(unassigned)" by the backend) look like a
+      parent/child pair. Dropped the dedup entirely — `cost_report.html`
+      now always shows the cost-center value. Rows are still sorted by
+      cost_center server-side so the value clusters visually without
+      the misleading hierarchy glyph.
 
 ### [decision] QA regression sweep — recorded 2026-04-29
 Items below were raised in `ipsolis-agent-prompt.md` but are

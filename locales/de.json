@@ -173,6 +173,8 @@
       "field_from": "Von",
       "field_until": "Bis",
       "field_hostname": "Hostname",
+      "field_unit_cost": "Monatliche Kosten",
+      "field_projected_total": "Hochrechnung gesamt",
       "execution_steps": "Ausführungsschritte",
       "no_steps": "Noch keine Schritte erfasst.",
       "step_start": "Start:",

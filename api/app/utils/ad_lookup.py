@@ -119,6 +119,36 @@ def lookup_user(identifier: str) -> dict:
     return _msldap_lookup_sync(identifier, ad_config)
 
 
+def snapshot_requester_attrs(email: str) -> dict[str, str | None]:
+    """Return Order ``requester_*`` columns from an AD lookup on ``email``.
+
+    Used to populate the chargeback snapshot at order-creation time so
+    the cost report can slice spend by consuming team without
+    re-querying AD per report build. Best-effort: every failure path
+    (empty input, AD not configured, lookup error, unsuccessful
+    response) returns an empty dict so the caller can splat ``**``
+    onto an ``Order`` constructor without ever blocking the order.
+    Logs at WARNING when AD is configured but the lookup itself fails.
+    """
+    if not email or not email.strip():
+        return {}
+    try:
+        ad_lookup = lookup_user(email)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("AD attribute snapshot failed for %s: %s", email, exc)
+        return {}
+    if not ad_lookup.get("success"):
+        return {}
+    return {
+        "requester_sam_account": ad_lookup.get("sam_account") or None,
+        "requester_department":  ad_lookup.get("department") or None,
+        "requester_cost_center": ad_lookup.get("cost_center") or None,
+        "requester_company":     ad_lookup.get("company") or None,
+        "requester_employee_id": ad_lookup.get("employee_id") or None,
+        "requester_title":       ad_lookup.get("title") or None,
+    }
+
+
 def lookup_manager(identifier: str) -> dict:
     """
     Looks up the manager of a user in Active Directory.
