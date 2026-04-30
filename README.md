@@ -169,8 +169,16 @@ cd ip·Solis
 cp .env.example .env
 # Edit .env -- set database credentials and API secrets
 
-docker compose up --build
+# Build and start the full stack in the background
+docker compose up -d --build
+
+# Apply database migrations (required on first install AND after every upgrade)
+docker compose exec api alembic upgrade head
 ```
+
+The api service does **not** auto-run migrations at startup, so this
+step is required on first install. The same command is also how you
+upgrade the schema after pulling new code.
 
 | Service | URL |
 |---|---|
@@ -179,7 +187,11 @@ docker compose up --build
 | API Docs (Swagger) | http://localhost:8000/docs |
 | Celery Flower | http://localhost:5555 |
 
-After startup, configure external systems (Active Directory, SMTP, vSphere, Entra ID SSO) through the Admin UI at `/ui/settings`.
+On first visit to `/ui/`, the admin login renders a **"Create first
+administrator"** form (RBAC first-run setup). Create the initial
+superadmin, then configure external systems (Active Directory, SMTP,
+vSphere, Entra ID SSO) through the Admin UI at `/ui/settings`. The
+dashboard's setup checklist tracks what's left to configure.
 
 ### Two run modes
 
