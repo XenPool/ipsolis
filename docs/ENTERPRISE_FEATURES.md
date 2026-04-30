@@ -2362,6 +2362,43 @@ are operator-set (`secret.cache_ttl_seconds`).
 Authentication is AppID + IP allow-list (the standard CCP install)
 or optional mTLS via the configured client cert.
 
+**mTLS bootstrap (Settings UI file upload)**: the CCP card in
+*Settings → Compliance → External Secret Backend* renders two file
+inputs — *Certificate file* (`.crt` / `.cer` / `.pem`) and
+*Private key file* (`.key` / `.pem`). Pick both, click Save, and
+ip·Solis assembles the cert + key bundle in the browser, validates
+the PEM headers, and POSTs the concatenated result to
+`secret.ccp.client_cert_pem` (which is `is_secret=true` so it lands
+masked in the UI on subsequent loads).
+
+Client-side validation catches the most common bootstrap mistakes:
+
+| Symptom | Error message |
+|---|---|
+| File doesn't contain a `-----BEGIN CERTIFICATE-----` block | "Certificate file doesn't contain a PEM CERTIFICATE block. Did you pick the wrong file?" |
+| Key file has `-----BEGIN ENCRYPTED PRIVATE KEY-----` header | "Private key is encrypted. ipSolis can't decrypt it on the wire — decrypt the key first (e.g. `openssl pkcs8 -in encrypted.key -out unencrypted.key`)." |
+| Key file doesn't contain a `PRIVATE KEY` block | "Private key file doesn't contain a PEM PRIVATE KEY block. Did you swap the cert and key files?" |
+
+The assembled bundle is `<cert pem>\n<key pem>\n` — same shape as
+`cat client.crt client.key`, which is what `ssl.load_cert_chain`
+expects. The resolver materialises it to a 0600 temp file for the
+duration of each CCP call.
+
+**Advanced: paste PEM directly** — a small toggle below the file
+inputs swaps the form into a single textarea for operators who
+have a pre-concatenated bundle (e.g. from an automation pipeline)
+or want to inspect what the file-upload path produces. The two
+modes write to the same backing config key.
+
+**Encrypted keys are not supported on the wire** — Python's
+stdlib `ssl.load_cert_chain` accepts a passphrase, but
+``app.utils.secrets`` doesn't currently surface a passphrase
+config key (deliberately — passphrases-in-config beat the point of
+encrypting the key file). Decrypt the key once at bootstrap
+(`openssl pkcs8 -in encrypted.key -out unencrypted.key`) and rely
+on the `is_secret=true` masking + the optional vault://… reference
+indirection if the key needs additional at-rest protection.
+
 ### Azure Key Vault setup
 
 | Config key | Purpose |
@@ -2752,14 +2789,17 @@ policy update before they migrate.
 
 ### Remaining slice 2 work
 
-Five backends shipped (Vault + CCP + Azure KV + AWS SM + Conjur),
-plus the bulk-migration tool, plus Vault AppRole / Kubernetes-JWT
-auth, plus AWS native AssumeRole. Still queued:
+External secret management slice 2 is **complete**: five backends
+(Vault + CCP + Azure KV + AWS SM + Conjur), the bulk-migration
+tool, Vault AppRole / Kubernetes-JWT auth, AWS native AssumeRole,
+and the CCP mTLS file-upload bootstrap UX have all shipped. The
+deferred-backlog section in `TASKS.md` no longer lists open
+secret-management slice-2 items.
 
-* **CCP mTLS bootstrap UX** — today operators paste the PEM blob;
-  a guided "upload cert + key" form would be friendlier.
-
-Track in *Deferred Enterprise Backlog* (top of `TASKS.md`).
+Future stretch items live in their own backlog entries (e.g.
+direct IMDS / IRSA fetch from inside the AWS resolver, response-
+wrapping support for Vault AppRole secret_ids) — pull when a
+specific tenant requirement surfaces.
 
 ---
 

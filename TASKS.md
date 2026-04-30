@@ -241,7 +241,54 @@ pull one when there's a procurement need or a quiet week.
       form-encoded body + XML-response parsing all work end-to-end
       (otherwise AWS would have rejected with
       `InvalidSignatureException` / `SignatureDoesNotMatch`).
-- [ ] CCP: dedicated mTLS bootstrap UX (today operators paste the PEM).
+- [x] **CCP mTLS bootstrap UX (file upload)** *(2026-04-30)*. Today's
+      slice-1 UI surfaces a single textarea where operators paste the
+      pre-concatenated cert + key PEM. The two most common bootstrap
+      mistakes — forgetting the trailing newline between blocks, or
+      swapping the cert and key — both fail at the resolver with an
+      opaque CCP 4xx that's hard to diagnose. Slice 2 replaces the
+      textarea with two `<input type="file">` inputs (one for the
+      certificate, one for the key) that the browser reads via
+      `FileReader`, validates against PEM-shape regexes, concatenates
+      with the canonical `cat client.crt client.key` shape
+      (`<cert>\n<key>\n`), and writes into a hidden textarea so the
+      existing `saveSecretBackend()` save-path is unchanged — server-
+      side: same `secret.ccp.client_cert_pem` config key, same
+      `is_secret=true` masking, same resolver materialisation to a
+      0600 temp file via `ssl.load_cert_chain`. No new migration, no
+      new config key, no API surface change. Validation catches the
+      operator-facing failures before they reach the resolver:
+      certificate file missing the `-----BEGIN CERTIFICATE-----`
+      block ("Did you pick the wrong file?"), key file with the
+      `-----BEGIN ENCRYPTED PRIVATE KEY-----` header (clear "ipSolis
+      can't decrypt encrypted keys, run `openssl pkcs8 -in
+      encrypted.key -out unencrypted.key`" message — passphrases-in-
+      config beat the point of an encrypted key file, so the
+      adapter doesn't surface a passphrase knob), key file missing
+      the `PRIVATE KEY` block ("Did you swap the cert and key
+      files?"). An *Advanced: paste PEM directly* toggle keeps the
+      old textarea available for operators with a pre-assembled
+      bundle (typical of automation pipelines that dump
+      `cat *.crt *.key` into a config sync); the two modes write to
+      the same backing config key. Status badge above the inputs
+      shows the currently-configured state ("✓ Configured — upload
+      new files to replace, or leave empty to keep current.") so the
+      "(configured — leave blank to keep current)" placeholder
+      semantics inherited from the textarea version still apply when
+      no file is picked. Smoke-tested live: generated a 2048-bit
+      RSA self-signed cert + key with `openssl req -x509 -newkey
+      rsa:2048 -nodes`, simulated the JS concatenation logic,
+      POSTed the assembled bundle to
+      `/admin/config/secret.ccp.client_cert_pem` → 200 OK, returned
+      response masked as `***`; resolver-side
+      `_load_secret_cfg` round-trip confirms the saved value
+      contains both `BEGIN/END CERTIFICATE` and `BEGIN/END PRIVATE
+      KEY` blocks (2839 chars total). Container-side template
+      inspection confirms the new IDs are rendered (2× cert-file
+      input, 2× key-file input, 3× `onCcpFileChange` reference,
+      3× `toggleCcpMtlsAdvanced` reference). External secret
+      management slice 2 is now complete — closes the last queued
+      item in that backlog section.
 - [x] **One-shot plaintext → backend migration tool** *(2026-04-30)*.
       `POST /admin/config/secret-backend/migrate?dry_run=true|false`
       walks every `is_secret=true` row in `app_config`, pushes each
@@ -945,7 +992,7 @@ CCP mTLS bootstrap UX, and the one-shot migration tool stay queued
     re-reading via `GET /admin/config/ad.password` returns the
     reference in clear (not `***`) — masking exception works.
 
-**Slice-2 enrichments (Conjur, AWS SM, Azure KV, residual key coverage, the one-shot migration tool, Vault AppRole/JWT auth, and AWS native AssumeRole all shipped; CCP mTLS bootstrap UX still queued) → tracked in *Deferred Enterprise Backlog* (top of file).**
+**Slice-2 enrichments are complete — Conjur, AWS SM, Azure KV, residual key coverage, the one-shot migration tool, Vault AppRole/JWT auth, AWS native AssumeRole, and the CCP mTLS file-upload bootstrap UX have all shipped. No further open items in this backlog section.**
 
 ### [done] API tokens with scopes — Prio 0
 Slice 1 — table + ORM + bearer auth + Admin UI — **shipped 2026-04-26**.

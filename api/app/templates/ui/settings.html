@@ -1622,12 +1622,62 @@
             <p class="text-[11px] text-muted/60 mt-1">Used when a reference omits the Safe.</p>
           </div>
         </div>
+        <!-- Client cert + key (mTLS — optional) — file-upload UX with
+             a fallback to direct PEM paste for API-driven configs. -->
         <div>
-          <label class="block text-xs font-medium text-muted mb-1">Client cert PEM (mTLS — optional)</label>
-          <textarea id="secret-ccp-client-cert-pem" rows="3"
-                    placeholder="{% if secret_config and secret_config.get('secret.ccp.client_cert_pem') == '***' %}(configured — leave blank to keep current){% else %}-----BEGIN CERTIFICATE-----…&#10;-----BEGIN PRIVATE KEY-----…{% endif %}"
-                    class="w-full rounded border border-token-border bg-surface text-body text-xs px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea>
-          <p class="text-[11px] text-muted/60 mt-1">Concatenated cert + key. Stored as a secret. Leave empty for AppID + IP allow-list installs.</p>
+          <label class="block text-xs font-medium text-muted mb-1">Client cert + key (mTLS — optional)</label>
+          {% set _ccp_pem_set = secret_config and secret_config.get('secret.ccp.client_cert_pem') == '***' %}
+          <div id="secret-ccp-mtls-status" class="text-[11px] mb-2
+                      {% if _ccp_pem_set %}text-green-700 dark:text-green-300{% else %}text-muted/60{% endif %}">
+            {% if _ccp_pem_set %}✓ Configured — upload new files to replace, or leave empty to keep current.
+            {% else %}Not configured — leave empty for AppID + IP allow-list installs.{% endif %}
+          </div>
+
+          <!-- File-upload mode (default) -->
+          <div id="secret-ccp-mtls-upload" class="space-y-2">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[11px] font-medium text-muted mb-1">Certificate file</label>
+                <input type="file" id="secret-ccp-cert-file"
+                       accept=".crt,.cer,.pem,application/x-x509-ca-cert,application/x-pem-file"
+                       onchange="onCcpFileChange()"
+                       class="w-full text-xs text-body file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-surface-raised file:text-body hover:file:bg-surface">
+                <p class="text-[11px] text-muted/60 mt-1"><code class="font-mono">.crt</code> / <code class="font-mono">.cer</code> / <code class="font-mono">.pem</code> — PEM-encoded.</p>
+              </div>
+              <div>
+                <label class="block text-[11px] font-medium text-muted mb-1">Private key file</label>
+                <input type="file" id="secret-ccp-key-file"
+                       accept=".key,.pem,application/x-pem-file"
+                       onchange="onCcpFileChange()"
+                       class="w-full text-xs text-body file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-surface-raised file:text-body hover:file:bg-surface">
+                <p class="text-[11px] text-muted/60 mt-1">Unencrypted PEM. Encrypted keys (<code class="font-mono">ENCRYPTED PRIVATE KEY</code>) are rejected.</p>
+              </div>
+            </div>
+            <div id="secret-ccp-mtls-file-status" class="hidden text-[11px] mt-1"></div>
+            <div class="text-right">
+              <button type="button" onclick="toggleCcpMtlsAdvanced()"
+                      class="text-[11px] text-muted/70 hover:text-body underline">
+                Advanced: paste PEM directly
+              </button>
+            </div>
+          </div>
+
+          <!-- Advanced direct-paste mode (for operators feeding from -->
+          <!-- automation pipelines or with a pre-concatenated bundle) -->
+          <div id="secret-ccp-mtls-paste" class="hidden space-y-2">
+            <textarea id="secret-ccp-client-cert-pem" rows="4"
+                      placeholder="{% if _ccp_pem_set %}(configured — leave blank to keep current){% else %}-----BEGIN CERTIFICATE-----…&#10;-----END CERTIFICATE-----&#10;-----BEGIN PRIVATE KEY-----…&#10;-----END PRIVATE KEY-----{% endif %}"
+                      class="w-full rounded border border-token-border bg-surface text-body text-xs px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea>
+            <p class="text-[11px] text-muted/60">
+              Concatenated cert + key. The file-upload form above produces the same shape automatically.
+            </p>
+            <div class="text-right">
+              <button type="button" onclick="toggleCcpMtlsAdvanced()"
+                      class="text-[11px] text-muted/70 hover:text-body underline">
+                Back to file upload
+              </button>
+            </div>
+          </div>
         </div>
         <div>
           <label class="block text-xs font-medium text-muted mb-1">Verify TLS</label>
@@ -2593,6 +2643,127 @@ function onAwsAuthMethodChange() {
   if (!assumeRoleFields) return;
   if (select.value === 'assume_role') assumeRoleFields.classList.remove('hidden');
   else                                assumeRoleFields.classList.add('hidden');
+}
+
+// ── CCP mTLS upload UX ────────────────────────────────────────────────────
+function toggleCcpMtlsAdvanced() {
+  var upload = document.getElementById('secret-ccp-mtls-upload');
+  var paste  = document.getElementById('secret-ccp-mtls-paste');
+  if (!upload || !paste) return;
+  var showPaste = upload.classList.contains('hidden') === false;
+  if (showPaste) {
+    upload.classList.add('hidden');
+    paste.classList.remove('hidden');
+  } else {
+    paste.classList.add('hidden');
+    upload.classList.remove('hidden');
+  }
+}
+
+function _readFileText(file) {
+  return new Promise(function(resolve, reject) {
+    var fr = new FileReader();
+    fr.onload  = function() { resolve(String(fr.result || '')); };
+    fr.onerror = function() { reject(fr.error || new Error('read failed')); };
+    fr.readAsText(file);
+  });
+}
+
+function _showCcpFileStatus(state) {
+  // state: {ok: true|false|null, message: string}
+  var el = document.getElementById('secret-ccp-mtls-file-status');
+  if (!el) return;
+  el.classList.remove('hidden', 'text-green-700', 'dark:text-green-300',
+                      'text-red-700', 'dark:text-red-300', 'text-muted/70');
+  if (state.ok === true) {
+    el.classList.add('text-green-700', 'dark:text-green-300');
+  } else if (state.ok === false) {
+    el.classList.add('text-red-700', 'dark:text-red-300');
+  } else {
+    el.classList.add('text-muted/70');
+  }
+  el.textContent = state.message;
+  el.classList.remove('hidden');
+}
+
+async function onCcpFileChange() {
+  var certInput = document.getElementById('secret-ccp-cert-file');
+  var keyInput  = document.getElementById('secret-ccp-key-file');
+  var pemArea   = document.getElementById('secret-ccp-client-cert-pem');
+  if (!certInput || !keyInput || !pemArea) return;
+
+  var certFile = certInput.files && certInput.files[0];
+  var keyFile  = keyInput.files && keyInput.files[0];
+
+  // Both fields empty → user cancelled, clear the staging textarea so
+  // the save path falls back to "leave current value alone".
+  if (!certFile && !keyFile) {
+    pemArea.value = '';
+    _showCcpFileStatus({ok: null, message: ''});
+    document.getElementById('secret-ccp-mtls-file-status').classList.add('hidden');
+    return;
+  }
+  if (!certFile || !keyFile) {
+    _showCcpFileStatus({ok: null, message: 'Pick both the certificate and the private key.'});
+    pemArea.value = '';
+    return;
+  }
+
+  var certText, keyText;
+  try {
+    certText = (await _readFileText(certFile)).trim();
+    keyText  = (await _readFileText(keyFile)).trim();
+  } catch (e) {
+    _showCcpFileStatus({ok: false, message: 'Could not read one of the files: ' + e.message});
+    pemArea.value = '';
+    return;
+  }
+
+  // PEM-shape sanity checks — catches the most common operator
+  // mistakes (wrong file, swapped order, encrypted key) before
+  // the value reaches the resolver where the failure mode is a
+  // 4xx from CCP that's harder to diagnose.
+  if (!/-----BEGIN CERTIFICATE-----/.test(certText) ||
+      !/-----END CERTIFICATE-----/.test(certText)) {
+    _showCcpFileStatus({
+      ok: false,
+      message: "Certificate file doesn't contain a PEM CERTIFICATE block. " +
+               "Did you pick the wrong file?",
+    });
+    pemArea.value = '';
+    return;
+  }
+  if (/-----BEGIN ENCRYPTED PRIVATE KEY-----/.test(keyText)) {
+    _showCcpFileStatus({
+      ok: false,
+      message: "Private key is encrypted. ipSolis can't decrypt it on the wire — " +
+               "decrypt the key first (e.g. openssl pkcs8 -in encrypted.key -out unencrypted.key).",
+    });
+    pemArea.value = '';
+    return;
+  }
+  if (!/-----BEGIN ([A-Z]+ )?PRIVATE KEY-----/.test(keyText) ||
+      !/-----END ([A-Z]+ )?PRIVATE KEY-----/.test(keyText)) {
+    _showCcpFileStatus({
+      ok: false,
+      message: "Private key file doesn't contain a PEM PRIVATE KEY block. " +
+               "Did you swap the cert and key files?",
+    });
+    pemArea.value = '';
+    return;
+  }
+
+  // Concatenate cert + key with a single trailing newline between
+  // them — matches what `cat client.crt client.key` produces and
+  // what `ssl.load_cert_chain` expects.
+  var bundle = certText.replace(/\s+$/, '') + '\n' + keyText.replace(/\s+$/, '') + '\n';
+  pemArea.value = bundle;
+
+  _showCcpFileStatus({
+    ok: true,
+    message: 'Cert + key bundle assembled (' + bundle.length + ' bytes). ' +
+             'Click Save to apply.',
+  });
 }
 
 function onVaultAuthMethodChange() {
