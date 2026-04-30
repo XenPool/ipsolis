@@ -145,6 +145,9 @@
       <span class="w-6 h-6 flex items-center justify-center rounded-full bg-surface-raised text-muted text-xs font-mono font-medium flex-shrink-0">
         {{ step.position }}
       </span>
+      <!-- Drag handle (mouse) — keyboard users still have the ↑ / ↓ buttons -->
+      <span class="step-drag-handle text-muted/50 hover:text-body cursor-grab active:cursor-grabbing select-none flex-shrink-0 px-1"
+            draggable="true" title="Drag to reorder">☰</span>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2">
           <span class="text-sm font-medium text-heading">{{ step.step_name }}</span>
@@ -744,20 +747,40 @@ async function deleteStep(stepId) {
   if (resp.ok) location.reload();
 }
 
+// Renumber the position badges in-place after a reorder so we don't
+// have to ``location.reload()`` and lose scroll position. Mirror of the
+// helper in runbook_editor.html.
+function _renumberStepBadges() {
+  var rows = document.querySelectorAll('#steps-list .step-row');
+  rows.forEach(function(row, i) {
+    var badge = row.firstElementChild;
+    if (badge && badge.tagName === 'SPAN') badge.textContent = String(i + 1);
+  });
+}
+
 async function moveStep(stepId, direction) {
-  var rows = Array.from(document.querySelectorAll('.step-row'));
+  var list = document.getElementById('steps-list');
+  var rows = Array.from(list.querySelectorAll('.step-row'));
   var idx = rows.findIndex(function(r) { return r.dataset.stepId == stepId; });
   if (direction === 'up' && idx === 0) return;
   if (direction === 'down' && idx === rows.length - 1) return;
-  var swap = direction === 'up' ? idx - 1 : idx + 1;
-  var tmp = rows[idx]; rows[idx] = rows[swap]; rows[swap] = tmp;
-  var newOrder = rows.map(function(r) { return parseInt(r.dataset.stepId); });
-  await fetch('/admin/standalone-runbooks/' + RUNBOOK_ID + '/steps/reorder', {
+
+  var row = rows[idx];
+  if (direction === 'up') {
+    list.insertBefore(row, rows[idx - 1]);
+  } else {
+    list.insertBefore(row, rows[idx + 1].nextSibling);
+  }
+  _renumberStepBadges();
+
+  var newOrder = Array.from(list.querySelectorAll('.step-row'))
+    .map(function(r) { return parseInt(r.dataset.stepId); });
+  var resp = await fetch('/admin/standalone-runbooks/' + RUNBOOK_ID + '/steps/reorder', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({step_ids: newOrder}),
   });
-  location.reload();
+  if (!resp.ok) location.reload();
 }
 
 function editStep(stepId, step) {
@@ -801,6 +824,84 @@ function cancelEdit() {
   document.getElementById('cancel-edit-btn').classList.add('hidden');
   document.getElementById('step-result').innerHTML = '';
 }
+
+// ── Drag-and-drop step reordering (mouse) ──────────────────────────────
+// Mirror of the helper in runbook_editor.html — see comments there for
+// the rationale. Kept inline rather than extracted to a shared file
+// because there's no shared-JS structure in /static/js/ for the admin UI.
+function initStepDragDrop(reorderUrl) {
+  var list = document.getElementById('steps-list');
+  if (!list) return;
+  var dragRow = null;
+  var originalOrder = null;
+  var inFlight = false;
+
+  list.addEventListener('dragstart', function(e) {
+    var handle = e.target.closest && e.target.closest('.step-drag-handle');
+    if (!handle) return;
+    dragRow = handle.closest('.step-row');
+    if (!dragRow) return;
+    originalOrder = Array.from(list.querySelectorAll('.step-row'))
+      .map(function(r) { return r.dataset.stepId; }).join(',');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', dragRow.dataset.stepId); } catch (_) {}
+    requestAnimationFrame(function() {
+      if (dragRow) dragRow.classList.add('opacity-30');
+    });
+  });
+
+  list.addEventListener('dragend', function() {
+    if (dragRow) dragRow.classList.remove('opacity-30');
+    dragRow = null;
+  });
+
+  list.addEventListener('dragover', function(e) {
+    if (!dragRow) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    var target = e.target.closest && e.target.closest('.step-row');
+    if (!target || target === dragRow) return;
+    var rect = target.getBoundingClientRect();
+    var after = (e.clientY - rect.top) > rect.height / 2;
+    if (after) {
+      target.parentNode.insertBefore(dragRow, target.nextSibling);
+    } else {
+      target.parentNode.insertBefore(dragRow, target);
+    }
+  });
+
+  list.addEventListener('drop', async function(e) {
+    if (!dragRow) return;
+    e.preventDefault();
+    var newOrderArr = Array.from(list.querySelectorAll('.step-row'))
+      .map(function(r) { return r.dataset.stepId; });
+    if (newOrderArr.join(',') === originalOrder) return;
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      var resp = await fetch(reorderUrl, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({step_ids: newOrderArr.map(function(s) { return parseInt(s, 10); })}),
+      });
+      if (resp.ok) {
+        // Renumber badges in-place; no full reload, no scroll jump.
+        _renumberStepBadges();
+      } else {
+        // Server rejected — pull persisted truth.
+        location.reload();
+      }
+    } catch (_) {
+      location.reload();
+    } finally {
+      inFlight = false;
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  initStepDragDrop('/admin/standalone-runbooks/' + RUNBOOK_ID + '/steps/reorder');
+});
 {% endraw %}
 </script>
 {% endblock %}

@@ -23,6 +23,7 @@
   <table class="min-w-full divide-y divide-token-border text-sm">
     <thead class="bg-surface-raised">
       <tr>
+        <th class="px-3 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" title="Asset definition ID — used in Certification Campaigns and the API. Click any value to copy.">ID</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Name</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Category</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Assignment Model</th>
@@ -37,6 +38,13 @@
     <tbody class="divide-y divide-token-border">
       {% for t in asset_types %}
       <tr class="hover:bg-surface-raised {% if not t.is_active %}opacity-60{% endif %}" data-type-id="{{ t.id }}">
+        <td class="px-3 py-3 text-xs font-mono">
+          <button type="button" onclick="copyAssetTypeId(this, '{{ t.id }}')"
+                  class="asset-type-id-btn inline-flex items-center px-1.5 py-0.5 rounded border border-token-border bg-surface text-muted hover:bg-surface-raised hover:text-body transition-colors"
+                  title="Copy ID">
+            {{ t.id }}
+          </button>
+        </td>
         <td class="px-4 py-3">
           <div class="font-medium text-heading flex items-center gap-2">
             <span>{{ t.name }}</span>
@@ -179,6 +187,41 @@ async function cloneAssetType(id, name) {
   const created = await resp.json();
   // Drop straight into the edit page so the admin can rename/tweak right away.
   window.location.href = '/ui/asset-types/' + created.id + '/edit';
+}
+
+// ── Copy asset-definition ID to clipboard ─────────────────────────────
+// Used by the ID column on each row. The value is small (numeric id) and
+// useful for the Certification Campaign scope filter (which expects a
+// comma-separated ID list). On success the button briefly flashes green
+// and shows ✓; on failure it falls back to a manual selectable prompt.
+async function copyAssetTypeId(btn, id) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(String(id));
+    } else {
+      // Fallback for older browsers / non-secure contexts (e.g. plain
+      // http on intranets without HTTPS — Clipboard API only works on
+      // secure origins). Use a hidden textarea + execCommand('copy').
+      var ta = document.createElement('textarea');
+      ta.value = String(id);
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } finally { document.body.removeChild(ta); }
+    }
+    var original = btn.textContent;
+    btn.textContent = '✓ ' + id;
+    btn.classList.add('bg-green-50', 'text-green-700', 'border-green-300',
+                      'dark:bg-green-500/15', 'dark:text-green-300', 'dark:border-green-500/40');
+    setTimeout(function() {
+      btn.textContent = original;
+      btn.classList.remove('bg-green-50', 'text-green-700', 'border-green-300',
+                           'dark:bg-green-500/15', 'dark:text-green-300', 'dark:border-green-500/40');
+    }, 1200);
+  } catch (e) {
+    window.prompt('Copy this ID:', String(id));
+  }
 }
 </script>
 {% endblock %}

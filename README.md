@@ -110,7 +110,7 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 - **Setup checklist** on the dashboard — auto-derived from current DB state, separates "essential" from "recommended", each pending item links to the relevant config page; collapses once everything is done and stays out of the way until something changes
 - **Pool capacity warnings** on the dashboard — pools at ≥80% fill (warning, amber) or ≥95% (critical, red) surface in a banner above the status tiles, listed by severity with one-click links to the affected asset definition or pool view
 - Full asset type configuration (categories, attributes, automation strategy, approvals)
-- Runbook management with drag-and-drop step ordering
+- Runbook management with drag-and-drop step ordering (mouse via the `☰` handle on each row, plus ↑ / ↓ buttons for keyboard accessibility)
 - Email template editor with variable placeholders (per-action templates)
 - Central settings for AD, SMTP, vSphere, XenServer, SCCM, Entra ID
 - Configurable app branding (title, logo, logo position/size)
