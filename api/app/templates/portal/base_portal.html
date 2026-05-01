@@ -106,6 +106,7 @@
         </svg>
         <span data-i18n="portal.nav.delegations">Delegations</span>
       </a>
+      {% if is_enterprise %}
       <a href="/portal/certifications"
          class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'certifications' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -115,6 +116,7 @@
         </svg>
         <span data-i18n="portal.nav.certifications">Access Reviews</span>
       </a>
+      {% endif %}
       <a href="/portal/orders/new"
          class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'new' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">

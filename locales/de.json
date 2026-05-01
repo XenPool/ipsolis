@@ -5,6 +5,7 @@
       "my_it": "Meine IT",
       "my_approvals": "Meine Freigaben",
       "delegations": "Vertretungen",
+      "certifications": "Zugriffsprüfungen",
       "request_access": "Zugang anfordern"
     },
     "user": {
@@ -112,6 +113,32 @@
       "revoke_button": "Widerrufen",
       "revoke_confirm": "Diese Vertretung jetzt widerrufen? Künftige Genehmigungen gehen wieder an Sie.",
       "empty": "Noch keine Vertretungen."
+    },
+    "certifications": {
+      "page_title": "Meine Zugriffsprüfungen",
+      "intro": "In regelmäßigen Zertifizierungszyklen werden Sie gebeten, die zuvor genehmigten Zugriffe Ihres Teams erneut zu bestätigen. Wählen Sie für jede ausstehende Zeile <strong>Bestätigen</strong> (Benutzer behält den Zugriff) oder <strong>Widerrufen</strong> (ip·Solis entzieht den Zugriff sofort über das Deprovisionierungs-Runbook).",
+      "pending_heading": "Ausstehende Prüfungen",
+      "recent_heading": "Letzte Entscheidungen",
+      "col_user": "Benutzer",
+      "col_asset": "Asset",
+      "col_campaign": "Kampagne",
+      "col_due": "Fällig",
+      "col_decision": "Entscheidung",
+      "col_decided": "Entschieden",
+      "col_comment": "Kommentar",
+      "comment_label": "Kommentar (optional)",
+      "status_pending": "ausstehend",
+      "status_confirmed": "bestätigt",
+      "status_revoked": "widerrufen",
+      "status_auto_revoked": "automatisch widerrufen",
+      "empty_pending": "Keine ausstehenden Prüfungen — danke!",
+      "empty_recent": "Noch keine Entscheidungen.",
+      "btn_confirm": "Bestätigen",
+      "btn_revoke": "Widerrufen",
+      "confirm_title": "Zugriff bestätigen",
+      "confirm_body": "Der Benutzer behält seinen Zugriff. Die Prüfzeile wechselt zu <code class=\"font-mono\">confirmed</code>, und ein Audit-Eintrag dokumentiert Ihre Entscheidung.",
+      "revoke_title": "Zugriff widerrufen",
+      "revoke_body": "ip·Solis entzieht den Zugriff sofort über das Deprovisionierungs-Runbook des Assets. Die Prüfzeile wechselt zu <code class=\"font-mono\">revoked</code>."
     },
     "order_new": {
       "page_title": "Neuen Zugang anfordern",

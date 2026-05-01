@@ -15,6 +15,15 @@ The payload must be a JSON object with at least the following fields:
     expires_at   – ISO-8601 timestamp
     features     – list; use ["all"] for full Enterprise access
 
+Optional install-binding field:
+
+    install_uuid – UUID copied from the customer's install (visible on the
+                   License page in the admin UI, or in the ``app_config``
+                   row keyed ``install.uuid``). When present, the runtime
+                   verifier rejects the license on any other install,
+                   preventing license-sharing across deployments.
+                   Omit the field for portable licenses (legacy behaviour).
+
 After signing, the script re-loads the output file and verifies the signature
 against the derived public key as a safety check.
 

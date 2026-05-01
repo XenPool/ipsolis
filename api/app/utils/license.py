@@ -4,10 +4,20 @@ Offline, trust-based license system:
 - Reads a signed JSON license file at ``/app/license/ipsolis.lic``
 - Verifies an Ed25519 signature against the embedded public key
 - Checks expiry
+- Optionally enforces an install-bound ``install_uuid`` (see below)
 - Caches the result in a process-local variable
 
 Missing file or any validation failure silently falls back to Community edition.
 No phone-home, no telemetry, no online checks.
+
+Install binding
+---------------
+Licenses MAY include an ``install_uuid`` field. When present, the verifier
+compares it against the local install UUID (seeded by migration 0094 into
+``app_config['install.uuid']`` and registered with this module via
+``set_install_uuid()`` at application startup). Mismatches fall back to
+Community with an explanatory message. Licenses without ``install_uuid``
+remain valid — backwards-compat for legacy issuances.
 
 KEEP IN SYNC: api/app/utils/license.py <-> worker/tasks/utils/license.py
 (byte-identical copies — Docker build contexts are separate so we duplicate).
@@ -53,6 +63,7 @@ class LicenseInfo(BaseModel):
     issued_at: datetime | None = None
     expires_at: datetime | None = None
     features: list[str] = []
+    install_uuid: str | None = None  # set when the license is install-bound
     valid: bool = True
     message: str = ""
 
@@ -60,6 +71,33 @@ class LicenseInfo(BaseModel):
 _COMMUNITY_FALLBACK = LicenseInfo()
 _CACHED_INFO: LicenseInfo | None = None
 _CACHED_MTIME: float | None = None  # mtime of the license file at cache time (None = no file)
+
+# Per-install identifier registered by application bootstrap (api lifespan or
+# worker task init). When set, the verifier enforces install-bound licenses;
+# when None, install-bound licenses fail closed (treated as Community) so a
+# bootstrap-order race can't accidentally grant Enterprise without a binding
+# check.
+_INSTALL_UUID: str | None = None
+
+
+def set_install_uuid(value: str | None) -> None:
+    """Register the per-install UUID for license-binding verification.
+
+    Application bootstrap is responsible for reading ``install.uuid`` from
+    ``app_config`` and calling this once before any license check runs.
+    Calling it again invalidates the cache so the next ``load_license()``
+    call re-evaluates with the updated binding.
+    """
+    global _INSTALL_UUID, _CACHED_INFO, _CACHED_MTIME
+    _INSTALL_UUID = (value or None)
+    # Invalidate the license cache so the binding takes effect immediately.
+    _CACHED_INFO = None
+    _CACHED_MTIME = None
+
+
+def get_install_uuid() -> str | None:
+    """Return the locally-registered install UUID (None if not set yet)."""
+    return _INSTALL_UUID
 
 
 def _community(message: str = "") -> LicenseInfo:
@@ -183,6 +221,50 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
         _CACHED_MTIME = current_mtime
         return _CACHED_INFO
 
+    # Install-bound licenses: ``install_uuid`` in the payload must match the
+    # locally-registered install UUID. Fail closed if the binding can't be
+    # checked (bootstrap hasn't registered it yet) — better to drop to
+    # Community than grant Enterprise to an install we can't verify.
+    license_install_uuid = data.get("install_uuid")
+    if license_install_uuid:
+        license_install_uuid = str(license_install_uuid).strip()
+        if not _INSTALL_UUID:
+            logger.warning(
+                "License is install-bound (install_uuid=%s) but the local "
+                "install UUID has not been registered yet — falling back "
+                "to Community.",
+                license_install_uuid,
+            )
+            _CACHED_INFO = LicenseInfo(
+                license_id=str(data.get("license_id") or "community"),
+                licensee=str(data.get("licensee") or "Community Edition"),
+                edition=COMMUNITY_EDITION,
+                install_uuid=license_install_uuid,
+                valid=False,
+                message="License install binding cannot be verified yet",
+            )
+            _CACHED_MTIME = current_mtime
+            return _CACHED_INFO
+        if license_install_uuid != _INSTALL_UUID:
+            logger.warning(
+                "License install_uuid mismatch — license=%s local=%s. "
+                "Falling back to Community.",
+                license_install_uuid, _INSTALL_UUID,
+            )
+            _CACHED_INFO = LicenseInfo(
+                license_id=str(data.get("license_id") or "community"),
+                licensee=str(data.get("licensee") or "Community Edition"),
+                edition=COMMUNITY_EDITION,
+                install_uuid=license_install_uuid,
+                valid=False,
+                message=(
+                    "License is bound to a different install. "
+                    "Request a new license bound to this install's UUID."
+                ),
+            )
+            _CACHED_MTIME = current_mtime
+            return _CACHED_INFO
+
     edition = str(data.get("edition") or COMMUNITY_EDITION)
     if edition not in (COMMUNITY_EDITION, ENTERPRISE_EDITION):
         edition = COMMUNITY_EDITION
@@ -199,6 +281,7 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
         issued_at=issued_at,
         expires_at=expires_at,
         features=features,
+        install_uuid=license_install_uuid or None,
         valid=True,
         message="",
     )

@@ -17,7 +17,7 @@ from app.models.config import AppConfig
 from app.routes import admin, admin_api_tokens, admin_approval_delegations, admin_auth, admin_certifications, admin_cost_report, admin_license, admin_maintenance, admin_modules, admin_runbooks, admin_seed_export, admin_self, admin_setup, admin_standalone_runbooks, admin_users, approvals_external, assets, auth, certifications_external, health, hr_webhook, metrics as metrics_route, orders, portal, portal_certifications, portal_delegations, scim, ui, webhook
 from app.utils import metrics as metrics_util
 from app.templates_instance import set_app_title, set_app_logo_config, set_license_globals, refresh_app_config_if_stale
-from app.utils.license import load_license
+from app.utils.license import load_license, set_install_uuid
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -52,6 +52,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     set_app_logo_config(cfg.key, cfg.value)
     except Exception as exc:
         logger.warning("Could not load app config globals from DB at startup: %s", exc)
+
+    # Register the per-install UUID so the license verifier can enforce
+    # install-bound licenses. Migration 0094 seeds this row; older installs
+    # that haven't migrated yet will get a None and any install-bound license
+    # will fail closed (Community fallback) until the migration applies.
+    try:
+        async with AsyncSessionLocal() as db:
+            uuid_row = await db.execute(
+                select(AppConfig).where(AppConfig.key == "install.uuid")
+            )
+            uuid_cfg = uuid_row.scalar_one_or_none()
+            set_install_uuid(uuid_cfg.value if uuid_cfg else None)
+    except Exception as exc:
+        logger.warning("Could not load install.uuid from DB at startup: %s", exc)
+        set_install_uuid(None)
 
     # Load license and publish edition globals to Jinja2 (safe on error)
     try:

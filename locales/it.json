@@ -5,6 +5,7 @@
       "my_it": "La mia IT",
       "my_approvals": "Le mie approvazioni",
       "delegations": "Deleghe",
+      "certifications": "Revisioni di accesso",
       "request_access": "Richiedi accesso"
     },
     "user": {
@@ -112,6 +113,32 @@
       "revoke_button": "Revoca",
       "revoke_confirm": "Revocare questa delega adesso? Le future approvazioni torneranno a te.",
       "empty": "Nessuna delega ancora."
+    },
+    "certifications": {
+      "page_title": "Le mie revisioni di accesso",
+      "intro": "Cicli periodici di certificazione ti chiedono di riconfermare gli accessi che hai approvato per il tuo team. Per ogni riga in sospeso scegli <strong>Conferma</strong> (l'utente mantiene l'accesso) oppure <strong>Revoca</strong> (ip·Solis rimuove subito l'accesso tramite il runbook di deprovisioning).",
+      "pending_heading": "Revisioni in sospeso",
+      "recent_heading": "Decisioni recenti",
+      "col_user": "Utente",
+      "col_asset": "Risorsa",
+      "col_campaign": "Campagna",
+      "col_due": "Scadenza",
+      "col_decision": "Decisione",
+      "col_decided": "Deciso il",
+      "col_comment": "Commento",
+      "comment_label": "Commento (opzionale)",
+      "status_pending": "in sospeso",
+      "status_confirmed": "confermato",
+      "status_revoked": "revocato",
+      "status_auto_revoked": "revocato automaticamente",
+      "empty_pending": "Nessuna revisione in sospeso — grazie!",
+      "empty_recent": "Ancora nessuna decisione recente.",
+      "btn_confirm": "Conferma",
+      "btn_revoke": "Revoca",
+      "confirm_title": "Conferma accesso",
+      "confirm_body": "L'utente mantiene il proprio accesso. La riga di revisione passa a <code class=\"font-mono\">confirmed</code> e una voce di audit attribuisce la decisione alla tua sessione del portale.",
+      "revoke_title": "Revoca accesso",
+      "revoke_body": "ip·Solis rimuoverà subito l'accesso dell'utente tramite il runbook di deprovisioning della risorsa. La riga di revisione passa a <code class=\"font-mono\">revoked</code>."
     },
     "order_new": {
       "page_title": "Richiedi nuovo accesso",

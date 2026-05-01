@@ -73,6 +73,31 @@
   </div>
 </section>
 
+<!-- Install identity card -->
+<section class="bg-surface rounded-lg border border-token-border p-5 mb-6">
+  <h2 class="text-sm font-semibold text-heading mb-1">Install identity</h2>
+  <p class="text-xs text-muted mb-3">
+    Stable per-install UUID. Provide this value when requesting a new
+    Enterprise license — we'll bake it into the signed file so the
+    license only validates on this deployment and can't be re-used
+    elsewhere. The UUID was generated when the database was first
+    migrated and never changes for the life of this install.
+  </p>
+  <div class="flex items-center gap-2 max-w-2xl">
+    <input id="install-uuid" type="text" readonly value="loading…"
+           class="flex-1 font-mono text-xs px-3 py-2 rounded border border-token-border bg-surface-raised text-body select-all">
+    <button type="button" id="copy-install-uuid"
+            class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded border border-token-border text-body hover:bg-surface-raised whitespace-nowrap">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+      </svg>
+      <span id="copy-install-uuid-label">Copy</span>
+    </button>
+  </div>
+  <p id="install-binding-status" class="hidden mt-3 text-xs"></p>
+</section>
+
 <!-- Upload card -->
 <section class="bg-surface rounded-lg border border-token-border p-5 mb-6">
   <h2 class="text-sm font-semibold text-heading mb-1">Install or replace license</h2>
@@ -200,7 +225,49 @@ function renderStatus(info) {
 
   document.getElementById('download-btn').classList.toggle('hidden', !filePresent);
   document.getElementById('remove-btn').classList.toggle('hidden', !filePresent);
+
+  // Install identity: fill the read-only field with the local UUID and
+  // surface a binding mismatch (license claims a different install) so
+  // the operator knows why an Enterprise file is being treated as Community.
+  var local = info.local_install_uuid || '';
+  var licenseUuid = info.install_uuid || '';
+  var input = document.getElementById('install-uuid');
+  input.value = local || '(not yet generated — apply migration 0094)';
+  var status = document.getElementById('install-binding-status');
+  if (filePresent && licenseUuid && local && licenseUuid !== local) {
+    status.textContent = 'License is bound to install ' + licenseUuid +
+      ' but this install is ' + local + '. Request a new license bound to this install’s UUID.';
+    status.className = 'mt-3 text-xs text-red-700 dark:text-red-300';
+    status.classList.remove('hidden');
+  } else if (filePresent && licenseUuid && licenseUuid === local) {
+    status.textContent = 'License is install-bound and matches this deployment.';
+    status.className = 'mt-3 text-xs text-emerald-700 dark:text-emerald-300';
+    status.classList.remove('hidden');
+  } else if (filePresent && !licenseUuid) {
+    status.textContent = 'Current license is portable (not install-bound).';
+    status.className = 'mt-3 text-xs text-muted/80';
+    status.classList.remove('hidden');
+  } else {
+    status.classList.add('hidden');
+  }
 }
+
+// ── Install UUID copy ─────────────────────────────────────────────────────
+document.getElementById('copy-install-uuid').addEventListener('click', async () => {
+  var input = document.getElementById('install-uuid');
+  var label = document.getElementById('copy-install-uuid-label');
+  if (!input.value || input.value.startsWith('(')) return;
+  try {
+    await navigator.clipboard.writeText(input.value);
+    label.textContent = 'Copied';
+    setTimeout(() => { label.textContent = 'Copy'; }, 1200);
+  } catch (e) {
+    input.select();
+    document.execCommand('copy');
+    label.textContent = 'Copied';
+    setTimeout(() => { label.textContent = 'Copy'; }, 1200);
+  }
+});
 
 function fmtDate(iso) {
   if (!iso) return '';

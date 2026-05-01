@@ -5,6 +5,7 @@
       "my_it": "My IT",
       "my_approvals": "My Approvals",
       "delegations": "Delegations",
+      "certifications": "Access Reviews",
       "request_access": "Request Access"
     },
     "user": {
@@ -112,6 +113,32 @@
       "revoke_button": "Revoke",
       "revoke_confirm": "Revoke this delegation now? Future approvals will go to you again.",
       "empty": "No delegations yet."
+    },
+    "certifications": {
+      "page_title": "My access reviews",
+      "intro": "Periodic certification cycles ask you to re-confirm the access you originally approved for your team. For each pending row, choose <strong>Confirm</strong> (the user keeps the access) or <strong>Revoke</strong> (ip·Solis pulls the access immediately via the deprovision runbook).",
+      "pending_heading": "Pending reviews",
+      "recent_heading": "Recent decisions",
+      "col_user": "User",
+      "col_asset": "Asset",
+      "col_campaign": "Campaign",
+      "col_due": "Due",
+      "col_decision": "Decision",
+      "col_decided": "Decided",
+      "col_comment": "Comment",
+      "comment_label": "Comment (optional)",
+      "status_pending": "pending",
+      "status_confirmed": "confirmed",
+      "status_revoked": "revoked",
+      "status_auto_revoked": "auto-revoked",
+      "empty_pending": "No pending reviews — thank you!",
+      "empty_recent": "No recent decisions yet.",
+      "btn_confirm": "Confirm",
+      "btn_revoke": "Revoke",
+      "confirm_title": "Confirm access",
+      "confirm_body": "The user keeps their access. The review row moves to <code class=\"font-mono\">confirmed</code> and an audit row attributes the decision to your portal session.",
+      "revoke_title": "Revoke access",
+      "revoke_body": "ip·Solis will immediately remove the user's access via the asset's deprovision runbook. The review row moves to <code class=\"font-mono\">revoked</code>."
     },
     "order_new": {
       "page_title": "Request New Access",

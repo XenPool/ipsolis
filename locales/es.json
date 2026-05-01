@@ -5,6 +5,7 @@
       "my_it": "Mi IT",
       "my_approvals": "Mis aprobaciones",
       "delegations": "Delegaciones",
+      "certifications": "Revisiones de acceso",
       "request_access": "Solicitar acceso"
     },
     "user": {
@@ -112,6 +113,32 @@
       "revoke_button": "Revocar",
       "revoke_confirm": "¿Revocar esta delegación ahora? Las futuras aprobaciones volverán a usted.",
       "empty": "Aún no hay delegaciones."
+    },
+    "certifications": {
+      "page_title": "Mis revisiones de acceso",
+      "intro": "Los ciclos periódicos de certificación le piden reconfirmar el acceso que originalmente aprobó para su equipo. Para cada fila pendiente, elija <strong>Confirmar</strong> (el usuario conserva el acceso) o <strong>Revocar</strong> (ip·Solis retira el acceso de inmediato a través del runbook de desaprovisionamiento).",
+      "pending_heading": "Revisiones pendientes",
+      "recent_heading": "Decisiones recientes",
+      "col_user": "Usuario",
+      "col_asset": "Recurso",
+      "col_campaign": "Campaña",
+      "col_due": "Vencimiento",
+      "col_decision": "Decisión",
+      "col_decided": "Decidido",
+      "col_comment": "Comentario",
+      "comment_label": "Comentario (opcional)",
+      "status_pending": "pendiente",
+      "status_confirmed": "confirmado",
+      "status_revoked": "revocado",
+      "status_auto_revoked": "revocado automáticamente",
+      "empty_pending": "Sin revisiones pendientes — ¡gracias!",
+      "empty_recent": "Aún no hay decisiones recientes.",
+      "btn_confirm": "Confirmar",
+      "btn_revoke": "Revocar",
+      "confirm_title": "Confirmar acceso",
+      "confirm_body": "El usuario conserva su acceso. La fila de revisión pasa a <code class=\"font-mono\">confirmed</code> y un registro de auditoría atribuye la decisión a su sesión del portal.",
+      "revoke_title": "Revocar acceso",
+      "revoke_body": "ip·Solis eliminará de inmediato el acceso del usuario a través del runbook de desaprovisionamiento del recurso. La fila de revisión pasa a <code class=\"font-mono\">revoked</code>."
     },
     "order_new": {
       "page_title": "Solicitar nuevo acceso",
