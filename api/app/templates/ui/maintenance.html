@@ -536,19 +536,20 @@
       reclaim:       'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
       'default':     'bg-surface-raised text-muted',
     }[r.queue] || 'bg-surface-raised text-muted';
-    // ENT-locked: task is gated behind an Enterprise feature. On community installs
-    // it no-ops on every tick — dim the row and swap the ENT badge for an explicit
-    // "No-op" indicator so operators understand the difference between
-    // "this fires but does nothing" and "this fires normally".
+    // ENT-locked: task is gated behind an Enterprise feature. The ENT badge always
+    // renders for these rows so operators see *why* the task is gated. On community
+    // installs we additionally dim the row and append a "No-op" tag so it's clear
+    // the task fires but does nothing each tick.
     var entLocked = !r.community;
     var entBadge = '';
     if (entLocked) {
-      entBadge = _isEnterprise
-        ? ' <span class="text-[9px] tracking-widest uppercase bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-semibold align-middle ml-1">ENT</span>'
-        : ' <span class="text-[10px] italic text-muted/70 align-middle ml-2">No-op — feature locked</span>';
+      entBadge = ' <span class="text-[9px] tracking-widest uppercase bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-semibold align-middle ml-1">ENT</span>';
+      if (!_isEnterprise) {
+        entBadge += ' <span class="text-[10px] italic text-muted/70 align-middle ml-2">No-op — feature locked</span>';
+      }
     }
     var rowClass = (entLocked && !_isEnterprise)
-      ? 'opacity-50 hover:bg-surface-raised/20'
+      ? 'opacity-60 hover:bg-surface-raised/20'
       : 'hover:bg-surface-raised/30';
     var configKnobs = (r.config_keys || []).length === 0
       ? '<span class="text-[11px] text-muted/50 italic">no operator knobs</span>'
