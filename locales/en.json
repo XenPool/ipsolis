@@ -29,6 +29,7 @@
       "back_to_orders": "← Orders",
       "back_to_my_it": "← My IT",
       "cancel": "Cancel",
+      "create": "Create",
       "update": "Update",
       "add": "+ Add",
       "yes": "Yes",
@@ -87,7 +88,14 @@
       "empty_pending": "No pending approvals.",
       "empty_recent": "No recent decisions.",
       "approver_manager": "Manager",
-      "approver_app_owner": "App Owner"
+      "approver_app_owner": "App Owner",
+      "error_sod_title": "Cannot decide on this order",
+      "error_sod_body": "Separation of duties: you configured this asset type, so a different approver must decide. The approval is still pending and visible to other eligible approvers.",
+      "error_sod_asset_type_label": "Asset type:",
+      "error_forbidden_title": "Not your approval",
+      "error_forbidden_body": "You are not the designated approver for this order.",
+      "error_notfound_title": "Approval not found",
+      "error_notfound_body": "This approval no longer exists or has already been decided."
     },
     "delegations": {
       "page_title": "My Approval Delegations",

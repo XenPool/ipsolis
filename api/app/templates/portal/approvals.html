@@ -19,6 +19,37 @@
   </a>
 </div>
 
+{% if error_kind %}
+<div class="mb-4 rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 dark:border-red-900 px-4 py-3 flex items-start gap-3"
+     role="alert">
+  <div class="flex-shrink-0 w-6 h-6 rounded-full bg-red-100 dark:bg-red-900 flex items-center justify-center text-red-700 dark:text-red-300 text-sm font-bold" aria-hidden="true">!</div>
+  <div class="flex-1 text-sm">
+    {% if error_kind == "sod" %}
+      <div class="font-semibold text-red-800 dark:text-red-300"
+           data-i18n="portal.approvals.error_sod_title">Cannot decide on this order</div>
+      <div class="mt-1 text-red-700 dark:text-red-300/90"
+           data-i18n="portal.approvals.error_sod_body">Separation of duties: you configured this asset type, so a different approver must decide. The approval is still pending and visible to other eligible approvers.</div>
+      {% if error_type_name %}
+      <div class="mt-1 text-xs text-red-700/80 dark:text-red-300/70">
+        <span data-i18n="portal.approvals.error_sod_asset_type_label">Asset type:</span>
+        <span class="font-medium">{{ error_type_name }}</span>
+      </div>
+      {% endif %}
+    {% elif error_kind == "forbidden" %}
+      <div class="font-semibold text-red-800 dark:text-red-300"
+           data-i18n="portal.approvals.error_forbidden_title">Not your approval</div>
+      <div class="mt-1 text-red-700 dark:text-red-300/90"
+           data-i18n="portal.approvals.error_forbidden_body">You are not the designated approver for this order.</div>
+    {% elif error_kind == "notfound" %}
+      <div class="font-semibold text-red-800 dark:text-red-300"
+           data-i18n="portal.approvals.error_notfound_title">Approval not found</div>
+      <div class="mt-1 text-red-700 dark:text-red-300/90"
+           data-i18n="portal.approvals.error_notfound_body">This approval no longer exists or has already been decided.</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 {% if pending_approvals %}
 <div class="bg-surface rounded-lg border border-token-border overflow-hidden mb-6">
   <table class="min-w-full divide-y divide-token-border text-sm">

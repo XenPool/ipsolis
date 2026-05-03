@@ -29,6 +29,7 @@
       "back_to_orders": "← Ordini",
       "back_to_my_it": "← La mia IT",
       "cancel": "Annulla",
+      "create": "Crea",
       "update": "Aggiorna",
       "add": "+ Aggiungi",
       "yes": "Sì",
@@ -87,7 +88,14 @@
       "empty_pending": "Nessuna approvazione in attesa.",
       "empty_recent": "Nessuna decisione recente.",
       "approver_manager": "Responsabile",
-      "approver_app_owner": "Proprietario applicazione"
+      "approver_app_owner": "Proprietario applicazione",
+      "error_sod_title": "Impossibile decidere su questo ordine",
+      "error_sod_body": "Separazione dei compiti: hai configurato questo tipo di asset, quindi deve decidere un altro approvatore. L'approvazione resta in sospeso ed è visibile agli altri approvatori autorizzati.",
+      "error_sod_asset_type_label": "Tipo di asset:",
+      "error_forbidden_title": "Approvazione non assegnata",
+      "error_forbidden_body": "Non sei l'approvatore designato per questo ordine.",
+      "error_notfound_title": "Approvazione non trovata",
+      "error_notfound_body": "Questa approvazione non esiste più o è già stata decisa."
     },
     "delegations": {
       "page_title": "Le mie deleghe di approvazione",

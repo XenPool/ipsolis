@@ -1270,6 +1270,8 @@ async def portal_approvals(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_portal_auth),
     show_recent: bool = False,
+    error: str | None = None,
+    type: str | None = None,
 ):
     from app.models.approval import OrderApproval
 
@@ -1316,6 +1318,9 @@ async def portal_approvals(
                 "asset_type_name": at.name if at else f"Type {order.asset_type_id}",
             })
 
+    error_kind = error if error in ("sod", "forbidden", "notfound") else None
+    error_type_name = (type or "").strip()[:200] if error_kind == "sod" else ""
+
     return templates.TemplateResponse("portal/approvals.html", {
         "request": request,
         "active_page": "approvals",
@@ -1324,6 +1329,8 @@ async def portal_approvals(
         "pending_count": len(pending_approvals),
         "recent_approvals": recent_approvals,
         "show_recent": show_recent,
+        "error_kind": error_kind,
+        "error_type_name": error_type_name,
     })
 
 
@@ -1337,14 +1344,21 @@ async def portal_decide_approval(
     comment: str = Form(default=""),
 ):
     from app.models.approval import OrderApproval
+    from urllib.parse import urlencode
 
     result = await db.execute(select(OrderApproval).where(OrderApproval.id == approval_id))
     approval = result.scalar_one_or_none()
     if not approval:
-        raise HTTPException(status_code=404, detail="Approval not found")
+        return RedirectResponse(
+            url="/portal/approvals?" + urlencode({"error": "notfound"}),
+            status_code=303,
+        )
 
     if approval.approver_email != current_user["email"]:
-        raise HTTPException(status_code=403, detail="You are not the designated approver")
+        return RedirectResponse(
+            url="/portal/approvals?" + urlencode({"error": "forbidden"}),
+            status_code=303,
+        )
 
     from app.utils.approval_decision import SoDViolation, apply_approval_decision
     try:
@@ -1354,17 +1368,20 @@ async def portal_decide_approval(
         )
     except SoDViolation as exc:
         # SoD is per-asset-type; the approval row stays ``pending`` so
-        # another approver can decide. We return 409 with a message
-        # quoting the original config-time attribution back at the
-        # operator so the path forward is clear.
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"Separation of duties: you configured asset type "
-                f"{exc.asset_type_id} (audit: {exc.audit_excerpt!r}). "
-                f"Ask a different approver to decide on this order."
-            ),
-        ) from exc
+        # another approver can decide. Redirect back to the approvals
+        # page with an error flag so the portal can render a friendly
+        # banner instead of leaking raw JSON to the user.
+        type_name = ""
+        at = await db.get(AssetType, exc.asset_type_id)
+        if at:
+            type_name = at.name
+        return RedirectResponse(
+            url="/portal/approvals?" + urlencode({
+                "error": "sod",
+                "type": type_name,
+            }),
+            status_code=303,
+        )
     return RedirectResponse(url="/portal/approvals", status_code=303)
 
 

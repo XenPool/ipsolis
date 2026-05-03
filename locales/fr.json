@@ -29,6 +29,7 @@
       "back_to_orders": "← Commandes",
       "back_to_my_it": "← Mon IT",
       "cancel": "Annuler",
+      "create": "Créer",
       "update": "Mettre à jour",
       "add": "+ Ajouter",
       "yes": "Oui",
@@ -87,7 +88,14 @@
       "empty_pending": "Aucune approbation en attente.",
       "empty_recent": "Aucune décision récente.",
       "approver_manager": "Manager",
-      "approver_app_owner": "Propriétaire d'application"
+      "approver_app_owner": "Propriétaire d'application",
+      "error_sod_title": "Décision impossible",
+      "error_sod_body": "Séparation des tâches : vous avez configuré ce type d'actif, une autre personne doit donc décider. L'approbation reste en attente et est visible par les autres approbateurs éligibles.",
+      "error_sod_asset_type_label": "Type d'actif :",
+      "error_forbidden_title": "Approbation non assignée",
+      "error_forbidden_body": "Vous n'êtes pas l'approbateur désigné pour cette commande.",
+      "error_notfound_title": "Approbation introuvable",
+      "error_notfound_body": "Cette approbation n'existe plus ou a déjà été décidée."
     },
     "delegations": {
       "page_title": "Mes délégations d'approbation",

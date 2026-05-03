@@ -29,6 +29,7 @@
       "back_to_orders": "← Bestellungen",
       "back_to_my_it": "← Meine IT",
       "cancel": "Abbrechen",
+      "create": "Erstellen",
       "update": "Aktualisieren",
       "add": "+ Hinzufügen",
       "yes": "Ja",
@@ -87,7 +88,14 @@
       "empty_pending": "Keine offenen Freigaben.",
       "empty_recent": "Keine kürzlichen Entscheidungen.",
       "approver_manager": "Vorgesetzte:r",
-      "approver_app_owner": "Applikations-Owner"
+      "approver_app_owner": "Applikations-Owner",
+      "error_sod_title": "Entscheidung nicht möglich",
+      "error_sod_body": "Funktionstrennung: Sie haben diesen Asset-Typ konfiguriert. Daher muss eine andere Person entscheiden. Die Genehmigung bleibt offen und ist für weitere berechtigte Genehmiger:innen sichtbar.",
+      "error_sod_asset_type_label": "Asset-Typ:",
+      "error_forbidden_title": "Nicht Ihre Genehmigung",
+      "error_forbidden_body": "Sie sind nicht als Genehmiger:in für diese Bestellung vorgesehen.",
+      "error_notfound_title": "Genehmigung nicht gefunden",
+      "error_notfound_body": "Diese Genehmigung existiert nicht mehr oder wurde bereits entschieden."
     },
     "delegations": {
       "page_title": "Meine Genehmigungs-Vertretungen",

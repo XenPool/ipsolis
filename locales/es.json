@@ -29,6 +29,7 @@
       "back_to_orders": "← Pedidos",
       "back_to_my_it": "← Mi IT",
       "cancel": "Cancelar",
+      "create": "Crear",
       "update": "Actualizar",
       "add": "+ Añadir",
       "yes": "Sí",
@@ -87,7 +88,14 @@
       "empty_pending": "No hay aprobaciones pendientes.",
       "empty_recent": "No hay decisiones recientes.",
       "approver_manager": "Responsable",
-      "approver_app_owner": "Propietario de aplicación"
+      "approver_app_owner": "Propietario de aplicación",
+      "error_sod_title": "No se puede decidir sobre este pedido",
+      "error_sod_body": "Separación de funciones: usted configuró este tipo de activo, por lo que otra persona debe decidir. La aprobación sigue pendiente y es visible para otros aprobadores elegibles.",
+      "error_sod_asset_type_label": "Tipo de activo:",
+      "error_forbidden_title": "Aprobación no asignada",
+      "error_forbidden_body": "Usted no es el aprobador designado para este pedido.",
+      "error_notfound_title": "Aprobación no encontrada",
+      "error_notfound_body": "Esta aprobación ya no existe o ya ha sido decidida."
     },
     "delegations": {
       "page_title": "Mis delegaciones de aprobación",
