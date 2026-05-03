@@ -24,7 +24,7 @@ from app.models.order import Order, OrderAction, OrderStatus
 from app.routes.portal import require_portal_auth
 from app.templates_instance import templates
 from app.utils.audit import aaudit, portal_actor_by
-from app.utils.features import is_feature_enabled, require_enterprise
+from app.utils.features import is_feature_enabled, require_business
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["portal-certifications"])
@@ -53,7 +53,7 @@ async def my_certifications_page(
 
 @router.get(
     "/portal/api/certifications/reviews",
-    dependencies=[require_enterprise("certifications")],
+    dependencies=[require_business("certifications")],
 )
 async def api_my_reviews(
     db: AsyncSession = Depends(get_db),
@@ -101,7 +101,7 @@ async def api_my_reviews(
 
 @router.post(
     "/portal/api/certifications/reviews/{review_id}/decide",
-    dependencies=[require_enterprise("certifications")],
+    dependencies=[require_business("certifications")],
 )
 async def api_decide_review(
     review_id: int,

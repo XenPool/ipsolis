@@ -90,6 +90,7 @@ templates.env.globals["app_logo_title_size"] = "12"
 # Community so any early render before load_license() runs is safe.
 templates.env.globals["edition"] = "community"
 templates.env.globals["is_enterprise"] = False
+templates.env.globals["is_business"] = False
 templates.env.globals["license_info"] = None
 
 # Module-level cache so the /portal/logo endpoint can read the raw data URL
@@ -238,10 +239,12 @@ def set_license_globals(info) -> None:
     if info is None:
         templates.env.globals["edition"] = "community"
         templates.env.globals["is_enterprise"] = False
+        templates.env.globals["is_business"] = False
         templates.env.globals["license_info"] = None
         return
     templates.env.globals["edition"] = info.edition
     templates.env.globals["is_enterprise"] = (info.edition == "enterprise" and info.valid)
+    templates.env.globals["is_business"] = (info.edition in ("business", "enterprise") and info.valid)
     templates.env.globals["license_info"] = info
 
 

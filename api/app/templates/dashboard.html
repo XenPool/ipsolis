@@ -45,9 +45,17 @@
     &middot; expires {{ license_info.expires_at.strftime("%Y-%m-%d") }}
   {% endif %}
 </div>
+{% elif is_business %}
+<div class="mb-6 rounded-lg border border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 px-4 py-3 text-sm text-blue-700 dark:text-blue-300">
+  <strong>Business Edition</strong> &middot; Licensed to {{ license_info.licensee }}
+  {% if license_info.expires_at %}
+    &middot; expires {{ license_info.expires_at.strftime("%Y-%m-%d") }}
+  {% endif %}
+  &middot; <a href="mailto:info@xenpool.com" class="underline">Upgrade to Enterprise &rarr;</a>
+</div>
 {% else %}
 <div class="mb-6 rounded-lg border border-token-border bg-surface px-4 py-3 text-xs text-muted">
-  <strong>Community Edition</strong> &mdash; Upgrade to Enterprise for advanced workflows,
+  <strong>Community Edition</strong> &mdash; Upgrade to Business or Enterprise for advanced workflows,
   integrations, and compliance features.
   <a href="https://xenpool.com" target="_blank" rel="noopener" class="underline">Learn more &rarr;</a>
 </div>

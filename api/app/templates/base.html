@@ -94,7 +94,7 @@
         </svg>
         Modules
       </a>
-      {% if is_enterprise %}
+      {% if is_business %}
       <a href="/ui/ps-modules"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'ps-modules' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -146,7 +146,7 @@
         </svg>
         Cost Report
       </a>
-      {% if is_enterprise %}
+      {% if is_business %}
       <a href="/ui/audit-log"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'audit-log' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -170,7 +170,7 @@
         </svg>
         License
       </a>
-      {% if is_enterprise %}
+      {% if is_business %}
       <a href="/ui/api-tokens"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'api-tokens' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -207,10 +207,8 @@
       </a>
       {% endif %}
 
-      {# Access Certifications — visible to auditor+ (read floor of the API);
-         page is fully usable but the write actions hide themselves for
-         non-admin roles via inline checks against `current_admin_role`. #}
-      {% if admin_role_at_least(request, 'auditor') and is_enterprise %}
+      {# Access Certifications — Business+; auditor+ read floor #}
+      {% if admin_role_at_least(request, 'auditor') and is_business %}
       <a href="/ui/certifications"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'certifications' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -220,6 +218,9 @@
         </svg>
         Certifications
       </a>
+      {% endif %}
+      {# Leaver Events — Enterprise-only (hr_leaver_events) #}
+      {% if admin_role_at_least(request, 'auditor') and is_enterprise %}
       <a href="/ui/leaver-events"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'leaver-events' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -238,7 +239,7 @@
          survives navigation. RBAC mirrored from the original gates above
          — helpdesk has no Enterprise items to advertise, so the group
          renders only for admin+. #}
-      {% if not is_enterprise and admin_role_at_least(request, 'admin') %}
+      {% if not is_business and admin_role_at_least(request, 'admin') %}
       <details id="ent-features-group"
                class="group mt-3 pt-2 border-t border-token-border [&_summary::-webkit-details-marker]:hidden">
         <summary class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:bg-surface-raised hover:text-body cursor-pointer list-none">
@@ -246,7 +247,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
           </svg>
-          <span class="flex-1 text-left">Enterprise Features</span>
+          <span class="flex-1 text-left">Business &amp; Enterprise Features</span>
           <svg class="w-3.5 h-3.5 flex-shrink-0 transition-transform duration-150 group-open:rotate-90"
                fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>

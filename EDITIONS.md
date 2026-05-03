@@ -1,13 +1,18 @@
 # ip·Solis – Edition Feature Matrix
 
-This document defines the feature split between the **Community Edition** (open-source, AGPL-3.0) and the **Enterprise Edition** (commercial license). It serves as the canonical reference for edition gating throughout the codebase.
+This document defines the feature split across the three editions of ip·Solis:
+**Community** (open-source, AGPL-3.0), **Business** (commercial), and **Enterprise** (commercial).
+It is the canonical reference for edition gating throughout the codebase.
 
 ## Guiding Principles
 
 - The Community Edition must be **fully functional** for small-to-mid-sized teams — not a crippled demo.
-- Enterprise features target organizations with **complex governance, compliance, or scale requirements**.
+- Business features target organizations with **operational automation, compliance basics, and custom integrations**.
+- Enterprise features target organizations with **identity sync, ITSM integration, hypervisor lifecycle management, and regulated compliance requirements**.
 - Edition gating is implemented via **runtime license checks and feature flags**, not separate codebases or branches.
-- All features ship in a **single codebase**. Enterprise features are present but gated.
+- All features ship in a **single codebase**. Business and Enterprise features are present but gated.
+
+---
 
 ## Community Edition (AGPL-3.0)
 
@@ -16,6 +21,7 @@ This document defines the feature split between the **Community Edition** (open-
 - "My IT" dashboard (active assets overview)
 - Multi-language UI (EN, DE, FR, ES, IT)
 - Entra ID (Azure AD) single sign-on
+- Up to 3 asset types · up to 100 managed users
 
 ### Approval Workflows
 - Manager approval (auto-resolved from Active Directory)
@@ -51,11 +57,10 @@ This document defines the feature split between the **Community Edition** (open-
 - Docker Compose deployment
 - Basic health probes (DB, Redis connectivity)
 - Append-only audit log (data written in all editions)
-- Mock mode for development (no external systems required)
 
 ---
 
-## Enterprise Edition (Commercial License)
+## Business Edition (Commercial License)
 
 *Includes everything in Community Edition, plus:*
 
@@ -64,6 +69,7 @@ This document defines the feature split between the **Community Edition** (open-
 - Re-approval on asset modification (configurable per asset type)
 - Deputy support (order on behalf of another user)
 - Scheduled orders (future-dated provisioning with asset reservation)
+- Eligible requestors (restrict asset types to specific AD groups)
 - Custom runbook deprovision policy
 
 ### Visual Runbook Builder
@@ -79,22 +85,6 @@ This document defines the feature split between the **Community Edition** (open-
 - Upload custom modules (.zip)
 - Module registry with metadata
 
-### Platform Integrations
-- VMware vSphere (VM lifecycle operations via PowerCLI)
-- XenServer / XCP-ng (VM lifecycle operations)
-- SCCM (task sequence triggers, device import/delete, status polling)
-- ServiceNow (inbound HMAC-signed webhook for order dispatch)
-
-### Advanced Access Control
-- Eligible requestors (restrict asset types to specific AD groups)
-- Per-asset-type RDP and admin user management
-
-### Maintenance & Operations
-- Scheduled PostgreSQL backups with retention policy
-- Manual backup / restore / download via Admin UI
-- Celery queue inspection and targeted purge
-- Email alerts on health state transitions
-
 ### Customization
 - Email template editor with variable placeholders (per-action templates)
 - App branding (title, logo, logo position and size)
@@ -103,15 +93,51 @@ This document defines the feature split between the **Community Edition** (open-
 ### Audit & Compliance
 - Audit log viewer (UI)
 - Order change log viewer (UI)
+- Access certification campaigns (ISO 27001 / SOX / PCI)
 
-### Planned (Enterprise Roadmap)
-- Role-based admin access (multiple admin roles)
-- API token management for external integrations
-- Usage analytics dashboard
-- Data retention policies with automatic cleanup
-- User data export and deletion (GDPR / DSGVO)
-- Sentry integration (optional error tracking)
-- Terraform provider for asset type configuration
+### API & Integration
+- Per-integration named API tokens with scopes and role binding
+
+### Limits
+- Up to 2,000 managed users · unlimited asset type definitions
+
+---
+
+## Enterprise Edition (Commercial License)
+
+*Includes everything in Business Edition, plus:*
+
+### Identity Sync & HR Integration
+- SCIM 2.0 deprovisioning (Okta, Ping, SailPoint)
+- HR leaver webhook (Workday, SAP, custom HR systems)
+- HR leaver events viewer
+
+### ITSM Integration
+- ServiceNow inbound HMAC-signed webhook for order dispatch
+
+### Hypervisor & OS Deployment
+- VMware vSphere (VM lifecycle operations via PowerCLI)
+- XenServer / XCP-ng (VM lifecycle operations)
+- SCCM (task sequence triggers, device import/delete, status polling)
+
+### Advanced Maintenance & Operations
+- Scheduled PostgreSQL backups with configurable retention
+- Manual backup / restore / download via Admin UI
+- Celery queue inspection and targeted purge
+- Email alerts on health state transitions
+- Audit log retention policies (PII / PHI / PCI classification)
+
+### Advanced Access Control
+- Per-asset-type ACL grants (restrict asset-type management to specific admin groups)
+- Role-bound API tokens (issue tokens locked to a specific admin role)
+- Separation-of-Duties enforcement (block self-approval and cross-role conflicts)
+- Password rotation and lockout policy
+
+### Limits & Deployment
+- Unlimited users and asset type definitions
+- On-premises / air-gapped deployment support
+- Dedicated solution architect
+- Custom SLA and security review
 
 ---
 
@@ -119,72 +145,73 @@ This document defines the feature split between the **Community Edition** (open-
 
 ### License Model
 
-The application checks for a valid license at startup. Without a license (or with an expired license), all Enterprise features are hidden and disabled.
-
-```
+```python
 # License check pseudocode
-EDITION = load_license()  # "community" | "enterprise"
+EDITION = load_license()  # "community" | "business" | "enterprise"
 ```
+
+### Feature Key Registry
+
+Feature keys are split into two frozensets in `api/app/utils/license.py`:
+
+```python
+BUSINESS_FEATURE_KEYS: frozenset[str] = frozenset({
+    "standalone_runbooks",    "visual_runbook_builder", "ps_module_management",
+    "deputy_support",         "scheduled_orders",       "app_owner_approval",
+    "reapproval_on_modify",   "email_template_editor",  "app_branding",
+    "eligible_requestors",    "global_variables",        "audit_log_viewer",
+    "change_log_viewer",      "api_token_management",   "certifications",
+})
+
+ENTERPRISE_ONLY_FEATURE_KEYS: frozenset[str] = frozenset({
+    "servicenow_webhook",     "hr_webhook",             "hr_leaver_events",
+    "scim",                   "vsphere_integration",    "xenserver_integration",
+    "sccm_integration",       "audit_retention",        "advanced_maintenance",
+    "custom_deprovision",     "rbac_asset_type_grants", "rbac_token_role_binding",
+    "rbac_sod_enforcement",   "password_policy",
+})
+```
+
+### Gating Hierarchy
+
+- **Enterprise license** → all features enabled (backward-compatible with `features: ["all"]`)
+- **Business license** → `BUSINESS_FEATURE_KEYS` enabled, `ENTERPRISE_ONLY_FEATURE_KEYS` blocked
+- **Community (no license / invalid)** → all gated features disabled
 
 ### Gating Pattern
 
-Enterprise features are gated at three levels:
+Features are gated at three levels:
 
-1. **UI layer** — Menu items, buttons, and pages are conditionally rendered:
+1. **UI layer** — Menu items and pages are conditionally rendered:
    ```jinja2
-   {% if edition == "enterprise" %}
+   {% if is_business %}  {# Business-tier nav item #}
      <a href="/ui/standalone-runbooks">Standalone Runbooks</a>
+   {% endif %}
+   {% if is_enterprise %}  {# Enterprise-only nav item #}
+     <a href="/ui/leaver-events">Leaver Events</a>
    {% endif %}
    ```
 
 2. **API layer** — Endpoints return `HTTP 403` with an upgrade message:
    ```python
-   @router.post("/standalone-runbooks")
-   async def create_standalone_runbook(...):
-       if not license.is_enterprise:
-           raise HTTPException(403, "Standalone Runbooks require an Enterprise license.")
+   # Business-tier endpoint
+   dependencies=[require_business("standalone_runbooks")]
+
+   # Enterprise-only endpoint
+   dependencies=[require_enterprise("scim")]
    ```
 
 3. **Worker layer** — Tasks check edition before execution:
    ```python
-   if not is_enterprise():
+   if not is_feature_enabled("servicenow_webhook"):
        return {"status": "skipped", "reason": "enterprise_only"}
    ```
-
-### Feature Flag Registry
-
-A central `ENTERPRISE_FEATURES` registry maps feature keys to their gating status:
-
-```python
-ENTERPRISE_FEATURES = {
-    "standalone_runbooks":      True,
-    "visual_runbook_builder":   True,
-    "ps_module_management":     True,
-    "deputy_support":           True,
-    "scheduled_orders":         True,
-    "app_owner_approval":       True,
-    "reapproval_on_modify":     True,
-    "servicenow_webhook":       True,
-    "vsphere_integration":      True,
-    "xenserver_integration":    True,
-    "sccm_integration":         True,
-    "eligible_requestors":      True,
-    "email_template_editor":    True,
-    "app_branding":             True,
-    "global_variables":         True,
-    "audit_log_viewer":         True,
-    "change_log_viewer":        True,
-    "advanced_maintenance":     True,
-    "custom_deprovision":       True,
-}
-```
 
 ---
 
 ## Versioning
 
-This document follows the product version. Update it whenever features move between editions or new features are added.
-
 | Version | Date | Change |
 |---------|------|--------|
-| 1.0 | 2026-04-23 | Initial edition split |
+| 1.0 | 2026-04-23 | Initial two-tier edition split (Community / Enterprise) |
+| 2.0 | 2026-05-02 | Three-tier system: added Business Edition between Community and Enterprise |

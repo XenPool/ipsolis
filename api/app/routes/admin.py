@@ -34,7 +34,7 @@ from app.utils.audit import (
     aaudit, actor_by, classify_asset_type, classify_for_asset_type_id,
 )
 from app.utils.auth import require_admin_key, require_scopes
-from app.utils.features import require_enterprise
+from app.utils.features import require_business, require_enterprise
 from app.utils.rbac import require_role
 from app.utils.rbac_grants import assert_asset_type_visible
 from app.utils.license import is_feature_enabled
@@ -81,7 +81,7 @@ def _require_config_key_licensed(key: str) -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
-                f"{label} requires an ip·Solis Enterprise license. "
+                f"{label} requires an ip·Solis Business or Enterprise license. "
                 f"Contact info@xenpool.com for licensing options."
             ),
         )
@@ -1372,7 +1372,7 @@ async def list_assets(
     "/audit-log",
     response_model=list[AuditLogRead],
     dependencies=[
-        require_enterprise("audit_log_viewer"),
+        require_business("audit_log_viewer"),
         require_scopes("audit:read"),
         require_role("auditor"),
     ],
@@ -1411,7 +1411,7 @@ async def list_audit_log(
 
 @router.get(
     "/email-templates",
-    dependencies=[require_enterprise("email_template_editor"), require_scopes("config:read")],
+    dependencies=[require_business("email_template_editor"), require_scopes("config:read")],
 )
 async def list_email_templates(db: AsyncSession = Depends(get_db)) -> list[dict]:
     """Lists all email templates (without body, for table display)."""
@@ -1432,7 +1432,7 @@ async def list_email_templates(db: AsyncSession = Depends(get_db)) -> list[dict]
 
 @router.get(
     "/email-templates/{event_key}",
-    dependencies=[require_enterprise("email_template_editor"), require_scopes("config:read")],
+    dependencies=[require_business("email_template_editor"), require_scopes("config:read")],
 )
 async def get_email_template(event_key: str, db: AsyncSession = Depends(get_db)) -> dict:
     """Returns a single email template including body and available_variables."""
@@ -1458,7 +1458,7 @@ async def get_email_template(event_key: str, db: AsyncSession = Depends(get_db))
 @router.put(
     "/email-templates/{event_key}",
     dependencies=[
-        require_enterprise("email_template_editor"),
+        require_business("email_template_editor"),
         require_scopes("config:write"),
         require_role("admin"),
     ],
@@ -1505,7 +1505,7 @@ async def update_email_template(
 
 @router.post(
     "/config/email/test",
-    dependencies=[require_enterprise("email_template_editor"), require_role("admin")],
+    dependencies=[require_business("email_template_editor"), require_role("admin")],
 )
 async def test_email(payload: dict = None, db: AsyncSession = Depends(get_db)) -> dict:
     """Sends a test email using the current email.* config settings."""

@@ -62,21 +62,71 @@ async def enforce_max_per_user(
     normalized = (user_email or "").strip().lower()
     if not normalized:
         return
-    result = await db.execute(
-        select(func.count())
-        .select_from(Order)
-        .where(
-            Order.asset_type_id == asset_type_id,
-            func.lower(Order.user_email) == normalized,
-            Order.status.in_(_ACTIVE_STATUSES),
+    rows = (
+        await db.execute(
+            select(Order.id, Order.status)
+            .where(
+                Order.asset_type_id == asset_type_id,
+                func.lower(Order.user_email) == normalized,
+                Order.status.in_(_ACTIVE_STATUSES),
+            )
+            .order_by(Order.id)
         )
-    )
-    current: int = result.scalar_one()
+    ).all()
+    current = len(rows)
     if current >= max_per_user:
+        # Bucket the blocking orders so the message tells the user exactly
+        # what's eating their quota and which order ID(s) to act on.
+        awaiting = [r for r in rows if r.status == OrderStatus.PENDING_APPROVAL]
+        in_flight = [r for r in rows if r.status in (
+            OrderStatus.SCHEDULED,
+            OrderStatus.PENDING,
+            OrderStatus.PROCESSING,
+            OrderStatus.PROVISIONING,
+        )]
+        live = [r for r in rows if r.status in (
+            OrderStatus.PROVISIONED,
+            OrderStatus.DELIVERED,
+        )]
+
+        def _ids(rs):
+            return ", ".join(f"#{r.id}" for r in rs)
+
+        parts: list[str] = []
+        if live:
+            parts.append(
+                f"{len(live)} active "
+                + ("instance" if len(live) == 1 else "instances")
+                + f" ({_ids(live)})"
+            )
+        if awaiting:
+            parts.append(
+                f"{len(awaiting)} order"
+                + ("" if len(awaiting) == 1 else "s")
+                + f" awaiting approval ({_ids(awaiting)})"
+            )
+        if in_flight:
+            parts.append(
+                f"{len(in_flight)} order"
+                + ("" if len(in_flight) == 1 else "s")
+                + f" in progress ({_ids(in_flight)})"
+            )
+        held = " and ".join(parts) if parts else f"{current} order(s)"
+
+        hint_bits: list[str] = []
+        if awaiting:
+            hint_bits.append(
+                f"Ask the approver to decide on {_ids(awaiting)} "
+                "(or cancel it)"
+            )
+        elif in_flight or live:
+            hint_bits.append("Wait for an existing one to be released")
+        hint = (" " + ". ".join(hint_bits) + ".") if hint_bits else ""
+
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Per-user limit reached: {user_email} already holds "
-                f"{current}/{max_per_user} instances of this asset definition."
+                f"Per-user limit reached ({current}/{max_per_user}) for this "
+                f"asset definition: {user_email} already has {held}.{hint}"
             ),
         )

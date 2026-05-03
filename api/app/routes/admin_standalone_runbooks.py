@@ -22,7 +22,7 @@ from app.models.standalone_runbook import (
     StandaloneRunbookStep,
 )
 from app.utils.auth import require_admin_key
-from app.utils.features import require_enterprise
+from app.utils.features import require_business
 from app.utils.rbac import require_role
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ router = APIRouter(
     tags=["admin-standalone-runbooks"],
     dependencies=[
         Depends(require_admin_key),
-        require_enterprise("standalone_runbooks"),
+        require_business("standalone_runbooks"),
         require_role("admin"),
     ],
 )

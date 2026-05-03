@@ -16,7 +16,7 @@ from app.models.ps_module import PsModule
 from app.models.runbook import RunbookStep
 from app.models.script_module import ScriptModule
 from app.utils.auth import require_admin_key
-from app.utils.features import require_enterprise
+from app.utils.features import require_business
 from app.utils.rbac import require_role
 
 logger = logging.getLogger(__name__)
@@ -31,9 +31,9 @@ router = APIRouter(
     dependencies=[Depends(require_admin_key), require_role("admin")],
 )
 
-# Enterprise gates (per-endpoint; script-modules stays Community)
-_GATE_PS_MODULES = require_enterprise("ps_module_management")
-_GATE_GLOBAL_VARS = require_enterprise("global_variables")
+# Business gates (per-endpoint; script-modules stays Community)
+_GATE_PS_MODULES = require_business("ps_module_management")
+_GATE_GLOBAL_VARS = require_business("global_variables")
 
 _SECRET_MASK = "***"
 

@@ -1,4 +1,4 @@
-"""Ipsolis license module (Community / Enterprise edition gating).
+"""Ipsolis license module (Community / Business / Enterprise edition gating).
 
 Offline, trust-based license system:
 - Reads a signed JSON license file at ``/app/license/ipsolis.lic``
@@ -45,9 +45,27 @@ PUBLIC_KEY_HEX: str = "e2b380f0d1c5205b119c96e7802165b55398c15f5b429e60c334a0e63
 # ── License file location ───────────────────────────────────────────────────
 LICENSE_PATH = Path(os.environ.get("IPSOLIS_LICENSE_PATH", "/app/license/ipsolis.lic"))
 
-# ── Community fallback ──────────────────────────────────────────────────────
-COMMUNITY_EDITION = "community"
+# ── Edition constants ───────────────────────────────────────────────────────
+COMMUNITY_EDITION  = "community"
+BUSINESS_EDITION   = "business"
 ENTERPRISE_EDITION = "enterprise"
+
+# Features available on Business and Enterprise licenses.
+BUSINESS_FEATURE_KEYS: frozenset[str] = frozenset({
+    "standalone_runbooks", "visual_runbook_builder", "ps_module_management",
+    "deputy_support", "scheduled_orders", "app_owner_approval", "reapproval_on_modify",
+    "email_template_editor", "app_branding", "eligible_requestors", "global_variables",
+    "audit_log_viewer", "change_log_viewer", "api_token_management", "certifications",
+})
+
+# Features that require an Enterprise license; hard-blocked on Business.
+ENTERPRISE_ONLY_FEATURE_KEYS: frozenset[str] = frozenset({
+    "servicenow_webhook", "hr_webhook", "hr_leaver_events", "scim",
+    "vsphere_integration", "xenserver_integration", "sccm_integration",
+    "audit_retention", "advanced_maintenance", "custom_deprovision",
+    "rbac_asset_type_grants", "rbac_token_role_binding", "rbac_sod_enforcement",
+    "password_policy",
+})
 
 
 class LicenseInfo(BaseModel):
@@ -57,7 +75,7 @@ class LicenseInfo(BaseModel):
 
     license_id: str = "community"
     licensee: str = "Community Edition"
-    edition: Literal["community", "enterprise"] = "community"
+    edition: Literal["community", "business", "enterprise"] = "community"
     max_users: int = 0
     max_asset_types: int = 0
     issued_at: datetime | None = None
@@ -266,7 +284,7 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
             return _CACHED_INFO
 
     edition = str(data.get("edition") or COMMUNITY_EDITION)
-    if edition not in (COMMUNITY_EDITION, ENTERPRISE_EDITION):
+    if edition not in (COMMUNITY_EDITION, BUSINESS_EDITION, ENTERPRISE_EDITION):
         edition = COMMUNITY_EDITION
 
     features_raw = data.get("features") or []
@@ -306,16 +324,36 @@ def is_enterprise() -> bool:
     return info.edition == ENTERPRISE_EDITION and info.valid
 
 
+def is_business() -> bool:
+    """True iff the instance runs with a valid Business or Enterprise license.
+
+    Enterprise is a strict superset of Business, so Enterprise licenses
+    also satisfy Business-tier gates.
+    """
+    info = get_license_info()
+    return info.edition in (BUSINESS_EDITION, ENTERPRISE_EDITION) and info.valid
+
+
 def is_feature_enabled(feature: str) -> bool:
     """True iff the feature is available under the current license.
 
-    Enterprise with features=["all"] enables everything. Explicit feature lists
-    are honored when set. Community always returns False for Enterprise features.
+    Tier hierarchy: Enterprise ⊇ Business ⊇ Community.
+    - Enterprise with features=["all"] or empty list → all features (legacy behaviour preserved).
+    - Enterprise with explicit list → honour the list.
+    - Business → enables BUSINESS_FEATURE_KEYS; ENTERPRISE_ONLY_FEATURE_KEYS always blocked.
+    - Community → all gated features disabled.
     """
     info = get_license_info()
-    if info.edition != ENTERPRISE_EDITION or not info.valid:
+    if not info.valid:
         return False
-    if "all" in info.features or not info.features:
-        # "all" or unspecified → everything enabled on an Enterprise license.
-        return True
-    return feature in info.features
+    if info.edition == ENTERPRISE_EDITION:
+        if "all" in info.features or not info.features:
+            return True
+        return feature in info.features
+    if info.edition == BUSINESS_EDITION:
+        if feature in ENTERPRISE_ONLY_FEATURE_KEYS:
+            return False
+        if "all" in info.features or not info.features:
+            return feature in BUSINESS_FEATURE_KEYS
+        return feature in info.features
+    return False

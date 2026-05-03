@@ -205,9 +205,13 @@ _ACTIVE_ORDER_STATUSES = (
 async def _get_unavailable_type_ids(db: AsyncSession, asset_types: list) -> set[int]:
     """Return set of asset_type IDs that have no free assets available.
 
-    Checks two things:
-    - capacity_pooled types: active orders >= pool_capacity
-    - All types with pool assets: 0 free assets in asset_pool
+    A type is considered out of stock when:
+    - it has pool assets but 0 in ``Free`` status, OR
+    - it has 0 pool assets AND its model requires picking an existing one
+      (``dedicated_shared``; or ``assigned_personal`` with strategy
+      ``assign_existing_free``). Types whose strategy provisions on demand
+      (``create_new``) are NOT marked unavailable on an empty pool.
+    - capacity_pooled with ``pool_capacity`` set: active orders >= capacity.
     """
     unavailable: set[int] = set()
     type_ids = [t.id for t in asset_types]
@@ -238,6 +242,19 @@ async def _get_unavailable_type_ids(db: AsyncSession, asset_types: list) -> set[
         free = free_counts.get(t.id, 0)
         if has_pool and free == 0:
             unavailable.add(t.id)
+            continue
+        if not has_pool:
+            # Empty pool: only a problem when the type can't conjure new assets.
+            needs_existing = (
+                t.assignment_model == "dedicated_shared"
+                or (
+                    t.assignment_model == "assigned_personal"
+                    and (t.personal_provisioning_strategy or "assign_existing_free")
+                    == "assign_existing_free"
+                )
+            )
+            if needs_existing:
+                unavailable.add(t.id)
 
     # 2) Additional check for capacity_pooled: active orders >= pool_capacity
     pooled = [t for t in asset_types if t.assignment_model == "capacity_pooled" and t.pool_capacity]

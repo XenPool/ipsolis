@@ -21,7 +21,8 @@
       "Bash(docker cp:*)",
       "Bash(docker exec xp_postgres psql -U xpuser -d itselfservice -c \"SELECT id, status, error_message FROM orders WHERE id=12;\")",
       "Bash(xargs grep -l \"order_change_log\")",
-      "Bash(docker exec:*)"
+      "Bash(docker exec:*)",
+      "Read(//c/Users/StefanvanBoxmer-Fisc/OneDrive - XenPool GmbH/Dokumente/XenPool/Projekte/XenPool/**)"
     ]
   }
 }

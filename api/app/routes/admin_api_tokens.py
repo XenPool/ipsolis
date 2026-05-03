@@ -25,7 +25,7 @@ from app.utils.api_tokens import (
     status as token_status,
 )
 from app.utils.auth import require_admin_key
-from app.utils.features import require_enterprise
+from app.utils.features import require_business
 from app.utils.license import is_feature_enabled
 from app.utils.rbac import VALID_ROLES, role_at_least, require_role
 
@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/admin/api-tokens",
     tags=["admin-api-tokens"],
-    # Enterprise-gated: per-integration named tokens with scopes / role
-    # binding / audit attribution are an Enterprise feature. Community
+    # Business-gated: per-integration named tokens with scopes / role
+    # binding / audit attribution are a Business feature. Community
     # installs keep the legacy ``X-Admin-Key`` fallback so existing
     # integrations don't break.
     # RBAC: ``admin`` is the operational floor; the mint guard
@@ -42,7 +42,7 @@ router = APIRouter(
     # defends against privilege escalation via token issuance.
     dependencies=[
         Depends(require_admin_key),
-        require_enterprise("api_token_management"),
+        require_business("api_token_management"),
         require_role("admin"),
     ],
 )
