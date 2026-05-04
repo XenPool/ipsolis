@@ -45,15 +45,8 @@ _EXPORT_END = "::__XP_STEP_EXPORTS_END__::"
 
 def _get_sync_session() -> Session:
     """Creates a synchronous DB session for the worker."""
-    import os
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session as SyncSession
-    db_url = os.environ.get(
-        "DATABASE_URL",
-        "postgresql://postgres:postgres@postgres:5432/xp_db",
-    )
-    engine = create_engine(db_url, pool_pre_ping=True)
-    return SyncSession(engine)
+    from tasks.modules.db import get_worker_session
+    return get_worker_session()
 
 
 _TEMPLATE_RE = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")

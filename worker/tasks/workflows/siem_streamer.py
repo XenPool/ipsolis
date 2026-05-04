@@ -34,8 +34,8 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 
 def _get_db_session() -> Session:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-    return Session(engine)
+    from tasks.modules.db import get_worker_session
+    return get_worker_session()
 
 
 def _set_config(db: Session, key: str, value: str) -> None:

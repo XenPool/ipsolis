@@ -50,8 +50,8 @@ _VIEW_SOURCES = {
 
 
 def _get_db_session() -> Session:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-    return Session(engine)
+    from tasks.modules.db import get_worker_session
+    return get_worker_session()
 
 
 @app.task(name="tasks.workflows.cost_report_snapshot.capture_daily_snapshot")

@@ -142,6 +142,13 @@ app.conf.update(
             "schedule": crontab(minute=0),  # Every full hour
             "options": {"queue": "provision"},
         },
+        # Re-dispatch deprovision tasks for orders stuck in 'revoking' with no
+        # active step — catches silent task failures (e.g. DB connection exhaustion).
+        "recover-stuck-revoking": {
+            "task": "tasks.workflows.dynamic_runner.recover_stuck_revoking",
+            "schedule": crontab(minute="*/5"),  # Every 5 minutes
+            "options": {"queue": "reclaim"},
+        },
         # Dispatch cron-scheduled standalone runbooks
         "dispatch-standalone-cron": {
             "task": "tasks.workflows.standalone_runner.check_cron_schedules",

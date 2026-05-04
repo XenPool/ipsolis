@@ -36,8 +36,8 @@ DATABASE_URL = os.getenv(
 
 
 def _get_db_session() -> Session:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-    return Session(engine)
+    from tasks.modules.db import get_worker_session
+    return get_worker_session()
 
 
 def _run_step_inline(
@@ -978,8 +978,22 @@ def _run_runbook_path(
                     step_name, e,
                 )
 
-    # provisioned_state nach erfolgreicher Provision schreiben
+    # Guard against leaver race: if action was "provision" when we started but
+    # has since been changed to "delete" (leaver fired mid-run), do not stamp
+    # the order as "provisioned" — let the leaver's deprovision task finalize it.
     if action == "provision":
+        live_action = db.execute(
+            text("SELECT action FROM orders WHERE id = :id"), {"id": order_id}
+        ).scalar()
+        if str(live_action).lower() == "delete":
+            logger.warning(
+                "[runbook_path] order_id=%s: action changed to 'delete' during provision run "
+                "(leaver fired mid-flight) — skipping 'provisioned' stamp",
+                order_id,
+            )
+            db.close()
+            return {"success": True, "order_id": order_id, "aborted": "leaver_preempted"}
+
         _write_provisioned_state(
             db, order_id,
             assignment_model=assignment_model,
@@ -1077,6 +1091,19 @@ def _run_composite_mode(
             logger.warning("[composite] Unknown step_type=%r – skipped", step_type)
 
     # Alle Schritte erfolgreich – Status setzen
+    # Guard: if action was "provision" but changed to "delete" mid-run (leaver race), don't overwrite
+    if action == "provision":
+        live_action = db.execute(
+            text("SELECT action FROM orders WHERE id = :id"), {"id": order_id}
+        ).scalar()
+        if str(live_action).lower() == "delete":
+            logger.warning(
+                "[composite] order_id=%s: action changed to 'delete' mid-run — skipping 'provisioned' stamp",
+                order_id,
+            )
+            db.close()
+            return {"success": True, "order_id": order_id, "aborted": "leaver_preempted", "composite": True}
+
     final = _final_status(action)
     update_order_status(db, order_id, final)
     audit_helper.waudit(
@@ -1771,6 +1798,56 @@ def check_scheduled_orders() -> dict:
 
         logger.info("=== check_scheduled_orders DONE: %s orders dispatched ===", dispatched)
         return {"dispatched": dispatched}
+
+    finally:
+        db.close()
+
+
+@app.task(
+    name="tasks.workflows.dynamic_runner.recover_stuck_revoking",
+    bind=True,
+    max_retries=0,
+    queue="reclaim",
+)
+def recover_stuck_revoking(self: Task) -> dict:
+    """Re-dispatch deprovision tasks for orders stuck in 'revoking' state.
+
+    An order is considered stuck when it has been in 'revoking' status with
+    action='delete' but has no currently-running order step. This catches the
+    case where the deprovision Celery task failed silently (e.g. DB connection
+    exhaustion) and was not retried.
+    """
+    db = _get_db_session()
+    try:
+        stuck_rows = db.execute(
+            text("""
+                SELECT o.id
+                FROM orders o
+                WHERE o.status = 'revoking'
+                  AND o.action = 'delete'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM order_steps s
+                      WHERE s.order_id = o.id
+                        AND s.status = 'running'
+                  )
+            """)
+        ).fetchall()
+
+        if not stuck_rows:
+            return {"recovered": 0}
+
+        recovered = 0
+        for row in stuck_rows:
+            order_id = row[0]
+            logger.warning(
+                "[recover_stuck_revoking] Order %s is stuck in 'revoking' — re-dispatching deprovision",
+                order_id,
+            )
+            run.apply_async(args=[order_id], queue="reclaim")
+            recovered += 1
+
+        logger.info("[recover_stuck_revoking] Re-dispatched %s stuck order(s)", recovered)
+        return {"recovered": recovered}
 
     finally:
         db.close()

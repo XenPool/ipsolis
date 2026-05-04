@@ -319,6 +319,16 @@ async def portal_new_order_form(
     asset_types = _filter_eligible_asset_types(all_types, current_user["email"])
     unavailable_ids = await _get_unavailable_type_ids(db, asset_types)
 
+    # Leaver check — show error banner instead of order form
+    from app.models.hr_leaver_event import HrLeaverEvent
+    leaver_row = await db.execute(
+        select(HrLeaverEvent)
+        .where(HrLeaverEvent.user_email == current_user["email"].lower())
+        .where(HrLeaverEvent.status == "processed")
+        .limit(1)
+    )
+    leaver_blocked = leaver_row.scalar_one_or_none() is not None
+
     # Load max advance days setting
     max_adv_row = await db.execute(
         select(AppConfig.value).where(AppConfig.key == "portal.max_advance_days")
@@ -335,7 +345,10 @@ async def portal_new_order_form(
         "today": date.today().isoformat(),
         "max_advance_days": max_advance_days,
         "max_from_date": max_from_date,
-        "error": None,
+        "error": (
+            "Your account has been flagged as a leaver. New orders are blocked. "
+            "Please contact your IT administrator."
+        ) if leaver_blocked else None,
     })
 
 
@@ -488,6 +501,20 @@ async def portal_create_order(
     asset_type = at_result.scalar_one_or_none()
     if not asset_type:
         return await _render_error("Unknown asset type.")
+
+    # Leaver check — block new orders for users who have been processed as leavers
+    from app.models.hr_leaver_event import HrLeaverEvent
+    leaver_result = await db.execute(
+        select(HrLeaverEvent)
+        .where(HrLeaverEvent.user_email == user_email.lower())
+        .where(HrLeaverEvent.status == "processed")
+        .limit(1)
+    )
+    if leaver_result.scalar_one_or_none():
+        return await _render_error(
+            "This account has been flagged as a leaver and cannot place new orders. "
+            "Please contact your IT administrator."
+        )
 
     # Eligibility check — ensure user is member of the required group
     if asset_type.eligible_requestors_dn:

@@ -50,8 +50,8 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 
 def _get_db_session() -> Session:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-    return Session(engine)
+    from tasks.modules.db import get_worker_session
+    return get_worker_session()
 
 
 @app.task(name="tasks.workflows.api_token_purge.purge_old_tokens")

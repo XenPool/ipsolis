@@ -43,8 +43,8 @@ _ACTIVE_ORDER_STATUSES = (
 
 
 def _get_db_session() -> Session:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-    return Session(engine)
+    from tasks.modules.db import get_worker_session
+    return get_worker_session()
 
 
 @app.task(name="tasks.workflows.cost_threshold_alerter.scan_and_alert")
