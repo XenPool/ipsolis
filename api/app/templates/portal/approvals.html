@@ -19,13 +19,44 @@
   </a>
 </div>
 
+{% if error_kind %}
+<div class="mb-4 rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/30 dark:border-red-900 px-4 py-3 flex items-start gap-3"
+     role="alert">
+  <div class="flex-shrink-0 w-6 h-6 rounded-full bg-red-100 dark:bg-red-900 flex items-center justify-center text-red-700 dark:text-red-300 text-sm font-bold" aria-hidden="true">!</div>
+  <div class="flex-1 text-sm">
+    {% if error_kind == "sod" %}
+      <div class="font-semibold text-red-800 dark:text-red-300"
+           data-i18n="portal.approvals.error_sod_title">Cannot decide on this order</div>
+      <div class="mt-1 text-red-700 dark:text-red-300/90"
+           data-i18n="portal.approvals.error_sod_body">Separation of duties: you configured this asset type, so a different approver must decide. The approval is still pending and visible to other eligible approvers.</div>
+      {% if error_type_name %}
+      <div class="mt-1 text-xs text-red-700/80 dark:text-red-300/70">
+        <span data-i18n="portal.approvals.error_sod_asset_type_label">Asset type:</span>
+        <span class="font-medium">{{ error_type_name }}</span>
+      </div>
+      {% endif %}
+    {% elif error_kind == "forbidden" %}
+      <div class="font-semibold text-red-800 dark:text-red-300"
+           data-i18n="portal.approvals.error_forbidden_title">Not your approval</div>
+      <div class="mt-1 text-red-700 dark:text-red-300/90"
+           data-i18n="portal.approvals.error_forbidden_body">You are not the designated approver for this order.</div>
+    {% elif error_kind == "notfound" %}
+      <div class="font-semibold text-red-800 dark:text-red-300"
+           data-i18n="portal.approvals.error_notfound_title">Approval not found</div>
+      <div class="mt-1 text-red-700 dark:text-red-300/90"
+           data-i18n="portal.approvals.error_notfound_body">This approval no longer exists or has already been decided.</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 {% if pending_approvals %}
 <div class="bg-surface rounded-lg border border-token-border overflow-hidden mb-6">
   <table class="min-w-full divide-y divide-token-border text-sm">
     <thead class="bg-surface-raised">
       <tr>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_requester">Requester</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_asset_type">Asset Type</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_asset_type">Asset Definition</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_approval_type">Approval Type</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_requested">Requested</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_period">Period</th>
@@ -92,8 +123,9 @@
   </table>
 </div>
 {% elif not show_recent %}
-<div class="bg-surface rounded-lg border border-token-border p-12 text-center text-muted/70 text-sm" data-i18n="portal.approvals.empty_pending">
-  No pending approvals.
+<div class="bg-surface rounded-lg border border-token-border p-12 text-center">
+  <div class="mx-auto mb-3 w-14 h-14 rounded-full bg-surface-raised flex items-center justify-center text-3xl text-green-500/70 dark:text-green-400/60" aria-hidden="true">✓</div>
+  <p class="text-base text-muted" data-i18n="portal.approvals.empty_pending">No pending approvals.</p>
 </div>
 {% endif %}
 
@@ -104,7 +136,7 @@
     <thead class="bg-surface-raised">
       <tr>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_requester">Requester</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_asset_type">Asset Type</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_asset_type">Asset Definition</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_decision">Decision</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_decided">Decided</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.approvals.col_comment">Comment</th>
@@ -135,8 +167,9 @@
 </div>
 {% elif show_recent %}
 <h2 class="text-sm font-semibold text-body mb-3 mt-6" data-i18n="portal.approvals.recent_heading">Recent Decisions</h2>
-<div class="bg-surface rounded-lg border border-token-border p-8 text-center text-muted/70 text-sm" data-i18n="portal.approvals.empty_recent">
-  No recent decisions.
+<div class="bg-surface rounded-lg border border-token-border p-8 text-center">
+  <div class="mx-auto mb-2 w-10 h-10 rounded-full bg-surface-raised flex items-center justify-center text-xl text-muted/40" aria-hidden="true">⌛</div>
+  <p class="text-sm text-muted" data-i18n="portal.approvals.empty_recent">No recent decisions.</p>
 </div>
 {% endif %}
 

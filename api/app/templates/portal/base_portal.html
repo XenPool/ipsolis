@@ -5,6 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}{{ app_title }}{% endblock %}</title>
   {% include "_partials/theme_head.html" %}
+
+  <!--
+    Flash-of-untranslated-content guard.
+    The HTML is rendered with English defaults inside `data-i18n` elements;
+    i18n.js runs async and rewrites them in the user's chosen language.
+    Without this, users on de/fr/es/it see a ~fraction-of-a-second flash
+    of English on every navigation. We hide translatable text while the
+    `i18n-pending` class is present, i18n.js removes the class after apply(),
+    and a 2 s safety timer removes it even if i18n.js fails to load so the
+    sidebar can't stay blank forever.
+  -->
+  <script>document.documentElement.classList.add('i18n-pending');
+    window.setTimeout(function(){ document.documentElement.classList.remove('i18n-pending'); }, 2000);
+  </script>
+  <style>html.i18n-pending [data-i18n] { visibility: hidden; }</style>
+
   <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous"></script>
   <script src="/static/js/i18n.js"></script>
 </head>
@@ -14,7 +30,7 @@
   <aside class="w-56 bg-surface border-r border-token-border flex flex-col flex-shrink-0 min-h-full">
 
     <!-- Logo / Brand -->
-    <div class="px-4 py-5 border-b border-token-border flex flex-col gap-1.5
+    <div class="px-4 py-5 border-b border-token-border flex flex-col gap-3
       {% if app_logo_position == 'center' %}items-center
       {% elif app_logo_position == 'right' %}items-end
       {% else %}items-start{% endif %}">
@@ -76,6 +92,31 @@
         </svg>
         <span data-i18n="portal.nav.my_approvals">My Approvals</span>
       </a>
+      {# Delegations is always visible — the user might not be an approver
+         today but could be named as one tomorrow, and setting up the
+         proactive "while I'm OOO, route to Bob" delegation is a thing
+         they should be able to do without waiting for the first approval
+         to land in their queue. #}
+      <a href="/portal/delegations"
+         class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'delegations' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+        </svg>
+        <span data-i18n="portal.nav.delegations">Delegations</span>
+      </a>
+      {% if is_enterprise %}
+      <a href="/portal/certifications"
+         class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'certifications' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+        </svg>
+        <span data-i18n="portal.nav.certifications">Access Reviews</span>
+      </a>
+      {% endif %}
       <a href="/portal/orders/new"
          class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'new' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">

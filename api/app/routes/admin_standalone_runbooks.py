@@ -22,14 +22,19 @@ from app.models.standalone_runbook import (
     StandaloneRunbookStep,
 )
 from app.utils.auth import require_admin_key
-from app.utils.features import require_enterprise
+from app.utils.features import require_business
+from app.utils.rbac import require_role
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin/standalone-runbooks",
     tags=["admin-standalone-runbooks"],
-    dependencies=[Depends(require_admin_key), require_enterprise("standalone_runbooks")],
+    dependencies=[
+        Depends(require_admin_key),
+        require_business("standalone_runbooks"),
+        require_role("admin"),
+    ],
 )
 
 def _get_celery():
@@ -67,6 +72,7 @@ class StepCreate(BaseModel):
     is_critical: bool = True
     retry_count: int = 3
     timeout_seconds: int = 120
+    always_run: bool = False
 
 
 class StepUpdate(BaseModel):
@@ -76,6 +82,7 @@ class StepUpdate(BaseModel):
     is_critical: bool | None = None
     retry_count: int | None = None
     timeout_seconds: int | None = None
+    always_run: bool | None = None
 
 
 class ReorderRequest(BaseModel):
@@ -181,6 +188,7 @@ async def get_runbook(runbook_id: int, db: AsyncSession = Depends(get_db)) -> di
                 "is_critical": s.is_critical,
                 "retry_count": s.retry_count,
                 "timeout_seconds": s.timeout_seconds,
+                "always_run": s.always_run,
             }
             for s in rb.steps
         ],
@@ -236,9 +244,9 @@ async def add_step(
         text("""
             INSERT INTO standalone_runbook_steps
                 (runbook_id, position, step_name, script_module_id, params_template,
-                 is_critical, retry_count, timeout_seconds, created_at)
+                 is_critical, retry_count, timeout_seconds, always_run, created_at)
             VALUES (:rid, :pos, :sname, :smid, CAST(:ptpl AS jsonb),
-                    :critical, :retry, :timeout, NOW())
+                    :critical, :retry, :timeout, :always, NOW())
         """),
         {
             "rid": runbook_id,
@@ -249,6 +257,7 @@ async def add_step(
             "critical": body.is_critical,
             "retry": body.retry_count,
             "timeout": body.timeout_seconds,
+            "always": body.always_run,
         },
     )
     await db.commit()
@@ -280,6 +289,8 @@ async def update_step(
         s.retry_count = body.retry_count
     if body.timeout_seconds is not None:
         s.timeout_seconds = body.timeout_seconds
+    if body.always_run is not None:
+        s.always_run = body.always_run
     await db.commit()
     return {"id": step_id, "updated": True}
 
@@ -412,4 +423,76 @@ async def get_run(runbook_id: int, run_id: int, db: AsyncSession = Depends(get_d
             }
             for s in r.run_steps
         ],
+    }
+
+
+@router.post("/{runbook_id}/runs/{run_id}/cancel")
+async def cancel_run(
+    runbook_id: int, run_id: int, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Cancel a pending or running standalone runbook run.
+
+    Behaviour:
+    - ``pending``: Celery revokes the queued task; DB row -> 'cancelled'.
+    - ``running``: Celery revokes with ``terminate=True`` (SIGTERM to the
+      worker's task); DB row -> 'cancelled'. The runner's exception handler
+      will NOT overwrite the cancelled status (guarded by a conditional
+      UPDATE in ``standalone_runner.run``).
+    - terminal (success/failed/cancelled): 409 Conflict, no-op.
+
+    Any still-``pending``/``running`` step rows are also marked 'cancelled'
+    so the run detail view doesn't leave orphaned in-flight steps.
+    """
+    r = await db.get(StandaloneRunbookRun, run_id)
+    if not r or r.runbook_id != runbook_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Run {run_id} not found")
+
+    if r.status not in ("pending", "running"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Run {run_id} is already in terminal state '{r.status}'; cannot cancel.",
+        )
+
+    # 1. Mark DB first so a race with the worker's own UPDATE doesn't re-open the run.
+    await db.execute(
+        text(
+            "UPDATE standalone_runbook_runs "
+            "SET status = 'cancelled', "
+            "    error_message = COALESCE(NULLIF(error_message, ''), 'Cancelled by admin'), "
+            "    finished_at = NOW() "
+            "WHERE id = :id"
+        ),
+        {"id": run_id},
+    )
+    await db.execute(
+        text(
+            "UPDATE standalone_runbook_run_steps "
+            "SET status = 'cancelled', "
+            "    finished_at = COALESCE(finished_at, NOW()) "
+            "WHERE run_id = :id AND status IN ('pending', 'running')"
+        ),
+        {"id": run_id},
+    )
+    await db.commit()
+
+    # 2. Revoke the Celery task so the worker stops (or never starts).
+    task_id = r.celery_task_id
+    revoke_ok = False
+    if task_id:
+        try:
+            celery = _get_celery()
+            celery.control.revoke(task_id, terminate=True, signal="SIGTERM")
+            revoke_ok = True
+        except Exception as exc:
+            logger.warning("cancel_run: Celery revoke failed for task %s: %s", task_id, exc)
+
+    logger.info(
+        "admin: run %s cancelled (task_id=%s revoke_ok=%s)",
+        run_id, task_id, revoke_ok,
+    )
+    return {
+        "id": run_id,
+        "status": "cancelled",
+        "celery_task_id": task_id,
+        "celery_revoked": revoke_ok,
     }

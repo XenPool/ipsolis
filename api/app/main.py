@@ -14,9 +14,10 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.config import AppConfig
-from app.routes import admin, admin_auth, admin_maintenance, admin_modules, admin_runbooks, admin_standalone_runbooks, assets, auth, health, orders, portal, ui, webhook
+from app.routes import admin, admin_api_tokens, admin_approval_delegations, admin_auth, admin_certifications, admin_cost_report, admin_license, admin_maintenance, admin_modules, admin_runbooks, admin_seed_export, admin_self, admin_setup, admin_standalone_runbooks, admin_users, approvals_external, assets, auth, certifications_external, health, hr_webhook, metrics as metrics_route, orders, portal, portal_certifications, portal_delegations, scim, ui, webhook
+from app.utils import metrics as metrics_util
 from app.templates_instance import set_app_title, set_app_logo_config, set_license_globals, refresh_app_config_if_stale
-from app.utils.license import load_license
+from app.utils.license import load_license, set_install_uuid
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -52,6 +53,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.warning("Could not load app config globals from DB at startup: %s", exc)
 
+    # Register the per-install UUID so the license verifier can enforce
+    # install-bound licenses. Migration 0094 seeds this row; older installs
+    # that haven't migrated yet will get a None and any install-bound license
+    # will fail closed (Community fallback) until the migration applies.
+    try:
+        async with AsyncSessionLocal() as db:
+            uuid_row = await db.execute(
+                select(AppConfig).where(AppConfig.key == "install.uuid")
+            )
+            uuid_cfg = uuid_row.scalar_one_or_none()
+            set_install_uuid(uuid_cfg.value if uuid_cfg else None)
+    except Exception as exc:
+        logger.warning("Could not load install.uuid from DB at startup: %s", exc)
+        set_install_uuid(None)
+
     # Load license and publish edition globals to Jinja2 (safe on error)
     try:
         license_info = load_license()
@@ -63,13 +79,29 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.warning("License load failed; running Community: %s", exc)
 
+    # OpenTelemetry tracing — opt-in via otel.* config keys. Auto-instrument
+    # FastAPI + SQLAlchemy after the provider is wired up so spans flow.
+    try:
+        from app.utils.tracing import setup_tracing, instrument_app
+        from app.database import engine
+
+        async with AsyncSessionLocal() as db:
+            otel_rows = await db.execute(
+                select(AppConfig).where(AppConfig.key.like("otel.%"))
+            )
+            otel_cfg = {r.key: (r.value or "") for r in otel_rows.scalars().all()}
+        if setup_tracing(otel_cfg):
+            instrument_app(app, engine)
+    except Exception as exc:
+        logger.warning("OpenTelemetry setup failed (continuing without tracing): %s", exc)
+
     yield
     logger.info("Application shutting down")
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="Ipsolis API",
+    title="ip·Solis API",
     description=(
         "Dispatcher and REST API for IT asset lifecycle orchestration. "
         "Receives webhooks from ServiceNow and self-service portal requests, "
@@ -112,6 +144,41 @@ async def sync_app_config_globals(request, call_next):
     return await call_next(request)
 
 
+# ── Prometheus request metrics ────────────────────────────────────────────────
+import time as _time  # noqa: E402 — local to the middleware
+
+
+@app.middleware("http")
+async def record_request_metrics(request, call_next):
+    """Record request count + latency, labelled by route template."""
+    started = _time.perf_counter()
+    response = await call_next(request)
+    duration = _time.perf_counter() - started
+
+    path = request.url.path
+    # /metrics scrapes don't count toward themselves to avoid trivially
+    # inflating the request rate displayed on dashboards.
+    if path == "/metrics":
+        return response
+
+    bucketed = metrics_util.collapse_high_volume_paths(path)
+    if bucketed is not None:
+        route_label = bucketed
+    else:
+        route = request.scope.get("route")
+        route_label = metrics_util.safe_route_template(
+            getattr(route, "path", None), fallback="<unmatched>"
+        )
+
+    metrics_util.record_request(
+        method=request.method,
+        route=route_label,
+        status_code=response.status_code,
+        duration_seconds=duration,
+    )
+    return response
+
+
 # ── Static Files ──────────────────────────────────────────────────────────────
 app.mount("/static", StaticFiles(directory="/app/app/static"), name="static")
 
@@ -132,7 +199,24 @@ app.include_router(admin_modules.router)
 app.include_router(admin_runbooks.router)
 app.include_router(admin_standalone_runbooks.router)
 app.include_router(admin_maintenance.router)
+app.include_router(admin_license.router)
+app.include_router(admin_api_tokens.router)
+app.include_router(admin_users.router)
+app.include_router(admin_self.router)
+app.include_router(admin_cost_report.router)
+app.include_router(admin_certifications.router)
+app.include_router(certifications_external.router)
+app.include_router(portal_certifications.router)
+app.include_router(hr_webhook.router)
+app.include_router(hr_webhook.admin_router)
+app.include_router(scim.router)
+app.include_router(admin_setup.router)
+app.include_router(admin_approval_delegations.router)
+app.include_router(admin_seed_export.router)
 app.include_router(admin_auth.router)  # admin login/logout — no auth, before ui.router
 app.include_router(ui.router)
 app.include_router(auth.router)   # login / callback / logout — before portal
 app.include_router(portal.router)
+app.include_router(portal_delegations.router)  # /portal/delegations + /portal/api/delegations
+app.include_router(approvals_external.router)  # tokenized /approve/{token} (no auth required)
+app.include_router(metrics_route.router)        # /metrics (Prometheus)

@@ -31,7 +31,7 @@
              class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
     </div>
     <div class="col-span-3">
-      <label class="block text-xs font-medium text-muted mb-1">Asset Type <span class="text-red-500">*</span></label>
+      <label class="block text-xs font-medium text-muted mb-1">Asset Definition <span class="text-red-500">*</span></label>
       <select id="add-type"
               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
         <option value="">– Select type –</option>
@@ -40,12 +40,7 @@
         {% endfor %}
       </select>
     </div>
-    <div class="col-span-2">
-      <label class="block text-xs font-medium text-muted mb-1">IP Address</label>
-      <input type="text" id="add-ip" placeholder="10.0.1.1"
-             class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
-    </div>
-    <div class="col-span-3">
+    <div class="col-span-5">
       <label class="block text-xs font-medium text-muted mb-1">Notes</label>
       <input type="text" id="add-notes" placeholder="Optional notes"
              class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
@@ -85,7 +80,7 @@
              class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500">
     </div>
     <div class="col-span-3">
-      <label class="block text-xs font-medium text-muted mb-1">Asset Type <span class="text-red-500">*</span></label>
+      <label class="block text-xs font-medium text-muted mb-1">Asset Definition <span class="text-red-500">*</span></label>
       <select id="bulk-type"
               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500">
         <option value="">– Select type –</option>
@@ -121,7 +116,7 @@
     </button>
   </div>
   <p class="text-xs text-muted mb-3">
-    Columns: <code class="bg-surface-raised px-1 rounded">hostname, asset_type, ip_address, notes</code>
+    Columns: <code class="bg-surface-raised px-1 rounded">hostname, asset_type, notes</code>
     — comma or tab separated. First line may be a header (auto-detected).
     <code>asset_type</code> must match a type name exactly, or leave blank and use the override below.
   </p>
@@ -133,13 +128,13 @@
                onchange="importFileSelected()"
                class="text-xs text-muted">
       </div>
-      <textarea id="import-text" rows="6" placeholder="hostname,asset_type,ip_address,notes&#10;VDI-PC01,Developer VDI,10.0.1.1,Floor 2&#10;VDI-PC02,Developer VDI,10.0.1.2,"
+      <textarea id="import-text" rows="6" placeholder="hostname,asset_type,notes&#10;VDI-PC01,Developer VDI,Floor 2&#10;VDI-PC02,Developer VDI,"
                 oninput="importPreview()"
                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-xs px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-teal-500 resize-y"></textarea>
     </div>
     <div class="col-span-4 flex flex-col gap-3">
       <div>
-        <label class="block text-xs font-medium text-muted mb-1">Asset Type override</label>
+        <label class="block text-xs font-medium text-muted mb-1">Asset Definition override</label>
         <select id="import-type-override"
                 onchange="importPreview()"
                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal-500">
@@ -166,8 +161,7 @@
         <thead class="bg-surface-raised sticky top-0">
           <tr>
             <th class="px-3 py-2 text-left text-muted font-medium">Hostname</th>
-            <th class="px-3 py-2 text-left text-muted font-medium">Asset Type</th>
-            <th class="px-3 py-2 text-left text-muted font-medium">IP Address</th>
+            <th class="px-3 py-2 text-left text-muted font-medium">Asset Definition</th>
             <th class="px-3 py-2 text-left text-muted font-medium">Notes</th>
             <th class="px-3 py-2 text-left text-muted font-medium">Status</th>
           </tr>
@@ -182,7 +176,7 @@
 <div class="mb-3 flex items-center gap-3">
   <select id="filter-type" onchange="applyFilters()"
           class="rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500">
-    <option value="">All Asset Types</option>
+    <option value="">All Asset Definitions</option>
     {% for t in asset_types %}
     <option value="{{ t.id }}" {% if selected_type_id == t.id %}selected{% endif %}>{{ t.name }}</option>
     {% endfor %}
@@ -194,7 +188,6 @@
     <option value="reserved">Reserved</option>
     <option value="busy">Assigned</option>
     <option value="maintenance">Maintenance</option>
-    <option value="reclaiming">Releasing...</option>
     <option value="Reinstall">Reinstall</option>
     <option value="Reinstalling">Reinstalling</option>
     <option value="Failed">Failed</option>
@@ -208,12 +201,11 @@
     <thead class="bg-surface-raised">
       <tr>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Hostname</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Asset Type</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Asset Definition</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Status</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Assigned To</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Order</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Expires</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">IP Address</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">MAC Address</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Notes</th>
         <th class="px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide text-right">Actions</th>
@@ -221,7 +213,7 @@
     </thead>
     <tbody id="pool-tbody" class="divide-y divide-token-border">
       <tr id="loading-row">
-        <td colspan="10" class="px-4 py-10 text-center text-muted/70 text-sm">Loading assets…</td>
+        <td colspan="9" class="px-4 py-10 text-center text-muted/70 text-sm">Loading assets…</td>
       </tr>
     </tbody>
   </table>
@@ -255,7 +247,7 @@
         <span class="text-sm text-body">
           Revoke permissions
           <span class="block text-xs text-muted/70 mt-0.5">
-            Remove the user's group memberships for this asset type.
+            Remove the user's group memberships for this asset definition.
           </span>
         </span>
       </label>
@@ -352,14 +344,12 @@ var _STATUS_LABELS = {
   reserved:    'Reserved',
   busy:        'Assigned',
   maintenance: 'Maintenance',
-  reclaiming:  'Releasing\u2026',
 };
 var _STATUS_CLASSES = {
   free:        'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300',
   reserved:    'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300',
   busy:        'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
   maintenance: 'bg-surface-raised text-muted',
-  reclaiming:  'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300',
 };
 
 // ── Panel toggle ──────────────────────────────────────────────────
@@ -441,21 +431,20 @@ var STATUS_LABELS = {
 
 function buildRow(a) {
   var canEdit = EDITABLE_STATUSES.indexOf(a.status) !== -1;
-  var ip = (a.asset_metadata && a.asset_metadata.ip_address) ? a.asset_metadata.ip_address : '';
   var mac = (a.asset_metadata && a.asset_metadata.mac_address) ? a.asset_metadata.mac_address : '';
   var notes = (a.asset_metadata && a.asset_metadata.notes) ? a.asset_metadata.notes : '';
   var expiresStr = a.expires_at ? new Date(a.expires_at).toLocaleDateString('en-GB') : '–';
   var orderCell = a.current_order_id
     ? '<a href="/ui/orders/' + a.current_order_id + '" class="text-blue-600 hover:underline">#' + a.current_order_id + '</a>'
     : '<span class="text-muted/70">–</span>';
-  var inUse = (a.status === 'reserved' || a.status === 'busy' || a.status === 'reclaiming');
-  var forceBtn = '<button onclick="openForceDeleteModal(' + a.id + ')" title="Force Delete"'
-    + ' class="text-muted/50 hover:text-red-500 ml-1" style="font-size:15px;line-height:1">⊗</button>';
-  var revokeBtn = '<button onclick="openRevokeModal(' + a.id + ')" title="Revoke &amp; Release"'
-    + ' class="text-muted/50 hover:text-orange-500 ml-1" style="font-size:15px;line-height:1">↩</button>';
+  var inUse = (a.status === 'reserved' || a.status === 'busy');
+  var forceBtn = '<button onclick="openForceDeleteModal(' + a.id + ')" title="Force Delete" aria-label="Force delete asset"'
+    + ' class="text-muted/50 hover:text-red-500 ml-1" style="font-size:15px;line-height:1"><span aria-hidden="true">⊗</span></button>';
+  var revokeBtn = '<button onclick="openRevokeModal(' + a.id + ')" title="Revoke &amp; Release" aria-label="Revoke and release asset"'
+    + ' class="text-muted/50 hover:text-orange-500 ml-1" style="font-size:15px;line-height:1"><span aria-hidden="true">↩</span></button>';
   var actionsHtml = canEdit
-    ? '<button onclick="startEdit(' + a.id + ')" title="Edit" class="text-muted/70 hover:text-blue-600 mr-2">✏</button>'
-      + '<button onclick="deleteAsset(' + a.id + ', \'' + _esc(a.name) + '\')" title="Delete" class="text-muted/70 hover:text-red-600">×</button>'
+    ? '<button onclick="startEdit(' + a.id + ')" title="Edit" aria-label="Edit asset" class="text-muted/70 hover:text-blue-600 mr-2"><span aria-hidden="true">✏</span></button>'
+      + '<button onclick="deleteAsset(' + a.id + ', \'' + _esc(a.name) + '\')" title="Delete" aria-label="Delete asset" class="text-muted/70 hover:text-red-600"><span aria-hidden="true">×</span></button>'
       + forceBtn
     : (inUse ? revokeBtn : '') + forceBtn;
   var tr = document.createElement('tr');
@@ -472,11 +461,81 @@ function buildRow(a) {
     + '<td class="px-4 py-3 text-xs">' + assignedCell + '</td>'
     + '<td class="px-4 py-3 text-xs">' + orderCell + '</td>'
     + '<td class="px-4 py-3 text-xs text-muted">' + _esc(expiresStr) + '</td>'
-    + '<td class="px-4 py-3 text-xs text-muted font-mono">' + _esc(ip) + '</td>'
     + '<td class="px-4 py-3 text-xs text-muted font-mono">' + _esc(mac) + '</td>'
-    + '<td class="px-4 py-3 text-xs text-muted max-w-xs truncate" title="' + _esc(notes) + '">' + _esc(notes) + '</td>'
+    + '<td class="px-4 py-3 text-xs text-muted max-w-xs">'
+    +   '<span id="notes-cell-' + a.id + '" class="block truncate cursor-text hover:text-body"'
+    +   ' title="Click to edit notes" onclick="editNotesInline(' + a.id + ')">'
+    +   (notes ? _esc(notes) : '<span class="text-muted/40">–</span>')
+    +   '</span>'
+    + '</td>'
     + '<td class="px-4 py-3 text-right text-sm">' + actionsHtml + '</td>';
   return tr;
+}
+
+// Inline Notes editor — always available, regardless of asset status.
+function editNotesInline(id) {
+  var cell = document.getElementById('notes-cell-' + id);
+  if (!cell || cell.dataset.editing === '1') return;
+  var a = _allAssets.find(function(x) { return x.id === id; });
+  if (!a) return;
+  var current = (a.asset_metadata && a.asset_metadata.notes) || '';
+  cell.dataset.editing = '1';
+  cell.innerHTML =
+    '<input type="text" id="notes-input-' + id + '" value="' + _esc(current) + '" '
+    + 'placeholder="Notes" maxlength="500" '
+    + 'class="w-full rounded border border-token-border bg-surface text-body text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500">';
+  var input = document.getElementById('notes-input-' + id);
+  input.focus();
+  input.select();
+  var cancelled = false;
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    else if (e.key === 'Escape') { cancelled = true; input.blur(); }
+  });
+  input.addEventListener('blur', function() {
+    if (cancelled) { _renderNotesCell(id, current); cell.dataset.editing = '0'; return; }
+    _saveNotesInline(id, input.value.trim(), current);
+  });
+}
+
+async function _saveNotesInline(id, newNotes, originalNotes) {
+  var a = _allAssets.find(function(x) { return x.id === id; });
+  if (!a) return;
+  // No change → just re-render without a round trip.
+  if (newNotes === originalNotes) { _renderNotesCell(id, newNotes); _markNotCell(id, false); return; }
+  var meta = Object.assign({}, a.asset_metadata || {});
+  if (newNotes) meta.notes = newNotes; else delete meta.notes;
+  try {
+    var resp = await fetch('/admin/assets/' + id, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ asset_metadata: Object.keys(meta).length ? meta : null }),
+    });
+    if (!resp.ok) {
+      var err = {}; try { err = await resp.json(); } catch(e) {}
+      alert('Saving notes failed: ' + (err.detail || resp.status));
+      _renderNotesCell(id, originalNotes);
+    } else {
+      a.asset_metadata = meta;
+      _renderNotesCell(id, newNotes);
+    }
+  } catch(e) {
+    alert('Network error while saving notes: ' + e.message);
+    _renderNotesCell(id, originalNotes);
+  }
+  _markNotCell(id, false);
+}
+
+function _renderNotesCell(id, notes) {
+  var cell = document.getElementById('notes-cell-' + id);
+  if (!cell) return;
+  cell.innerHTML = notes ? _esc(notes) : '<span class="text-muted/40">–</span>';
+  cell.title = notes ? 'Click to edit notes — ' + notes : 'Click to edit notes';
+}
+
+function _markNotCell(id, on) {
+  var cell = document.getElementById('notes-cell-' + id);
+  if (cell) cell.dataset.editing = on ? '1' : '0';
 }
 
 // ── Edit inline ───────────────────────────────────────────────────
@@ -485,7 +544,6 @@ function startEdit(id) {
   _editingId = id;
   var a = _allAssets.find(function(x) { return x.id === id; });
   if (!a) return;
-  var ip = (a.asset_metadata && a.asset_metadata.ip_address) ? a.asset_metadata.ip_address : '';
   var mac = (a.asset_metadata && a.asset_metadata.mac_address) ? a.asset_metadata.mac_address : '';
   var notes = (a.asset_metadata && a.asset_metadata.notes) ? a.asset_metadata.notes : '';
   var tr = document.getElementById('row-' + id);
@@ -502,8 +560,6 @@ function startEdit(id) {
     + '<td class="px-4 py-2 text-xs text-muted/70">–</td>'
     + '<td class="px-4 py-2 text-xs text-muted/70">–</td>'
     + '<td class="px-4 py-2 text-xs text-muted/70">–</td>'
-    + '<td class="px-4 py-2"><input id="edit-ip-' + id + '" value="' + _esc(ip) + '" placeholder="10.0.1.x"'
-    + ' class="w-full rounded border border-token-border bg-surface text-body text-xs px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"></td>'
     + '<td class="px-4 py-2"><input id="edit-mac-' + id + '" value="' + _esc(mac) + '" placeholder="aa:bb:cc:dd:ee:ff"'
     + ' class="w-full rounded border border-token-border bg-surface text-body text-xs px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"></td>'
     + '<td class="px-4 py-2"><input id="edit-notes-' + id + '" value="' + _esc(notes) + '" placeholder="Notes"'
@@ -519,13 +575,12 @@ function cancelEdit() { _editingId = null; renderTable(); }
 async function saveEdit(id) {
   var newName   = document.getElementById('edit-name-' + id).value.trim();
   var newStatus = document.getElementById('edit-status-' + id).value;
-  var newIp     = document.getElementById('edit-ip-' + id).value.trim();
   var newMac    = document.getElementById('edit-mac-' + id).value.trim();
   var newNotes  = document.getElementById('edit-notes-' + id).value.trim();
   if (!newName) { alert('Hostname must not be empty.'); return; }
   var a = _allAssets.find(function(x) { return x.id === id; });
   var meta = Object.assign({}, a.asset_metadata || {});
-  meta.ip_address = newIp || undefined;
+  delete meta.ip_address; // dropped from the schema
   meta.mac_address = newMac ? newMac.toLowerCase() : undefined;
   meta.notes = newNotes || undefined;
   try {
@@ -571,7 +626,7 @@ function openForceDeleteModal(id) {
   document.getElementById('fdm-confirm-btn').textContent = 'Delete';
 
   // Show user info + revoke checkbox only when asset is in active use
-  var inUse = (a.status === 'reserved' || a.status === 'busy' || a.status === 'reclaiming');
+  var inUse = (a.status === 'reserved' || a.status === 'busy');
   var userRow = document.getElementById('fdm-user-row');
   var revokeRow = document.getElementById('fdm-revoke-row');
   if (inUse && a.current_order_id) {
@@ -696,15 +751,13 @@ document.getElementById('revoke-modal').addEventListener('click', function(e) {
 async function addAsset() {
   var name   = document.getElementById('add-name').value.trim();
   var typeId = document.getElementById('add-type').value;
-  var ip     = document.getElementById('add-ip').value.trim();
   var notes  = document.getElementById('add-notes').value.trim();
   var errEl  = document.getElementById('add-error');
   if (!name)   { errEl.textContent = 'Hostname is required.';         errEl.classList.remove('hidden'); return; }
-  if (!typeId) { errEl.textContent = 'Please select an asset type.';  errEl.classList.remove('hidden'); return; }
+  if (!typeId) { errEl.textContent = 'Please select an asset definition.';  errEl.classList.remove('hidden'); return; }
   errEl.classList.add('hidden');
   var meta = {};
-  if (ip)    meta.ip_address = ip;
-  if (notes) meta.notes      = notes;
+  if (notes) meta.notes = notes;
   try {
     var resp = await fetch('/admin/assets', {
       method: 'POST',
@@ -713,7 +766,6 @@ async function addAsset() {
     });
     if (!resp.ok) { var err = {}; try { err = await resp.json(); } catch(e) {} errEl.textContent = 'Error: ' + (err.detail || resp.status); errEl.classList.remove('hidden'); return; }
     document.getElementById('add-name').value  = '';
-    document.getElementById('add-ip').value    = '';
     document.getElementById('add-notes').value = '';
     await loadAssets();
     document.getElementById('panel-add').classList.add('hidden');
@@ -769,7 +821,7 @@ async function bulkCreate() {
   if (!names.length || !document.getElementById('bulk-prefix').value.trim()) {
     errEl.textContent = 'Prefix is required.'; errEl.classList.remove('hidden'); return;
   }
-  if (!typeId) { errEl.textContent = 'Please select an asset type.'; errEl.classList.remove('hidden'); return; }
+  if (!typeId) { errEl.textContent = 'Please select an asset definition.'; errEl.classList.remove('hidden'); return; }
   var items = names.map(function(n) {
     var item = { name: n, asset_type_id: parseInt(typeId) };
     if (notes) item.notes = notes;
@@ -834,14 +886,13 @@ function importPreview() {
     var cols = _parseCsvLine(lines[i]);
     var hostname = cols[0] || '';
     var typeName = cols[1] || '';
-    var ip       = cols[2] || '';
-    var rowNotes = cols[3] || '';
+    var rowNotes = cols[2] || '';
     if (!hostname) continue;
     // Resolve type
     var typeId = overrideTypeId ? parseInt(overrideTypeId) : (_typeByName[typeName.toLowerCase()] || null);
     var typeLabelResolved = typeId ? (_typeNameById[typeId] || typeName) : typeName;
     var valid = hostname && typeId;
-    _importRows.push({ name: hostname, asset_type_id: typeId, ip_address: ip || null, notes: rowNotes || null, _valid: valid });
+    _importRows.push({ name: hostname, asset_type_id: typeId, notes: rowNotes || null, _valid: valid });
     var statusHtml = valid
       ? '<span class="text-green-600">OK</span>'
       : '<span class="text-red-500">' + (!hostname ? 'missing hostname' : 'unknown type') + '</span>';
@@ -850,7 +901,6 @@ function importPreview() {
     tr.innerHTML =
       '<td class="px-3 py-1 font-mono">' + _esc(hostname) + '</td>'
       + '<td class="px-3 py-1">' + _esc(typeLabelResolved) + '</td>'
-      + '<td class="px-3 py-1 font-mono text-muted">' + _esc(ip) + '</td>'
       + '<td class="px-3 py-1 text-muted">' + _esc(rowNotes) + '</td>'
       + '<td class="px-3 py-1">' + statusHtml + '</td>';
     tbody.appendChild(tr);
@@ -865,9 +915,9 @@ async function importAssets() {
   errEl.classList.add('hidden');
   resEl.classList.add('hidden');
   var validRows = _importRows.filter(function(r) { return r._valid; });
-  if (!validRows.length) { errEl.textContent = 'No valid rows to import. Check asset type names.'; errEl.classList.remove('hidden'); return; }
+  if (!validRows.length) { errEl.textContent = 'No valid rows to import. Check asset definition names.'; errEl.classList.remove('hidden'); return; }
   var items = validRows.map(function(r) {
-    return { name: r.name, asset_type_id: r.asset_type_id, ip_address: r.ip_address || undefined, notes: r.notes || undefined };
+    return { name: r.name, asset_type_id: r.asset_type_id, notes: r.notes || undefined };
   });
   try {
     var resp = await fetch('/admin/assets/bulk', {
@@ -889,11 +939,11 @@ async function importAssets() {
 
 function downloadExample() {
   var lines = [
-    'hostname,asset_type,ip_address,notes',
-    'VDI-PC01,Developer VDI,10.0.1.1,Floor 2',
-    'VDI-PC02,Developer VDI,10.0.1.2,Floor 2',
-    'SRV-APP01,App Server,10.0.2.1,',
-    'SRV-APP02,App Server,10.0.2.2,Rack B',
+    'hostname,asset_type,notes',
+    'VDI-PC01,Developer VDI,Floor 2',
+    'VDI-PC02,Developer VDI,Floor 2',
+    'SRV-APP01,App Server,',
+    'SRV-APP02,App Server,Rack B',
   ];
   var blob = new Blob([lines.join('\n')], {type: 'text/csv'});
   var url = URL.createObjectURL(blob);

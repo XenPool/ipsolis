@@ -1,0 +1,520 @@
+{% extends "base.html" %}
+
+{% block title %}Cost Report – {{ app_title }}{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-start justify-between gap-4">
+  <div>
+    <h1 class="text-lg font-semibold text-heading">Cost Report</h1>
+    <p class="text-xs text-muted/70 mt-1 max-w-2xl">
+      Projected monthly spend across two views — <strong>provider</strong> (asset definition's cost center,
+      who runs the platform) and <strong>consumer</strong> (the requester's AD attribute snapshot, who uses it).
+      Asset definitions without a <code class="font-mono bg-surface-raised px-1 rounded">monthly_cost</code>
+      are excluded — set one on the
+      <a href="/ui/asset-types" class="text-blue-600 hover:underline">Asset Definitions</a>
+      page to start tracking. Active = any order in pending / scheduled / processing / provisioning / provisioned / delivered status.
+    </p>
+  </div>
+  <a href="/admin/cost-report?fmt=csv"
+     class="px-4 py-2 bg-surface-raised text-body text-sm font-medium rounded hover:bg-surface border border-token-border whitespace-nowrap">
+    Download CSV (per-order detail)
+  </a>
+</div>
+
+<!-- View tabs: provider (default) | consumer cost center | consumer department -->
+<div class="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-token-border">
+  <div class="flex gap-1">
+    <button id="view-tab-provider" onclick="showView('provider')"
+            class="px-3 py-1.5 text-sm border-b-2 border-blue-600 text-blue-700 dark:text-blue-300 -mb-px">
+      By provider (asset cost center)
+    </button>
+    <button id="view-tab-consumer-cc" onclick="showView('consumer-cc')"
+            class="px-3 py-1.5 text-sm border-b-2 border-transparent text-muted hover:text-body">
+      By consumer cost center
+    </button>
+    <button id="view-tab-consumer-dept" onclick="showView('consumer-dept')"
+            class="px-3 py-1.5 text-sm border-b-2 border-transparent text-muted hover:text-body">
+      By department
+    </button>
+  </div>
+  <!-- View knobs: as_of date + reporting currency -->
+  <div class="flex flex-wrap items-end gap-3 mb-1">
+    <div>
+      <label class="block text-[11px] font-medium text-muted mb-0.5">As of</label>
+      <input id="view-as-of" type="date" onchange="onAsOfChange()"
+             class="rounded border border-token-border bg-surface text-body text-sm px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+             title="Read the cost report at a past date from the daily snapshot. Falls back to live data when no snapshot exists.">
+      <button id="view-as-of-clear" type="button" onclick="clearAsOf()"
+              class="hidden ml-1 text-[11px] text-blue-600 hover:underline align-middle">Today</button>
+    </div>
+    <div>
+      <label class="block text-[11px] font-medium text-muted mb-0.5">Show in</label>
+      <select id="view-currency" onchange="onReportingCurrencyChange()"
+              class="rounded border border-token-border bg-surface text-body text-sm px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              title="Convert mixed-currency totals into a single reporting currency using the rates configured under cost.fx.rates.">
+        <option value="">Source currency</option>
+        <!-- populated dynamically from /admin/cost-report/fx-config -->
+      </select>
+    </div>
+  </div>
+</div>
+
+<div id="view-meta-banner" class="hidden mb-3 px-3 py-1.5 rounded bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 text-xs text-blue-800 dark:text-blue-200"></div>
+
+<div id="totals-card" class="hidden mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+
+<div id="detail-table-wrap" class="bg-surface rounded-lg border border-token-border overflow-hidden">
+  <table class="min-w-full divide-y divide-token-border text-sm">
+    <thead id="detail-header" class="bg-surface-raised">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Cost center</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Asset definition</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-muted uppercase tracking-wide">Unit cost</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-muted uppercase tracking-wide">Active orders</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-muted uppercase tracking-wide">Unique users</th>
+        <th class="px-4 py-3 text-right text-xs font-medium text-muted uppercase tracking-wide">Projected / month</th>
+      </tr>
+    </thead>
+    <tbody id="rows-body" class="divide-y divide-token-border">
+      <tr><td colspan="6" class="px-4 py-8 text-center text-muted/70 text-sm">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Cost thresholds (alerts) ─────────────────────────────────────────── -->
+<div class="mt-8 bg-surface rounded-lg border border-token-border overflow-hidden">
+  <div class="px-4 py-3 border-b border-token-border bg-surface-raised flex items-center justify-between">
+    <div>
+      <h2 class="text-sm font-semibold text-heading">Cost thresholds</h2>
+      <p class="text-[11px] text-muted/70 mt-0.5">
+        Daily Beat task at 04:00 Europe/Berlin checks projected provider-side spend
+        against these limits and emails the configured recipients on breach. Repeat alerts
+        suppressed for 24h (configurable via <code class="font-mono">cost.threshold_alert_quiet_hours</code>).
+      </p>
+    </div>
+    <button onclick="openThresholdModal()"
+            class="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700">
+      + Add threshold
+    </button>
+  </div>
+  <table class="min-w-full divide-y divide-token-border text-sm">
+    <thead class="bg-surface">
+      <tr>
+        <th class="px-4 py-2 text-left text-xs font-medium text-muted uppercase tracking-wide">Cost center</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-muted uppercase tracking-wide">Currency</th>
+        <th class="px-4 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Monthly limit</th>
+        <th class="px-4 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Current projection</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-muted uppercase tracking-wide">Recipients</th>
+        <th class="px-4 py-2 text-left text-xs font-medium text-muted uppercase tracking-wide">Last alert</th>
+        <th class="px-4 py-2"></th>
+      </tr>
+    </thead>
+    <tbody id="thresholds-body" class="divide-y divide-token-border">
+      <tr><td colspan="7" class="px-4 py-6 text-center text-muted/70 text-sm">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Threshold modal (create + edit) ──────────────────────────────────── -->
+<div id="threshold-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  <div class="bg-surface rounded-lg border border-token-border shadow-xl w-full max-w-md mx-4 p-6">
+    <h2 id="threshold-modal-title" class="text-base font-semibold text-heading mb-4">New cost threshold</h2>
+
+    <div class="space-y-4">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Cost center <span class="text-red-500">*</span></label>
+          <input id="t-cost-center" type="text" maxlength="100" placeholder="e.g. CC-IT-2100"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Currency <span class="text-red-500">*</span></label>
+          <select id="t-currency"
+                  class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <option value="EUR">EUR</option>
+            <option value="USD">USD</option>
+            <option value="GBP">GBP</option>
+            <option value="CHF">CHF</option>
+            <option value="JPY">JPY</option>
+            <option value="CAD">CAD</option>
+            <option value="AUD">AUD</option>
+            <option value="SEK">SEK</option>
+            <option value="DKK">DKK</option>
+            <option value="NOK">NOK</option>
+            <option value="PLN">PLN</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Monthly limit <span class="text-red-500">*</span></label>
+        <input id="t-monthly-limit" type="number" min="0.01" step="0.01"
+               class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+        <p class="text-[11px] text-muted/60 mt-1">Alert fires when the provider-side projection crosses this amount.</p>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Recipients <span class="text-red-500">*</span></label>
+        <input id="t-recipients" type="text" placeholder="finance@example.com, ops-lead@example.com"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+        <p class="text-[11px] text-muted/60 mt-1">Comma-separated email addresses.</p>
+      </div>
+    </div>
+
+    <div id="threshold-modal-error" class="hidden mt-3 text-xs text-red-600"></div>
+
+    <div class="flex justify-end gap-2 mt-6">
+      <button onclick="closeThresholdModal()"
+              class="px-4 py-2 text-sm rounded border border-token-border text-body hover:bg-surface-raised">Cancel</button>
+      <button id="threshold-modal-submit" onclick="submitThreshold()"
+              class="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function fmtMoney(n, currency) {
+  if (n == null || isNaN(n)) return '—';
+  try {
+    return new Intl.NumberFormat(navigator.language, {
+      style: 'currency', currency: currency || 'EUR',
+      minimumFractionDigits: 2, maximumFractionDigits: 2,
+    }).format(n);
+  } catch (e) {
+    return n.toFixed(2) + ' ' + (currency || '');
+  }
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, function(c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+  });
+}
+
+var _reportData = null;
+var _thresholds = [];
+var _currentView = 'provider';
+var _editingThreshold = null;  // {cost_center, currency} when in edit mode
+var _asOf = '';                // YYYY-MM-DD or '' for live
+var _reportingCurrency = '';   // 3-letter ISO or '' for source currency
+var _fxConfig = null;          // {canonical, available_currencies, rates}
+
+async function loadReport() {
+  // Build query string from current view-knob state.
+  var params = new URLSearchParams({fmt: 'json'});
+  if (_asOf) params.set('as_of', _asOf);
+  if (_reportingCurrency) params.set('reporting_currency', _reportingCurrency);
+
+  // Pull report, thresholds, and FX config in parallel.
+  var [reportResp, thresholdsResp, fxResp] = await Promise.all([
+    fetch('/admin/cost-report?' + params.toString()),
+    fetch('/admin/cost-report/thresholds'),
+    _fxConfig ? Promise.resolve(null) : fetch('/admin/cost-report/fx-config'),
+  ]);
+  if (!reportResp.ok) {
+    document.getElementById('rows-body').innerHTML =
+      '<tr><td colspan="6" class="px-4 py-8 text-center text-red-600 text-sm">Failed to load report (HTTP ' + reportResp.status + ').</td></tr>';
+    return;
+  }
+  _reportData = await reportResp.json();
+  _thresholds = thresholdsResp.ok ? await thresholdsResp.json() : [];
+  if (fxResp && fxResp.ok) {
+    _fxConfig = await fxResp.json();
+    _populateCurrencySelector();
+  }
+  _renderMetaBanner();
+  showView(_currentView);
+  renderThresholds();
+}
+
+function _populateCurrencySelector() {
+  if (!_fxConfig) return;
+  var sel = document.getElementById('view-currency');
+  // Keep the leading "Source currency" option, append one per known rate.
+  while (sel.options.length > 1) sel.remove(1);
+  (_fxConfig.available_currencies || []).forEach(function(cur) {
+    var opt = document.createElement('option');
+    opt.value = cur;
+    opt.textContent = (cur === _fxConfig.canonical) ? (cur + ' (canonical)') : cur;
+    sel.appendChild(opt);
+  });
+  if (_reportingCurrency) sel.value = _reportingCurrency;
+}
+
+function _renderMetaBanner() {
+  var el = document.getElementById('view-meta-banner');
+  if (!el) return;
+  var meta = (_reportData && _reportData.meta) || {};
+  var parts = [];
+  if (meta.snapshot && meta.as_of) {
+    parts.push('Showing snapshot as of <strong>' + escapeHtml(meta.as_of) + '</strong>. Per-asset-type detail rows are not stored in snapshots; switch to today to see them.');
+  } else if (_asOf && !meta.snapshot) {
+    parts.push('No snapshot exists for <strong>' + escapeHtml(_asOf) + '</strong> — showing live data instead.');
+  }
+  if (meta.fx_applied && meta.fx_canonical) {
+    var msg = 'Converted into <strong>' + escapeHtml(meta.fx_canonical) + '</strong> via configured FX rates.';
+    if ((meta.fx_excluded_currencies || []).length) {
+      msg += ' Excluded (no rate): ' + meta.fx_excluded_currencies.map(escapeHtml).join(', ') + '.';
+    }
+    parts.push(msg);
+  }
+  if (!parts.length) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.innerHTML = parts.join('<br>');
+  el.classList.remove('hidden');
+}
+
+function onAsOfChange() {
+  var v = document.getElementById('view-as-of').value;
+  _asOf = v || '';
+  document.getElementById('view-as-of-clear').classList.toggle('hidden', !v);
+  loadReport();
+}
+
+function clearAsOf() {
+  _asOf = '';
+  document.getElementById('view-as-of').value = '';
+  document.getElementById('view-as-of-clear').classList.add('hidden');
+  loadReport();
+}
+
+function onReportingCurrencyChange() {
+  _reportingCurrency = document.getElementById('view-currency').value || '';
+  loadReport();
+}
+
+// ── Cost thresholds ──────────────────────────────────────────────────────────
+function _projectionFor(costCenter, currency) {
+  if (!_reportData || !_reportData.totals) return null;
+  for (var i = 0; i < _reportData.totals.length; i++) {
+    var t = _reportData.totals[i];
+    if (t.key === costCenter && t.currency === currency) {
+      return t.projected_monthly_total;
+    }
+  }
+  return null;
+}
+
+function renderThresholds() {
+  var body = document.getElementById('thresholds-body');
+  if (!_thresholds.length) {
+    body.innerHTML = '<tr><td colspan="7" class="px-4 py-6 text-center text-muted/70 text-sm">No thresholds configured. <button onclick="openThresholdModal()" class="text-blue-600 hover:underline ml-1">Add one →</button></td></tr>';
+    return;
+  }
+  body.innerHTML = _thresholds.map(function(t) {
+    var projected = _projectionFor(t.cost_center, t.currency);
+    var breached = projected !== null && projected > parseFloat(t.monthly_limit);
+    var projectionCell = (projected !== null)
+      ? (breached
+          ? '<span class="text-red-700 dark:text-red-300 font-semibold">' + fmtMoney(projected, t.currency) + '</span>'
+          : '<span class="tabular-nums">' + fmtMoney(projected, t.currency) + '</span>')
+      : '<span class="text-muted/50">no active orders</span>';
+    var lastAlert = t.last_alerted_at
+      ? new Date(t.last_alerted_at).toLocaleString()
+      : '<span class="text-muted/50">never</span>';
+    return '<tr ' + (breached ? 'class="bg-red-50/40 dark:bg-red-500/5"' : '') + '>'
+      + '<td class="px-4 py-2 text-xs font-medium text-heading whitespace-nowrap">' + escapeHtml(t.cost_center) + '</td>'
+      + '<td class="px-4 py-2 text-xs text-muted">' + escapeHtml(t.currency) + '</td>'
+      + '<td class="px-4 py-2 text-right text-xs tabular-nums">' + fmtMoney(t.monthly_limit, t.currency) + '</td>'
+      + '<td class="px-4 py-2 text-right text-xs tabular-nums">' + projectionCell + '</td>'
+      + '<td class="px-4 py-2 text-xs text-muted truncate max-w-xs" title="' + escapeHtml(t.recipients) + '">' + escapeHtml(t.recipients) + '</td>'
+      + '<td class="px-4 py-2 text-xs text-muted whitespace-nowrap">' + lastAlert + '</td>'
+      + '<td class="px-4 py-2 text-right text-xs whitespace-nowrap">'
+      +   '<button onclick="editThreshold(' + JSON.stringify(t.cost_center).replace(/"/g, '&quot;') + ',' + JSON.stringify(t.currency).replace(/"/g, '&quot;') + ')" class="text-blue-600 hover:underline mr-2">Edit</button>'
+      +   '<button onclick="deleteThreshold(' + JSON.stringify(t.cost_center).replace(/"/g, '&quot;') + ',' + JSON.stringify(t.currency).replace(/"/g, '&quot;') + ')" class="text-red-500 hover:text-red-700">Delete</button>'
+      + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function openThresholdModal() {
+  _editingThreshold = null;
+  document.getElementById('threshold-modal-title').textContent = 'New cost threshold';
+  document.getElementById('threshold-modal-submit').textContent = 'Create';
+  document.getElementById('t-cost-center').value = '';
+  document.getElementById('t-cost-center').disabled = false;
+  document.getElementById('t-currency').value = 'EUR';
+  document.getElementById('t-currency').disabled = false;
+  document.getElementById('t-monthly-limit').value = '';
+  document.getElementById('t-recipients').value = '';
+  document.getElementById('threshold-modal-error').classList.add('hidden');
+  document.getElementById('threshold-modal').classList.remove('hidden');
+  setTimeout(function() { document.getElementById('t-cost-center').focus(); }, 50);
+}
+
+function editThreshold(costCenter, currency) {
+  var t = _thresholds.find(function(x) { return x.cost_center === costCenter && x.currency === currency; });
+  if (!t) return;
+  _editingThreshold = {cost_center: costCenter, currency: currency};
+  document.getElementById('threshold-modal-title').textContent = 'Edit cost threshold';
+  document.getElementById('threshold-modal-submit').textContent = 'Save';
+  document.getElementById('t-cost-center').value = costCenter;
+  document.getElementById('t-cost-center').disabled = true;  // PK; can't change
+  document.getElementById('t-currency').value = currency;
+  document.getElementById('t-currency').disabled = true;     // PK; can't change
+  document.getElementById('t-monthly-limit').value = t.monthly_limit;
+  document.getElementById('t-recipients').value = t.recipients;
+  document.getElementById('threshold-modal-error').classList.add('hidden');
+  document.getElementById('threshold-modal').classList.remove('hidden');
+  setTimeout(function() { document.getElementById('t-monthly-limit').focus(); }, 50);
+}
+
+function closeThresholdModal() {
+  document.getElementById('threshold-modal').classList.add('hidden');
+  _editingThreshold = null;
+}
+
+document.getElementById('threshold-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeThresholdModal();
+});
+
+async function submitThreshold() {
+  var err = document.getElementById('threshold-modal-error');
+  err.classList.add('hidden');
+
+  var costCenter = document.getElementById('t-cost-center').value.trim();
+  var currency = document.getElementById('t-currency').value.trim().toUpperCase();
+  var limit = parseFloat(document.getElementById('t-monthly-limit').value);
+  var recipients = document.getElementById('t-recipients').value.trim();
+
+  if (!costCenter || !currency || !(limit > 0) || !recipients) {
+    err.textContent = 'All fields required; monthly limit must be > 0.';
+    err.classList.remove('hidden');
+    return;
+  }
+
+  var url, method, body;
+  if (_editingThreshold) {
+    url = '/admin/cost-report/thresholds/'
+      + encodeURIComponent(_editingThreshold.cost_center) + '/'
+      + encodeURIComponent(_editingThreshold.currency);
+    method = 'PUT';
+    body = {monthly_limit: limit, recipients: recipients};
+  } else {
+    url = '/admin/cost-report/thresholds';
+    method = 'POST';
+    body = {cost_center: costCenter, currency: currency, monthly_limit: limit, recipients: recipients};
+  }
+
+  var resp = await fetch(url, {
+    method: method,
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    var detail = await resp.json().catch(function() { return {}; });
+    err.textContent = detail.detail || ('HTTP ' + resp.status);
+    err.classList.remove('hidden');
+    return;
+  }
+  closeThresholdModal();
+  await loadReport();
+}
+
+async function deleteThreshold(costCenter, currency) {
+  if (!confirm('Delete the threshold for ' + costCenter + '/' + currency + '?\n\nNo emails will be sent for breaches on this combination until you re-add it.')) return;
+  var url = '/admin/cost-report/thresholds/'
+    + encodeURIComponent(costCenter) + '/'
+    + encodeURIComponent(currency);
+  var resp = await fetch(url, {method: 'DELETE'});
+  if (resp.status === 204) {
+    await loadReport();
+  } else {
+    var detail = await resp.json().catch(function() { return {}; });
+    alert(detail.detail || ('Delete failed (HTTP ' + resp.status + ')'));
+  }
+}
+
+function showView(name) {
+  _currentView = name;
+  // Update tab styling
+  ['provider', 'consumer-cc', 'consumer-dept'].forEach(function(n) {
+    var el = document.getElementById('view-tab-' + n);
+    if (!el) return;
+    if (n === name) {
+      el.classList.add('border-blue-600', 'text-blue-700', 'dark:text-blue-300');
+      el.classList.remove('border-transparent', 'text-muted');
+    } else {
+      el.classList.remove('border-blue-600', 'text-blue-700', 'dark:text-blue-300');
+      el.classList.add('border-transparent', 'text-muted');
+    }
+  });
+  if (!_reportData) return;
+  var totals = (name === 'consumer-cc')   ? _reportData.by_consumer_cost_center
+             : (name === 'consumer-dept') ? _reportData.by_consumer_department
+                                          : _reportData.totals;
+  renderTotals(totals || [], name);
+  // Detail table only meaningful for the provider view (rows are per asset_type).
+  var wrap = document.getElementById('detail-table-wrap');
+  if (name === 'provider') {
+    if (wrap) wrap.classList.remove('hidden');
+    renderRows(_reportData.rows || []);
+  } else {
+    if (wrap) wrap.classList.add('hidden');
+  }
+}
+
+function renderTotals(totals, viewName) {
+  var card = document.getElementById('totals-card');
+  if (!totals.length) {
+    card.classList.add('hidden');
+    return;
+  }
+  var emptyLabel = (viewName === 'consumer-dept') ? '(no department on file)' : '(unassigned)';
+  // Index thresholds by (cost_center, currency) so we can flag breached cards
+  // on the provider view (the only view where the keys line up with the
+  // thresholds table).
+  var thresholdIdx = {};
+  if (viewName === 'provider') {
+    (_thresholds || []).forEach(function(t) {
+      thresholdIdx[t.cost_center + '|' + t.currency] = t;
+    });
+  }
+  card.innerHTML = totals.map(function(t) {
+    var label = t.key || t.cost_center || emptyLabel;
+    var th = thresholdIdx[label + '|' + t.currency];
+    var breached = th && t.projected_monthly_total > parseFloat(th.monthly_limit);
+    var border = breached
+      ? 'border-red-300 dark:border-red-500/50 bg-red-50/40 dark:bg-red-500/10'
+      : 'border-token-border';
+    var amount = breached
+      ? '<div class="mt-1 text-lg font-semibold text-red-700 dark:text-red-300">' + fmtMoney(t.projected_monthly_total, t.currency) + '</div>'
+        + '<div class="text-[11px] text-red-700 dark:text-red-300 mt-0.5">⚠ over limit ' + fmtMoney(th.monthly_limit, th.currency) + '</div>'
+      : '<div class="mt-1 text-lg font-semibold text-heading">' + fmtMoney(t.projected_monthly_total, t.currency) + '</div>'
+        + (th ? '<div class="text-[11px] text-muted/70 mt-0.5">limit ' + fmtMoney(th.monthly_limit, th.currency) + '</div>' : '');
+    return '<div class="bg-surface rounded-lg border p-4 ' + border + '">'
+      + '<div class="text-[11px] uppercase tracking-wider text-muted/60">' + escapeHtml(label) + '</div>'
+      + amount
+      + '<div class="text-xs text-muted mt-0.5">' + t.active_orders + ' active orders across ' + t.asset_types + ' definition' + (t.asset_types === 1 ? '' : 's') + '</div>'
+      + '</div>';
+  }).join('');
+  card.classList.remove('hidden');
+}
+
+function renderRows(rows) {
+  var body = document.getElementById('rows-body');
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="6" class="px-4 py-12 text-center text-muted/70 text-sm">No asset definitions have a <span class="font-mono">monthly_cost</span> set yet. <a href="/ui/asset-types" class="text-blue-600 hover:underline ml-1">Configure one →</a></td></tr>';
+    return;
+  }
+  // Always render the cost-center cell — earlier "↳" dedup looked like
+  // a parent/child hierarchy when consecutive rows shared a cost center
+  // (cf. QA report 2026-04-29 P4). Rows are sorted by cost_center
+  // server-side so the value naturally clusters visually.
+  body.innerHTML = rows.map(function(r) {
+    return '<tr>'
+      + '<td class="px-4 py-3 text-xs font-medium text-heading whitespace-nowrap align-top">' + escapeHtml(r.cost_center) + '</td>'
+      + '<td class="px-4 py-3"><a href="/ui/asset-types/' + r.asset_type_id + '/edit" class="text-blue-600 hover:underline">' + escapeHtml(r.asset_type_name) + '</a></td>'
+      + '<td class="px-4 py-3 text-right text-sm tabular-nums">' + fmtMoney(r.unit_monthly_cost, r.currency) + '</td>'
+      + '<td class="px-4 py-3 text-right text-sm tabular-nums">' + r.active_orders + '</td>'
+      + '<td class="px-4 py-3 text-right text-sm tabular-nums">' + r.unique_users + '</td>'
+      + '<td class="px-4 py-3 text-right text-sm tabular-nums font-medium">' + fmtMoney(r.projected_monthly_total, r.currency) + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+document.addEventListener('DOMContentLoaded', loadReport);
+</script>
+{% endblock %}

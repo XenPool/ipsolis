@@ -1,0 +1,24 @@
+{# Update notifier banner — only renders when ``updates.check_enabled``
+   is on AND the daily Beat task observed a higher version than the
+   running ``app_version``. Logic lives in
+   ``templates_instance._compute_banner_state`` so the template stays
+   simple. Off by default so air-gapped tenants see nothing. #}
+{% set _ub = update_banner_state() %}
+{% if _ub.visible %}
+<div class="px-6 sm:px-8 pt-3 -mb-1">
+  <div class="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-900 dark:text-amber-200 px-4 py-2.5 flex items-center gap-3 text-xs">
+    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <span>
+      <strong>{{ _ub.latest }}</strong> is available
+      <span class="text-amber-700/70 dark:text-amber-300/70">— you are running {{ _ub.current }}.</span>
+    </span>
+    {% if _ub.url %}
+    <a href="{{ _ub.url }}" target="_blank" rel="noopener"
+       class="ml-auto font-medium underline hover:no-underline">Release notes ↗</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

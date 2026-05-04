@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }} – {{ app_title }}</title>
+  {% include "_partials/theme_head.html" %}
+</head>
+<body class="bg-surface-raised text-body min-h-screen">
+  <div class="max-w-md mx-auto px-4 py-12 sm:py-20">
+    {% set tone_classes = {
+      "success": "bg-green-50 border-green-200 text-green-800 dark:bg-green-500/10 dark:border-green-500/30 dark:text-green-200",
+      "warning": "bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-200",
+      "error":   "bg-red-50 border-red-200 text-red-800 dark:bg-red-500/10 dark:border-red-500/30 dark:text-red-200",
+      "info":    "bg-surface border-token-border text-body"
+    } %}
+    <div class="rounded-lg border p-6 sm:p-8 text-center {{ tone_classes.get(tone, tone_classes['info']) }}">
+      <h1 class="text-base font-semibold mb-2">{{ headline }}</h1>
+      <p class="text-sm">{{ message }}</p>
+    </div>
+    <p class="text-xs text-muted/70 mt-4 text-center">
+      <a href="/portal/approvals" class="hover:underline">Open approvals in {{ app_title }}</a>
+    </p>
+  </div>
+</body>
+</html>

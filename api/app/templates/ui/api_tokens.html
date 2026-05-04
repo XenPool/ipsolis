@@ -1,0 +1,473 @@
+{% extends "base.html" %}
+{% from "_partials/enterprise_teaser.html" import teaser_pane %}
+
+{% block title %}API Tokens – {{ app_title }}{% endblock %}
+
+{% block content %}
+{% if not is_business %}
+{{ teaser_pane(
+    "Per-integration API tokens",
+    "Replace the single shared X-Admin-Key with named, expiring, revocable bearer tokens — each scoped to the endpoints a specific integration actually needs (e.g. ServiceNow needs only 'webhook:in', a reporting tool only 'orders:read'). Token-role binding caps the privilege a token can wield even when the calling endpoint is broader. Every audit-log row records which token drove the change ('token:servicenow-int') so a compliance review can trace any mutation back to the specific integration. Optional hard-delete retention purges revoked tokens after a configurable window for tenants under strict record-retention rules. Community installs keep the legacy X-Admin-Key fallback so existing scripts don't break — you upgrade for the auditability.",
+    tier="business"
+) }}
+{% else %}
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-lg font-semibold text-heading">API Tokens</h1>
+    <p class="text-xs text-muted/70 mt-1 max-w-2xl">
+      Per-integration credentials for machine-to-machine access. Send them in the
+      <code class="font-mono bg-surface-raised px-1 rounded">Authorization: Bearer &lt;token&gt;</code> header.
+      The legacy <code class="font-mono bg-surface-raised px-1 rounded">X-Admin-Key</code> still works
+      as a fallback for existing integrations.
+    </p>
+  </div>
+  <button onclick="openCreateModal()"
+          class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+    + New token
+  </button>
+</div>
+
+<!-- One-time reveal banner — populated after successful creation -->
+<div id="reveal-card" class="hidden mb-6 rounded-lg border border-amber-200 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 p-5">
+  <div class="flex items-start gap-3">
+    <svg class="shrink-0 w-5 h-5 mt-0.5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.74-3l-6.93-12a2 2 0 00-3.48 0L3.34 16a2 2 0 001.73 3z"/>
+    </svg>
+    <div class="flex-1 min-w-0">
+      <p class="text-sm font-semibold text-amber-900 dark:text-amber-200">Copy this token now — it will not be shown again.</p>
+      <div class="mt-3 flex items-center gap-2">
+        <input type="text" id="reveal-token" readonly
+               class="flex-1 rounded border border-amber-300 dark:border-amber-500/50 bg-surface text-body text-sm px-3 py-2 font-mono">
+        <button onclick="copyRevealedToken()"
+                class="px-3 py-2 bg-surface-raised text-body text-sm rounded border border-token-border hover:bg-surface">
+          Copy
+        </button>
+        <button onclick="dismissReveal()"
+                class="px-3 py-2 bg-amber-600 text-white text-sm rounded hover:bg-amber-700">
+          I've saved it
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Retention policy card -->
+<div class="mb-6 bg-surface rounded-lg border border-token-border p-5">
+  <div class="flex items-center justify-between mb-2">
+    <h2 class="text-sm font-semibold text-heading">Retention policy</h2>
+    <span id="purge-status" class="text-xs text-muted/70 font-mono"></span>
+  </div>
+  <p class="text-xs text-muted/70 mb-3 leading-snug">
+    Slice 1 keeps revoked / expired tokens in the database forever — the audit trail of
+    "we used to have token X" stays intact. Tenants under strict record-retention rules
+    can opt in to <strong>hard-delete</strong>: rows with <code class="font-mono">revoked_at</code>
+    or <code class="font-mono">expires_at</code> older than the window below are removed by
+    a daily Beat task at 03:15 Europe/Berlin (and by <em>Purge now</em>). Each deletion writes
+    one <code class="font-mono">api_token / hard_deleted</code> audit row capturing the
+    name + prefix + reason. Default <code class="font-mono">0</code> = disabled (slice-1 behaviour).
+  </p>
+  <div class="flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-xs font-medium text-muted mb-1">Purge after (days)</label>
+      <input type="number" id="purge-after-days" min="0" max="3650"
+             value="0"
+             class="w-32 rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+    </div>
+    <button onclick="savePurgePolicy()"
+            class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+      Save policy
+    </button>
+    <button onclick="purgeNow()"
+            class="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded hover:bg-amber-700">
+      Purge now
+    </button>
+  </div>
+  <div id="purge-result" class="hidden mt-3 px-3 py-2 rounded text-xs"></div>
+</div>
+
+<!-- Token list -->
+<div class="bg-surface rounded-lg border border-token-border overflow-hidden">
+  <table class="min-w-full divide-y divide-token-border text-sm">
+    <thead class="bg-surface-raised">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Name</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Prefix</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Scopes</th>
+        {% if is_enterprise %}
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Role</th>
+        {% endif %}
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Status</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Last used</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Expires</th>
+        <th class="px-4 py-3"></th>
+      </tr>
+    </thead>
+    <tbody id="tokens-body" class="divide-y divide-token-border">
+      <tr><td colspan="8" class="px-4 py-8 text-center text-muted/70 text-sm">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Create modal -->
+<div id="create-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  <div class="bg-surface rounded-lg border border-token-border shadow-xl w-full max-w-md p-6">
+    <h2 class="text-base font-semibold text-heading mb-4">Create API token</h2>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Name</label>
+        <input id="new-token-name" type="text" autocomplete="off"
+               placeholder="e.g. servicenow-integration, prometheus-scraper"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <p class="text-[11px] text-muted/60 mt-1">Helps you identify the token later. Required.</p>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Expiry</label>
+        <select id="new-token-expiry"
+                class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <option value="">Never expire</option>
+          <option value="30">30 days</option>
+          <option value="90" selected>90 days</option>
+          <option value="180">180 days</option>
+          <option value="365">1 year</option>
+          <option value="730">2 years</option>
+        </select>
+        <p class="text-[11px] text-muted/60 mt-1">Pick a horizon that matches your rotation policy.</p>
+      </div>
+
+      {% if is_enterprise %}
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Role</label>
+        <select id="new-token-role"
+                class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <option value="" selected>(no role — scope-only authz, back-compat)</option>
+          <option value="superadmin">superadmin — full control incl. admin user mgmt</option>
+          <option value="admin">admin — operational owner</option>
+          <option value="approver">approver — sign-off only</option>
+          <option value="auditor">auditor — read-only</option>
+          <option value="helpdesk">helpdesk — narrow operational</option>
+        </select>
+        <p class="text-[11px] text-muted/60 mt-1">
+          Optional — when set, ip·Solis enforces this role on routes that require one,
+          on top of the scopes below. You can only mint tokens at or below your own role.
+        </p>
+      </div>
+      {% else %}
+      {# Role-bound tokens are an Enterprise feature; community gets
+         scope-only authz which is still meaningful (admin:*,
+         audit_log:read, config:read, etc.). The hidden input keeps the
+         submit handler's ``fields.role`` lookup working without branching. #}
+      <input type="hidden" id="new-token-role" value="">
+      {% endif %}
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Scopes</label>
+        <div class="rounded border border-token-border bg-surface-raised/40 p-3 max-h-56 overflow-y-auto">
+          <div id="scope-grid" class="grid grid-cols-1 gap-1.5 text-xs">
+            <p class="text-muted/60">Loading scopes…</p>
+          </div>
+        </div>
+        <p class="text-[11px] text-muted/60 mt-1 leading-snug">
+          Select what this token can do. <code class="font-mono bg-surface-raised px-1 rounded">admin:*</code>
+          grants everything (equivalent to the legacy <code class="font-mono bg-surface-raised px-1 rounded">X-Admin-Key</code>).
+          Narrowly-scoped tokens are recommended for new integrations.
+        </p>
+      </div>
+    </div>
+
+    <div id="create-error" class="hidden mt-3 text-xs text-red-600"></div>
+
+    <div class="flex justify-end gap-2 mt-6">
+      <button onclick="closeCreateModal()"
+              class="px-4 py-2 text-sm rounded border border-token-border text-body hover:bg-surface-raised">Cancel</button>
+      <button onclick="submitCreateToken()"
+              class="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function fmtDate(s) {
+  if (!s) return '—';
+  try {
+    var d = new Date(s);
+    return d.toLocaleString();
+  } catch (e) { return s; }
+}
+
+function statusBadge(s) {
+  var classes = {
+    active:  'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300',
+    expired: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
+    revoked: 'bg-surface-raised text-muted dark:bg-surface-raised dark:text-muted',
+  }[s] || 'bg-surface-raised text-muted';
+  return '<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ' + classes + '">' + s + '</span>';
+}
+
+var _scopeCatalog = [];
+
+async function loadScopes() {
+  try {
+    var resp = await fetch('/admin/api-tokens/scopes');
+    if (!resp.ok) return;
+    var data = await resp.json();
+    _scopeCatalog = data.scopes || [];
+  } catch (e) { /* swallow */ }
+}
+
+function renderScopeGrid() {
+  var grid = document.getElementById('scope-grid');
+  if (!grid) return;
+  if (!_scopeCatalog.length) {
+    grid.innerHTML = '<p class="text-muted/60">Could not load scopes.</p>';
+    return;
+  }
+  grid.innerHTML = _scopeCatalog.map(function(s) {
+    var checked = (s.name === 'admin:*') ? 'checked' : '';
+    return '<label class="flex items-start gap-2 py-1 cursor-pointer hover:bg-surface-raised/40 px-2 rounded">'
+      + '<input type="checkbox" class="scope-cb mt-0.5 rounded border-token-border" value="' + escapeHtml(s.name) + '" ' + checked + '>'
+      + '<div class="min-w-0">'
+      +   '<code class="font-mono text-[11px] text-blue-700 dark:text-blue-300">' + escapeHtml(s.name) + '</code>'
+      +   '<span class="text-muted/80 ml-2">' + escapeHtml(s.description) + '</span>'
+      + '</div>'
+      + '</label>';
+  }).join('');
+}
+
+// Role-bound API tokens are an Enterprise feature; suppress the role
+// column on community so the table shape matches the gated header.
+const IS_ENTERPRISE = {{ 'true' if is_enterprise else 'false' }};
+
+function roleBadge(role) {
+  if (!role) {
+    return '<span class="text-muted/50 text-xs italic">unbound</span>';
+  }
+  var color = role === 'superadmin'
+    ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'
+    : 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300';
+  return '<span class="inline-block ' + color + ' rounded px-1.5 py-0.5 text-[10px] font-mono">' + escapeHtml(role) + '</span>';
+}
+
+function scopeBadges(scopes) {
+  if (!scopes || !scopes.length) return '<span class="text-muted/50 text-xs">—</span>';
+  return scopes.map(function(s) {
+    var color = s === 'admin:*'
+      ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'
+      : 'bg-surface-raised text-body';
+    return '<span class="inline-block ' + color + ' rounded px-1.5 py-0.5 text-[10px] font-mono mr-1 mb-0.5">' + escapeHtml(s) + '</span>';
+  }).join('');
+}
+
+async function loadTokens() {
+  var resp = await fetch('/admin/api-tokens');
+  var body = document.getElementById('tokens-body');
+  if (!resp.ok) {
+    body.innerHTML = '<tr><td colspan="8" class="px-4 py-8 text-center text-red-600 text-sm">Failed to load tokens (HTTP ' + resp.status + ').</td></tr>';
+    return;
+  }
+  var rows = await resp.json();
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="8" class="px-4 py-12 text-center text-muted/70 text-sm">No tokens yet. <button onclick="openCreateModal()" class="text-blue-600 hover:underline ml-1">Create one →</button></td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(function(r) {
+    var revokeBtn = (r.status === 'revoked')
+      ? '<span class="text-muted/60 text-xs">revoked ' + fmtDate(r.revoked_at) + '</span>'
+      : '<button onclick="revokeToken(' + r.id + ', \'' + (r.name || '').replace(/'/g, "\\'") + '\')" class="text-red-500 hover:text-red-700 text-xs">Revoke</button>';
+    return '<tr data-token-id="' + r.id + '" ' + (r.status === 'revoked' ? 'class="opacity-60"' : '') + '>'
+      + '<td class="px-4 py-3"><div class="font-medium text-heading">' + escapeHtml(r.name) + '</div><div class="text-[11px] text-muted/60">created by ' + escapeHtml(r.created_by) + ' · ' + fmtDate(r.created_at) + '</div></td>'
+      + '<td class="px-4 py-3"><span class="font-mono text-xs text-muted">' + escapeHtml(r.token_prefix) + '…</span></td>'
+      + '<td class="px-4 py-3">' + scopeBadges(r.scopes) + '</td>'
+      + (IS_ENTERPRISE ? '<td class="px-4 py-3">' + roleBadge(r.role) + '</td>' : '')
+      + '<td class="px-4 py-3">' + statusBadge(r.status) + '</td>'
+      + '<td class="px-4 py-3 text-xs text-muted">' + fmtDate(r.last_used_at) + '</td>'
+      + '<td class="px-4 py-3 text-xs text-muted">' + (r.expires_at ? fmtDate(r.expires_at) : 'never') + '</td>'
+      + '<td class="px-4 py-3 text-right">' + revokeBtn + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, function(c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+  });
+}
+
+function openCreateModal() {
+  document.getElementById('new-token-name').value = '';
+  document.getElementById('new-token-expiry').value = '90';
+  document.getElementById('new-token-role').value = '';
+  document.getElementById('create-error').classList.add('hidden');
+  renderScopeGrid();  // re-render so checkboxes reset to defaults
+  document.getElementById('create-modal').classList.remove('hidden');
+  setTimeout(function() { document.getElementById('new-token-name').focus(); }, 50);
+}
+
+function closeCreateModal() {
+  document.getElementById('create-modal').classList.add('hidden');
+}
+
+async function submitCreateToken() {
+  var name = document.getElementById('new-token-name').value.trim();
+  var exp = document.getElementById('new-token-expiry').value;
+  var err = document.getElementById('create-error');
+  err.classList.add('hidden');
+
+  if (!name) {
+    err.textContent = 'Name is required.';
+    err.classList.remove('hidden');
+    return;
+  }
+
+  var body = { name: name };
+  if (exp) body.expires_in_days = parseInt(exp);
+
+  var selected = Array.from(document.querySelectorAll('.scope-cb:checked')).map(function(cb) { return cb.value; });
+  if (!selected.length) {
+    err.textContent = 'At least one scope is required.';
+    err.classList.remove('hidden');
+    return;
+  }
+  body.scopes = selected;
+
+  var role = document.getElementById('new-token-role').value;
+  if (role) body.role = role;
+
+  var resp = await fetch('/admin/api-tokens', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    var detail = await resp.json().catch(function() { return {}; });
+    err.textContent = detail.detail || ('HTTP ' + resp.status);
+    err.classList.remove('hidden');
+    return;
+  }
+  var data = await resp.json();
+  closeCreateModal();
+  showRevealCard(data.raw_token);
+  loadTokens();
+}
+
+function showRevealCard(rawToken) {
+  document.getElementById('reveal-token').value = rawToken;
+  document.getElementById('reveal-card').classList.remove('hidden');
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+function copyRevealedToken() {
+  var input = document.getElementById('reveal-token');
+  input.select();
+  document.execCommand('copy');
+  // Brief flash on the Copy button — fall back if Clipboard API is unavailable.
+  navigator.clipboard && navigator.clipboard.writeText(input.value).catch(function() {});
+}
+
+function dismissReveal() {
+  document.getElementById('reveal-token').value = '';
+  document.getElementById('reveal-card').classList.add('hidden');
+}
+
+async function revokeToken(id, name) {
+  if (!confirm('Revoke API token "' + name + '"?\n\nAny integration using this token will start receiving 401 immediately. The row stays in the list so historical audit attribution still resolves.')) return;
+  var resp = await fetch('/admin/api-tokens/' + id, {method: 'DELETE'});
+  if (resp.status === 204) {
+    loadTokens();
+  } else {
+    var err = await resp.json().catch(function() { return {}; });
+    alert(err.detail || ('Revoke failed (HTTP ' + resp.status + ')'));
+  }
+}
+
+// ── Retention policy: purge_after_days ──────────────────────────────────────
+async function loadPurgePolicy() {
+  try {
+    var resp = await fetch('/admin/config/api_tokens.purge_after_days');
+    if (!resp.ok) return;
+    var data = await resp.json();
+    var days = parseInt(data.value || '0', 10) || 0;
+    document.getElementById('purge-after-days').value = days;
+    var status = document.getElementById('purge-status');
+    if (status) {
+      status.textContent = days > 0
+        ? 'Active — hard-delete after ' + days + ' day' + (days === 1 ? '' : 's')
+        : 'Disabled — slice-1 retain-forever behaviour';
+    }
+  } catch (e) { /* swallow */ }
+}
+
+async function savePurgePolicy() {
+  var raw = document.getElementById('purge-after-days').value.trim() || '0';
+  var n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0 || n > 3650) {
+    showPurgeResult({ok: false, message: 'Window must be an integer between 0 and 3650 days.'});
+    return;
+  }
+  var resp = await fetch('/admin/config/api_tokens.purge_after_days', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({value: String(n)}),
+  });
+  if (resp.ok) {
+    showPurgeResult({ok: true, message: 'Policy saved.'});
+    loadPurgePolicy();
+  } else {
+    showPurgeResult({ok: false, message: 'Failed to save (HTTP ' + resp.status + ').'});
+  }
+}
+
+async function purgeNow() {
+  if (!window.confirm(
+    'Run the API token purge now?\n\n' +
+    'Hard-deletes every revoked / expired token older than the configured window. ' +
+    'This is irreversible — restore from a database backup if you need to undo.'
+  )) return;
+  showPurgeResult({ok: null, message: 'Running purge…'});
+  var resp = await fetch('/admin/api-tokens/purge', {method: 'POST'});
+  var data = await resp.json().catch(function() { return {success: false, error: 'Bad response'}; });
+  if (data.skipped) {
+    showPurgeResult({ok: null, message: 'Skipped: ' + (data.reason || 'purge disabled')});
+    return;
+  }
+  if (data.success) {
+    var r = data.deleted_revoked || 0;
+    var x = data.deleted_expired || 0;
+    showPurgeResult({
+      ok: true,
+      message: 'Purge complete: ' + r + ' revoked + ' + x + ' expired = ' +
+               (r + x) + ' tokens hard-deleted.',
+    });
+    loadTokens();
+  } else {
+    showPurgeResult({ok: false, message: 'Purge failed: ' + (data.error || 'unknown')});
+  }
+}
+
+function showPurgeResult(state) {
+  var el = document.getElementById('purge-result');
+  if (!el) return;
+  el.className = 'mt-3 px-3 py-2 rounded text-xs';
+  if (state.ok === true) {
+    el.classList.add('bg-green-50', 'text-green-700', 'border', 'border-green-200',
+                     'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30');
+  } else if (state.ok === false) {
+    el.classList.add('bg-red-50', 'text-red-700', 'border', 'border-red-200',
+                     'dark:bg-red-500/10', 'dark:text-red-300', 'dark:border-red-500/30');
+  } else {
+    el.classList.add('bg-blue-50', 'text-blue-700', 'border', 'border-blue-200',
+                     'dark:bg-blue-500/10', 'dark:text-blue-300', 'dark:border-blue-500/30');
+  }
+  el.textContent = state.message;
+  el.classList.remove('hidden');
+}
+
+document.addEventListener('DOMContentLoaded', async function() {
+  await loadScopes();
+  await loadTokens();
+  await loadPurgePolicy();
+});
+</script>
+{% endif %}
+{% endblock %}

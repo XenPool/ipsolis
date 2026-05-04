@@ -6,7 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -29,9 +29,14 @@ from app.schemas.admin import (
 )
 from app.schemas.asset import AssetPoolRead, AssetTypeRead
 from app.utils.asset_type_constraints import validate_asset_type
-from app.utils.audit import _asset_snap, _config_snap, _type_snap, aaudit
-from app.utils.auth import require_admin_key
-from app.utils.features import require_enterprise
+from app.utils.audit import (
+    _asset_snap, _config_snap, _type_snap,
+    aaudit, actor_by, classify_asset_type, classify_for_asset_type_id,
+)
+from app.utils.auth import require_admin_key, require_scopes
+from app.utils.features import require_business, require_enterprise
+from app.utils.rbac import require_role
+from app.utils.rbac_grants import assert_asset_type_visible
 from app.utils.license import is_feature_enabled
 from app.templates_instance import set_app_title, set_app_logo_config
 
@@ -44,6 +49,14 @@ router = APIRouter(
 )
 
 _SECRET_MASK = "***"
+
+
+# Audit writes touching asset rows inherit their parent type's
+# classification — both because the asset's own status / expiry /
+# linkage is gate-keepable by the same regulatory framework as the
+# attribute data on the type, and because the prune task only knows
+# how to bucket on ``classification`` (not entity_type chains).
+_classify_for_asset_type_id = classify_for_asset_type_id
 
 
 def _enterprise_gate_for_config_key(key: str) -> str | None:
@@ -68,7 +81,7 @@ def _require_config_key_licensed(key: str) -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
-                f"{label} requires an Ipsolis Enterprise license. "
+                f"{label} requires an ip·Solis Business or Enterprise license. "
                 f"Contact info@xenpool.com for licensing options."
             ),
         )
@@ -103,18 +116,78 @@ def _require_asset_type_fields_licensed(payload) -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
-                f"{labels} require an Ipsolis Enterprise license. "
+                f"{labels} require an ip·Solis Enterprise license. "
                 f"Contact info@xenpool.com for licensing options."
             ),
         )
 
 
+async def _maybe_auto_grant_creator(
+    request: Request, db: AsyncSession, asset_type_id: int,
+) -> None:
+    """Auto-grant the creating session admin on a newly created asset type.
+
+    Only fires when the actor is a session admin who already has at
+    least one grant (i.e. they're in scoped mode). Superadmins,
+    ungranted admins, legacy-key actors, and bearer-token integrations
+    are skipped — their visibility is unrestricted, so a grant would
+    have no effect today and risks turning them into a scoped admin
+    on first creation if the model ever shifts.
+    """
+    actor = getattr(request.state, "actor", "") or ""
+    if not actor.startswith("admin:session:"):
+        return
+    role = (request.session.get("admin_role") or "").strip()
+    if role != "admin":
+        return
+    username = (request.session.get("admin_user") or "").strip().lower()
+    if not username:
+        return
+    # Local imports — avoids a module cycle since admin_user_grant lives
+    # under the same package and pulls in the AdminUser model registry.
+    from app.models.admin_user import AdminUser
+    from app.models.admin_user_grant import AdminUserAssetTypeGrant
+
+    user_row = await db.execute(
+        select(AdminUser.id).where(AdminUser.username == username, AdminUser.is_active.is_(True))
+    )
+    user_id = user_row.scalar_one_or_none()
+    if user_id is None:
+        return
+    existing_grants = await db.execute(
+        select(AdminUserAssetTypeGrant.asset_type_id).where(
+            AdminUserAssetTypeGrant.admin_user_id == user_id
+        ).limit(1)
+    )
+    if existing_grants.scalar_one_or_none() is None:
+        # User is in unscoped (back-compat) mode — leave them alone.
+        return
+    db.add(AdminUserAssetTypeGrant(
+        admin_user_id=user_id,
+        asset_type_id=asset_type_id,
+        created_by=f"auto-grant:create_asset_type ({actor})",
+    ))
+
+
 def _mask(cfg: AppConfig) -> AppConfigRead:
-    """Returns AppConfigRead; masks the value if is_secret=True."""
+    """Returns AppConfigRead; masks the value if is_secret=True.
+
+    Exception (slice 1 external secrets): when ``value`` is a recognised
+    reference scheme (``vault://``, ``ccp://``), it stays in clear —
+    the path itself is non-sensitive (knowing it doesn't grant access)
+    and admins need to see *which* secret-store path each row points
+    to. The actual resolved secret is never returned by this API.
+    """
+    from app.utils.secrets import is_secret_reference  # noqa: PLC0415
+    raw = cfg.value or ""
+    if cfg.is_secret and not is_secret_reference(raw):
+        rendered = _SECRET_MASK
+    else:
+        rendered = raw
     return AppConfigRead(
         id=cfg.id,
         key=cfg.key,
-        value=_SECRET_MASK if cfg.is_secret else cfg.value,
+        value=rendered,
         description=cfg.description,
         is_secret=cfg.is_secret,
         updated_at=cfg.updated_at,
@@ -123,14 +196,22 @@ def _mask(cfg: AppConfig) -> AppConfigRead:
 
 # ── app_config ─────────────────────────────────────────────────────────────────
 
-@router.get("/config", response_model=list[AppConfigRead])
+@router.get(
+    "/config",
+    response_model=list[AppConfigRead],
+    dependencies=[require_scopes("config:read")],
+)
 async def list_config(db: AsyncSession = Depends(get_db)) -> list[AppConfigRead]:
     result = await db.execute(select(AppConfig).order_by(AppConfig.key))
     rows = result.scalars().all()
     return [_mask(r) for r in rows]
 
 
-@router.get("/config/{key}", response_model=AppConfigRead)
+@router.get(
+    "/config/{key}",
+    response_model=AppConfigRead,
+    dependencies=[require_scopes("config:read")],
+)
 async def get_config(key: str, db: AsyncSession = Depends(get_db)) -> AppConfigRead:
     result = await db.execute(select(AppConfig).where(AppConfig.key == key))
     cfg = result.scalar_one_or_none()
@@ -139,9 +220,14 @@ async def get_config(key: str, db: AsyncSession = Depends(get_db)) -> AppConfigR
     return _mask(cfg)
 
 
-@router.post("/config", response_model=AppConfigRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/config",
+    response_model=AppConfigRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[require_scopes("config:write"), require_role("admin")],
+)
 async def create_config(
-    payload: AppConfigCreate, db: AsyncSession = Depends(get_db)
+    request: Request, payload: AppConfigCreate, db: AsyncSession = Depends(get_db)
 ) -> AppConfigRead:
     _require_config_key_licensed(payload.key)
     existing = await db.execute(select(AppConfig).where(AppConfig.key == payload.key))
@@ -158,16 +244,21 @@ async def create_config(
     )
     db.add(cfg)
     await db.flush()
-    await aaudit(db, "app_config", cfg.id, "created", new=_config_snap(cfg), by="api:create_config")
+    await aaudit(db, "app_config", cfg.id, "created", new=_config_snap(cfg),
+                 by=actor_by(request, "create_config"))
     await db.commit()
     await db.refresh(cfg)
     logger.info("admin: created config key=%s", payload.key)
     return _mask(cfg)
 
 
-@router.put("/config/{key}", response_model=AppConfigRead)
+@router.put(
+    "/config/{key}",
+    response_model=AppConfigRead,
+    dependencies=[require_scopes("config:write"), require_role("admin")],
+)
 async def update_config(
-    key: str, payload: AppConfigUpdate, db: AsyncSession = Depends(get_db)
+    request: Request, key: str, payload: AppConfigUpdate, db: AsyncSession = Depends(get_db)
 ) -> AppConfigRead:
     _require_config_key_licensed(key)
     result = await db.execute(select(AppConfig).where(AppConfig.key == key))
@@ -178,7 +269,8 @@ async def update_config(
     cfg.value = payload.value
     if payload.description is not None:
         cfg.description = payload.description
-    await aaudit(db, "app_config", cfg.id, "updated", old=old_snap, new=_config_snap(cfg), by="api:update_config")
+    await aaudit(db, "app_config", cfg.id, "updated", old=old_snap, new=_config_snap(cfg),
+                 by=actor_by(request, "update_config"))
     await db.commit()
     await db.refresh(cfg)
     logger.info("admin: updated config key=%s", key)
@@ -189,20 +281,25 @@ async def update_config(
     return _mask(cfg)
 
 
-@router.delete("/config/{key}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_config(key: str, db: AsyncSession = Depends(get_db)) -> None:
+@router.delete(
+    "/config/{key}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[require_scopes("config:write"), require_role("admin")],
+)
+async def delete_config(request: Request, key: str, db: AsyncSession = Depends(get_db)) -> None:
     _require_config_key_licensed(key)
     result = await db.execute(select(AppConfig).where(AppConfig.key == key))
     cfg = result.scalar_one_or_none()
     if not cfg:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Key {key!r} not found")
-    await aaudit(db, "app_config", cfg.id, "deleted", old=_config_snap(cfg), by="api:delete_config")
+    await aaudit(db, "app_config", cfg.id, "deleted", old=_config_snap(cfg),
+                 by=actor_by(request, "delete_config"))
     await db.delete(cfg)
     await db.commit()
     logger.info("admin: deleted config key=%s", key)
 
 
-@router.post("/config/ad/test")
+@router.post("/config/ad/test", dependencies=[require_role("admin")])
 async def test_ad_connection(db: AsyncSession = Depends(get_db)) -> dict:
     """Tries to bind to AD with current ad.* config and returns a status dict."""
     from sqlalchemy import text as sa_text
@@ -216,9 +313,13 @@ async def test_ad_connection(db: AsyncSession = Depends(get_db)) -> dict:
     server_host = await _get("ad.server", "dc.example.com")
     server_port = int(await _get("ad.port", "389"))
     bind_user = await _get("ad.username", "")
-    bind_password = await _get("ad.password", "")
+    raw_bind_password = await _get("ad.password", "")
     domain = await _get("ad.domain", "")
     base_dn = await _get("ad.base_dn", "DC=example,DC=com")
+
+    # External-secret resolution — supports vault:// and ccp:// references.
+    from app.utils.secrets import resolve_secret_value
+    bind_password = await resolve_secret_value(db, raw_bind_password)
 
     raw_user = f"{domain}\\{bind_user}" if domain else bind_user
     url = (f"ldap+ntlm-password://{quote(raw_user, safe='')}:"
@@ -243,7 +344,7 @@ async def test_ad_connection(db: AsyncSession = Depends(get_db)) -> dict:
         return {"ok": False, "message": str(exc)}
 
 
-@router.post("/config/entra/test")
+@router.post("/config/entra/test", dependencies=[require_role("admin")])
 async def test_entra_connection(db: AsyncSession = Depends(get_db)) -> dict:
     """Verifies Entra ID credentials by acquiring an app-only token (client credentials flow)."""
     from app.utils.entra import _get_entra_config, get_msal_app
@@ -272,7 +373,249 @@ async def test_entra_connection(db: AsyncSession = Depends(get_db)) -> dict:
         return {"ok": False, "message": str(exc)}
 
 
-@router.post("/config/sccm/test", dependencies=[require_enterprise("sccm_integration")])
+@router.post("/config/siem/test", dependencies=[require_role("admin")])
+async def test_siem_connection(db: AsyncSession = Depends(get_db)) -> dict:
+    """POST a single synthetic audit event to the configured SIEM endpoint."""
+    from app.utils.siem_export import send_test_event
+
+    cfg = await db.execute(
+        select(AppConfig).where(AppConfig.key.in_([
+            "siem.endpoint_url", "siem.token", "siem.format",
+            "siem.verify_tls", "app.title",
+            "siem.workspace_id", "siem.shared_key", "siem.log_type",
+            "siem.webhook_url", "siem.webhook_secret",
+            "siem.webhook_signature_header", "siem.webhook_extra_headers",
+            "siem.sentinel_dce_endpoint", "siem.sentinel_dcr_immutable_id",
+            "siem.sentinel_stream_name", "siem.sentinel_tenant_id",
+            "siem.sentinel_client_id", "siem.sentinel_client_secret",
+        ]))
+    )
+    rows = {r.key: (r.value or "") for r in cfg.scalars().all()}
+    fmt = (rows.get("siem.format") or "splunk_hec").strip()
+    verify_tls = (rows.get("siem.verify_tls") or "true").strip().lower() not in ("false", "0", "no", "off")
+    host = (rows.get("app.title") or "ipsolis").strip().replace(" ", "_").lower()
+
+    # The three is_secret keys (token, shared_key, webhook_secret) flow
+    # through resolve_secret_value so reference-shaped values point at
+    # Vault / Conjur / etc. and dereference at test time. Plain strings
+    # pass through unchanged.
+    from app.utils.secrets import resolve_secret_value
+    endpoint = (rows.get("siem.endpoint_url") or "").strip()
+    token = (await resolve_secret_value(db, rows.get("siem.token") or "")).strip()
+    workspace_id = (rows.get("siem.workspace_id") or "").strip()
+    shared_key = (await resolve_secret_value(db, rows.get("siem.shared_key") or "")).strip()
+    log_type = (rows.get("siem.log_type") or "IpsolisAudit").strip() or "IpsolisAudit"
+    webhook_url = (rows.get("siem.webhook_url") or "").strip()
+    webhook_secret = (await resolve_secret_value(db, rows.get("siem.webhook_secret") or "")).strip()
+    webhook_sig_header = (rows.get("siem.webhook_signature_header") or "X-Hub-Signature-256").strip()
+    webhook_extra = rows.get("siem.webhook_extra_headers") or ""
+    # Logs Ingestion API path: DCE host + DCR + stream + SPN. The
+    # client_secret is is_secret=true so it flows through resolve_secret_value
+    # — operators with a vault://… reference for it want it dereferenced
+    # before we hand it to the AAD token endpoint.
+    sentinel_dce = (rows.get("siem.sentinel_dce_endpoint") or "").strip()
+    sentinel_dcr = (rows.get("siem.sentinel_dcr_immutable_id") or "").strip()
+    sentinel_stream = (rows.get("siem.sentinel_stream_name") or "").strip()
+    sentinel_tenant = (rows.get("siem.sentinel_tenant_id") or "").strip()
+    sentinel_client = (rows.get("siem.sentinel_client_id") or "").strip()
+    sentinel_client_secret = (await resolve_secret_value(
+        db, rows.get("siem.sentinel_client_secret") or ""
+    )).strip()
+
+    # Per-format precondition check so admins get a tight error before
+    # we round-trip out to a SIEM that would have rejected anyway.
+    if fmt == "splunk_hec" and (not endpoint or not token):
+        return {"ok": False, "message": "Endpoint URL or HEC token is missing."}
+    if fmt == "sentinel" and (not workspace_id or not shared_key):
+        return {"ok": False, "message": "Workspace ID or shared key is missing."}
+    if fmt == "sentinel_log_ingestion" and not (sentinel_dce and sentinel_dcr and sentinel_stream):
+        return {"ok": False, "message": "DCE endpoint / DCR immutable id / stream name is missing."}
+    if fmt == "webhook" and (not webhook_url or not webhook_secret):
+        return {"ok": False, "message": "Webhook URL or secret is missing."}
+
+    ok, msg = send_test_event(
+        endpoint, token,
+        fmt=fmt, verify_tls=verify_tls, host=host,
+        workspace_id=workspace_id, shared_key=shared_key, log_type=log_type,
+        webhook_url=webhook_url, webhook_secret=webhook_secret,
+        webhook_signature_header=webhook_sig_header,
+        webhook_extra_headers=webhook_extra,
+        sentinel_dce_endpoint=sentinel_dce,
+        sentinel_dcr_immutable_id=sentinel_dcr,
+        sentinel_stream_name=sentinel_stream,
+        sentinel_tenant_id=sentinel_tenant,
+        sentinel_client_id=sentinel_client,
+        sentinel_client_secret=sentinel_client_secret,
+    )
+    return {"ok": ok, "message": msg}
+
+
+@router.get("/config/siem/status", dependencies=[require_scopes("config:read")])
+async def siem_status(db: AsyncSession = Depends(get_db)) -> dict:
+    """Return SIEM streaming health (cursor, last error, last success)."""
+    cfg = await db.execute(
+        select(AppConfig).where(AppConfig.key.in_([
+            "siem.enabled", "siem.last_id", "siem.last_error", "siem.last_success_at",
+        ]))
+    )
+    rows = {r.key: (r.value or "") for r in cfg.scalars().all()}
+
+    # How far behind is the cursor?
+    last_id = int(rows.get("siem.last_id") or "0")
+    backlog_row = await db.execute(
+        select(func.count()).select_from(AuditLog).where(AuditLog.id > last_id)
+    )
+    backlog = backlog_row.scalar_one()
+    return {
+        "enabled": (rows.get("siem.enabled") or "false").lower() in ("true", "1", "yes", "on", "enabled"),
+        "last_id": last_id,
+        "backlog": backlog,
+        "last_error": rows.get("siem.last_error") or "",
+        "last_success_at": rows.get("siem.last_success_at") or "",
+    }
+
+
+@router.post("/config/teams/test", dependencies=[require_role("admin")])
+async def test_teams_webhook(db: AsyncSession = Depends(get_db)) -> dict:
+    """POST a test Adaptive Card to the configured Teams Workflow webhook."""
+    from app.utils.teams_notify import build_approval_card, post_adaptive_card
+
+    cfg = await db.execute(
+        select(AppConfig).where(AppConfig.key.in_(["teams.mode", "teams.webhook_url", "app.title"]))
+    )
+    rows = {r.key: (r.value or "") for r in cfg.scalars().all()}
+    mode = (rows.get("teams.mode") or "disabled").strip()
+    # Teams webhook URL is is_secret=true so it can be stored as a
+    # secret-store reference; dereference here before posting.
+    from app.utils.secrets import resolve_secret_value
+    url = (await resolve_secret_value(db, rows.get("teams.webhook_url") or "")).strip()
+    app_title = (rows.get("app.title") or "ip·Solis").strip()
+
+    if mode == "disabled":
+        return {"ok": None, "message": "Teams notifications are disabled — no test sent."}
+    if not url:
+        return {"ok": False, "message": "Teams webhook URL is not configured."}
+
+    # Address the test card to a configured admin if available, otherwise
+    # fall back to a placeholder so the @mention path is still exercised.
+    test_approver = await db.execute(
+        select(AppConfig.value).where(AppConfig.key == "email.from")
+    )
+    test_email = (test_approver.scalar_one_or_none() or "").strip() or "approver@example.com"
+
+    card = build_approval_card(
+        asset_type_name="(Test asset)",
+        requester_name="Test Requester",
+        requester_email="test@example.com",
+        approver_name="Approver",
+        approver_email=test_email,
+        review_url="https://example.com/approve/test-token",
+        from_date="2026-01-01",
+        until_date="2026-01-08",
+        app_title=app_title,
+    )
+    # Replace the body's first line so the recipient knows this is a test.
+    card["body"][0]["text"] = f"{app_title} — Test notification (no action required)"
+    ok, msg = post_adaptive_card(url, card)
+    return {"ok": ok, "message": msg}
+
+
+@router.post("/config/secret-backend/test", dependencies=[require_role("admin")])
+async def test_secret_backend(db: AsyncSession = Depends(get_db)) -> dict:
+    """Verify the configured secret backend (Vault, CCP, or Azure KV) is reachable.
+
+    Updates ``secret.last_test_at`` / ``secret.last_test_error`` so the
+    Settings UI can show "last verified" state without re-running the
+    test. Also clears the in-process resolution cache so the next read
+    after a credential rotation goes back to source.
+
+    Per backend the test is the cheapest reachable probe:
+    * Vault → ``/v1/sys/health`` (no token needed).
+    * CCP → ``/api/Verify`` (4xx counts as reachable, since CCP requires
+      a valid AppID for non-error responses on this endpoint).
+    * Azure KV → AAD client_credentials token acquire against
+      ``https://vault.azure.net/.default``. Doesn't probe a specific
+      vault (no vault name in scope) — verifies the SPN itself is
+      configured correctly, which is the most-common failure mode.
+    """
+    from datetime import datetime, timezone
+    from sqlalchemy import text as sa_text
+    from app.utils.secrets import cache_clear, test_backend
+
+    cache_clear()
+    ok, msg = await test_backend(db)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    if ok:
+        await db.execute(sa_text("""
+            UPDATE app_config SET value = :v, updated_at = NOW()
+            WHERE key = 'secret.last_test_at'
+        """), {"v": now_iso})
+        await db.execute(sa_text("""
+            UPDATE app_config SET value = '', updated_at = NOW()
+            WHERE key = 'secret.last_test_error'
+        """))
+    else:
+        await db.execute(sa_text("""
+            UPDATE app_config SET value = :v, updated_at = NOW()
+            WHERE key = 'secret.last_test_error'
+        """), {"v": msg})
+    await db.commit()
+    return {"ok": ok, "message": msg}
+
+
+@router.post("/config/secret-backend/migrate", dependencies=[require_role("admin")])
+async def migrate_secret_backend(
+    request: Request,
+    dry_run: bool = True,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Push every plaintext ``is_secret=true`` row to the configured backend.
+
+    Each row's value is written to the backend at a backend-specific
+    address derived from the row's key + ``secret.migration_prefix``,
+    then the row's value is replaced with the matching reference
+    (``vault://...``, ``azurekv://...``, ``awssm://...``, or
+    ``conjur://...``). CCP is read-only and is rejected with a clear
+    error — operators must populate Safes via PVWA, then point ip·Solis
+    rows at them with ``ccp://...`` references manually.
+
+    Defaults to ``dry_run=true`` so admins can review the per-row plan
+    before any backend writes happen. The dry-run report contains the
+    same shape as a real run minus the actual pushes / DB updates /
+    audit rows. Pass ``dry_run=false`` to actually migrate.
+
+    Per-row status:
+
+    * ``would_migrate`` (dry-run only) — would push to backend.
+    * ``migrated`` — pushed and row updated.
+    * ``skipped`` — empty value, already a reference, or excluded
+      (``secret.*`` keys).
+    * ``failed`` — backend write failed (network, auth, missing policy
+      on Conjur, …); message in ``reason``. Failures are per-row;
+      successful rows in the same run still commit so a partial
+      backend outage doesn't bin all the work.
+    """
+    from app.utils.secrets import migrate_to_backend
+
+    report = await migrate_to_backend(db, dry_run=dry_run)
+    # Aggregate audit row so the run shows up in the audit log even
+    # when the per-row pushes happened (or didn't, for dry-run).
+    if not dry_run and report.get("summary", {}).get("migrated", 0) > 0:
+        await aaudit(
+            db, "app_config", 0, "secret_migration_run",
+            new={
+                "backend": report.get("backend"),
+                "prefix": report.get("prefix"),
+                "summary": report.get("summary"),
+            },
+            by=actor_by(request, "secret_migrate"),
+        )
+        await db.commit()
+    return report
+
+
+@router.post("/config/sccm/test", dependencies=[require_enterprise("sccm_integration"), require_role("admin")])
 async def test_sccm_connection() -> dict:
     """Enqueues a Celery task that runs a pwsh+Kerberos probe inside the worker
     container (where krb5 libs and pwsh are installed) and waits for the result."""
@@ -314,9 +657,14 @@ async def asset_type_logo(type_id: int, db: AsyncSession = Depends(get_db)):
     return Response(content=raw, media_type=mime, headers={"Cache-Control": "no-cache"})
 
 
-@router.post("/asset-types", response_model=AssetTypeRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/asset-types",
+    response_model=AssetTypeRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[require_scopes("asset_types:write"), require_role("admin")],
+)
 async def create_asset_type(
-    payload: AssetTypeCreate, db: AsyncSession = Depends(get_db)
+    request: Request, payload: AssetTypeCreate, db: AsyncSession = Depends(get_db)
 ) -> AssetType:
     _require_asset_type_fields_licensed(payload)
     existing = await db.execute(select(AssetType).where(AssetType.name == payload.name))
@@ -331,9 +679,6 @@ async def create_asset_type(
         automation_strategy=payload.automation_strategy,
         deprovision_policy=payload.deprovision_policy,
         personal_provisioning_strategy=payload.personal_provisioning_strategy,
-        runbook_provision_id=payload.runbook_provision_id,
-        runbook_revoke_id=payload.runbook_revoke_id,
-        skip_runbook_rules=True,  # runbooks can't exist before the asset type has an ID
     )
     if violations:
         raise HTTPException(
@@ -343,6 +688,9 @@ async def create_asset_type(
     asset_type = AssetType(
         name=payload.name,
         description=payload.description,
+        help_text=payload.help_text,
+        is_active=payload.is_active,
+        show_on_dashboard=payload.show_on_dashboard,
         category=payload.category,
         config=payload.config,
         assignment_model=payload.assignment_model,
@@ -359,29 +707,51 @@ async def create_asset_type(
         personal_provisioning_strategy=payload.personal_provisioning_strategy,
         naming_pattern=payload.naming_pattern,
         max_per_user=payload.max_per_user,
+        monthly_cost=payload.monthly_cost,
+        currency=(payload.currency or None),
+        cost_center=(payload.cost_center or None),
         automation_strategy=payload.automation_strategy,
         composite_steps=payload.composite_steps,
         requires_manager_approval=payload.requires_manager_approval,
         requires_owner_approval=payload.requires_owner_approval,
         approval_owners=payload.approval_owners,
+        approval_rules=payload.approval_rules or None,
+        min_approvals_required=payload.min_approvals_required,
         requires_approval_on_modify=payload.requires_approval_on_modify,
         eligible_requestors_dn=payload.eligible_requestors_dn or None,
         logo=payload.logo or None,
     )
     db.add(asset_type)
     await db.flush()
-    await aaudit(db, "asset_type", asset_type.id, "created", new=_type_snap(asset_type), by="api:create_asset_type")
+    await aaudit(db, "asset_type", asset_type.id, "created", new=_type_snap(asset_type),
+                 by=actor_by(request, "create_asset_type"),
+                 classification=classify_asset_type(asset_type))
+
+    # RBAC slice 2: auto-grant the creator if they're a scoped admin —
+    # otherwise creating a new type would silently remove it from their
+    # own list as soon as the page reloads. Superadmins / ungranted
+    # admins are unaffected (their visibility is "all").
+    await _maybe_auto_grant_creator(request, db, asset_type.id)
+
     await db.commit()
     await db.refresh(asset_type)
     logger.info("admin: created asset_type id=%s name=%s", asset_type.id, asset_type.name)
     return asset_type
 
 
-@router.put("/asset-types/{type_id}", response_model=AssetTypeRead)
+@router.put(
+    "/asset-types/{type_id}",
+    response_model=AssetTypeRead,
+    dependencies=[require_scopes("asset_types:write"), require_role("admin")],
+)
 async def update_asset_type(
-    type_id: int, payload: AssetTypeUpdate, db: AsyncSession = Depends(get_db)
+    request: Request, type_id: int, payload: AssetTypeUpdate, db: AsyncSession = Depends(get_db)
 ) -> AssetType:
     _require_asset_type_fields_licensed(payload)
+    # RBAC slice 2: scoped admins get a clean 404 for out-of-scope ids
+    # before any further work — same response shape as a missing id, so
+    # the existence of unrelated teams' types isn't leaked.
+    await assert_asset_type_visible(request, db, type_id)
     result = await db.execute(select(AssetType).where(AssetType.id == type_id))
     asset_type = result.scalar_one_or_none()
     if not asset_type:
@@ -400,9 +770,6 @@ async def update_asset_type(
         automation_strategy=eff_automation_strategy,
         deprovision_policy=eff_deprovision_policy,
         personal_provisioning_strategy=eff_pps,
-        runbook_provision_id=payload.runbook_provision_id,
-        runbook_revoke_id=payload.runbook_revoke_id,
-        skip_runbook_rules=True,  # runbooks are attached after the asset type exists; missing runbooks fail at order dispatch
     )
     if violations:
         raise HTTPException(
@@ -415,6 +782,10 @@ async def update_asset_type(
         asset_type.name = payload.name
     if payload.description is not None:
         asset_type.description = payload.description
+    if payload.help_text is not None:
+        asset_type.help_text = payload.help_text or None
+    if payload.is_active is not None:
+        asset_type.is_active = payload.is_active
     if payload.category is not None:
         asset_type.category = payload.category
     if payload.config is not None:
@@ -447,6 +818,12 @@ async def update_asset_type(
         asset_type.naming_pattern = payload.naming_pattern
     if payload.max_per_user is not None:
         asset_type.max_per_user = payload.max_per_user
+    if payload.monthly_cost is not None:
+        asset_type.monthly_cost = payload.monthly_cost
+    if payload.currency is not None:
+        asset_type.currency = payload.currency or None
+    if payload.cost_center is not None:
+        asset_type.cost_center = payload.cost_center or None
     if payload.automation_strategy is not None:
         asset_type.automation_strategy = payload.automation_strategy
     if payload.composite_steps is not None:
@@ -457,21 +834,118 @@ async def update_asset_type(
         asset_type.requires_owner_approval = payload.requires_owner_approval
     if payload.approval_owners is not None:
         asset_type.approval_owners = payload.approval_owners or None
+    if payload.approval_rules is not None:
+        asset_type.approval_rules = payload.approval_rules or None
+    if payload.min_approvals_required is not None:
+        # Treat 0 as "all required" — store NULL for cleanliness.
+        asset_type.min_approvals_required = payload.min_approvals_required or None
     if payload.requires_approval_on_modify is not None:
         asset_type.requires_approval_on_modify = payload.requires_approval_on_modify
     if payload.eligible_requestors_dn is not None:
         asset_type.eligible_requestors_dn = payload.eligible_requestors_dn or None
     if payload.logo is not None:
         asset_type.logo = payload.logo or None
-    await aaudit(db, "asset_type", asset_type.id, "updated", old=old_snap, new=_type_snap(asset_type), by="api:update_asset_type")
+    if payload.show_on_dashboard is not None:
+        asset_type.show_on_dashboard = payload.show_on_dashboard
+    await aaudit(db, "asset_type", asset_type.id, "updated", old=old_snap, new=_type_snap(asset_type),
+                 by=actor_by(request, "update_asset_type"),
+                 classification=classify_asset_type(asset_type))
     await db.commit()
     await db.refresh(asset_type)
     logger.info("admin: updated asset_type id=%s", type_id)
     return asset_type
 
 
-@router.delete("/asset-types/{type_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_asset_type(type_id: int, db: AsyncSession = Depends(get_db)) -> None:
+@router.post(
+    "/asset-types/{type_id}/clone",
+    response_model=AssetTypeRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[require_scopes("asset_types:write"), require_role("admin")],
+)
+async def clone_asset_type(
+    request: Request, type_id: int, db: AsyncSession = Depends(get_db)
+) -> AssetType:
+    """Shallow-clone an asset type: same configuration, fresh row, name suffixed.
+
+    Runbooks (provision / modify / deprovision) and pool assets are NOT
+    copied — those reference the source type and would need a deeper clone.
+    The cloned row starts with empty runbook slots, which the admin then
+    configures or copies in separately.
+
+    Name collision is resolved by appending " (copy)", " (copy 2)", etc.
+    """
+    await assert_asset_type_visible(request, db, type_id)
+    result = await db.execute(select(AssetType).where(AssetType.id == type_id))
+    src = result.scalar_one_or_none()
+    if not src:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Asset type {type_id} not found")
+
+    # Find a unique name. "Foo" -> "Foo (copy)" -> "Foo (copy 2)" -> ...
+    base = f"{src.name} (copy)"
+    candidate = base
+    suffix = 2
+    while True:
+        clash = await db.execute(select(AssetType.id).where(AssetType.name == candidate))
+        if clash.scalar_one_or_none() is None:
+            break
+        candidate = f"{base} {suffix}"
+        suffix += 1
+
+    new_type = AssetType(
+        name=candidate,
+        description=src.description,
+        help_text=src.help_text,
+        is_active=src.is_active,
+        category=src.category,
+        config=src.config,
+        assignment_model=src.assignment_model,
+        pool_capacity=src.pool_capacity,
+        automation_mode=src.automation_mode,
+        targets=src.targets,
+        lifecycle_ttl_days=src.lifecycle_ttl_days,
+        lifecycle_renewable=src.lifecycle_renewable,
+        lifecycle_reminder_days=src.lifecycle_reminder_days,
+        allow_rdp_users=src.allow_rdp_users,
+        allow_admin_users=src.allow_admin_users,
+        rds_gateway_url=src.rds_gateway_url,
+        deprovision_policy=src.deprovision_policy,
+        personal_provisioning_strategy=src.personal_provisioning_strategy,
+        naming_pattern=src.naming_pattern,
+        max_per_user=src.max_per_user,
+        monthly_cost=src.monthly_cost,
+        currency=src.currency,
+        cost_center=src.cost_center,
+        automation_strategy=src.automation_strategy,
+        composite_steps=src.composite_steps,
+        requires_manager_approval=src.requires_manager_approval,
+        requires_owner_approval=src.requires_owner_approval,
+        approval_owners=src.approval_owners,
+        approval_rules=src.approval_rules,
+        min_approvals_required=src.min_approvals_required,
+        requires_approval_on_modify=src.requires_approval_on_modify,
+        eligible_requestors_dn=src.eligible_requestors_dn,
+        logo=src.logo,
+    )
+    db.add(new_type)
+    await db.flush()
+    await aaudit(db, "asset_type", new_type.id, "cloned", new=_type_snap(new_type),
+                 by=actor_by(request, f"clone_asset_type from id={src.id}"),
+                 classification=classify_asset_type(new_type))
+    await db.commit()
+    await db.refresh(new_type)
+    logger.info("admin: cloned asset_type id=%s -> id=%s name=%r", src.id, new_type.id, new_type.name)
+    return new_type
+
+
+@router.delete(
+    "/asset-types/{type_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[require_scopes("asset_types:write"), require_role("admin")],
+)
+async def delete_asset_type(
+    request: Request, type_id: int, db: AsyncSession = Depends(get_db)
+) -> None:
+    await assert_asset_type_visible(request, db, type_id)
     result = await db.execute(select(AssetType).where(AssetType.id == type_id))
     asset_type = result.scalar_one_or_none()
     if not asset_type:
@@ -502,7 +976,9 @@ async def delete_asset_type(type_id: int, db: AsyncSession = Depends(get_db)) ->
         AssetPool.__table__.delete().where(AssetPool.__table__.c.asset_type_id == type_id)
     )
     # 6. runbook_definitions/steps cascade via FK ondelete=CASCADE
-    await aaudit(db, "asset_type", asset_type.id, "deleted", old=_type_snap(asset_type), by="api:delete_asset_type")
+    await aaudit(db, "asset_type", asset_type.id, "deleted", old=_type_snap(asset_type),
+                 by=actor_by(request, "delete_asset_type"),
+                 classification=classify_asset_type(asset_type))
     await db.delete(asset_type)
     await db.commit()
     logger.info("admin: deleted asset_type id=%s", type_id)
@@ -510,9 +986,14 @@ async def delete_asset_type(type_id: int, db: AsyncSession = Depends(get_db)) ->
 
 # ── Asset-Pool ─────────────────────────────────────────────────────────────────
 
-@router.post("/assets", response_model=AssetPoolRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/assets",
+    response_model=AssetPoolRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[require_scopes("assets:write"), require_role("admin")],
+)
 async def create_asset(
-    payload: AssetPoolCreate, db: AsyncSession = Depends(get_db)
+    request: Request, payload: AssetPoolCreate, db: AsyncSession = Depends(get_db)
 ) -> AssetPool:
     # Validate asset type
     type_result = await db.execute(select(AssetType).where(AssetType.id == payload.asset_type_id))
@@ -535,14 +1016,16 @@ async def create_asset(
     )
     db.add(asset)
     await db.flush()
-    await aaudit(db, "asset", asset.id, "created", new=_asset_snap(asset), by="api:create_asset")
+    await aaudit(db, "asset", asset.id, "created", new=_asset_snap(asset),
+                 by=actor_by(request, "create_asset"),
+                 classification=await _classify_for_asset_type_id(db, asset.asset_type_id))
     await db.commit()
     await db.refresh(asset)
     logger.info("admin: created asset id=%s name=%s", asset.id, asset.name)
     return asset
 
 
-@router.post("/assets/bulk")
+@router.post("/assets/bulk", dependencies=[require_scopes("assets:write"), require_role("admin")])
 async def bulk_create_assets(payload: AssetBulkCreate, db: AsyncSession = Depends(get_db)) -> dict:
     """Create multiple assets at once. Skips duplicates, collects errors per item."""
     # Validate all referenced type IDs exist (batch lookup)
@@ -568,8 +1051,6 @@ async def bulk_create_assets(payload: AssetBulkCreate, db: AsyncSession = Depend
             skipped.append(item.name)
             continue
         meta: dict = {}
-        if item.ip_address:
-            meta["ip_address"] = item.ip_address
         if item.notes:
             meta["notes"] = item.notes
         asset = AssetPool(
@@ -589,9 +1070,13 @@ async def bulk_create_assets(payload: AssetBulkCreate, db: AsyncSession = Depend
     return {"created": created, "skipped": skipped, "errors": errors}
 
 
-@router.put("/assets/{asset_id}", response_model=AssetPoolRead)
+@router.put(
+    "/assets/{asset_id}",
+    response_model=AssetPoolRead,
+    dependencies=[require_scopes("assets:write"), require_role("admin")],
+)
 async def update_asset(
-    asset_id: int, payload: AssetPoolUpdate, db: AsyncSession = Depends(get_db)
+    request: Request, asset_id: int, payload: AssetPoolUpdate, db: AsyncSession = Depends(get_db)
 ) -> AssetPool:
     result = await db.execute(select(AssetPool).where(AssetPool.id == asset_id))
     asset = result.scalar_one_or_none()
@@ -619,15 +1104,23 @@ async def update_asset(
     if payload.expires_at is not None:
         asset.expires_at = payload.expires_at
     action = "status_changed" if payload.status is not None else "updated"
-    await aaudit(db, "asset", asset.id, action, old=old_snap, new=_asset_snap(asset), by="api:update_asset")
+    await aaudit(db, "asset", asset.id, action, old=old_snap, new=_asset_snap(asset),
+                 by=actor_by(request, "update_asset"),
+                 classification=await _classify_for_asset_type_id(db, asset.asset_type_id))
     await db.commit()
     await db.refresh(asset)
     logger.info("admin: updated asset id=%s", asset_id)
     return asset
 
 
-@router.delete("/assets/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_asset(asset_id: int, db: AsyncSession = Depends(get_db)) -> None:
+@router.delete(
+    "/assets/{asset_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[require_scopes("assets:write"), require_role("admin")],
+)
+async def delete_asset(
+    request: Request, asset_id: int, db: AsyncSession = Depends(get_db)
+) -> None:
     result = await db.execute(select(AssetPool).where(AssetPool.id == asset_id))
     asset = result.scalar_one_or_none()
     if not asset:
@@ -642,7 +1135,9 @@ async def delete_asset(asset_id: int, db: AsyncSession = Depends(get_db)) -> Non
         .where(Order.__table__.c.assigned_asset_id == asset_id)
         .values(assigned_asset_id=None)
     )
-    await aaudit(db, "asset", asset.id, "deleted", old=_asset_snap(asset), by="api:delete_asset")
+    await aaudit(db, "asset", asset.id, "deleted", old=_asset_snap(asset),
+                 by=actor_by(request, "delete_asset"),
+                 classification=await _classify_for_asset_type_id(db, asset.asset_type_id))
     await db.delete(asset)
     await db.commit()
     logger.info("admin: deleted asset id=%s", asset_id)
@@ -672,8 +1167,13 @@ def _sync_revoke(user_email: str, asset_type_id: int) -> dict:
         return target_executor.revoke(db_sync, user_email, asset_type_id)
 
 
-@router.post("/assets/{asset_id}/force-delete", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/assets/{asset_id}/force-delete",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[require_scopes("assets:write"), require_role("admin")],
+)
 async def force_delete_asset(
+    request: Request,
     asset_id: int,
     payload: ForceDeleteAsset,
     db: AsyncSession = Depends(get_db),
@@ -743,14 +1243,21 @@ async def force_delete_asset(
     audit_extra = {"force": True, "revoke_permissions": payload.revoke_permissions}
     if revoke_result is not None:
         audit_extra["revoke_result"] = revoke_result
-    await aaudit(db, "asset", asset.id, "force_deleted", old=snap, new=audit_extra, by="api:force_delete_asset")
+    await aaudit(db, "asset", asset.id, "force_deleted", old=snap, new=audit_extra,
+                 by=actor_by(request, "force_delete_asset"),
+                 classification=await _classify_for_asset_type_id(db, asset.asset_type_id))
     await db.delete(asset)
     await db.commit()
     logger.info("admin: force-deleted asset id=%s (revoke=%s)", asset_id, payload.revoke_permissions)
 
 
-@router.post("/assets/{asset_id}/revoke", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/assets/{asset_id}/revoke",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[require_scopes("assets:write"), require_role("admin")],
+)
 async def revoke_asset(
+    request: Request,
     asset_id: int,
     payload: ForceDeleteAsset,
     db: AsyncSession = Depends(get_db),
@@ -810,12 +1317,14 @@ async def revoke_asset(
     audit_extra = {"revoke_permissions": payload.revoke_permissions}
     if revoke_result is not None:
         audit_extra["revoke_result"] = revoke_result
-    await aaudit(db, "asset", asset.id, "revoked", old=snap, new=audit_extra, by="api:revoke_asset")
+    await aaudit(db, "asset", asset.id, "revoked", old=snap, new=audit_extra,
+                 by=actor_by(request, "revoke_asset"),
+                 classification=await _classify_for_asset_type_id(db, asset.asset_type_id))
     await db.commit()
     logger.info("admin: revoked asset id=%s back to free (revoke_permissions=%s)", asset_id, payload.revoke_permissions)
 
 
-@router.get("/assets")
+@router.get("/assets", dependencies=[require_scopes("assets:read")])
 async def list_assets(
     asset_type_id: int | None = None,
     include_capacity_pooled: bool = False,
@@ -859,7 +1368,15 @@ async def list_assets(
 
 # ── Audit-Log ──────────────────────────────────────────────────────────────────
 
-@router.get("/audit-log", response_model=list[AuditLogRead], dependencies=[require_enterprise("audit_log_viewer")])
+@router.get(
+    "/audit-log",
+    response_model=list[AuditLogRead],
+    dependencies=[
+        require_business("audit_log_viewer"),
+        require_scopes("audit:read"),
+        require_role("auditor"),
+    ],
+)
 async def list_audit_log(
     entity_type: str | None = None,
     entity_id: int | None = None,
@@ -892,7 +1409,10 @@ async def list_audit_log(
 
 # ── Email Templates ─────────────────────────────────────────────────────────────
 
-@router.get("/email-templates", dependencies=[require_enterprise("email_template_editor")])
+@router.get(
+    "/email-templates",
+    dependencies=[require_business("email_template_editor"), require_scopes("config:read")],
+)
 async def list_email_templates(db: AsyncSession = Depends(get_db)) -> list[dict]:
     """Lists all email templates (without body, for table display)."""
     from sqlalchemy import text as sa_text
@@ -910,7 +1430,10 @@ async def list_email_templates(db: AsyncSession = Depends(get_db)) -> list[dict]
     ]
 
 
-@router.get("/email-templates/{event_key}", dependencies=[require_enterprise("email_template_editor")])
+@router.get(
+    "/email-templates/{event_key}",
+    dependencies=[require_business("email_template_editor"), require_scopes("config:read")],
+)
 async def get_email_template(event_key: str, db: AsyncSession = Depends(get_db)) -> dict:
     """Returns a single email template including body and available_variables."""
     from sqlalchemy import text as sa_text
@@ -932,7 +1455,14 @@ async def get_email_template(event_key: str, db: AsyncSession = Depends(get_db))
     }
 
 
-@router.put("/email-templates/{event_key}", dependencies=[require_enterprise("email_template_editor")])
+@router.put(
+    "/email-templates/{event_key}",
+    dependencies=[
+        require_business("email_template_editor"),
+        require_scopes("config:write"),
+        require_role("admin"),
+    ],
+)
 async def update_email_template(
     event_key: str,
     payload: dict,
@@ -973,7 +1503,10 @@ async def update_email_template(
 
 # ── Email Test ──────────────────────────────────────────────────────────────────
 
-@router.post("/config/email/test", dependencies=[require_enterprise("email_template_editor")])
+@router.post(
+    "/config/email/test",
+    dependencies=[require_business("email_template_editor"), require_role("admin")],
+)
 async def test_email(payload: dict = None, db: AsyncSession = Depends(get_db)) -> dict:
     """Sends a test email using the current email.* config settings."""
     import asyncio
@@ -990,11 +1523,14 @@ async def test_email(payload: dict = None, db: AsyncSession = Depends(get_db)) -
     smtp_host = await _get("email.smtp_server", "localhost")
     smtp_port = int(await _get("email.smtp_port", "25"))
     smtp_user = await _get("email.username", "")
-    smtp_password = await _get("email.password", "")
+    raw_smtp_password = await _get("email.password", "")
+    # External-secret resolution
+    from app.utils.secrets import resolve_secret_value
+    smtp_password = await resolve_secret_value(db, raw_smtp_password)
     mail_from = await _get("email.from", "noreply@example.com")
-    from_name = await _get("email.from_name", "Ipsolis")
+    from_name = await _get("email.from_name", "ip·Solis")
     bcc = await _get("email.bcc", "")
-    app_title = await _get("app.title", "Ipsolis")
+    app_title = await _get("app.title", "ip·Solis")
 
     to_address = (payload or {}).get("to") or bcc or mail_from
 

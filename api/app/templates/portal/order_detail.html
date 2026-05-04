@@ -14,12 +14,12 @@
       <span data-i18n="portal.order_detail.order_prefix">Order</span> #{{ order.id }}
     </h1>
     <p class="text-sm text-muted mt-0.5">
-      {{ order.action.value | upper }} ·
+      {{ order.action.value | capitalize }} ·
       <span data-i18n="portal.order_detail.created_label">Created:</span> {{ order.created_at.strftime("%d.%m.%Y %H:%M") }} UTC
     </p>
   </div>
   <span class="inline-block px-3 py-1 rounded-full text-sm font-semibold {{ status_colors.get(order.status.value, 'bg-surface-raised text-body') }}">
-    {{ order.status.value }}
+    {{ order.status.value | replace('_', ' ') | title }}
   </span>
 </div>
 
@@ -96,11 +96,20 @@
 </div>
 {% endif %}
 
-<!-- Error banner -->
-{% if order.error_message %}
-<div class="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
-  <p class="text-sm font-medium text-red-800" data-i18n="portal.order_detail.error_label">Error</p>
-  <p class="text-sm text-red-700 mt-1 font-mono break-all">{{ order.error_message }}</p>
+<!-- Error banner — only for technical failures. Rejections render above
+     in the dedicated "Order Rejected" block, so we suppress this banner
+     when status == rejected even though error_message is populated
+     ([approval_decision.py] writes the decline reason there for admin
+     diagnostics). End-users get a friendly message + "contact IT" hint;
+     full technical text stays admin-only (admin order_detail.html). -->
+{% if order.error_message and order.status.value != "rejected" %}
+<div class="mb-6 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 px-4 py-3">
+  <p class="text-sm font-medium text-red-800 dark:text-red-200"
+     data-i18n="portal.order_detail.error_label">Error</p>
+  <p class="text-sm text-red-700 dark:text-red-300 mt-1"
+     data-i18n="portal.order_detail.error_friendly_message">
+    Access could not be provisioned. Please contact IT support.
+  </p>
 </div>
 {% endif %}
 
@@ -142,7 +151,7 @@
     <h2 class="text-xs font-semibold text-muted/70 uppercase tracking-wide mb-3" data-i18n="portal.order_detail.section_access_duration">Access &amp; Duration</h2>
     <dl class="space-y-2 text-sm">
       <div class="flex justify-between">
-        <dt class="text-muted" data-i18n="portal.order_detail.field_asset_type">Asset Type</dt>
+        <dt class="text-muted" data-i18n="portal.order_detail.field_asset_type">Asset Definition</dt>
         <dd class="font-medium text-heading">{{ asset_type_name or "–" }}</dd>
       </div>
       <div class="flex justify-between">
@@ -157,6 +166,22 @@
       <div class="flex justify-between">
         <dt class="text-muted" data-i18n="portal.order_detail.field_hostname">Hostname</dt>
         <dd class="font-mono font-medium text-heading">{{ asset_name }}</dd>
+      </div>
+      {% endif %}
+      {% if cost_projection %}
+      <div class="pt-2 mt-2 border-t border-token-border space-y-1">
+        <div class="flex justify-between">
+          <dt class="text-muted" data-i18n="portal.order_detail.field_unit_cost">Monthly cost</dt>
+          <dd class="text-heading tabular-nums">
+            {{ "%.2f"|format(cost_projection.unit_monthly_cost) }} {{ cost_projection.currency }}
+          </dd>
+        </div>
+        <div class="flex justify-between">
+          <dt class="text-muted" data-i18n="portal.order_detail.field_projected_total">Projected total</dt>
+          <dd class="font-medium text-heading tabular-nums" title="{{ cost_projection.span_days }} days · {{ cost_projection.months_estimate }} months">
+            {{ "%.2f"|format(cost_projection.projected_total) }} {{ cost_projection.currency }}
+          </dd>
+        </div>
       </div>
       {% endif %}
     </dl>
@@ -186,8 +211,15 @@
           {% if step.started_at %}<span><span data-i18n="portal.order_detail.step_start">Start:</span> {{ step.started_at.strftime("%H:%M:%S") }}</span>{% endif %}
           {% if item.duration %}<span><span data-i18n="portal.order_detail.step_duration">Duration:</span> {{ item.duration }}</span>{% endif %}
         </div>
+        {# End-users get a generic "step failed" badge — the raw step.error
+           often contains technical paths (e.g. LDAP DNs) that leak
+           infrastructure detail. Admin order_detail.html still shows the
+           full text for diagnostics. #}
         {% if step.error %}
-        <p class="mt-1.5 text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 rounded px-2 py-1 font-mono break-all">{{ step.error }}</p>
+        <p class="mt-1.5 text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 rounded px-2 py-1"
+           data-i18n="portal.order_detail.step_failed_generic">
+          This step failed — contact IT for details.
+        </p>
         {% endif %}
       </div>
     </div>

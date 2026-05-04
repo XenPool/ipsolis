@@ -38,6 +38,20 @@ aiosmtplib==3.0.2
 # License (Ed25519 signature verification)
 cryptography>=43.0.0
 
+# Markdown rendering (asset definition help_text → sanitized HTML)
+markdown==3.7
+bleach==6.2.0
+
+# Prometheus /metrics endpoint
+prometheus-client==0.21.0
+
+# OpenTelemetry tracing (HTTP/protobuf exporter avoids grpcio compile pain)
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-exporter-otlp-proto-http==1.29.0
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-sqlalchemy==0.50b0
+
 # Logging
 structlog==24.4.0
 

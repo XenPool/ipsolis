@@ -10,6 +10,9 @@ class AssetTypeRead(BaseModel):
     id: int
     name: str
     description: str | None
+    help_text: str | None = None
+    is_active: bool = True
+    show_on_dashboard: bool = False
     category: AssetCategory
     config: list[dict[str, Any]] | None
     assignment_model: str
@@ -25,12 +28,17 @@ class AssetTypeRead(BaseModel):
     personal_provisioning_strategy: str | None
     naming_pattern: str | None
     max_per_user: int
+    monthly_cost: float | None = None
+    currency: str | None = None
+    cost_center: str | None = None
     automation_strategy: str
     composite_steps: list[dict[str, Any]] | None
     rds_gateway_url: str | None
     requires_manager_approval: bool
     requires_owner_approval: bool
     approval_owners: list[dict[str, Any]] | None
+    approval_rules: list[dict[str, Any]] | None = None
+    min_approvals_required: int | None = None
     requires_approval_on_modify: bool
     eligible_requestors_dn: str | None
     logo: str | None = None

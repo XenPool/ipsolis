@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session  # noqa: F401 – used by _run_step_inline/_r
 from tasks import app
 from tasks.modules import audit_helper
 from tasks.modules.config_reader import get_config
+from tasks.modules.secrets import get_secret_config as _get_secret_config
 from tasks.modules.step_helper import make_log_json, update_order_step, update_order_status
 
 logger = logging.getLogger(__name__)
@@ -35,8 +36,8 @@ DATABASE_URL = os.getenv(
 
 
 def _get_db_session() -> Session:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-    return Session(engine)
+    from tasks.modules.db import get_worker_session
+    return get_worker_session()
 
 
 def _run_step_inline(
@@ -127,12 +128,6 @@ def _write_provisioned_state(
         {"state": json.dumps(state), "id": order_id},
     )
     logger.info("[dynamic_runner] provisioned_state written for order_id=%s", order_id)
-
-
-def _skip_instance_action(order_id: int, action: str) -> dict:
-    """Log that an instance-level action is deferred to a separate runbook."""
-    logger.info("Instance action '%s' for order_id=%s must be handled via a configured runbook", action, order_id)
-    return {"success": True, "skipped": True, "message": f"Instance {action} must be configured via a runbook"}
 
 
 def _lookup_asset_name(db: Session, order: dict) -> str | None:
@@ -398,34 +393,6 @@ def _run_targets_mode(
                     critical=False,
                 )
 
-        elif deprovision_policy == "deallocate_instance":
-            # Revoke targets (above) + release pool + halt VM
-            if needs_asset and asset_id:
-                _run_step_inline(
-                    db, order_id, "Release assignment",
-                    lambda: pool_manager.release_asset(db=db, asset_id=asset_id),
-                    critical=False,
-                )
-            _run_step_inline(
-                db, order_id, "Pause instance",
-                lambda: _skip_instance_action(order_id, "deallocate"),
-                critical=False,
-            )
-
-        elif deprovision_policy == "delete_instance":
-            # Revoke targets (above) + release pool + delete VM
-            if needs_asset and asset_id:
-                _run_step_inline(
-                    db, order_id, "Release assignment",
-                    lambda: pool_manager.release_asset(db=db, asset_id=asset_id),
-                    critical=False,
-                )
-            _run_step_inline(
-                db, order_id, "Delete instance",
-                lambda: _skip_instance_action(order_id, "delete"),
-                critical=False,
-            )
-
         elif deprovision_policy == "custom_runbook":
             # Targets revoked; VM cleanup via separate runbook
             logger.info(
@@ -521,6 +488,10 @@ def _load_global_vars(db: Session) -> dict:
     for row in rows:
         gv[row[0]] = row[1] or ""
 
+    # External-secret resolution: ``*.password`` keys may be ``vault://``
+    # or ``ccp://`` references and need dereferencing before they hit
+    # the runbook script's environment. Plain values pass through.
+    from tasks.modules.secrets import resolve_secret_value
     hosting_keys = [
         "xenserver.host", "xenserver.username", "xenserver.password",
         "vsphere.host", "vsphere.username", "vsphere.password",
@@ -528,7 +499,7 @@ def _load_global_vars(db: Session) -> dict:
     for k in hosting_keys:
         val = get_config(db, k, "")
         if val:
-            gv[k] = val
+            gv[k] = resolve_secret_value(db, val) if k.endswith(".password") else val
     return gv
 
 
@@ -898,13 +869,16 @@ def _run_runbook_path(
         "asset_name": pre_asset_name,
         "snow_req": order.get("snow_req"),
         "snow_ritm": order.get("servicenow_ref"),
-        # Hosting infrastructure — available as {{config.vsphere.host}} etc. in params templates
+        # Hosting infrastructure — available as {{config.vsphere.host}} etc. in params templates.
+        # ``.password`` reads go through the secret resolver so vault://
+        # and ccp:// references get dereferenced before landing in the
+        # runbook script's environment.
         "config.vsphere.host":       get_config(db, "vsphere.host", ""),
         "config.vsphere.username":   get_config(db, "vsphere.username", ""),
-        "config.vsphere.password":   get_config(db, "vsphere.password", ""),
+        "config.vsphere.password":   _get_secret_config(db, "vsphere.password", ""),
         "config.xenserver.host":     get_config(db, "xenserver.host", ""),
         "config.xenserver.username": get_config(db, "xenserver.username", ""),
-        "config.xenserver.password": get_config(db, "xenserver.password", ""),
+        "config.xenserver.password": _get_secret_config(db, "xenserver.password", ""),
     }
 
     # 4. Execute steps
@@ -1004,8 +978,22 @@ def _run_runbook_path(
                     step_name, e,
                 )
 
-    # provisioned_state nach erfolgreicher Provision schreiben
+    # Guard against leaver race: if action was "provision" when we started but
+    # has since been changed to "delete" (leaver fired mid-run), do not stamp
+    # the order as "provisioned" — let the leaver's deprovision task finalize it.
     if action == "provision":
+        live_action = db.execute(
+            text("SELECT action FROM orders WHERE id = :id"), {"id": order_id}
+        ).scalar()
+        if str(live_action).lower() == "delete":
+            logger.warning(
+                "[runbook_path] order_id=%s: action changed to 'delete' during provision run "
+                "(leaver fired mid-flight) — skipping 'provisioned' stamp",
+                order_id,
+            )
+            db.close()
+            return {"success": True, "order_id": order_id, "aborted": "leaver_preempted"}
+
         _write_provisioned_state(
             db, order_id,
             assignment_model=assignment_model,
@@ -1103,6 +1091,19 @@ def _run_composite_mode(
             logger.warning("[composite] Unknown step_type=%r – skipped", step_type)
 
     # Alle Schritte erfolgreich – Status setzen
+    # Guard: if action was "provision" but changed to "delete" mid-run (leaver race), don't overwrite
+    if action == "provision":
+        live_action = db.execute(
+            text("SELECT action FROM orders WHERE id = :id"), {"id": order_id}
+        ).scalar()
+        if str(live_action).lower() == "delete":
+            logger.warning(
+                "[composite] order_id=%s: action changed to 'delete' mid-run — skipping 'provisioned' stamp",
+                order_id,
+            )
+            db.close()
+            return {"success": True, "order_id": order_id, "aborted": "leaver_preempted", "composite": True}
+
     final = _final_status(action)
     update_order_status(db, order_id, final)
     audit_helper.waudit(
@@ -1409,10 +1410,92 @@ def send_scheduled_confirmation(order_id: int) -> dict:
         db.close()
 
 
+def deliver_approval_notification(
+    db,
+    *,
+    approval_id: int,
+    approver_email: str,
+    approver_name: str,
+    requester_name: str,
+    requester_email: str,
+    asset_type_name: str,
+    from_date: str,
+    until_date: str,
+    portal_base: str,
+    teams_mode: str,
+    teams_webhook: str,
+    app_title: str,
+    is_reminder: bool = False,
+    reminder_count: int = 0,
+) -> tuple[bool, bool]:
+    """Send a single approval notification (email + Teams card if enabled).
+
+    Returns ``(email_sent, teams_sent)``. Reused by both the initial
+    dispatch and the reminder Beat task. ``approver_email`` is forwarded
+    to the Teams card builder so the rendered card can include an
+    ``@mention`` of the approver — required for Teams to surface a real
+    banner / push notification when the post is authored "by the user via
+    Workflows" (Teams suppresses self-authored channel-post notifications).
+    ``is_reminder`` bumps the card headline to "Reminder (n): …" so the
+    recipient can tell it's a nudge.
+    """
+    from tasks.modules import notifications as notif
+
+    approval_url = f"{portal_base.rstrip('/')}/portal/approvals"
+    notif.send_approval_request(
+        db=db,
+        approver_email=approver_email,
+        approver_name=approver_name,
+        requester_name=requester_name,
+        requester_email=requester_email,
+        asset_type_name=asset_type_name,
+        from_date=from_date,
+        until_date=until_date,
+        approval_url=approval_url,
+    )
+    email_sent = True
+    teams_sent = False
+
+    if teams_mode == "enabled" and teams_webhook:
+        try:
+            from tasks.modules.teams_notify import (
+                build_approval_card,
+                make_approval_token,
+                post_adaptive_card,
+            )
+            token = make_approval_token(approval_id)
+            review_url = f"{portal_base.rstrip('/')}/approve/{token}"
+            card = build_approval_card(
+                asset_type_name=asset_type_name,
+                requester_name=requester_name,
+                requester_email=requester_email,
+                approver_name=approver_name,
+                approver_email=approver_email,
+                review_url=review_url,
+                from_date=from_date,
+                until_date=until_date,
+                app_title=app_title,
+            )
+            if is_reminder and reminder_count > 0:
+                # Bump the headline so the recipient sees this is a nudge,
+                # not a duplicate of the original card.
+                card["body"][0]["text"] = (
+                    f"{app_title} — Reminder ({reminder_count}): access request awaiting approval"
+                )
+            ok, msg = post_adaptive_card(teams_webhook, card)
+            if ok:
+                teams_sent = True
+            else:
+                logger.warning("Teams card delivery failed for approval %s: %s", approval_id, msg)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Teams card error for approval %s: %s", approval_id, exc)
+
+    return email_sent, teams_sent
+
+
 @app.task(name="tasks.workflows.dynamic_runner.send_approval_requests")
 def send_approval_requests(order_id: int) -> dict:
     """Sends approval request emails to all pending approvers for an order."""
-    from tasks.modules import notifications as notif
     from tasks.modules.config_reader import get_config
 
     db = _get_db_session()
@@ -1448,14 +1531,22 @@ def send_approval_requests(order_id: int) -> dict:
             until_date = ru.strftime("%d.%m.%Y")
 
         approvals = db.execute(
-            text("SELECT approver_email, approver_name FROM order_approvals WHERE order_id = :oid AND status = 'pending'"),
+            text("SELECT id, approver_email, approver_name FROM order_approvals WHERE order_id = :oid AND status = 'pending'"),
             {"oid": order_id},
         ).fetchall()
 
+        # Teams notifications are best-effort — read config once, skip silently
+        # when not enabled. Failure to deliver to Teams must not abort the order.
+        teams_mode = (get_config(db, "teams.mode", "disabled") or "disabled").strip()
+        teams_webhook = _get_secret_config(db, "teams.webhook_url").strip()
+        app_title = get_config(db, "app.title", "ip·Solis") or "ip·Solis"
+
         sent = 0
+        teams_sent = 0
         for a in approvals:
-            notif.send_approval_request(
-                db=db,
+            email_ok, teams_ok = deliver_approval_notification(
+                db,
+                approval_id=a.id,
                 approver_email=a.approver_email,
                 approver_name=a.approver_name,
                 requester_name=row.user_name or "",
@@ -1463,12 +1554,22 @@ def send_approval_requests(order_id: int) -> dict:
                 asset_type_name=row.asset_type_name or "",
                 from_date=from_date,
                 until_date=until_date,
-                approval_url=approval_url,
+                portal_base=portal_base,
+                teams_mode=teams_mode,
+                teams_webhook=teams_webhook,
+                app_title=app_title,
+                is_reminder=False,
             )
-            sent += 1
+            if email_ok:
+                sent += 1
+            if teams_ok:
+                teams_sent += 1
 
-        logger.info("Sent %d approval request emails for order_id=%s", sent, order_id)
-        return {"success": True, "sent": sent}
+        logger.info(
+            "Approval notifications for order %s — emails=%d teams=%d (mode=%s)",
+            order_id, sent, teams_sent, teams_mode,
+        )
+        return {"success": True, "sent": sent, "teams_sent": teams_sent}
     finally:
         db.close()
 
@@ -1697,6 +1798,56 @@ def check_scheduled_orders() -> dict:
 
         logger.info("=== check_scheduled_orders DONE: %s orders dispatched ===", dispatched)
         return {"dispatched": dispatched}
+
+    finally:
+        db.close()
+
+
+@app.task(
+    name="tasks.workflows.dynamic_runner.recover_stuck_revoking",
+    bind=True,
+    max_retries=0,
+    queue="reclaim",
+)
+def recover_stuck_revoking(self: Task) -> dict:
+    """Re-dispatch deprovision tasks for orders stuck in 'revoking' state.
+
+    An order is considered stuck when it has been in 'revoking' status with
+    action='delete' but has no currently-running order step. This catches the
+    case where the deprovision Celery task failed silently (e.g. DB connection
+    exhaustion) and was not retried.
+    """
+    db = _get_db_session()
+    try:
+        stuck_rows = db.execute(
+            text("""
+                SELECT o.id
+                FROM orders o
+                WHERE o.status = 'revoking'
+                  AND o.action = 'delete'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM order_steps s
+                      WHERE s.order_id = o.id
+                        AND s.status = 'running'
+                  )
+            """)
+        ).fetchall()
+
+        if not stuck_rows:
+            return {"recovered": 0}
+
+        recovered = 0
+        for row in stuck_rows:
+            order_id = row[0]
+            logger.warning(
+                "[recover_stuck_revoking] Order %s is stuck in 'revoking' — re-dispatching deprovision",
+                order_id,
+            )
+            run.apply_async(args=[order_id], queue="reclaim")
+            recovered += 1
+
+        logger.info("[recover_stuck_revoking] Re-dispatched %s stuck order(s)", recovered)
+        return {"recovered": recovered}
 
     finally:
         db.close()

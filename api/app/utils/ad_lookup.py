@@ -45,7 +45,7 @@ def _get_ad_config() -> dict:
     """
     server = os.getenv("AD_SERVER", "")
     if server:
-        return {
+        cfg = {
             "server": server,
             "port": int(os.getenv("AD_PORT", "389")),
             "base_dn": os.getenv("AD_BASE_DN", ""),
@@ -54,18 +54,44 @@ def _get_ad_config() -> dict:
             "password": os.getenv("AD_PASSWORD", ""),
             "use_ssl": os.getenv("AD_USE_SSL", "false").lower() == "true",
         }
+        # Attribute mapping always comes from the DB, even when server creds
+        # are env-driven, so admins can change attribute names without a redeploy.
+        cfg.update(_load_attribute_mapping_from_db())
+        return cfg
 
     cfg = _load_ad_config_from_db()
     if not cfg.get("ad.server"):
         return {}
+    # External-secret resolution: ``ad.password`` may be a literal or a
+    # ``vault://...`` / ``ccp://...`` reference. Plain strings pass
+    # through unchanged so existing installs keep working.
+    from app.utils.secrets import resolve_secret_value_sync
+    raw_password = cfg.get("ad.password", "")
     return {
         "server": cfg.get("ad.server", ""),
         "port": int(cfg.get("ad.port", "389")),
         "base_dn": cfg.get("ad.base_dn", ""),
         "domain": cfg.get("ad.domain", ""),
         "username": cfg.get("ad.username", ""),
-        "password": cfg.get("ad.password", ""),
+        "password": resolve_secret_value_sync(raw_password),
         "use_ssl": cfg.get("ad.use_ssl", "false") == "true",
+        "attr_department":  (cfg.get("ad.attribute.department")  or "department").strip(),
+        "attr_cost_center": (cfg.get("ad.attribute.cost_center") or "").strip(),
+        "attr_company":     (cfg.get("ad.attribute.company")     or "company").strip(),
+        "attr_employee_id": (cfg.get("ad.attribute.employee_id") or "employeeID").strip(),
+        "attr_title":       (cfg.get("ad.attribute.title")       or "title").strip(),
+    }
+
+
+def _load_attribute_mapping_from_db() -> dict:
+    """Return ``{"attr_department": "department", ...}`` from app_config."""
+    raw = _load_ad_config_from_db()
+    return {
+        "attr_department":  (raw.get("ad.attribute.department")  or "department").strip(),
+        "attr_cost_center": (raw.get("ad.attribute.cost_center") or "").strip(),
+        "attr_company":     (raw.get("ad.attribute.company")     or "company").strip(),
+        "attr_employee_id": (raw.get("ad.attribute.employee_id") or "employeeID").strip(),
+        "attr_title":       (raw.get("ad.attribute.title")       or "title").strip(),
     }
 
 
@@ -91,6 +117,36 @@ def lookup_user(identifier: str) -> dict:
         return {"success": False, "error": "Active Directory is not configured. Configure AD via Admin > Settings > Active Directory."}
 
     return _msldap_lookup_sync(identifier, ad_config)
+
+
+def snapshot_requester_attrs(email: str) -> dict[str, str | None]:
+    """Return Order ``requester_*`` columns from an AD lookup on ``email``.
+
+    Used to populate the chargeback snapshot at order-creation time so
+    the cost report can slice spend by consuming team without
+    re-querying AD per report build. Best-effort: every failure path
+    (empty input, AD not configured, lookup error, unsuccessful
+    response) returns an empty dict so the caller can splat ``**``
+    onto an ``Order`` constructor without ever blocking the order.
+    Logs at WARNING when AD is configured but the lookup itself fails.
+    """
+    if not email or not email.strip():
+        return {}
+    try:
+        ad_lookup = lookup_user(email)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("AD attribute snapshot failed for %s: %s", email, exc)
+        return {}
+    if not ad_lookup.get("success"):
+        return {}
+    return {
+        "requester_sam_account": ad_lookup.get("sam_account") or None,
+        "requester_department":  ad_lookup.get("department") or None,
+        "requester_cost_center": ad_lookup.get("cost_center") or None,
+        "requester_company":     ad_lookup.get("company") or None,
+        "requester_employee_id": ad_lookup.get("employee_id") or None,
+        "requester_title":       ad_lookup.get("title") or None,
+    }
 
 
 def lookup_manager(identifier: str) -> dict:
@@ -357,7 +413,19 @@ async def _msldap_lookup(identifier: str, ad_config: dict) -> dict:
     await client.connect()
 
     try:
-        attrs = ["mail", "displayName", "sAMAccountName", "userPrincipalName"]
+        # Mandatory identity attrs + the configurable HR attrs needed for
+        # chargeback. Empty mapping entries (cost_center default = "") are
+        # filtered out so we don't ask AD for a literal "" attribute.
+        identity_attrs = ["mail", "displayName", "sAMAccountName", "userPrincipalName"]
+        hr_attr_keys = [
+            ad_config.get("attr_department"),
+            ad_config.get("attr_cost_center"),
+            ad_config.get("attr_company"),
+            ad_config.get("attr_employee_id"),
+            ad_config.get("attr_title"),
+        ]
+        attrs = list(dict.fromkeys(identity_attrs + [a for a in hr_attr_keys if a]))
+
         found = None
         async for entry, err in client.pagedsearch(ldap_filter, attrs, tree=base_dn):
             if err:
@@ -369,16 +437,38 @@ async def _msldap_lookup(identifier: str, ad_config: dict) -> dict:
             return {"success": False, "error": f"User '{identifier}' not found in AD"}
 
         def _attr(key):
+            """Extract a single string value from the LDAP entry.
+
+            msldap auto-decodes standard schema attributes (displayName,
+            department, …) to ``str``, but custom attributes whose syntax
+            it doesn't know (e.g. ``userCostCenter``) come back as raw
+            ``bytes``. Always decode to UTF-8 so the value is safe to
+            persist via asyncpg.
+            """
+            if not key:
+                return None
             v = found.get(key)
             if isinstance(v, list):
-                return v[0] if v else None
-            return str(v) if v else None
+                v = v[0] if v else None
+            if v is None or v == "" or v == b"":
+                return None
+            if isinstance(v, bytes):
+                try:
+                    return v.decode("utf-8")
+                except UnicodeDecodeError:
+                    return v.decode("latin-1", errors="replace")
+            return str(v)
 
         return {
             "success": True,
             "email": _attr("mail") or _attr("userPrincipalName") or identifier,
             "display_name": _attr("displayName") or identifier,
             "sam_account": _attr("sAMAccountName") or identifier,
+            "department":  _attr(ad_config.get("attr_department")),
+            "cost_center": _attr(ad_config.get("attr_cost_center")),
+            "company":     _attr(ad_config.get("attr_company")),
+            "employee_id": _attr(ad_config.get("attr_employee_id")),
+            "title":       _attr(ad_config.get("attr_title")),
         }
     finally:
         await client.disconnect()

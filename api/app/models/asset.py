@@ -2,6 +2,8 @@ import enum
 from datetime import datetime
 from typing import Any
 
+from decimal import Decimal
+
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -9,6 +11,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     func,
@@ -37,9 +40,7 @@ class DeprovisionPolicy(str, enum.Enum):
     ACCESS_ONLY = "access_only"                   # Remove group membership only
     RETURN_TO_POOL = "return_to_pool"             # Release pool reservation, instance remains free
     RETURN_TO_POOL_REINSTALL = "return_to_pool_reinstall"  # Release + mark for reinstall
-    DEALLOCATE_INSTANCE = "deallocate_instance"   # Stop / deallocate VM
-    DELETE_INSTANCE = "delete_instance"           # Delete VM including cleanup
-    CUSTOM_RUNBOOK = "custom_runbook"             # Revoke via separate runbook
+    CUSTOM_RUNBOOK = "custom_runbook"             # Any instance-level action (stop, delete, …) via a runbook
 
 
 class PersonalProvisioningStrategy(str, enum.Enum):
@@ -58,7 +59,6 @@ class AssetStatus(str, enum.Enum):
     RESERVED = "reserved"
     BUSY = "busy"
     MAINTENANCE = "maintenance"
-    RECLAIMING = "reclaiming"
     REINSTALL = "Reinstall"        # Awaiting reinstall runbook; not assignable
     REINSTALLING = "Reinstalling"  # Reinstall runbook currently running
     FAILED = "Failed"              # Reinstall failed; needs manual attention
@@ -72,6 +72,20 @@ class AssetType(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Long-form markdown shown in the portal at request time. Rendered
+    # via the bleach-allowlisted markdown filter; only safe tags survive.
+    help_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # When False, the type is hidden from the portal catalog but remains
+    # visible to admins (used to deprecate without losing history).
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    # Per-type opt-in for the Admin Dashboard donut card. Default false
+    # so installs with many asset types stay scannable; admins toggle
+    # this on the types they want at-a-glance status for.
+    show_on_dashboard: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     category: Mapped[AssetCategory] = mapped_column(
         Enum(AssetCategory, name="asset_category", values_callable=lambda x: [e.value for e in x]),
         nullable=False,
@@ -110,6 +124,11 @@ class AssetType(Base):
     max_per_user: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default="1"
     )
+    # Cost / chargeback — populated by finance for the monthly cost report.
+    # NULL means "untracked" so legacy definitions don't surface as 0 €.
+    monthly_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    cost_center: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Lifecycle
     lifecycle_ttl_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     lifecycle_renewable: Mapped[bool] = mapped_column(
@@ -133,6 +152,13 @@ class AssetType(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     approval_owners: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    # Conditional rules: list of {name, condition, approvers}. Evaluated at
+    # order creation; matching rules add their approvers to the list of
+    # OrderApproval rows alongside the manager / owners.
+    approval_rules: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    # N-of-M threshold: when set, any N of the configured approvers
+    # satisfies the order. NULL / 0 / >= total = "all required" (default).
+    min_approvals_required: Mapped[int | None] = mapped_column(Integer, nullable=True)
     requires_approval_on_modify: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )

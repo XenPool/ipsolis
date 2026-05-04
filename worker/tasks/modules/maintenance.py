@@ -96,52 +96,118 @@ def _enforce_keep_last_n(db: Session) -> None:
     db.commit()
 
 
-@shared_task(name="tasks.modules.maintenance.run_backup", bind=True)
-def run_backup(self, backup_id: int, trigger: str = "manual") -> dict:
-    """Runs pg_dump against DATABASE_URL, stores the file under /app/backups/.
+def _reconcile_backup_files(db) -> int:
+    """Scan ``BACKUP_DIR`` for ``.sql.gz`` files without a matching
+    ``db_backups`` row and INSERT one for each.
 
-    The db_backups row is expected to exist already (status='pending') —
-    the API endpoint inserts it before enqueuing this task so the UI can
-    show the pending record immediately.
+    Used after restores: the dump's ``db_backups`` table replaces the
+    target's, so any rows that existed only on the target instance
+    (typically the just-taken safety backup, plus any uploads not yet
+    restored) lose their database record while their files survive on
+    disk. Reconciling makes those files visible in the UI again and
+    restore-eligible.
+
+    Also useful as a periodic janitor for files dropped in via ``scp`` /
+    manual copy. Idempotent — safe to call repeatedly.
+
+    Returns the number of rows inserted.
     """
-    db = _db()
-    try:
-        row = db.execute(
-            text("SELECT filename FROM db_backups WHERE id = :i"),
-            {"i": backup_id},
+    inserted = 0
+    for path in sorted(BACKUP_DIR.glob("*.sql.gz")):
+        if not path.is_file():
+            continue
+        filename = path.name
+        existing = db.execute(
+            text("SELECT 1 FROM db_backups WHERE filename = :f LIMIT 1"),
+            {"f": filename},
         ).first()
-        if not row:
-            logger.error("run_backup: no db_backups row with id=%s", backup_id)
-            return {"success": False, "error": "backup row not found"}
-        filename = row[0]
-        target = BACKUP_DIR / filename
+        if existing:
+            continue
+        # Derive trigger from the filename's naming convention. New
+        # uploads + safety backups + manual backups all use distinct
+        # prefixes, so we can recover the right ``trigger`` value
+        # without parsing the dump itself.
+        if "_pre_restore_" in filename:
+            trig = "pre_restore"
+        elif "_uploaded_" in filename:
+            trig = "upload"
+        else:
+            trig = "manual"
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        try:
+            res = db.execute(
+                text(
+                    "INSERT INTO db_backups "
+                    "(filename, status, trigger, size_bytes, finished_at, "
+                    " created_at, created_by, note) "
+                    "VALUES (:f, 'success', :t, :s, to_timestamp(:m), "
+                    "        to_timestamp(:m), 'reconcile', "
+                    "        'Reconciled — backup file existed on disk without a db_backups row.') "
+                    "ON CONFLICT (filename) DO NOTHING"
+                ),
+                {"f": filename, "t": trig, "s": stat.st_size, "m": stat.st_mtime},
+            )
+            if (res.rowcount or 0) > 0:
+                inserted += 1
+        except Exception:
+            logger.warning("reconcile: could not INSERT row for %s", filename)
+            db.rollback()
+            continue
+    db.commit()
+    if inserted:
+        logger.info("reconcile: inserted %d db_backups row(s) for orphan files", inserted)
+    return inserted
 
-        db.execute(
-            text(
-                "UPDATE db_backups SET status='running', trigger=:t "
-                "WHERE id = :i"
-            ),
-            {"i": backup_id, "t": trigger},
-        )
-        db.commit()
 
-        pg = _parse_pg_url()
-        env = os.environ.copy()
-        if pg["password"]:
-            env["PGPASSWORD"] = pg["password"]
+def _run_backup_sync(db, backup_id: int, trigger: str = "manual") -> dict:
+    """Plain-function backup runner — the actual pg_dump work.
 
-        # pg_dump custom format + gzip for smaller file + atomic write (.part)
-        tmp = target.with_suffix(target.suffix + ".part")
-        cmd = [
-            "pg_dump",
-            "--host",     pg["host"],
-            "--port",     pg["port"],
-            "--username", pg["user"],
-            "--dbname",   pg["dbname"],
-            "--format",   "plain",
-            "--no-owner",
-            "--no-privileges",
-        ]
+    Extracted from the Celery task wrapper so other tasks (notably
+    ``run_restore``) can call it directly without the Celery
+    "Never call result.get() within a task" anti-pattern that
+    ``apply()``/``get()`` would trigger. The caller owns the SQLAlchemy
+    session.
+    """
+    row = db.execute(
+        text("SELECT filename FROM db_backups WHERE id = :i"),
+        {"i": backup_id},
+    ).first()
+    if not row:
+        logger.error("_run_backup_sync: no db_backups row with id=%s", backup_id)
+        return {"success": False, "error": "backup row not found"}
+    filename = row[0]
+    target = BACKUP_DIR / filename
+
+    db.execute(
+        text(
+            "UPDATE db_backups SET status='running', trigger=:t "
+            "WHERE id = :i"
+        ),
+        {"i": backup_id, "t": trigger},
+    )
+    db.commit()
+
+    pg = _parse_pg_url()
+    env = os.environ.copy()
+    if pg["password"]:
+        env["PGPASSWORD"] = pg["password"]
+
+    # pg_dump custom format + gzip for smaller file + atomic write (.part)
+    tmp = target.with_suffix(target.suffix + ".part")
+    cmd = [
+        "pg_dump",
+        "--host",     pg["host"],
+        "--port",     pg["port"],
+        "--username", pg["user"],
+        "--dbname",   pg["dbname"],
+        "--format",   "plain",
+        "--no-owner",
+        "--no-privileges",
+    ]
+    try:
         with open(tmp, "wb") as out:
             dump = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
             gzip_p = subprocess.Popen(["gzip", "-c"], stdin=dump.stdout, stdout=out)
@@ -175,6 +241,10 @@ def run_backup(self, backup_id: int, trigger: str = "manual") -> dict:
     except Exception as exc:
         logger.exception("Backup failed for id=%s: %s", backup_id, exc)
         try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        try:
             db.execute(
                 text(
                     "UPDATE db_backups SET status='failed', finished_at=NOW(), "
@@ -186,8 +256,231 @@ def run_backup(self, backup_id: int, trigger: str = "manual") -> dict:
         except Exception:
             pass
         return {"success": False, "error": str(exc)}
+
+
+@shared_task(name="tasks.modules.maintenance.run_backup", bind=True)
+def run_backup(self, backup_id: int, trigger: str = "manual") -> dict:
+    """Celery wrapper around ``_run_backup_sync``.
+
+    The db_backups row is expected to exist already (status='pending') —
+    the API endpoint inserts it before enqueuing this task so the UI can
+    show the pending record immediately.
+    """
+    db = _db()
+    try:
+        return _run_backup_sync(db, backup_id, trigger)
     finally:
         db.close()
+
+
+@shared_task(name="tasks.modules.maintenance.run_restore", bind=True)
+def run_restore(self, backup_id: int, safety_backup_id: int) -> dict:
+    """Restore the DB from a previously-taken backup.
+
+    Workflow:
+      1. Run pg_dump for ``safety_backup_id`` so the operator can
+         roll back this restore if the result is wrong.
+      2. Connect to the maintenance DB (``postgres``) as a separate
+         psycopg2 connection, terminate every session on the target
+         DB, DROP and re-CREATE it.
+      3. Pipe ``gunzip -c <file> | psql`` to load the dump.
+      4. Mark the target backup row as ``restored`` (with
+         ``restored_at`` audit-trail data via the ``error`` field —
+         the column doesn't exist as a dedicated timestamp yet, so
+         we stash a short marker there for now).
+
+    The api can't run alembic ``upgrade head`` from inside this task
+    (worker image has no alembic config), so when a dump is older
+    than the current code's schema head the operator still has to
+    run ``docker compose exec -T api alembic upgrade head`` manually.
+    Documented in the UI banner.
+    """
+    db = _db()
+    try:
+        row = db.execute(
+            text("SELECT filename FROM db_backups WHERE id = :i"),
+            {"i": backup_id},
+        ).first()
+        if not row:
+            return {"success": False, "error": f"backup row {backup_id} not found"}
+        target_filename = row[0]
+        target_path = BACKUP_DIR / target_filename
+        if not target_path.exists():
+            db.execute(
+                text(
+                    "UPDATE db_backups SET status='restore_failed', "
+                    "error=:e WHERE id = :i"
+                ),
+                {"i": backup_id, "e": f"backup file {target_filename} not on disk"},
+            )
+            db.commit()
+            return {"success": False, "error": "backup file missing"}
+
+        # ── 1. Pre-restore safety backup ──────────────────────────────
+        # Call the plain-function backup runner directly. We must NOT
+        # use ``run_backup.apply().get()`` here — Celery raises
+        # "Never call result.get() within a task" because synchronous
+        # subtasks inside a worker can deadlock the prefork pool when
+        # the called task ends up routed to the same worker.
+        safety_result = _run_backup_sync(
+            db, safety_backup_id, trigger="pre_restore"
+        )
+        if not safety_result.get("success"):
+            db.execute(
+                text(
+                    "UPDATE db_backups SET status='restore_failed', "
+                    "error=:e WHERE id = :i"
+                ),
+                {
+                    "i": backup_id,
+                    "e": "Pre-restore safety backup failed: "
+                         + (safety_result.get("error") or "unknown"),
+                },
+            )
+            db.commit()
+            return {"success": False, "error": "safety backup failed"}
+
+        # Mark target row as restoring.
+        db.execute(
+            text("UPDATE db_backups SET status='restoring' WHERE id = :i"),
+            {"i": backup_id},
+        )
+        db.commit()
+        # Drop our session on the soon-to-be-dropped DB so it doesn't
+        # get terminated mid-flight in step 2.
+        db.close()
+        db = None  # we'll re-open after the restore
+
+        # ── 2. DROP + CREATE the target DB via maintenance connection ──
+        import psycopg2  # noqa: PLC0415 — only needed during restore
+        pg = _parse_pg_url()
+        target_dbname = pg["dbname"]
+
+        # Connect to the postgres maintenance DB. autocommit because
+        # DROP/CREATE DATABASE can't run inside a transaction.
+        maint = psycopg2.connect(
+            host=pg["host"], port=int(pg["port"]),
+            user=pg["user"], password=pg["password"],
+            dbname="postgres",
+        )
+        maint.set_session(autocommit=True)
+        try:
+            cur = maint.cursor()
+            # Kick everyone off the target DB (api, beat, worker, …).
+            # SQLAlchemy pool_pre_ping + reconnect handles the api/worker
+            # losing their connections — they pick up fresh ones once the
+            # new DB is in place.
+            cur.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = %s AND pid <> pg_backend_pid()",
+                (target_dbname,),
+            )
+            # Quote the dbname with format() — no user input flows into
+            # the dbname (it comes from DATABASE_URL), but we still
+            # validate to be defensive against weird env values.
+            if not target_dbname.replace("_", "").replace("-", "").isalnum():
+                raise RuntimeError(f"refusing to DROP non-alphanumeric dbname: {target_dbname!r}")
+            cur.execute(f'DROP DATABASE IF EXISTS "{target_dbname}"')
+            cur.execute(f'CREATE DATABASE "{target_dbname}" OWNER "{pg["user"]}"')
+        finally:
+            maint.close()
+
+        # ── 3. Pipe gunzip into psql ─────────────────────────────────
+        env = os.environ.copy()
+        if pg["password"]:
+            env["PGPASSWORD"] = pg["password"]
+        # bash -c keeps the pipeline simple; both binaries are guaranteed
+        # to exist in the worker image (debian + apt postgres-client).
+        proc = subprocess.run(
+            [
+                "bash", "-c",
+                f"gunzip -c '{target_path}' | psql "
+                f"--host '{pg['host']}' --port '{pg['port']}' "
+                f"--username '{pg['user']}' --dbname '{target_dbname}' "
+                f"--quiet --set ON_ERROR_STOP=1",
+            ],
+            env=env,
+            capture_output=True,
+            timeout=3600,
+        )
+
+        # ── 4. Reconcile the restored DB's db_backups with /app/backups ─
+        # Re-open the session against the *freshly-restored* DB. That
+        # DB's ``db_backups`` table came from the source dump and so
+        # doesn't know about either:
+        #   * the safety backup we took at step 1 (its row was inserted
+        #     on the target instance, which we just dropped); or
+        #   * any uploads / pre-existing rows that lived only on the
+        #     target.
+        # Don't try to UPDATE the original target row — it likely
+        # doesn't exist in the restored DB, and even if it does it now
+        # describes a backup from the source perspective. Instead,
+        # ``_reconcile_backup_files`` walks BACKUP_DIR and INSERTs rows
+        # for any ``.sql.gz`` file without a matching ``filename``.
+        db = _db()
+        if proc.returncode != 0:
+            err = (proc.stderr or b"").decode("utf-8", errors="replace")[:4000]
+            # Best-effort UPDATE — the restored DB might be empty / partial,
+            # but if the row IS there the operator sees the failure surfaced.
+            try:
+                db.execute(
+                    text(
+                        "UPDATE db_backups SET status='restore_failed', error=:e "
+                        "WHERE id = :i"
+                    ),
+                    {"i": backup_id, "e": err or "psql exited non-zero"},
+                )
+                db.commit()
+            except Exception:
+                pass
+            # Still reconcile so the safety backup is recoverable from the UI.
+            try:
+                _reconcile_backup_files(db)
+            except Exception:
+                logger.warning("reconcile after restore failure: skipped (DB likely partial)")
+            logger.error("Restore %s failed: %s", target_filename, err[:200])
+            return {"success": False, "error": "psql restore failed", "stderr": err}
+
+        # Success path: reconcile orphan files (safety backup, uploads, etc.)
+        # so the UI shows a complete list. We deliberately do NOT UPDATE the
+        # original ``backup_id`` row — its content now reflects the source's
+        # state, not what we did on this target.
+        try:
+            _reconcile_backup_files(db)
+        except Exception:
+            logger.exception("post-restore reconcile failed; leaving as-is")
+
+        logger.info("Restore %s completed from %s", target_filename, target_path)
+        return {
+            "success": True,
+            "backup_id": backup_id,
+            "safety_backup_id": safety_backup_id,
+            "filename": target_filename,
+            "note": (
+                "db_backups now reflects the source dump's state; the safety "
+                "backup and any other on-disk-only files were re-registered "
+                "via reconcile."
+            ),
+        }
+    except Exception as exc:
+        logger.exception("Restore failed for id=%s: %s", backup_id, exc)
+        try:
+            if db is None:
+                db = _db()
+            db.execute(
+                text(
+                    "UPDATE db_backups SET status='restore_failed', error=:e "
+                    "WHERE id = :i"
+                ),
+                {"i": backup_id, "e": str(exc)[:4000]},
+            )
+            db.commit()
+        except Exception:
+            pass
+        return {"success": False, "error": str(exc)}
+    finally:
+        if db is not None:
+            db.close()
 
 
 # ── Retention cleanup ─────────────────────────────────────────────────────────
@@ -365,7 +658,7 @@ def send_test_alert_email(self) -> dict:
             return {"success": False, "error": "no recipient configured"}
         now = datetime.now(timezone.utc).isoformat()
         body = (
-            "<p>This is a test alert from Ipsolis.</p>"
+            "<p>This is a test alert from ip·Solis.</p>"
             f"<p><strong>Time (UTC):</strong> {now}</p>"
             "<p>If you received this email, health-alert delivery is working.</p>"
         )

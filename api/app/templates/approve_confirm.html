@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Approve request – {{ app_title }}</title>
+  {% include "_partials/theme_head.html" %}
+</head>
+<body class="bg-surface-raised text-body min-h-screen">
+  <div class="max-w-xl mx-auto px-4 py-8 sm:py-12">
+    <header class="mb-6 flex items-center gap-3">
+      {% if app_logo %}
+      <img src="/portal/logo" alt="" style="max-height: 32px; max-width: 120px;">
+      {% endif %}
+      <h1 class="text-base font-semibold text-heading">{{ app_title }} — Approval request</h1>
+    </header>
+
+    <div class="bg-surface rounded-lg border border-token-border p-5 sm:p-6">
+      <p class="text-sm text-muted mb-4">
+        Hi <span class="text-body font-medium">{{ approval.approver_name }}</span>, the request below is waiting for your decision.
+      </p>
+
+      <dl class="grid grid-cols-1 sm:grid-cols-3 gap-y-2 gap-x-4 text-sm border-y border-token-border py-4 mb-4">
+        <dt class="text-xs font-medium text-muted/70 uppercase tracking-wide sm:col-span-1">Asset</dt>
+        <dd class="text-body sm:col-span-2">{{ asset_type.name if asset_type else "(unknown)" }}</dd>
+
+        <dt class="text-xs font-medium text-muted/70 uppercase tracking-wide sm:col-span-1">Requester</dt>
+        <dd class="text-body sm:col-span-2">{{ order.user_name }} &lt;{{ order.user_email }}&gt;</dd>
+
+        {% if order.requested_from %}
+        <dt class="text-xs font-medium text-muted/70 uppercase tracking-wide sm:col-span-1">From</dt>
+        <dd class="text-body sm:col-span-2">{{ order.requested_from.strftime("%Y-%m-%d") }}</dd>
+        {% endif %}
+        {% if order.requested_until %}
+        <dt class="text-xs font-medium text-muted/70 uppercase tracking-wide sm:col-span-1">Until</dt>
+        <dd class="text-body sm:col-span-2">{{ order.requested_until.strftime("%Y-%m-%d") }}</dd>
+        {% endif %}
+
+        <dt class="text-xs font-medium text-muted/70 uppercase tracking-wide sm:col-span-1">As</dt>
+        <dd class="text-body sm:col-span-2 capitalize">
+          {% if approval.approver_type == 'manager' %}Manager{% else %}Application owner{% endif %}
+        </dd>
+      </dl>
+
+      <form method="post" action="/approve/{{ token }}" class="space-y-4">
+        <div>
+          <label for="comment" class="block text-xs font-medium text-muted mb-1">Comment <span class="text-muted/60">(optional, shown to the requester if you decline)</span></label>
+          <textarea id="comment" name="comment" rows="3"
+                    class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder="Reason / context"></textarea>
+        </div>
+
+        <div class="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2">
+          <button type="submit" name="decision" value="reject"
+                  class="px-4 py-2 rounded border border-token-border text-sm font-medium text-body hover:bg-surface-raised">
+            Decline
+          </button>
+          <button type="submit" name="decision" value="approve"
+                  class="px-5 py-2 rounded bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">
+            Approve
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <p class="text-xs text-muted/70 mt-4 text-center">
+      This link is unique to you and expires after 14 days. If you didn't expect this request, you may safely ignore it.
+    </p>
+  </div>
+</body>
+</html>

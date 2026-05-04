@@ -14,8 +14,8 @@ import os
 import subprocess
 import tempfile
 
-import psycopg2
-import psycopg2.extras
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
 from tasks import app
 
@@ -112,16 +112,31 @@ catch {
 
 
 def _load_sccm_config() -> dict:
+    """Read all ``sccm.*`` rows; resolve ``sccm.password`` through the
+    secret backend so ``vault://`` / ``conjur://`` / etc. references
+    resolve before the value is exported to the pwsh probe via env."""
+    from tasks.modules.secrets import resolve_secret_value
+
     db_url = os.environ.get("DATABASE_URL", "")
-    dsn = db_url.split("+")[0] + "://" + db_url.split("://", 1)[1] if "+" in db_url else db_url
-    conn = psycopg2.connect(dsn)
-    try:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT key, value FROM app_config WHERE key LIKE 'sccm.%%'")
-        rows = cur.fetchall()
-    finally:
-        conn.close()
-    return {r["key"].split(".", 1)[1]: (r["value"] or "") for r in rows}
+    # Strip the asyncpg dialect (worker uses sync psycopg2 driver).
+    sync_url = db_url.replace("+asyncpg", "+psycopg2") if "+asyncpg" in db_url else db_url
+    engine = create_engine(sync_url, pool_pre_ping=True)
+    Session = sessionmaker(bind=engine)
+    with Session() as db:
+        rows = db.execute(
+            text("SELECT key, value FROM app_config WHERE key LIKE 'sccm.%'")
+        ).fetchall()
+        cfg = {r[0].split(".", 1)[1]: (r[1] or "") for r in rows}
+        # Only the password field is is_secret=true; routing it through
+        # the resolver is enough to support reference-shaped values.
+        # Other keys (base_url, username, realm, kdc, verify_tls) are
+        # plain strings and pass through unchanged either way, but we
+        # route password explicitly so a future refactor (e.g. adding
+        # a kerberos keytab as a separate secret) is one line.
+        if cfg.get("password"):
+            cfg["password"] = resolve_secret_value(db, cfg["password"])
+    engine.dispose()
+    return cfg
 
 
 @app.task(name="tasks.workflows.sccm_probe.probe")
@@ -131,7 +146,7 @@ def probe() -> dict:
 
     from tasks.utils.license import is_feature_enabled
     if not is_feature_enabled("sccm_integration"):
-        return {"ok": False, "message": "SCCM Integration requires an Ipsolis Enterprise license."}
+        return {"ok": False, "message": "SCCM Integration requires an ip·Solis Enterprise license."}
 
     cfg = _load_sccm_config()
 

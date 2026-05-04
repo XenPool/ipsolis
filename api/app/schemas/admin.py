@@ -65,6 +65,9 @@ class AppConfigUpdate(BaseModel):
 class AssetTypeCreate(BaseModel):
     name: str
     description: str | None = None
+    help_text: str | None = None
+    is_active: bool = True
+    show_on_dashboard: bool = False
     category: AssetCategory = AssetCategory.PLATFORM_ACCESS
     config: list[dict[str, Any]] | None = None
     assignment_model: str = "assigned_personal"
@@ -80,23 +83,28 @@ class AssetTypeCreate(BaseModel):
     personal_provisioning_strategy: str | None = None
     naming_pattern: str | None = None
     max_per_user: int = 1
+    monthly_cost: float | None = None
+    currency: str | None = None
+    cost_center: str | None = None
     automation_strategy: str = "runbook_only"
     composite_steps: list[dict[str, Any]] | None = None
     rds_gateway_url: str | None = None
     requires_manager_approval: bool = False
     requires_owner_approval: bool = False
     approval_owners: list[dict[str, Any]] | None = None
+    approval_rules: list[dict[str, Any]] | None = None
+    min_approvals_required: int | None = None
     requires_approval_on_modify: bool = False
     eligible_requestors_dn: str | None = None
     logo: str | None = None
-    # Constraint validation: IDs of existing runbooks (not persisted, validation-time only)
-    runbook_provision_id: int | None = None
-    runbook_revoke_id: int | None = None
 
 
 class AssetTypeUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
+    help_text: str | None = None
+    is_active: bool | None = None
+    show_on_dashboard: bool | None = None
     category: AssetCategory | None = None
     config: list[dict[str, Any]] | None = None
     assignment_model: str | None = None
@@ -112,18 +120,20 @@ class AssetTypeUpdate(BaseModel):
     personal_provisioning_strategy: str | None = None
     naming_pattern: str | None = None
     max_per_user: int | None = None
+    monthly_cost: float | None = None
+    currency: str | None = None
+    cost_center: str | None = None
     automation_strategy: str | None = None
     composite_steps: list[dict[str, Any]] | None = None
     rds_gateway_url: str | None = None
     requires_manager_approval: bool | None = None
     requires_owner_approval: bool | None = None
     approval_owners: list[dict[str, Any]] | None = None
+    approval_rules: list[dict[str, Any]] | None = None
+    min_approvals_required: int | None = None
     requires_approval_on_modify: bool | None = None
     eligible_requestors_dn: str | None = None
     logo: str | None = None
-    # Constraint validation: IDs of existing runbooks (not persisted, validation-time only)
-    runbook_provision_id: int | None = None
-    runbook_revoke_id: int | None = None
 
 
 # ── Asset-Pool ─────────────────────────────────────────────────────────────────
@@ -138,7 +148,6 @@ class AssetPoolCreate(BaseModel):
 class AssetBulkItem(BaseModel):
     name: str
     asset_type_id: int
-    ip_address: str | None = None
     notes: str | None = None
 
 

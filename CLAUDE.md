@@ -1,4 +1,4 @@
-# Ipsolis – Claude Code Context
+# ip·Solis – Claude Code Context
 
 ## Task Backlog
 Open and completed tasks: see [`TASKS.md`](TASKS.md)
@@ -55,19 +55,37 @@ configured at runtime via Admin UI → Settings (`app_config` table), not via `.
 
 ## Development Notes
 
-### PowerShell Scripts
-Scripts live in `scripts/<platform>/` and must:
+### Scripts + Runbooks — DB is the single source of truth
+At runtime, script modules and standalone runbooks are read from the DB
+(`script_modules` + `standalone_runbooks` + `standalone_runbook_steps`). The
+`scripts/` folder is **seed material only** — disk files are used to (a) seed
+fresh deployments via migration 0046, and (b) track changes in git for code
+review. Disk files are NOT read at runtime.
+
+**On-disk layout:**
+- `scripts/modules/<category>/<Name>.<ext>` — one file per `script_modules` row.
+  Category is derived from the DB name prefix (`"SCCM - Delete Device"` → `sccm/`).
+  First comment lines carry round-trip metadata: `# NAME: <exact DB name>` and `# DESC: <...>`.
+- `scripts/runbooks/<Name>.json` — one file per `standalone_runbooks` row, with steps
+  referenced by **script name** (not id) so the seed works regardless of fresh-install ids.
+
+**Export (DB → disk):** Admin UI → Modules → **Export to disk** button, or
+`POST /admin/seed/export`. Overwrites the current `scripts/modules/` and
+`scripts/runbooks/` contents with a snapshot of the DB. Commit the result to
+git to ship it as updated seed data.
+
+**Seeding (disk → DB):** migration `0046_seed_example_scripts_and_runbooks` runs
+on every `alembic upgrade head`. Inserts rows only when the name is not already
+present — never overwrites user edits.
+
+**PowerShell script requirements:**
 - Return JSON on stdout
 - Use pure ASCII (no Unicode characters)
 - Not rely on interactive prompts (SSL cert prompts auto-answered via stdin)
 
-Active script directories:
-- `scripts/ad/` — Active Directory (computer accounts, permission groups)
-- `scripts/sccm/` — SCCM task sequence triggers, import/delete device, TS status
-- `scripts/sql/` — SQL helpers (e.g. recycle-VM queries)
-- `scripts/test/` — Sandbox / smoke-test scripts
-- `scripts/vmware/` — VMware vSphere operations (PowerCLI)
-- `scripts/xenserver/` — XCP-ng / XenServer VM operations
+**Developer tools** (not runtime modules) live under `tools/`:
+- `tools/license/` — Ed25519 keypair generator + license signer for Enterprise .lic files
+- `tools/validate_locales.py` — portal i18n JSON key-tree validator
 
 ### Database Migrations
 
@@ -86,7 +104,7 @@ Enum types (e.g. `order_action`, `asset_status`) already exist in the DB — use
 `op.execute(raw SQL)` instead of `op.create_table()` with `sa.Enum` to avoid
 `DuplicateObject` errors.
 
-Current head: `0044_email_templates_use_app_title.py`.
+Current head: `0093_seed_api_token_purge.py`.
 
 ### Template changes require image rebuild
 `api/app/templates/` and `api/app/routes/` are baked into the `xp_api` image, not
@@ -150,12 +168,10 @@ runtime; no build step needed.
 | `worker/tasks/modules/` | Atomic modules (pool_manager, vsphere, sccm, active_directory, notifications, target_executor, maintenance, config_reader) |
 | `worker/tasks/modules/step_helper.py` | Shared step tracking |
 | `worker/tasks/modules/registry.py` | Module metadata (names, params, param_schema) |
-| `scripts/ad/` | Active Directory PowerShell scripts |
-| `scripts/sccm/` | SCCM PowerShell scripts |
-| `scripts/sql/` | SQL helper scripts |
-| `scripts/test/` | Test / sandbox scripts |
-| `scripts/vmware/` | VMware vSphere PowerShell scripts |
-| `scripts/xenserver/` | XCP-ng / XenServer PowerShell scripts |
+| `scripts/modules/<cat>/` | Seed copies of script_modules rows (ad, sccm, sql, test, vmware, xenserver) |
+| `scripts/runbooks/` | Seed copies of standalone_runbooks as JSON |
+| `tools/license/` | Dev tooling: Ed25519 keypair generator + license signer |
+| `tools/validate_locales.py` | Portal i18n JSON validator |
 | `locales/` | Portal i18n JSON (de/en/es/fr/it) |
 | `nginx/nginx.conf` | Reverse-proxy + TLS config (production overlay) |
 | `docs/DEPLOYMENT.md` | Production deployment guide |
@@ -186,20 +202,19 @@ runtime; no build step needed.
 - `Free` — available for assignment
 - `reserved` — held by a scheduled order (not yet active)
 - `busy` — actively assigned to a user
-- `reclaiming` — revoke in progress
 - `Reinstall` — awaiting reinstall runbook after `return_to_pool_reinstall`
 - `Reinstalling` — reinstall runbook currently running
 - `Failed` — reinstall failed, manual intervention required
 - `maintenance` — taken offline by operator
 
-Dashboard tiles (Admin UI `/ui/`) count Free / In use / Reclaiming / Reinstall / Maintenance / Total.
+Dashboard tiles (Admin UI `/ui/`) count Free / In use / Failed / Reinstall / Maintenance / Total.
 
 ## External System Integrations
 
 - **XenServer/XCP-ng**: PowerShell scripts via `subprocess` (`pwsh` in worker container);
   SSL cert bypass injected globally (self-signed cert support), interactive prompts
   auto-answered via stdin
-- **VMware vSphere**: same mechanism as XenServer (PowerCLI-based scripts under `scripts/vmware/`)
+- **VMware vSphere**: same mechanism as XenServer (PowerCLI-based scripts stored in `script_modules` under the `vmware` category)
 - **Active Directory**: `msldap` (NTLM signing / Kerberos) for user validation, manager
   lookup, group membership. Deeper AD integration (e.g. Quest Active Roles) via
   PS modules + runbooks
@@ -237,9 +252,9 @@ Dashboard tiles (Admin UI `/ui/`) count Free / In use / Reclaiming / Reinstall /
 
 - **Audit logging**: `aaudit()` (async, API) · `waudit()` (sync, Worker) — see `worker/tasks/modules/audit_helper.py`
 - **Step tracking**: `worker/tasks/modules/step_helper.py`
-- **Admin auth**: `require_admin_key` accepts either `X-Admin-Key: <ADMIN_API_KEY>` header or an authenticated admin session cookie (dev bypass when `ENVIRONMENT=development`)
-- **Portal auth**: requires Entra ID config (`entra.mode = enabled`); portal returns HTTP 503 when Entra is not configured. Dev bypass available via `portal_dev_bypass` flag
+- **Admin auth**: `require_admin_key` accepts either `X-Admin-Key: <ADMIN_API_KEY>` header or an authenticated admin session cookie
+- **Portal auth**: controlled by `entra.mode` (Admin → Settings). `disabled` = portal open with shared anonymous identity; `entra_only` = Entra ID login required; `entra_with_onprem` = Entra ID + on-prem LDAP check
 - **`dynamic_runner`, `standalone_runner`, `ps_module_installer`, `sccm_probe`, `maintenance`** must be listed in `include=[]` in `worker/tasks/__init__.py` or Beat tasks won't register
 - **Worker queues**: `default` (maintenance), `provision` (orders + standalone + installs), `reclaim` (expiry checks), `notifications` (email)
 - **Timezone**: Celery configured for `Europe/Berlin`; DB timestamps stored in UTC
-- **Mock mode**: `ENVIRONMENT=development` in `.env` mocks all external system calls (AD, SMTP, vSphere, SCCM) — useful for local dev without target systems
+- **No mock mode**: all external systems (AD, SMTP, vSphere, XenServer, SCCM, Entra ID) must point at real test environments — there is no built-in mocking

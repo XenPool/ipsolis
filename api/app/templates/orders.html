@@ -47,7 +47,7 @@
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Asset</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Action</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Status</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Steps</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" title="Completed steps / Total steps">Steps</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Valid until</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Created</th>
         <th class="px-4 py-3"></th>
@@ -79,7 +79,7 @@
         <td class="px-4 py-3">
           <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold {{ status_colors.get(order.status.value, 'bg-slate-100 dark:bg-slate-700 text-body') }}">
             <span class="w-1.5 h-1.5 rounded-full bg-current opacity-70"></span>
-            {{ order.status.value }}
+            {{ order.status.value | replace('_', ' ') | title }}
           </span>
         </td>
         <td class="px-4 py-3 text-muted text-xs">

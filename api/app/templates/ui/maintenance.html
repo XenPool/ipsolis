@@ -18,17 +18,17 @@
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-700">
       Health
     </button>
-    {% if is_enterprise %}
     <button onclick="showTab('backups')" id="tab-btn-backups"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Backups
     </button>
-    {% else %}
-    {{ tab_locked("Backups", "backups") }}
-    {% endif %}
     <button onclick="showTab('queue')" id="tab-btn-queue"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Queue
+    </button>
+    <button onclick="showTab('schedule')" id="tab-btn-schedule"
+            class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
+      Recurring Tasks
     </button>
     {% if is_enterprise %}
     <button onclick="showTab('retention')" id="tab-btn-retention"
@@ -38,6 +38,10 @@
     {% else %}
     {{ tab_locked("Retention", "retention") }}
     {% endif %}
+    <button onclick="showTab('seed')" id="tab-btn-seed"
+            class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
+      Seed
+    </button>
   </nav>
 </div>
 
@@ -60,8 +64,7 @@
     <div class="text-sm text-muted/70">Loading…</div>
   </div>
 
-  {% if is_enterprise %}
-  <!-- Alert settings (Enterprise: advanced_maintenance) -->
+  <!-- Alert settings — community-tier as of 2026-04-30 (was advanced_maintenance) -->
   <div class="bg-surface rounded-lg border border-token-border p-5 mt-6 max-w-3xl">
     <div class="flex items-center justify-between mb-3">
       <h3 class="text-sm font-semibold text-body">Email alerts on probe failures</h3>
@@ -97,17 +100,10 @@
       </button>
     </div>
   </div>
-  {% else %}
-  {{ card_teaser(
-      "Health Alerts via Email",
-      "Get notified the moment a service (PostgreSQL, Redis, SMTP, Entra ID, SCCM) flips OK→FAILED — with a configurable cooldown window so you don't get spammed during outages."
-  ) }}
-  {% endif %}
 </div>
 
 <!-- ── Tab: Backups ─────────────────────────────────────────────────────── -->
 <div id="tab-backups" class="hidden">
-{% if is_enterprise %}
   <!-- Schedule panel -->
   <div class="bg-surface rounded-lg border border-token-border p-5 mb-6 max-w-3xl">
     <div class="flex items-center justify-between mb-3">
@@ -206,10 +202,54 @@
               class="px-3 py-1.5 text-xs font-medium rounded bg-blue-600 text-white hover:bg-blue-700">
         Create backup now
       </button>
+      <button onclick="openUploadModal()"
+              class="px-3 py-1.5 text-xs font-medium rounded border border-token-border text-body hover:bg-surface-raised"
+              title="Register a .sql.gz dump previously downloaded from another instance — useful for migrations between dev / prelive / prod.">
+        Upload backup…
+      </button>
       <button onclick="loadBackups()"
               class="px-3 py-1.5 text-xs font-medium rounded border border-token-border text-body hover:bg-surface-raised">
         Refresh
       </button>
+    </div>
+  </div>
+
+  <!-- Upload backup modal -->
+  <div id="upload-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div class="bg-surface rounded-lg border border-token-border shadow-xl w-full max-w-lg p-6">
+      <h2 class="text-base font-semibold text-heading mb-1">Upload backup</h2>
+      <p class="text-xs text-muted/70 mt-1 leading-snug">
+        Register a <code>.sql.gz</code> dump that was previously downloaded
+        from another instance. After upload it appears in the list below
+        with status <em>success</em> and can be restored like any other
+        backup. Up to 2 GB.
+      </p>
+      <div class="mt-4 space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">File (.sql.gz)</label>
+          <input id="upload-file" type="file" accept=".gz,application/gzip,application/x-gzip"
+                 class="block w-full text-sm text-body file:px-3 file:py-1.5 file:mr-3 file:text-xs file:font-medium file:rounded file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700">
+          <p id="upload-file-meta" class="text-[11px] text-muted/60 mt-1"></p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Note (optional)</label>
+          <input id="upload-note" type="text" autocomplete="off"
+                 placeholder="e.g. snapshot from production 2026-04-28"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2">
+        </div>
+      </div>
+      <p id="upload-error" class="hidden text-xs text-red-600 mt-2"></p>
+      <p id="upload-progress" class="hidden text-xs text-muted/70 mt-2"></p>
+      <div class="mt-5 flex justify-end gap-2">
+        <button onclick="closeUploadModal()"
+                class="px-3 py-2 text-sm rounded border border-token-border bg-surface-raised text-body hover:bg-surface">
+          Cancel
+        </button>
+        <button id="upload-submit-btn" onclick="confirmUpload()"
+                class="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60">
+          Upload
+        </button>
+      </div>
     </div>
   </div>
   <div class="bg-surface rounded-lg border border-token-border overflow-hidden">
@@ -232,15 +272,43 @@
     </table>
   </div>
   <p class="text-xs text-muted/70 mt-3">
-    Backups are stored on the host under <code>./backups/</code>. Restore is not yet
-    available via the UI — use <code>psql</code> or <code>pg_restore</code> manually.
+    Backups are stored on the host under <code>./backups/</code>. Click
+    <strong>Restore</strong> on any successful backup to roll the database
+    back — a pre-restore safety backup is taken automatically. If the dump
+    is from an older schema version, run
+    <code>docker compose exec -T api alembic upgrade head</code> after the
+    restore completes.
   </p>
-{% else %}
-{{ teaser_pane(
-    "Scheduled Database Backups",
-    "Automate nightly PostgreSQL backups with a configurable cron schedule, per-backup retention policy, and one-click manual create / download / delete from the Admin UI. Includes alerting on failure."
-) }}
-{% endif %}
+
+  <!-- Restore confirmation modal -->
+  <div id="restore-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div class="bg-surface rounded-lg border border-token-border shadow-xl w-full max-w-lg p-6">
+      <h2 class="text-base font-semibold text-heading mb-1">Restore from backup</h2>
+      <div class="rounded border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300 px-3 py-2 text-xs leading-snug mt-3">
+        <strong>This wipes the current database.</strong> A pre-restore
+        safety backup is taken automatically so you can roll back if the
+        result isn't what you want.
+      </div>
+      <p class="text-xs text-muted/70 mt-3">
+        Type the backup's filename below to confirm:
+      </p>
+      <div class="mt-1 font-mono text-xs text-body bg-surface-raised rounded px-2 py-1 select-all" id="restore-filename"></div>
+      <input id="restore-confirm-input" type="text" autocomplete="off"
+             placeholder="Type the filename above"
+             class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm font-mono px-3 py-2 mt-2 focus:outline-none focus:ring-1 focus:ring-red-500">
+      <p id="restore-error" class="hidden text-xs text-red-600 mt-1"></p>
+      <div class="mt-5 flex justify-end gap-2">
+        <button onclick="closeRestoreModal()"
+                class="px-3 py-2 text-sm rounded border border-token-border bg-surface-raised text-body hover:bg-surface">
+          Cancel
+        </button>
+        <button id="restore-submit-btn" onclick="confirmRestore()"
+                class="px-3 py-2 text-sm rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-60">
+          Restore
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ── Tab: Queue ───────────────────────────────────────────────────────── -->
@@ -266,6 +334,55 @@
       </div>
     </div>
   </div>
+</div>
+
+<!-- ── Tab: Recurring Tasks ─────────────────────────────────────────────── -->
+<div id="tab-schedule" class="hidden">
+  <div class="flex items-start justify-between mb-3 gap-4">
+    <div>
+      <h2 class="text-sm font-semibold text-body mb-1">Recurring background tasks</h2>
+      <p class="text-xs text-muted/70 leading-snug max-w-3xl">
+        Read-only view of every Beat-scheduled task in this install — what it does, how
+        often it runs, which queue it lands on, and which <code class="font-mono">app_config</code>
+        knobs influence it. The schedule itself is baked into the worker image; rescheduling
+        requires editing <code class="font-mono">worker/tasks/__init__.py</code> and rebuilding.
+        The <em>Configuration knobs</em> column is where most operational tuning lives — for
+        example, <em>approval reminders</em> respects
+        <code class="font-mono">approval.reminder_after_hours</code> + <code class="font-mono">max_reminders</code>
+        without changing the hourly trigger.
+      </p>
+    </div>
+    <button onclick="loadBeatSchedule()"
+            class="text-xs px-3 py-1.5 rounded border border-token-border bg-surface hover:bg-surface-raised text-body whitespace-nowrap">
+      Refresh
+    </button>
+  </div>
+
+  <div class="bg-surface rounded-lg border border-token-border overflow-hidden">
+    <table class="min-w-full text-sm">
+      <thead class="bg-surface-raised">
+        <tr>
+          <th class="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted">Task</th>
+          <th class="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted">Cadence</th>
+          <th class="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted">Queue</th>
+          <th class="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted">What it does</th>
+          <th class="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted">Configuration knobs</th>
+        </tr>
+      </thead>
+      <tbody id="beat-schedule-rows" class="divide-y divide-token-border">
+        <tr><td colspan="5" class="px-4 py-6 text-center text-muted/70 text-xs">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-[11px] text-muted/60 mt-3 leading-snug max-w-3xl">
+    All times are in <strong>Europe/Berlin</strong> — set in the worker's Celery config.
+    Tasks marked <span class="text-[9px] tracking-widest uppercase bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-semibold align-middle">ENT</span>
+    are no-ops on community installs (the underlying feature is gated).
+    Need a different cadence? See <em>Tuning Beat schedules</em> in
+    <a href="/docs" class="text-blue-600 hover:underline">DEPLOYMENT.md §12</a> — or
+    open a feature request for an editable scheduler if your use case is recurring.
+  </p>
 </div>
 
 <!-- ── Tab: Retention ───────────────────────────────────────────────────── -->
@@ -336,10 +453,31 @@
   <div id="cleanup-result" class="mt-4 max-w-3xl"></div>
 {% else %}
 {{ teaser_pane(
-    "Retention &amp; Cleanup",
+    "Retention & Cleanup",
     "Keep the database lean with configurable retention windows for orders, audit log, standalone-runbook runs, and backup files. Dry-run preview before execution; scheduled cleanup built in."
 ) }}
 {% endif %}
+</div>
+
+<!-- ── Tab: Seed ────────────────────────────────────────────────────────── -->
+<div id="tab-seed" class="hidden">
+  <div class="bg-surface rounded-lg border border-token-border p-5 max-w-3xl">
+    <h2 class="text-sm font-semibold text-body mb-1">Export scripts &amp; runbooks to disk</h2>
+    <p class="text-xs text-muted mb-4">
+      At runtime the database is the source of truth for script modules and
+      standalone runbooks. Use this to snapshot the current DB state to
+      <code class="px-1 py-0.5 bg-surface-raised rounded text-[11px]">scripts/modules/</code> and
+      <code class="px-1 py-0.5 bg-surface-raised rounded text-[11px]">scripts/runbooks/</code> on the
+      host, then <code class="px-1 py-0.5 bg-surface-raised rounded text-[11px]">git commit</code>
+      the result. Fresh deployments import what has been committed via migration
+      <code class="px-1 py-0.5 bg-surface-raised rounded text-[11px]">0046</code>.
+    </p>
+    <button type="button" onclick="exportSeed()" id="seed-export-btn"
+            class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+      Export to disk
+    </button>
+    <div id="seed-export-result" class="mt-4 hidden px-4 py-3 rounded text-sm font-medium"></div>
+  </div>
 </div>
 
 <script>
@@ -347,7 +485,7 @@
   var refreshTimer = null;
 
   function showTab(name) {
-    ['health', 'backups', 'queue', 'retention'].forEach(function(n) {
+    ['health', 'backups', 'queue', 'schedule', 'retention', 'seed'].forEach(function(n) {
       var panel = document.getElementById('tab-' + n);
       var btn = document.getElementById('tab-btn-' + n);
       if (!panel || !btn) return;
@@ -364,7 +502,79 @@
     if (name === 'health')    { loadHealth(); loadAlerts(); }
     if (name === 'backups')   { loadBackups(); loadSchedule(); }
     if (name === 'queue')     loadQueue();
+    if (name === 'schedule')  loadBeatSchedule();
     if (name === 'retention') loadRetention();
+  }
+
+  // ── Recurring Tasks (Beat schedule) — read-only catalog ────────────────
+  var _beatLoaded = false;
+  async function loadBeatSchedule() {
+    if (_beatLoaded) return;   // catalog is static; one fetch per page load is enough
+    var tbody = document.getElementById('beat-schedule-rows');
+    try {
+      var resp = await fetch('/admin/maintenance/beat-schedule');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      var rows = await resp.json();
+      if (!Array.isArray(rows) || rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-muted/70 text-xs">No scheduled tasks registered.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(_renderBeatRow).join('');
+      _beatLoaded = true;
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-red-600 text-xs">Failed to load: ' + _escBeat(e.message || String(e)) + '</td></tr>';
+    }
+  }
+
+  // Set at render time so the renderer knows whether to dim ENT-locked rows.
+  var _isEnterprise = {{ 'true' if is_enterprise else 'false' }};
+
+  function _renderBeatRow(r) {
+    var queueClass = {
+      provision:     'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+      notifications: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
+      reclaim:       'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+      'default':     'bg-surface-raised text-muted',
+    }[r.queue] || 'bg-surface-raised text-muted';
+    // ENT-locked: task is gated behind an Enterprise feature. The ENT badge always
+    // renders for these rows so operators see *why* the task is gated. On community
+    // installs we additionally dim the row and append a "No-op" tag so it's clear
+    // the task fires but does nothing each tick.
+    var entLocked = !r.community;
+    var entBadge = '';
+    if (entLocked) {
+      entBadge = ' <span class="text-[9px] tracking-widest uppercase bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-semibold align-middle ml-1">ENT</span>';
+      if (!_isEnterprise) {
+        entBadge += ' <span class="text-[10px] italic text-muted/70 align-middle ml-2">No-op — feature locked</span>';
+      }
+    }
+    var rowClass = (entLocked && !_isEnterprise)
+      ? 'opacity-60 hover:bg-surface-raised/20'
+      : 'hover:bg-surface-raised/30';
+    var configKnobs = (r.config_keys || []).length === 0
+      ? '<span class="text-[11px] text-muted/50 italic">no operator knobs</span>'
+      : (r.config_keys || []).map(function(k) {
+          return '<code class="font-mono text-[10px] bg-surface-raised px-1 py-0.5 rounded mr-0.5 inline-block">' + _escBeat(k) + '</code>';
+        }).join(' ');
+    return ''
+      + '<tr class="' + rowClass + '">'
+      +   '<td class="px-4 py-3 align-top">'
+      +     '<div class="font-medium text-body text-sm">' + _escBeat(r.name) + entBadge + '</div>'
+      +     '<div class="text-[10px] text-muted/60 font-mono mt-0.5 break-all">' + _escBeat(r.task) + '</div>'
+      +   '</td>'
+      +   '<td class="px-4 py-3 align-top whitespace-nowrap text-xs text-body">' + _escBeat(r.cadence) + '</td>'
+      +   '<td class="px-4 py-3 align-top">'
+      +     '<span class="inline-block px-2 py-0.5 rounded text-[11px] font-medium ' + queueClass + '">' + _escBeat(r.queue) + '</span>'
+      +   '</td>'
+      +   '<td class="px-4 py-3 align-top text-xs text-muted leading-snug max-w-md">' + _escBeat(r.description) + '</td>'
+      +   '<td class="px-4 py-3 align-top max-w-xs">' + configKnobs + '</td>'
+      + '</tr>';
+  }
+
+  function _escBeat(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   function banner(msg, kind) {
@@ -445,13 +655,35 @@
       }
       var html = '';
       rows.forEach(function(b) {
-        var statusPill = b.status === 'success' ? 'bg-green-100 text-green-700'
-                      : b.status === 'running' ? 'bg-blue-100 text-blue-700'
-                      : b.status === 'failed'  ? 'bg-red-100 text-red-700'
+        // Wider palette to cover restore lifecycle states alongside the
+        // existing backup ones — same visual grammar so a row's status
+        // is readable at a glance whether it's mid-backup or mid-restore.
+        var statusPill = b.status === 'success'         ? 'bg-green-100 text-green-700'
+                      : b.status === 'running'          ? 'bg-blue-100 text-blue-700'
+                      : b.status === 'restoring'        ? 'bg-blue-100 text-blue-700'
+                      : b.status === 'restored'         ? 'bg-green-100 text-green-700'
+                      : b.status === 'restore_failed'   ? 'bg-red-100 text-red-700'
+                      : b.status === 'failed'           ? 'bg-red-100 text-red-700'
                       : 'bg-surface-raised text-muted';
-        var dl = b.status === 'success'
+        var dl = b.status === 'success' || b.status === 'restored'
           ? '<a href="/admin/maintenance/backups/' + b.id + '/download" class="text-xs text-blue-600 hover:underline">Download</a>'
           : '<span class="text-xs text-muted/50">–</span>';
+        // Restore button only for completed backups — refusing for any
+        // other status mirrors the api 409. ``restored`` rows can be
+        // restored *again* (a tenant might want to bounce back twice),
+        // ``restoring`` rows are mid-flight, ``failed`` ones are no
+        // good source.
+        var canRestore = (b.status === 'success' || b.status === 'restored');
+        // ``JSON.stringify`` emits literal double quotes around the
+        // filename, which collide with the surrounding onclick="..."
+        // attribute quotes and the resulting attribute is unparseable.
+        // ``&quot;`` is decoded by the browser back to ``"`` before the
+        // attribute value reaches JS, so the JSON parses correctly.
+        var fnameAttr = JSON.stringify(b.filename).replace(/"/g, '&quot;');
+        var restore = canRestore
+          ? '<button onclick="openRestoreModal(' + b.id + ', ' + fnameAttr + ')" '
+            + 'class="ml-3 text-xs text-amber-600 hover:underline">Restore</button>'
+          : '';
         var err = b.error
           ? '<div class="text-[10px] text-red-500 mt-1 break-all">' + b.error + '</div>'
           : '';
@@ -465,6 +697,7 @@
               + '<td class="px-4 py-3 text-muted text-xs">' + (b.note || '') + '</td>'
               + '<td class="px-4 py-3 text-right whitespace-nowrap">'
               + '  ' + dl
+              + restore
               + '  <button onclick="deleteBackup(' + b.id + ')" class="ml-3 text-xs text-red-600 hover:underline">Delete</button>'
               + '</td>'
               + '</tr>';
@@ -500,6 +733,161 @@
       loadBackups();
     } else {
       banner('Delete failed.', 'error');
+    }
+  }
+
+  // ── Restore (typed-filename confirmation modal) ───────────────────────
+  // The api enforces the same filename match server-side — the modal is
+  // a UX layer to prevent accidental clicks, not a security boundary.
+  var _restoreBackupId = null;
+  function openRestoreModal(id, filename) {
+    _restoreBackupId = id;
+    document.getElementById('restore-filename').textContent = filename;
+    document.getElementById('restore-confirm-input').value = '';
+    document.getElementById('restore-error').classList.add('hidden');
+    document.getElementById('restore-submit-btn').disabled = false;
+    document.getElementById('restore-modal').classList.remove('hidden');
+    setTimeout(function () {
+      document.getElementById('restore-confirm-input').focus();
+    }, 50);
+  }
+  function closeRestoreModal() {
+    _restoreBackupId = null;
+    document.getElementById('restore-modal').classList.add('hidden');
+  }
+  async function confirmRestore() {
+    if (_restoreBackupId === null) return;
+    var typed = document.getElementById('restore-confirm-input').value;
+    var expected = document.getElementById('restore-filename').textContent;
+    var errEl = document.getElementById('restore-error');
+    if (typed !== expected) {
+      errEl.textContent = 'Filename does not match — type it exactly to confirm.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    var btn = document.getElementById('restore-submit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Restoring…';
+    var resp = await fetch('/admin/maintenance/backups/' + _restoreBackupId + '/restore', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({confirm_filename: typed}),
+    });
+    if (resp.ok) {
+      var data = await resp.json();
+      banner(
+        'Restore enqueued. Pre-restore safety backup #' + data.safety_backup_id +
+        ' is being taken; watch the row status flip from "restoring" → "restored".',
+        'ok',
+      );
+      closeRestoreModal();
+      loadBackups();
+      // Re-fetch the list every 4s for ~2 minutes so the operator sees
+      // status flip in near-real-time without manually clicking refresh.
+      var ticks = 0;
+      var poll = setInterval(function () {
+        ticks++;
+        if (ticks > 30) { clearInterval(poll); return; }
+        loadBackups();
+      }, 4000);
+    } else {
+      var msg = 'Restore failed.';
+      try {
+        var j = await resp.json();
+        msg = j.detail || msg;
+      } catch (_) {}
+      errEl.textContent = msg;
+      errEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Restore';
+    }
+  }
+
+  // ── Upload backup (existing dump from another instance) ───────────────
+  // The api streams the body to disk in 1 MiB chunks and validates magic
+  // bytes after the full transfer. Using fetch() here means the browser
+  // shows a generic spinner; XMLHttpRequest would let us wire a progress
+  // bar — worth doing later if customers complain about silent uploads.
+  function openUploadModal() {
+    document.getElementById('upload-file').value = '';
+    document.getElementById('upload-file-meta').textContent = '';
+    document.getElementById('upload-note').value = '';
+    document.getElementById('upload-error').classList.add('hidden');
+    document.getElementById('upload-progress').classList.add('hidden');
+    document.getElementById('upload-submit-btn').disabled = false;
+    document.getElementById('upload-submit-btn').textContent = 'Upload';
+    document.getElementById('upload-modal').classList.remove('hidden');
+  }
+  function closeUploadModal() {
+    document.getElementById('upload-modal').classList.add('hidden');
+  }
+  // Show file size + name as a sanity check before the operator clicks Upload.
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'upload-file') {
+      var f = e.target.files && e.target.files[0];
+      var meta = document.getElementById('upload-file-meta');
+      if (!f) { meta.textContent = ''; return; }
+      var mb = (f.size / (1024 * 1024)).toFixed(1);
+      meta.textContent = f.name + ' — ' + mb + ' MiB';
+    }
+  });
+  async function confirmUpload() {
+    var f = document.getElementById('upload-file').files[0];
+    var errEl = document.getElementById('upload-error');
+    var progEl = document.getElementById('upload-progress');
+    var btn = document.getElementById('upload-submit-btn');
+    errEl.classList.add('hidden');
+    if (!f) {
+      errEl.textContent = 'Pick a .sql.gz file first.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    if (!/\.gz$/i.test(f.name)) {
+      errEl.textContent = 'File must be a .gz / .sql.gz dump.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+
+    var fd = new FormData();
+    fd.append('file', f);
+    var note = document.getElementById('upload-note').value.trim();
+    if (note) fd.append('note', note);
+
+    btn.disabled = true;
+    btn.textContent = 'Uploading…';
+    progEl.textContent = 'Uploading ' + f.name + ' (' + (f.size / (1024 * 1024)).toFixed(1) + ' MiB)…';
+    progEl.classList.remove('hidden');
+
+    try {
+      var resp = await fetch('/admin/maintenance/backups/upload', {
+        method: 'POST',
+        body: fd,
+      });
+      if (resp.ok) {
+        var data = await resp.json();
+        banner('Upload accepted: ' + data.filename + ' (' + (data.size_bytes / (1024 * 1024)).toFixed(1) + ' MiB).', 'ok');
+        closeUploadModal();
+        loadBackups();
+      } else {
+        var msg = 'Upload failed.';
+        try {
+          var j = await resp.json();
+          msg = j.detail || msg;
+        } catch (_) {
+          try { msg = await resp.text(); } catch (__) {}
+        }
+        errEl.textContent = msg;
+        errEl.classList.remove('hidden');
+        btn.disabled = false;
+        btn.textContent = 'Upload';
+        progEl.classList.add('hidden');
+      }
+    } catch (netErr) {
+      errEl.textContent = 'Network error: ' + netErr;
+      errEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Upload';
+      progEl.classList.add('hidden');
     }
   }
 
@@ -876,6 +1264,36 @@
     } else {
       var t = await resp.text();
       banner('Test failed: ' + t, 'error');
+    }
+  }
+
+  // ── Seed tab ───────────────────────────────────────────────────────────
+  async function exportSeed() {
+    var btn = document.getElementById('seed-export-btn');
+    var out = document.getElementById('seed-export-result');
+    btn.disabled = true;
+    btn.textContent = 'Exporting…';
+    out.classList.add('hidden');
+    try {
+      var res = await fetch('/admin/seed/export', {method: 'POST', credentials: 'include'});
+      var body = await res.json().catch(function() { return {}; });
+      if (!res.ok) {
+        out.textContent = 'Export failed: ' + (body.detail || ('HTTP ' + res.status));
+        out.className = 'mt-4 px-4 py-3 rounded text-sm font-medium bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300';
+      } else {
+        out.textContent = 'Exported ' + body.scripts + ' script(s) and ' + body.runbooks +
+          ' runbook(s) to ' + body.modules_dir + ' / ' + body.runbooks_dir +
+          '. Commit the changes in scripts/ to ship them as seed data.';
+        out.className = 'mt-4 px-4 py-3 rounded text-sm font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300';
+      }
+      out.classList.remove('hidden');
+    } catch (e) {
+      out.textContent = 'Export failed: ' + e;
+      out.className = 'mt-4 px-4 py-3 rounded text-sm font-medium bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300';
+      out.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Export to disk';
     }
   }
 

@@ -1,20 +1,29 @@
 {% extends "base.html" %}
 
-{% block title %}Asset Types – {{ app_title }}{% endblock %}
+{% block title %}Asset Definitions – {{ app_title }}{% endblock %}
 
 {% block content %}
+{% set _can_write_asset_types = admin_role_at_least(request, 'admin') %}
 <div class="mb-6 flex items-center justify-between">
-  <h1 class="text-lg font-semibold text-heading">Asset Types</h1>
+  <h1 class="text-lg font-semibold text-heading">Asset Definitions</h1>
+  {% if _can_write_asset_types %}
   <a href="/ui/asset-types/new"
      class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
-    + New Asset Type
+    + New Asset Definition
   </a>
+  {% else %}
+  <span class="text-xs text-muted italic"
+        title="Your role ({{ current_admin_role(request) }}) is read-only here. Ask a superadmin to grant the 'admin' role to make changes.">
+    read-only
+  </span>
+  {% endif %}
 </div>
 
 <div class="bg-surface rounded-lg border border-token-border overflow-hidden">
   <table class="min-w-full divide-y divide-token-border text-sm">
     <thead class="bg-surface-raised">
       <tr>
+        <th class="px-3 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" title="Asset definition ID — used in Certification Campaigns and the API. Click any value to copy.">ID</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Name</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Category</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Assignment Model</th>
@@ -28,9 +37,22 @@
     </thead>
     <tbody class="divide-y divide-token-border">
       {% for t in asset_types %}
-      <tr class="hover:bg-surface-raised" data-type-id="{{ t.id }}">
+      <tr class="hover:bg-surface-raised {% if not t.is_active %}opacity-60{% endif %}" data-type-id="{{ t.id }}">
+        <td class="px-3 py-3 text-xs font-mono">
+          <button type="button" onclick="copyAssetTypeId(this, '{{ t.id }}')"
+                  class="asset-type-id-btn inline-flex items-center px-1.5 py-0.5 rounded border border-token-border bg-surface text-muted hover:bg-surface-raised hover:text-body transition-colors"
+                  title="Copy ID">
+            {{ t.id }}
+          </button>
+        </td>
         <td class="px-4 py-3">
-          <div class="font-medium text-heading">{{ t.name }}</div>
+          <div class="font-medium text-heading flex items-center gap-2">
+            <span>{{ t.name }}</span>
+            {% if not t.is_active %}
+            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-surface-raised text-muted border border-token-border"
+                  title="Hidden from the portal catalog. Existing orders unaffected.">Inactive</span>
+            {% endif %}
+          </div>
           {% if t.description %}
           <div class="text-xs text-muted">{{ t.description }}</div>
           {% endif %}
@@ -99,25 +121,39 @@
           {% if t.config and t.config | length > 0 %}
             {% set remaining = t.config | length - 2 %}
             {% for attr in t.config[:2] %}
-              <span class="inline-block bg-surface-raised rounded px-1.5 py-0.5 mr-1 font-mono">{{ attr.key }}</span>
+              {% set _cls = attr.classification or '' %}
+              {% set _cls_classes = {
+                'pii': 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
+                'phi': 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300',
+                'pci': 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300',
+                'internal': 'bg-surface-raised text-muted',
+              } %}
+              <span class="inline-block bg-surface-raised rounded px-1.5 py-0.5 mr-0.5 font-mono">{{ attr.key }}</span>{% if _cls and _cls != 'public' %}<span class="inline-block {{ _cls_classes.get(_cls, 'bg-surface-raised text-muted') }} rounded px-1 py-0.5 mr-1 text-[9px] uppercase tracking-wider align-top" title="{{ _cls }} classification">{{ _cls }}</span>{% endif %}
             {% endfor %}
             {% if remaining > 0 %}
               <span class="text-muted/50">+{{ remaining }}</span>
             {% endif %}
           {% else %}–{% endif %}
         </td>
-        <td class="px-4 py-3 text-right text-xs">
+        <td class="px-4 py-3 text-right text-xs whitespace-nowrap">
           <a href="/ui/asset-types/{{ t.id }}/edit"
-             class="text-muted hover:text-blue-600 mr-3">Edit</a>
+             class="text-muted hover:text-blue-600 mr-3">{% if _can_write_asset_types %}Edit{% else %}View{% endif %}</a>
+          {% if _can_write_asset_types %}
+          <button onclick="cloneAssetType({{ t.id }}, '{{ t.name | replace("'", "\\'") }}')"
+                  class="text-muted hover:text-blue-600 mr-3"
+                  title="Duplicate this definition (shallow — runbooks not copied)">Clone</button>
           <button onclick="deleteAssetType({{ t.id }}, '{{ t.name | replace("'", "\\'") }}')"
                   class="text-red-400 hover:text-red-600">Delete</button>
+          {% endif %}
         </td>
       </tr>
       {% else %}
       <tr>
         <td colspan="9" class="px-4 py-12 text-center text-muted/70 text-sm">
-          No asset types defined.
+          No asset definitions yet.
+          {% if _can_write_asset_types %}
           <a href="/ui/asset-types/new" class="ml-1 text-blue-600 hover:underline">Create one →</a>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -127,7 +163,7 @@
 
 <script>
 async function deleteAssetType(id, name) {
-  if (!confirm("Really delete asset type '" + name + "'? All associated runbooks will also be deleted.")) return;
+  if (!confirm("Really delete asset definition '" + name + "'? All associated runbooks will also be deleted.")) return;
   const resp = await fetch('/admin/asset-types/' + id, {method: 'DELETE'});
   if (resp.status === 204) {
     var row = document.querySelector('[data-type-id="' + id + '"]');
@@ -136,6 +172,55 @@ async function deleteAssetType(id, name) {
     var err = {};
     try { err = await resp.json(); } catch(e) {}
     alert(err.detail || 'Error deleting (status ' + resp.status + ')');
+  }
+}
+
+async function cloneAssetType(id, name) {
+  if (!confirm("Duplicate '" + name + "'?\n\nA new definition will be created with the same configuration. Runbooks (provision / modify / deprovision) are NOT copied — you'll configure those separately on the new definition.")) return;
+  const resp = await fetch('/admin/asset-types/' + id + '/clone', {method: 'POST'});
+  if (!resp.ok) {
+    var err = {};
+    try { err = await resp.json(); } catch(e) {}
+    alert(err.detail || 'Clone failed (status ' + resp.status + ')');
+    return;
+  }
+  const created = await resp.json();
+  // Drop straight into the edit page so the admin can rename/tweak right away.
+  window.location.href = '/ui/asset-types/' + created.id + '/edit';
+}
+
+// ── Copy asset-definition ID to clipboard ─────────────────────────────
+// Used by the ID column on each row. The value is small (numeric id) and
+// useful for the Certification Campaign scope filter (which expects a
+// comma-separated ID list). On success the button briefly flashes green
+// and shows ✓; on failure it falls back to a manual selectable prompt.
+async function copyAssetTypeId(btn, id) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(String(id));
+    } else {
+      // Fallback for older browsers / non-secure contexts (e.g. plain
+      // http on intranets without HTTPS — Clipboard API only works on
+      // secure origins). Use a hidden textarea + execCommand('copy').
+      var ta = document.createElement('textarea');
+      ta.value = String(id);
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } finally { document.body.removeChild(ta); }
+    }
+    var original = btn.textContent;
+    btn.textContent = '✓ ' + id;
+    btn.classList.add('bg-green-50', 'text-green-700', 'border-green-300',
+                      'dark:bg-green-500/15', 'dark:text-green-300', 'dark:border-green-500/40');
+    setTimeout(function() {
+      btn.textContent = original;
+      btn.classList.remove('bg-green-50', 'text-green-700', 'border-green-300',
+                           'dark:bg-green-500/15', 'dark:text-green-300', 'dark:border-green-500/40');
+    }, 1200);
+  } catch (e) {
+    window.prompt('Copy this ID:', String(id));
   }
 }
 </script>

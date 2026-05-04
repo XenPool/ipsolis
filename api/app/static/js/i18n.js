@@ -29,11 +29,45 @@
     return SUPPORTED.indexOf(nav) !== -1 ? nav : DEFAULT_LANG;
   }
 
+  const LS_CACHE_KEY = function (lang) { return "portal_i18n_cache_" + lang; };
+
+  function readLocaleFromLocalStorage(lang) {
+    try {
+      const raw = localStorage.getItem(LS_CACHE_KEY(lang));
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (_) { return null; }
+  }
+
+  function writeLocaleToLocalStorage(lang, data) {
+    try { localStorage.setItem(LS_CACHE_KEY(lang), JSON.stringify(data)); } catch (_) {}
+  }
+
   async function loadLocale(lang) {
     if (cache[lang]) return cache[lang];
+
+    // Seed cache from localStorage so the first apply() is synchronous and
+    // paint is already-translated. Kick off a background fetch to refresh.
+    const ls = readLocaleFromLocalStorage(lang);
+    if (ls) {
+      cache[lang] = ls;
+      fetch(LOCALE_URL(lang), { cache: "no-cache" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (fresh) {
+          if (!fresh) return;
+          cache[lang] = fresh;
+          writeLocaleToLocalStorage(lang, fresh);
+          // Re-apply so any keys that changed since last fetch are reflected.
+          if (current === lang) apply();
+        })
+        .catch(function () { /* network error — keep using ls copy */ });
+      return cache[lang];
+    }
+
     const res = await fetch(LOCALE_URL(lang), { cache: "no-cache" });
     if (!res.ok) throw new Error("Locale " + lang + " failed: HTTP " + res.status);
     cache[lang] = await res.json();
+    writeLocaleToLocalStorage(lang, cache[lang]);
     return cache[lang];
   }
 
@@ -107,6 +141,10 @@
     });
 
     document.documentElement.setAttribute("lang", current);
+
+    // Reveal translated content: the `i18n-pending` class (set inline in
+    // <head>) hides [data-i18n] elements to prevent a flash of English.
+    document.documentElement.classList.remove("i18n-pending");
   }
 
   function formatDate(value, opts) {
@@ -137,6 +175,9 @@
       }
     } catch (e) {
       console.warn("[i18n] failed to load default locale:", e);
+      // Reveal content anyway — showing English defaults is better than
+      // leaving the page stuck hidden forever.
+      document.documentElement.classList.remove("i18n-pending");
       return;
     }
     apply();

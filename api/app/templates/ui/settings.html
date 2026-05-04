@@ -20,17 +20,21 @@
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Active Directory
     </button>
-    {% if is_enterprise %}
+    {% if is_business %}
     <button onclick="showTab('vars')" id="tab-btn-vars"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Script Variables
     </button>
     {% else %}
-    {{ tab_locked("Script Variables", "vars") }}
+    {{ tab_locked("Script Variables", "vars", tier="business") }}
     {% endif %}
     <button onclick="showTab('email')" id="tab-btn-email"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       E-Mail
+    </button>
+    <button onclick="showTab('compliance')" id="tab-btn-compliance"
+            class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
+      Compliance
     </button>
     {% if is_enterprise %}
     <button onclick="showTab('sccm')" id="tab-btn-sccm"
@@ -52,8 +56,8 @@
 <div id="tab-general">
   <div id="general-banner" class="hidden mb-4 px-4 py-3 rounded text-sm font-medium"></div>
 
-  {% if is_enterprise %}
-  <!-- Application Title (Enterprise: app_branding) -->
+  {% if is_business %}
+  <!-- Application Title (Business: app_branding) -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-4">
     <h2 class="text-sm font-semibold text-body mb-1">Application</h2>
     <p class="text-xs text-muted mb-4">
@@ -63,7 +67,7 @@
       <label class="block text-xs font-medium text-muted mb-1">Application Title</label>
       <input type="text" id="cfg-app-title"
              value="{{ app_title }}"
-             placeholder="Ipsolis"
+             placeholder="ip·Solis"
              class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
     </div>
     <div class="mt-6">
@@ -166,9 +170,73 @@
   {% else %}
   {{ card_teaser(
       "App Branding",
-      "Customise the application title, upload your own logo, control its position and size, and match the portal to your corporate identity. Includes branded email templates."
+      "Customise the application title, upload your own logo, control its position and size, and match the portal to your corporate identity. Includes branded email templates.",
+      tier="business"
   ) }}
   {% endif %}
+
+  <!-- Update Notifier (opt-in; off by default for air-gapped tenants) -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mt-4">
+    <h2 class="text-sm font-semibold text-body mb-1">Update Notifier</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Daily check against the configured GitHub releases endpoint. When a newer
+      version is available a banner appears at the top of every admin page;
+      click through for release notes. <strong>Off by default</strong> so
+      air-gapped installs don't make outbound calls without explicit consent.
+      ip·Solis never auto-updates — operators control upgrades via
+      <code class="font-mono bg-surface-raised px-1 rounded">docker compose pull &amp;&amp; docker compose up -d</code>.
+    </p>
+    <div class="space-y-3">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Mode</label>
+        <select id="updates-enabled"
+                class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          {% set _ue = (updates_config.get('updates.check_enabled', 'false') if updates_config else 'false').lower() %}
+          <option value="false" {% if _ue != 'true' %}selected{% endif %}>Disabled — no outbound calls</option>
+          <option value="true"  {% if _ue == 'true' %}selected{% endif %}>Enabled — check daily and show banner if outdated</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Repository (GitHub API)</label>
+        <input type="text" id="updates-repo-url"
+               value="{{ updates_config.get('updates.repo_url', 'https://api.github.com/repos/XenPool/ipSolis') if updates_config else 'https://api.github.com/repos/XenPool/ipSolis' }}"
+               placeholder="https://api.github.com/repos/<owner>/<repo>"
+               class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <p class="text-[11px] text-muted/60 mt-1">
+          Repoint at a private fork if you ship internal patches. The Beat task appends
+          <code class="font-mono">/releases/latest</code> automatically.
+        </p>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">GitHub token (optional)</label>
+        <input type="password" id="updates-github-token" value=""
+               placeholder="{% if updates_config and updates_config.get('updates.github_token') == '***' %}(configured — leave blank to keep current){% else %}required for private repos{% endif %}"
+               class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <p class="text-[11px] text-muted/60 mt-1">
+          Personal Access Token (classic with <code class="font-mono">repo</code> scope, or
+          fine-grained with read-only Metadata + Contents on this repo). Required when the
+          target repo is private. Stored as a secret.
+        </p>
+      </div>
+    </div>
+    <div class="flex gap-3 mt-5 items-center">
+      <button onclick="saveUpdateNotifier()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save
+      </button>
+      <span class="text-xs text-muted/70">
+        Last check: <span class="font-mono">{{ updates_config.get('updates.checked_at', '—') or '—' if updates_config else '—' }}</span>
+        {% if updates_config and updates_config.get('updates.latest_version') %}
+          · Latest seen: <span class="font-mono">{{ updates_config.get('updates.latest_version') }}</span>
+        {% endif %}
+      </span>
+    </div>
+    {% if updates_config and updates_config.get('updates.check_error') %}
+    <div class="mt-3 px-3 py-2 rounded bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-xs text-red-700 dark:text-red-300">
+      Last check failed — token may be missing or invalid. See server logs for details.
+    </div>
+    {% endif %}
+  </div>
 
   <!-- Order Settings -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mt-4">
@@ -349,11 +417,63 @@
       </button>
     </div>
   </div><!-- /on-prem AD card -->
+
+  <!-- AD attribute mapping (drives the chargeback report) -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mt-6">
+    <h2 class="text-sm font-semibold text-body mb-1">AD Attribute Mapping (Chargeback)</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Snapshotted onto every order at creation time and shown in the
+      <a href="/ui/cost-report" class="text-blue-600 hover:underline">Cost Report</a>.
+      Defaults match the standard AD schema; override the cost-center mapping if your tenant
+      uses an <code class="font-mono bg-surface-raised px-1 rounded">extensionAttribute*</code>
+      or a custom attribute. Leave a field blank to skip that attribute.
+    </p>
+
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Department</label>
+        <input type="text" id="ad-attr-department" value="{{ ad_config.get('ad.attribute.department', 'department') }}"
+               placeholder="department"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Cost center</label>
+        <input type="text" id="ad-attr-cost-center" value="{{ ad_config.get('ad.attribute.cost_center', '') }}"
+               placeholder="extensionAttribute1"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Company</label>
+        <input type="text" id="ad-attr-company" value="{{ ad_config.get('ad.attribute.company', 'company') }}"
+               placeholder="company"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Employee ID</label>
+        <input type="text" id="ad-attr-employee-id" value="{{ ad_config.get('ad.attribute.employee_id', 'employeeID') }}"
+               placeholder="employeeID"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+      </div>
+      <div class="col-span-2">
+        <label class="block text-xs font-medium text-muted mb-1">Job title</label>
+        <input type="text" id="ad-attr-title" value="{{ ad_config.get('ad.attribute.title', 'title') }}"
+               placeholder="title"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveAdAttributeMapping()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save
+      </button>
+    </div>
+  </div>
 </div><!-- /tab-ad -->
 
 <!-- ── Tab: Script Variables ─────────────────────────────────────────────── -->
 <div id="tab-vars" class="hidden">
-{% if is_enterprise %}
+{% if is_business %}
   <p class="text-xs text-muted mb-4">
     Central configuration values for scripts. Available as
     <code class="font-mono bg-surface-raised px-1 rounded text-xs">$VARS.key</code>.
@@ -480,7 +600,8 @@
 {% else %}
 {{ teaser_pane(
     "Global Variables",
-    "Define reusable configuration values (API endpoints, service accounts, toggles, secrets) that all runbooks and in-app PowerShell scripts can read via $VARS.key. Centralise every environment-specific value in one place instead of hardcoding it into scripts."
+    "Define reusable configuration values (API endpoints, service accounts, toggles, secrets) that all runbooks and in-app PowerShell scripts can read via $VARS.key. Centralise every environment-specific value in one place instead of hardcoding it into scripts.",
+    tier="business"
 ) }}
 {% endif %}
 </div>
@@ -560,8 +681,170 @@
     </div>
   </div>
 
-  {% if is_enterprise %}
-  <!-- Section B: Email Templates (Enterprise: email_template_editor) -->
+  <!-- Section A2: Microsoft Teams approval cards -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
+    <h2 class="text-sm font-semibold text-body mb-1">Microsoft Teams — Approval Cards</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      When a request needs approval, ip·Solis can post an Adaptive Card to Microsoft Teams in addition to
+      the email notification. The approver clicks <span class="font-medium">Review request →</span> in the
+      card, lands on a one-click confirmation page (no portal login required), and approves or declines.
+    </p>
+
+    <div class="rounded border border-token-border bg-surface-raised/40 p-3 mb-4">
+      <p class="text-xs text-muted leading-relaxed">
+        <span class="font-medium text-body">Setup:</span> In Teams, open the target channel or chat → <span class="font-medium">Workflows</span> →
+        choose the template <span class="font-mono text-[11px] bg-surface px-1 rounded">Post to a channel when a webhook request is received</span> →
+        finish setup and copy the generated webhook URL into the field below.
+      </p>
+    </div>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Mode</label>
+        <select id="teams-mode"
+                class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          {% set _tm = teams_config.get('teams.mode', 'disabled') %}
+          <option value="disabled" {% if _tm == 'disabled' %}selected{% endif %}>Disabled — email only</option>
+          <option value="enabled"  {% if _tm == 'enabled' %}selected{% endif %}>Enabled — send Teams card alongside email</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Teams Workflow Webhook URL</label>
+        <input type="text" id="teams-webhook-url" value="{{ '' if teams_config.get('teams.webhook_url', '') == '***' else teams_config.get('teams.webhook_url', '') }}"
+               placeholder="https://prod-XX.westeurope.logic.azure.com:443/workflows/…"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+        <p class="text-[11px] text-muted/60 mt-1">
+          {% if teams_config.get('teams.webhook_url', '') == '***' %}A webhook URL is configured (hidden). Paste a new value to replace it; leave blank to keep current.{% else %}Generated by the Teams workflow you create above. Stored as a secret.{% endif %}
+        </p>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveTeamsConfig()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save Settings
+      </button>
+      <button onclick="testTeamsConfig()"
+              class="px-5 py-2 bg-surface-raised text-body text-sm font-medium rounded hover:bg-surface border border-token-border">
+        Send Test Card
+      </button>
+    </div>
+  </div>
+
+  <!-- Section A3: Approval reminders -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
+    <h2 class="text-sm font-semibold text-body mb-1">Approval Reminders</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      A Beat task scans every hour for pending approvals that haven't been acted on. When one
+      crosses the threshold below, ip·Solis re-sends the email and the Teams card (if configured)
+      with the same signed approval link as the original notification. Capped at <em>Max reminders</em>
+      per approval so approvers don't get spammed.
+    </p>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Status</label>
+        <select id="approval-reminders-enabled"
+                class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          {% set _are = (approval_config.get('approval.reminders_enabled', 'true')).lower() %}
+          <option value="false" {% if _are != 'true' %}selected{% endif %}>Disabled</option>
+          <option value="true"  {% if _are == 'true' %}selected{% endif %}>Enabled — re-send on stale approvals</option>
+        </select>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Reminder after (hours)</label>
+          <input type="number" id="approval-reminder-hours" min="1" max="720"
+                 value="{{ approval_config.get('approval.reminder_after_hours', '24') }}"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Time since the last notification before a nudge fires.</p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Max reminders</label>
+          <input type="number" id="approval-max-reminders" min="0" max="10"
+                 value="{{ approval_config.get('approval.max_reminders', '3') }}"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">After this many nudges the approval escalates (or is left alone if no escalation contact is set).</p>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Escalation contact(s)</label>
+        <input type="text" id="approval-escalation-email"
+               value="{{ approval_config.get('approval.escalation_email', '') }}"
+               placeholder="ops@example.com, oncall@example.com"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+        <p class="text-[11px] text-muted/60 mt-1 leading-snug">
+          Comma-separated. Each approval is escalated <em>at most once</em>; subsequent ticks ignore already-escalated rows.
+          Leave blank to disable escalation entirely.
+        </p>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Escalation behaviour</label>
+        {% set _ea = (approval_config.get('approval.escalation_assign', 'false') or 'false').lower() %}
+        <select id="approval-escalation-assign"
+                class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <option value="false" {% if _ea != 'true' %}selected{% endif %}>Notify only — contact intervenes via the admin UI</option>
+          <option value="true"  {% if _ea == 'true' %}selected{% endif %}>Reassign — create a new approval row for the contact (one-click decide)</option>
+        </select>
+        <p class="text-[11px] text-muted/60 mt-1 leading-snug">
+          <strong>Notify only</strong> (default) sends a heads-up email to the escalation contact and lets them
+          chase or cancel manually. <strong>Reassign</strong> creates a new <code class="font-mono">OrderApproval</code> row
+          per contact (<code class="font-mono">approver_type=escalation</code>) and emails them a tokenized
+          <code class="font-mono">/approve/&lt;token&gt;</code> URL — they can decide directly from their inbox without an admin login.
+          Mode change applies to subsequent escalations only; already-escalated rows stay as they were.
+        </p>
+      </div>
+
+      <div class="pt-4 mt-4 border-t border-token-border">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-muted mb-2">Auto-decline (opt-in)</h3>
+        <p class="text-[11px] text-muted/70 mb-3 leading-snug">
+          Once a pending approval crosses this age, ip·Solis system-declines it on the requester's
+          behalf, marking the order as <em>rejected</em> and emailing the requester. Daily Beat task
+          at 03:30 Europe/Berlin. <strong>Off by default</strong> — leave the threshold at 0 to disable.
+        </p>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Status</label>
+            <select id="approval-auto-decline-enabled"
+                    class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+              {% set _ade = (approval_config.get('approval.auto_decline_enabled', 'false')).lower() %}
+              <option value="false" {% if _ade != 'true' %}selected{% endif %}>Disabled</option>
+              <option value="true"  {% if _ade == 'true' %}selected{% endif %}>Enabled — system-decline stale approvals</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Decline after (days)</label>
+            <input type="number" id="approval-auto-decline-days" min="0" max="365"
+                   value="{{ approval_config.get('approval.auto_decline_after_days', '0') }}"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+            <p class="text-[11px] text-muted/60 mt-1">Counted from the approval row's <code class="font-mono">created_at</code>. 0 disables.</p>
+          </div>
+        </div>
+
+        <div class="mt-3">
+          <label class="block text-xs font-medium text-muted mb-1">Decline reason</label>
+          <textarea id="approval-auto-decline-message" rows="2"
+                    class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">{{ approval_config.get('approval.auto_decline_message', '') }}</textarea>
+          <p class="text-[11px] text-muted/60 mt-1">Recorded on the approval row + included in the rejection email sent to the requester.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveApprovalReminderConfig()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save Settings
+      </button>
+    </div>
+  </div>
+
+  {% if is_business %}
+  <!-- Section B: Email Templates (Business: email_template_editor) -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 overflow-hidden">
     <div class="px-5 py-3 border-b border-token-border bg-surface-raised">
       <h2 class="text-sm font-semibold text-body">Email Templates</h2>
@@ -603,7 +886,8 @@
   {% else %}
   {{ card_teaser(
       "Email Template Editor",
-      "Customise subject and body for every notification event (order confirmation, approval request, expiry reminder, reclaim, …) with variable placeholders. Send test emails from the UI before going live."
+      "Customise subject and body for every notification event (order confirmation, approval request, expiry reminder, reclaim, …) with variable placeholders. Send test emails from the UI before going live.",
+      tier="business"
   ) }}
   {% endif %}
 </div>
@@ -647,6 +931,1044 @@
               class="flex-1 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
         Save
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Tab: Compliance ─────────────────────────────────────────────────── -->
+<div id="tab-compliance" class="hidden">
+  <div id="compliance-banner" class="hidden mb-4 px-4 py-3 rounded text-sm font-medium"></div>
+
+  <!-- ── RBAC Password Policy (slice 4) ─────────────────────────────────── -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
+    <div class="flex items-start justify-between mb-1">
+      <h2 class="text-sm font-semibold text-body">RBAC — Password Policy</h2>
+      {% if not is_enterprise %}
+      <span class="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
+        Enterprise
+      </span>
+      {% endif %}
+    </div>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Force admin password rotation and lock accounts after repeated bad logins. Both
+      knobs are off by default ({{ "0" }} = disabled). Enforcement requires an Enterprise
+      license — community installs can configure the values but they're inert until a
+      license is uploaded. Lockouts auto-expire after the configured window so a brief
+      flurry of bad attempts doesn't require admin intervention.
+    </p>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Rotation (days)</label>
+        <input type="number" id="rbac-rotation-days" min="0" max="3650"
+               value="{{ password_policy.get('rbac.password_rotation_days', '0') if password_policy else '0' }}"
+               class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <p class="text-[11px] text-muted/60 mt-1">Force change every N days. <code>0</code> disables.</p>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Lockout threshold</label>
+        <input type="number" id="rbac-lockout-threshold" min="0" max="100"
+               value="{{ password_policy.get('rbac.lockout_threshold', '0') if password_policy else '0' }}"
+               class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <p class="text-[11px] text-muted/60 mt-1">Lock after N bad attempts. <code>0</code> disables.</p>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Lockout duration (min)</label>
+        <input type="number" id="rbac-lockout-duration" min="1" max="1440"
+               value="{{ password_policy.get('rbac.lockout_duration_minutes', '30') if password_policy else '30' }}"
+               class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <p class="text-[11px] text-muted/60 mt-1">Auto-unlock after this many minutes.</p>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-5 items-center">
+      <button onclick="savePasswordPolicy()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save Policy
+      </button>
+      <span class="text-xs text-muted/70">
+        A superadmin password reset on the Admin Users page also unlocks the affected account.
+      </span>
+    </div>
+  </div>
+
+  <!-- ── Per-classification approval routing ─────────────────────────────── -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
+    <h2 class="text-sm font-semibold text-body mb-1">Per-classification approval routing</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Auto-add an approval step on orders whose asset type carries attributes classified as
+      <strong>PII</strong>, <strong>PHI</strong>, or <strong>PCI</strong>. Two routing modes per class:
+      <strong>Compliance officer</strong> (one step at the global officer email below — standard for
+      centralised compliance teams) or <strong>Owner of record</strong> (one step <em>per entry</em>
+      in the asset type's <em>Approval Owners</em> list — standard for HIPAA-style workflows where
+      the data steward who actually owns the regulated surface must sign off, not a generic team).
+      Defaults to <code class="font-mono">none</code> on every class. Activation precedence is
+      strictest-first (PCI &gt; PHI &gt; PII); only one policy fires per order. All steps are
+      de-duped against existing approvers so the same person never gets two approval requests.
+    </p>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+      {% for _cls, _label in [('pci', 'PCI'), ('phi', 'PHI'), ('pii', 'PII')] %}
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">{{ _label }} policy</label>
+        {% set _val = (approval_config.get('approval.classification_policy.' + _cls, 'none') if approval_config else 'none').lower() %}
+        <select id="approval-class-policy-{{ _cls }}"
+                class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <option value="none"               {% if _val == 'none' or (_val != 'compliance_officer' and _val != 'owner_of_record') %}selected{% endif %}>None — existing flow</option>
+          <option value="compliance_officer" {% if _val == 'compliance_officer' %}selected{% endif %}>Compliance officer (centralised)</option>
+          <option value="owner_of_record"    {% if _val == 'owner_of_record' %}selected{% endif %}>Owner of record (asset's approval owners)</option>
+        </select>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Compliance officer email</label>
+        <input type="email" id="approval-compliance-officer-email"
+               value="{{ approval_config.get('approval.compliance_officer_email', '') if approval_config else '' }}"
+               placeholder="compliance@example.com"
+               class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <p class="text-[11px] text-muted/60 mt-1">Single email or distribution-list address. Required when any class is set to <code class="font-mono">Add compliance officer step</code>.</p>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Display name</label>
+        <input type="text" id="approval-compliance-officer-name"
+               value="{{ approval_config.get('approval.compliance_officer_name', 'Compliance Officer') if approval_config else 'Compliance Officer' }}"
+               placeholder="Compliance Officer"
+               class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <p class="text-[11px] text-muted/60 mt-1">Shown in approval emails and the portal's pending-approval page.</p>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-5 items-center">
+      <button onclick="saveClassificationPolicy()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save policy
+      </button>
+      <span class="text-xs text-muted/70">
+        Tip: use the asset-type editor's <em>Classification</em> dropdown to mark individual attributes
+        as PII / PHI / PCI. Only orders whose asset type has matching attributes trigger this routing.
+      </span>
+    </div>
+  </div>
+
+  <!-- SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel + Generic Webhook) -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
+    <h2 class="text-sm font-semibold text-body mb-1">SIEM — Audit Log Streaming</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Stream every <code class="font-mono bg-surface-raised px-1 rounded">audit_log</code> entry to your SIEM.
+      Adapters today: <span class="font-medium">Splunk HEC</span>, <span class="font-medium">Microsoft Sentinel</span>
+      (Azure Monitor Data Collector API), and a <span class="font-medium">generic HMAC-signed webhook</span>
+      (Elastic, Datadog, Sumo, Loki, homegrown receivers). The worker forwards new rows once a minute, tracks
+      the cursor in <code class="font-mono bg-surface-raised px-1 rounded">app_config</code>, and resumes
+      automatically on transient failure. All back-ends dedupe by event id, so at-least-once delivery is safe.
+    </p>
+
+    <div id="siem-help-splunk" class="rounded border border-token-border bg-surface-raised/40 p-3 mb-4">
+      <p class="text-xs text-muted leading-relaxed">
+        <span class="font-medium text-body">Splunk setup:</span> Splunk Web → <span class="font-medium">Settings → Data inputs → HTTP Event Collector</span> →
+        <span class="font-medium">New Token</span>. Pick a sourcetype like <code class="font-mono">ipsolis:audit</code> (or leave default — the worker sets it),
+        copy the token. The endpoint URL is your collector, e.g.
+        <code class="font-mono text-[11px] bg-surface px-1 rounded">https://splunk.example.com:8088/services/collector/event</code>.
+      </p>
+    </div>
+
+    <div id="siem-help-sentinel" class="hidden rounded border border-token-border bg-surface-raised/40 p-3 mb-4">
+      <p class="text-xs text-muted leading-relaxed">
+        <span class="font-medium text-body">Sentinel setup:</span> Azure portal → your Log Analytics workspace →
+        <span class="font-medium">Settings → Agents → Log Analytics agent instructions</span>. Copy
+        <span class="font-medium">Workspace ID</span> and <span class="font-medium">Primary key</span>.
+        ip·Solis writes to a custom table called <code class="font-mono">{Log-Type}_CL</code> (default
+        <code class="font-mono">IpsolisAudit_CL</code>) — the table is created on first ingest, no schema
+        registration needed. Uses the HTTP Data Collector API (HMAC-signed); Microsoft supports it through
+        Sept 2026.
+      </p>
+    </div>
+
+    <div id="siem-help-webhook" class="hidden rounded border border-token-border bg-surface-raised/40 p-3 mb-4">
+      <p class="text-xs text-muted leading-relaxed">
+        <span class="font-medium text-body">Webhook setup:</span> point ip·Solis at any HTTPS endpoint that accepts
+        a JSON array of events. Each POST is signed with HMAC-SHA256 over the raw body and the digest is sent in
+        a configurable header (default <code class="font-mono">X-Hub-Signature-256: sha256=&lt;hex&gt;</code>,
+        GitHub-compatible). Receivers verify by recomputing HMAC with the shared secret. Use the
+        <em>Extra headers</em> field to add per-receiver tokens (Datadog's
+        <code class="font-mono">DD-API-KEY</code>, Sumo's collector URL token, a static
+        <code class="font-mono">Authorization: Bearer …</code>, etc.).
+      </p>
+    </div>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Mode</label>
+        <select id="siem-enabled"
+                class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          {% set _se = (siem_config.get('siem.enabled', 'false')).lower() %}
+          <option value="false" {% if _se != 'true' %}selected{% endif %}>Disabled — audit log stays local</option>
+          <option value="true"  {% if _se == 'true' %}selected{% endif %}>Enabled — stream new rows every minute</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Format</label>
+        <select id="siem-format" onchange="onSiemFormatChange()"
+                class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          {% set _sf = siem_config.get('siem.format', 'splunk_hec') %}
+          <option value="splunk_hec"            {% if _sf == 'splunk_hec' %}selected{% endif %}>Splunk HEC</option>
+          <option value="sentinel"              {% if _sf == 'sentinel' %}selected{% endif %}>Microsoft Sentinel — Data Collector API (legacy, sunset 2026-08-31)</option>
+          <option value="sentinel_log_ingestion"{% if _sf == 'sentinel_log_ingestion' %}selected{% endif %}>Microsoft Sentinel — Logs Ingestion API (DCE/DCR)</option>
+          <option value="webhook"               {% if _sf == 'webhook' %}selected{% endif %}>Generic Webhook (HMAC-signed)</option>
+        </select>
+      </div>
+
+      <!-- ── Splunk fields ───────────────────────────────────────────────── -->
+      <div id="siem-splunk-fields" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Endpoint URL</label>
+          <input type="text" id="siem-endpoint-url" value="{{ siem_config.get('siem.endpoint_url', '') }}"
+                 placeholder="https://splunk.example.com:8088/services/collector/event"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">HEC Token</label>
+          <input type="password" id="siem-token" value=""
+                 placeholder="{% if siem_config.get('siem.token') == '***' %}(configured — leave blank to keep current){% else %}HEC token{% endif %}"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Sent as <code class="font-mono bg-surface-raised px-1 rounded">Authorization: Splunk &lt;token&gt;</code>. Stored as a secret.</p>
+        </div>
+      </div>
+
+      <!-- ── Sentinel fields ─────────────────────────────────────────────── -->
+      <div id="siem-sentinel-fields" class="hidden space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Workspace ID</label>
+          <input type="text" id="siem-workspace-id" value="{{ siem_config.get('siem.workspace_id', '') }}"
+                 placeholder="00000000-0000-0000-0000-000000000000"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">GUID of the Log Analytics workspace backing your Sentinel instance.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Shared Key</label>
+          <input type="password" id="siem-shared-key" value=""
+                 placeholder="{% if siem_config.get('siem.shared_key') == '***' %}(configured — leave blank to keep current){% else %}base64-encoded primary or secondary key{% endif %}"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Used to HMAC-SHA256 sign each batch. Stored as a secret.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Log Type</label>
+          <input type="text" id="siem-log-type" value="{{ siem_config.get('siem.log_type', 'IpsolisAudit') }}"
+                 placeholder="IpsolisAudit"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Custom table name without the <code class="font-mono">_CL</code> suffix. Sentinel will create <code class="font-mono">{value}_CL</code> on first ingest. Letters/digits only, ≤100 chars.</p>
+        </div>
+      </div>
+
+      <!-- ── Sentinel Logs Ingestion API fields ──────────────────────────── -->
+      <div id="siem-sentinel-log-ingestion-fields" class="hidden space-y-4">
+        <p class="text-[11px] text-muted/70 leading-snug">
+          Replacement for the legacy Data Collector API (Microsoft sunset: 2026-08-31).
+          Authenticates via an Azure AD service principal granted
+          <strong>Monitoring Metrics Publisher</strong> on the Data Collection Rule (DCR)
+          resource — independent from the Azure KV / Entra ID SSO SPNs so the streaming
+          credential carries minimum-necessary access. The DCR's stream schema declares
+          the column names; ip·Solis posts the same audit-row shape used by the legacy
+          adapter so existing dashboards continue to work after migrating.
+        </p>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">DCE endpoint URL</label>
+          <input type="text" id="siem-sentinel-dce-endpoint"
+                 value="{{ siem_config.get('siem.sentinel_dce_endpoint', '') }}"
+                 placeholder="https://ipsolis-dce-xxxx.westeurope-1.ingest.monitor.azure.com"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Read off the DCE's overview blade in Azure Portal. No trailing slash.</p>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">DCR immutable id</label>
+            <input type="text" id="siem-sentinel-dcr-immutable-id"
+                   value="{{ siem_config.get('siem.sentinel_dcr_immutable_id', '') }}"
+                   placeholder="dcr-abcd1234ef567890"
+                   class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+            <p class="text-[11px] text-muted/60 mt-1">DCR JSON view → <code class="font-mono">properties.immutableId</code>.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Stream name</label>
+            <input type="text" id="siem-sentinel-stream-name"
+                   value="{{ siem_config.get('siem.sentinel_stream_name', 'Custom-IpsolisAudit_CL') }}"
+                   placeholder="Custom-IpsolisAudit_CL"
+                   class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+            <p class="text-[11px] text-muted/60 mt-1"><code class="font-mono">Custom-</code> prefix + custom-table name with <code class="font-mono">_CL</code> suffix.</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Tenant ID</label>
+            <input type="text" id="siem-sentinel-tenant-id"
+                   value="{{ siem_config.get('siem.sentinel_tenant_id', '') }}"
+                   placeholder="00000000-0000-0000-0000-000000000000"
+                   class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Client ID</label>
+            <input type="text" id="siem-sentinel-client-id"
+                   value="{{ siem_config.get('siem.sentinel_client_id', '') }}"
+                   placeholder="00000000-0000-0000-0000-000000000000"
+                   class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Client Secret</label>
+          <input type="password" id="siem-sentinel-client-secret" value=""
+                 placeholder="{% if siem_config.get('siem.sentinel_client_secret') == '***' %}(configured — leave blank to keep current){% else %}service principal client secret{% endif %}"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Stored as a secret. The SPN needs only <strong>Monitoring Metrics Publisher</strong> on the DCR.</p>
+        </div>
+      </div>
+
+      <!-- ── Webhook fields ──────────────────────────────────────────────── -->
+      <div id="siem-webhook-fields" class="hidden space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Webhook URL</label>
+          <input type="text" id="siem-webhook-url" value="{{ siem_config.get('siem.webhook_url', '') }}"
+                 placeholder="https://siem.example.com/ingest/ipsolis"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Shared Secret</label>
+          <input type="password" id="siem-webhook-secret" value=""
+                 placeholder="{% if siem_config.get('siem.webhook_secret') == '***' %}(configured — leave blank to keep current){% else %}HMAC-SHA256 secret{% endif %}"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Used to HMAC-sign each batch. Stored as a secret. Receivers verify with the same value.</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Signature Header</label>
+            <input type="text" id="siem-webhook-signature-header"
+                   value="{{ siem_config.get('siem.webhook_signature_header', 'X-Hub-Signature-256') }}"
+                   placeholder="X-Hub-Signature-256"
+                   class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+            <p class="text-[11px] text-muted/60 mt-1">Header name carrying <code class="font-mono">sha256=&lt;hex&gt;</code>. GitHub-compatible default.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Extra Headers (JSON)</label>
+            <input type="text" id="siem-webhook-extra-headers"
+                   value="{{ siem_config.get('siem.webhook_extra_headers', '') }}"
+                   placeholder='{"DD-API-KEY":"…"}'
+                   class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+            <p class="text-[11px] text-muted/60 mt-1">Optional JSON object of additional headers. Malformed JSON is ignored at runtime.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Batch size</label>
+          <input type="number" id="siem-batch-size" min="1" max="1000"
+                 value="{{ siem_config.get('siem.batch_size', '200') }}"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-[11px] text-muted/60 mt-1">Maximum rows forwarded per Beat tick (1–1000).</p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Verify TLS</label>
+          <select id="siem-verify-tls"
+                  class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            {% set _vt = (siem_config.get('siem.verify_tls', 'true')).lower() %}
+            <option value="true"  {% if _vt != 'false' %}selected{% endif %}>Verify (recommended)</option>
+            <option value="false" {% if _vt == 'false' %}selected{% endif %}>Skip — self-signed lab only</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveSiemConfig()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save Settings
+      </button>
+      <button onclick="testSiemConfig()"
+              class="px-5 py-2 bg-surface-raised text-body text-sm font-medium rounded hover:bg-surface border border-token-border">
+        Send Test Event
+      </button>
+      <button onclick="refreshSiemStatus()"
+              class="px-5 py-2 bg-surface-raised text-body text-sm font-medium rounded hover:bg-surface border border-token-border">
+        Refresh Status
+      </button>
+    </div>
+
+    <!-- Live status: cursor, backlog, last error / success -->
+    <div id="siem-status" class="mt-5 text-xs text-muted/80 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 leading-relaxed">
+      <div><span class="text-muted/60">Cursor (last forwarded id):</span> <span id="siem-status-last-id" class="font-mono">—</span></div>
+      <div><span class="text-muted/60">Backlog:</span> <span id="siem-status-backlog" class="font-mono">—</span></div>
+      <div><span class="text-muted/60">Last success:</span> <span id="siem-status-last-success" class="font-mono">—</span></div>
+      <div><span class="text-muted/60">Last error:</span> <span id="siem-status-last-error" class="font-mono">—</span></div>
+    </div>
+  </div>
+
+  <!-- OpenTelemetry tracing -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
+    <h2 class="text-sm font-semibold text-body mb-1">OpenTelemetry Tracing</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Distributed tracing complement to the Prometheus <code class="font-mono bg-surface-raised px-1 rounded">/metrics</code> endpoint.
+      FastAPI requests + SQLAlchemy queries are auto-instrumented; spans flow to a configured
+      OTLP HTTP collector (Jaeger, Tempo, SigNoz, Honeycomb, …).
+      Changes take effect on the next API restart.
+    </p>
+
+    <div class="space-y-4">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Status</label>
+          <select id="otel-enabled"
+                  class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            {% set _otel = (otel_config.get('otel.enabled', 'false') if otel_config else 'false').lower() %}
+            <option value="false" {% if _otel != 'true' %}selected{% endif %}>Disabled — no spans emitted</option>
+            <option value="true"  {% if _otel == 'true' %}selected{% endif %}>Enabled — instrument FastAPI + SQLAlchemy</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Service name</label>
+          <input type="text" id="otel-service-name"
+                 value="{{ otel_config.get('otel.service_name', 'ipsolis-api') if otel_config else 'ipsolis-api' }}"
+                 placeholder="ipsolis-api"
+                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">OTLP HTTP endpoint</label>
+        <input type="text" id="otel-endpoint"
+               value="{{ otel_config.get('otel.endpoint', '') if otel_config else '' }}"
+               placeholder="https://otel-collector.example.com:4318/v1/traces"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+        <p class="text-[11px] text-muted/60 mt-1">Leave blank to disable OTLP export. Path is collector-specific (typically <code class="font-mono">/v1/traces</code>).</p>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Exporter headers (optional)</label>
+        <textarea id="otel-headers" rows="2" placeholder="x-honeycomb-team=YOUR_KEY&#10;x-tenant-id=acme"
+                  class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">{{ ('' if (otel_config.get('otel.headers') if otel_config else '') == '***' else (otel_config.get('otel.headers', '') if otel_config else '')) }}</textarea>
+        <p class="text-[11px] text-muted/60 mt-1">One <code class="font-mono">key=value</code> per line. Used for vendor auth (Honeycomb, Lightstep, etc.). Stored as a secret.</p>
+      </div>
+
+      <div>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" id="otel-console" value="true"
+                 {% if otel_config and (otel_config.get('otel.console_exporter', 'false')).lower() == 'true' %}checked{% endif %}
+                 class="rounded border-token-border">
+          <span class="text-body">Console exporter</span>
+          <span class="text-[11px] text-muted/60">— print spans to API stdout (debug; pair with <code class="font-mono">docker compose logs api</code>)</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveOtelConfig()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save Settings
+      </button>
+      <span class="text-xs text-muted/70 self-center">
+        Tracing wires up at API startup — restart with <code class="font-mono bg-surface-raised px-1 rounded">docker compose restart api</code> after changes.
+      </span>
+    </div>
+  </div>
+
+  <!-- Audit log retention -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
+    <h2 class="text-sm font-semibold text-body mb-1">Audit Log Retention</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Auto-prune <code class="font-mono bg-surface-raised px-1 rounded">audit_log</code> rows older than each
+      configured window. Runs daily at 03:00 (Europe/Berlin) via a Beat task that uses the documented
+      append-only-bypass GUC — every other path still hits the tamper-evident triggers from migration 0062.
+      Per-class windows let regulated data (PII / PHI / PCI) sit longer than routine config changes —
+      pair with SIEM streaming so the long-term archive also lives outside the app's blast radius.
+    </p>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Default retention</label>
+        <div class="flex items-center gap-2">
+          <input type="number" id="retention-days" min="0" max="36500"
+                 value="{{ retention_config.get('retention.audit_log_days', '0') if retention_config else '0' }}"
+                 class="w-24 rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <span class="text-sm text-muted">days</span>
+        </div>
+        <p class="text-[11px] text-muted/60 mt-1">
+          Applies to rows tagged <code class="font-mono">internal</code> (default) and to legacy NULL rows.
+          0 disables pruning of this bucket.
+        </p>
+      </div>
+
+      <div class="rounded border border-token-border bg-surface-raised/40 p-3">
+        <p class="text-[11px] font-medium text-muted mb-2">Per-classification overrides</p>
+        <p class="text-[11px] text-muted/60 mb-3 leading-snug">
+          Set a separate window for audit rows tagged with each data class. Classification is set at write
+          time from the strictest <em>classification</em> declared on the touched asset type's attributes.
+          Leave at <code class="font-mono">0</code> to keep that bucket indefinitely (the global default
+          does <strong>not</strong> apply to non-internal classes).
+        </p>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-[11px] font-medium text-muted mb-1">PII (days)</label>
+            <input type="number" id="retention-pii-days" min="0" max="36500"
+                   value="{{ retention_config.get('retention.pii_days', '0') if retention_config else '0' }}"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          </div>
+          <div>
+            <label class="block text-[11px] font-medium text-muted mb-1">PHI (days)</label>
+            <input type="number" id="retention-phi-days" min="0" max="36500"
+                   value="{{ retention_config.get('retention.phi_days', '0') if retention_config else '0' }}"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          </div>
+          <div>
+            <label class="block text-[11px] font-medium text-muted mb-1">PCI (days)</label>
+            <input type="number" id="retention-pci-days" min="0" max="36500"
+                   value="{{ retention_config.get('retention.pci_days', '0') if retention_config else '0' }}"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6 items-center">
+      <button onclick="saveRetentionConfig()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save Settings
+      </button>
+      <span class="text-xs text-muted/70">
+        Last run: <span id="retention-last-run" class="font-mono">{{ retention_config.get('retention.last_run_at', '—') or '—' if retention_config else '—' }}</span> ·
+        Pruned: <span id="retention-last-pruned" class="font-mono">{{ retention_config.get('retention.last_pruned', '0') if retention_config else '0' }}</span> rows
+        {% set _by_class = retention_config.get('retention.last_pruned_by_class', '') if retention_config else '' %}
+        {% if _by_class and _by_class != '{}' %}
+          <span class="text-muted/50">— breakdown:</span>
+          <span class="font-mono">{{ _by_class }}</span>
+        {% endif %}
+      </span>
+    </div>
+  </div>
+
+  <!-- ── External Secret Backend (Vault / CCP / Azure KV / AWS SM / Conjur) ── -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-3xl mb-6">
+    <h2 class="text-sm font-semibold text-body mb-1">External Secret Backend</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Replace plaintext credentials with references to your secret store. When a backend is enabled, any
+      <code class="font-mono bg-surface-raised px-1 rounded">secret.is_secret=true</code> row whose value is
+      <code class="font-mono bg-surface-raised px-1 rounded">vault://&lt;path&gt;</code>,
+      <code class="font-mono bg-surface-raised px-1 rounded">ccp://[&lt;safe&gt;/]&lt;object&gt;</code>,
+      <code class="font-mono bg-surface-raised px-1 rounded">azurekv://&lt;vault&gt;/&lt;secret&gt;</code>,
+      <code class="font-mono bg-surface-raised px-1 rounded">awssm://&lt;secret-id&gt;[#&lt;field&gt;]</code>, or
+      <code class="font-mono bg-surface-raised px-1 rounded">conjur://&lt;identifier&gt;[#&lt;field&gt;]</code>
+      gets resolved at read time. Plain string values keep working unchanged — partial migrations are fine.
+    </p>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Backend</label>
+        <select id="secret-backend" onchange="onSecretBackendChange()"
+                class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          {% set _sb = secret_config.get('secret.backend', 'db') if secret_config else 'db' %}
+          <option value="db"      {% if _sb == 'db' %}selected{% endif %}>Database (default — plaintext in app_config)</option>
+          <option value="vault"   {% if _sb == 'vault' %}selected{% endif %}>HashiCorp Vault (KV v2)</option>
+          <option value="ccp"     {% if _sb == 'ccp' %}selected{% endif %}>CyberArk CCP / AIM Web Service</option>
+          <option value="azurekv" {% if _sb == 'azurekv' %}selected{% endif %}>Azure Key Vault</option>
+          <option value="awssm"   {% if _sb == 'awssm' %}selected{% endif %}>AWS Secrets Manager</option>
+          <option value="conjur"  {% if _sb == 'conjur' %}selected{% endif %}>CyberArk Conjur</option>
+        </select>
+      </div>
+
+      <!-- Vault fields -->
+      <div id="secret-vault-fields" class="hidden space-y-3 border-l-2 border-blue-300/40 dark:border-blue-500/30 pl-3">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Vault URL</label>
+          <input type="text" id="secret-vault-url"
+                 value="{{ secret_config.get('secret.vault.url', '') if secret_config else '' }}"
+                 placeholder="https://vault.example.com:8200"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Authentication method</label>
+          {% set _vam = (secret_config.get('secret.vault.auth_method', 'token') if secret_config else 'token').lower() %}
+          <select id="secret-vault-auth-method" onchange="onVaultAuthMethodChange()"
+                  class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <option value="token"      {% if _vam == 'token' %}selected{% endif %}>Static token (legacy / lab)</option>
+            <option value="approle"    {% if _vam == 'approle' %}selected{% endif %}>AppRole (role_id + secret_id)</option>
+            <option value="kubernetes" {% if _vam == 'kubernetes' %}selected{% endif %}>Kubernetes (projected SA JWT)</option>
+          </select>
+          <p class="text-[11px] text-muted/60 mt-1">
+            Production installs should pick <strong>AppRole</strong> or
+            <strong>Kubernetes</strong> — static tokens don't auto-renew.
+          </p>
+        </div>
+
+        <!-- Method: static token -->
+        <div id="secret-vault-auth-token-fields" class="hidden">
+          <label class="block text-xs font-medium text-muted mb-1">Vault Token</label>
+          <input type="password" id="secret-vault-token" value=""
+                 placeholder="{% if secret_config and secret_config.get('secret.vault.token') == '***' %}(configured — leave blank to keep current){% else %}static Vault token{% endif %}"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <p class="text-[11px] text-muted/60 mt-1">Stored as a secret. Only consulted when the auth method is <strong>token</strong>.</p>
+        </div>
+
+        <!-- Method: AppRole -->
+        <div id="secret-vault-auth-approle-fields" class="hidden space-y-3">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">role_id</label>
+            <input type="text" id="secret-vault-approle-role-id"
+                   value="{{ secret_config.get('secret.vault.approle_role_id', '') if secret_config else '' }}"
+                   placeholder="00000000-0000-0000-0000-000000000000"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">Identity (treated as public-ish) — pair with the secret_id below.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">secret_id</label>
+            <input type="password" id="secret-vault-approle-secret-id" value=""
+                   placeholder="{% if secret_config and secret_config.get('secret.vault.approle_secret_id') == '***' %}(configured — leave blank to keep current){% else %}AppRole secret_id{% endif %}"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">Stored as a secret. Vault response-wrapping is <em>not</em> supported here — paste an unwrapped secret_id.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">AppRole mount path</label>
+            <input type="text" id="secret-vault-approle-path"
+                   value="{{ secret_config.get('secret.vault.approle_path', 'approle') if secret_config else 'approle' }}"
+                   placeholder="approle"
+                   class="w-64 rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">Default <code class="font-mono">approle</code>; change only if the auth method was enabled at a non-default path.</p>
+          </div>
+        </div>
+
+        <!-- Method: Kubernetes JWT -->
+        <div id="secret-vault-auth-kubernetes-fields" class="hidden space-y-3">
+          <p class="text-[11px] text-muted/70 leading-snug">
+            Reads the projected service-account JWT from the configured path
+            inside the api / worker container and swaps it for a Vault token.
+            Standard for in-cluster deployments — no long-lived secret on disk.
+          </p>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Vault role</label>
+            <input type="text" id="secret-vault-k8s-role"
+                   value="{{ secret_config.get('secret.vault.k8s_role', '') if secret_config else '' }}"
+                   placeholder="ipsolis-prod"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">Bound on the Vault side via <code class="font-mono">vault write auth/&lt;mount&gt;/role/&lt;name&gt; ...</code>.</p>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">k8s mount path</label>
+              <input type="text" id="secret-vault-k8s-path"
+                     value="{{ secret_config.get('secret.vault.k8s_path', 'kubernetes') if secret_config else 'kubernetes' }}"
+                     placeholder="kubernetes"
+                     class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <p class="text-[11px] text-muted/60 mt-1">Default <code class="font-mono">kubernetes</code>.</p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">JWT path inside container</label>
+              <input type="text" id="secret-vault-k8s-jwt-path"
+                     value="{{ secret_config.get('secret.vault.k8s_jwt_path', '/var/run/secrets/kubernetes.io/serviceaccount/token') if secret_config else '/var/run/secrets/kubernetes.io/serviceaccount/token' }}"
+                     placeholder="/var/run/secrets/kubernetes.io/serviceaccount/token"
+                     class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <p class="text-[11px] text-muted/60 mt-1">Read fresh on every login so kubelet rotation lands without a restart.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">KV mount</label>
+            <input type="text" id="secret-vault-kv-mount"
+                   value="{{ secret_config.get('secret.vault.kv_mount', 'secret') if secret_config else 'secret' }}"
+                   placeholder="secret"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">KV v2 mount path. Default <code class="font-mono">secret</code>.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Namespace (Vault Enterprise)</label>
+            <input type="text" id="secret-vault-namespace"
+                   value="{{ secret_config.get('secret.vault.namespace', '') if secret_config else '' }}"
+                   placeholder="ipsolis/prod"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">Optional. Sent as <code class="font-mono">X-Vault-Namespace</code>.</p>
+          </div>
+        </div>
+        <p class="text-[11px] text-muted/70 leading-snug">
+          Reference shape: <code class="font-mono bg-surface-raised px-1 rounded">vault://&lt;path&gt;[#&lt;field&gt;]</code>
+          (default field <code class="font-mono">value</code>). Example:
+          <code class="font-mono bg-surface-raised px-1 rounded">vault://ipsolis/ad/password</code>.
+        </p>
+      </div>
+
+      <!-- CCP fields -->
+      <div id="secret-ccp-fields" class="hidden space-y-3 border-l-2 border-amber-300/40 dark:border-amber-500/30 pl-3">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">CCP URL</label>
+          <input type="text" id="secret-ccp-url"
+                 value="{{ secret_config.get('secret.ccp.url', '') if secret_config else '' }}"
+                 placeholder="https://ccp.example.com/AIMWebService"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">AppID</label>
+            <input type="text" id="secret-ccp-app-id"
+                   value="{{ secret_config.get('secret.ccp.app_id', '') if secret_config else '' }}"
+                   placeholder="ipsolis-prod"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Default Safe</label>
+            <input type="text" id="secret-ccp-safe"
+                   value="{{ secret_config.get('secret.ccp.safe', '') if secret_config else '' }}"
+                   placeholder="(optional)"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">Used when a reference omits the Safe.</p>
+          </div>
+        </div>
+        <!-- Client cert + key (mTLS — optional) — file-upload UX with
+             a fallback to direct PEM paste for API-driven configs. -->
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Client cert + key (mTLS — optional)</label>
+          {% set _ccp_pem_set = secret_config and secret_config.get('secret.ccp.client_cert_pem') == '***' %}
+          <div id="secret-ccp-mtls-status" class="text-[11px] mb-2
+                      {% if _ccp_pem_set %}text-green-700 dark:text-green-300{% else %}text-muted/60{% endif %}">
+            {% if _ccp_pem_set %}✓ Configured — upload new files to replace, or leave empty to keep current.
+            {% else %}Not configured — leave empty for AppID + IP allow-list installs.{% endif %}
+          </div>
+
+          <!-- File-upload mode (default) -->
+          <div id="secret-ccp-mtls-upload" class="space-y-2">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[11px] font-medium text-muted mb-1">Certificate file</label>
+                <input type="file" id="secret-ccp-cert-file"
+                       accept=".crt,.cer,.pem,application/x-x509-ca-cert,application/x-pem-file"
+                       onchange="onCcpFileChange()"
+                       class="w-full text-xs text-body file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-surface-raised file:text-body hover:file:bg-surface">
+                <p class="text-[11px] text-muted/60 mt-1"><code class="font-mono">.crt</code> / <code class="font-mono">.cer</code> / <code class="font-mono">.pem</code> — PEM-encoded.</p>
+              </div>
+              <div>
+                <label class="block text-[11px] font-medium text-muted mb-1">Private key file</label>
+                <input type="file" id="secret-ccp-key-file"
+                       accept=".key,.pem,application/x-pem-file"
+                       onchange="onCcpFileChange()"
+                       class="w-full text-xs text-body file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-surface-raised file:text-body hover:file:bg-surface">
+                <p class="text-[11px] text-muted/60 mt-1">Unencrypted PEM. Encrypted keys (<code class="font-mono">ENCRYPTED PRIVATE KEY</code>) are rejected.</p>
+              </div>
+            </div>
+            <div id="secret-ccp-mtls-file-status" class="hidden text-[11px] mt-1"></div>
+            <div class="text-right">
+              <button type="button" onclick="toggleCcpMtlsAdvanced()"
+                      class="text-[11px] text-muted/70 hover:text-body underline">
+                Advanced: paste PEM directly
+              </button>
+            </div>
+          </div>
+
+          <!-- Advanced direct-paste mode (for operators feeding from -->
+          <!-- automation pipelines or with a pre-concatenated bundle) -->
+          <div id="secret-ccp-mtls-paste" class="hidden space-y-2">
+            <textarea id="secret-ccp-client-cert-pem" rows="4"
+                      placeholder="{% if _ccp_pem_set %}(configured — leave blank to keep current){% else %}-----BEGIN CERTIFICATE-----…&#10;-----END CERTIFICATE-----&#10;-----BEGIN PRIVATE KEY-----…&#10;-----END PRIVATE KEY-----{% endif %}"
+                      class="w-full rounded border border-token-border bg-surface text-body text-xs px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea>
+            <p class="text-[11px] text-muted/60">
+              Concatenated cert + key. The file-upload form above produces the same shape automatically.
+            </p>
+            <div class="text-right">
+              <button type="button" onclick="toggleCcpMtlsAdvanced()"
+                      class="text-[11px] text-muted/70 hover:text-body underline">
+                Back to file upload
+              </button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Verify TLS</label>
+          <select id="secret-ccp-verify-tls"
+                  class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            {% set _vt = (secret_config.get('secret.ccp.verify_tls', 'true') if secret_config else 'true').lower() %}
+            <option value="true"  {% if _vt != 'false' %}selected{% endif %}>Verify (recommended)</option>
+            <option value="false" {% if _vt == 'false' %}selected{% endif %}>Skip — self-signed lab only</option>
+          </select>
+        </div>
+        <p class="text-[11px] text-muted/70 leading-snug">
+          Reference shape: <code class="font-mono bg-surface-raised px-1 rounded">ccp://[&lt;safe&gt;/]&lt;object&gt;</code>.
+          ip·Solis returns the account's <code class="font-mono">Content</code> field (the password).
+        </p>
+      </div>
+
+      <!-- Azure Key Vault fields -->
+      <div id="secret-azurekv-fields" class="hidden space-y-3 border-l-2 border-sky-300/40 dark:border-sky-500/30 pl-3">
+        <p class="text-[11px] text-muted/70 leading-snug">
+          Authenticates via an Azure AD service principal (client_credentials flow). The SPN needs
+          <strong>Key Vault Secrets User</strong> (RBAC) or <em>Get</em> on Secrets (vault access policy)
+          on every vault you reference. Independent of the Entra ID SSO config so the KV SPN
+          can carry minimal-necessary access.
+        </p>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Tenant ID</label>
+            <input type="text" id="secret-azurekv-tenant-id"
+                   value="{{ secret_config.get('secret.azurekv.tenant_id', '') if secret_config else '' }}"
+                   placeholder="00000000-0000-0000-0000-000000000000"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Client ID</label>
+            <input type="text" id="secret-azurekv-client-id"
+                   value="{{ secret_config.get('secret.azurekv.client_id', '') if secret_config else '' }}"
+                   placeholder="00000000-0000-0000-0000-000000000000"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Client Secret</label>
+          <input type="password" id="secret-azurekv-client-secret" value=""
+                 placeholder="{% if secret_config and secret_config.get('secret.azurekv.client_secret') == '***' %}(configured — leave blank to keep current){% else %}service principal client secret{% endif %}"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <p class="text-[11px] text-muted/60 mt-1">Stored as a secret. Mask <code class="font-mono">***</code> means "configured — leave blank to keep current".</p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">API version</label>
+          <input type="text" id="secret-azurekv-api-version"
+                 value="{{ secret_config.get('secret.azurekv.api_version', '7.4') if secret_config else '7.4' }}"
+                 placeholder="7.4"
+                 class="w-32 rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <p class="text-[11px] text-muted/60 mt-1">Default <code class="font-mono">7.4</code> (current GA).</p>
+        </div>
+        <p class="text-[11px] text-muted/70 leading-snug">
+          Reference shape: <code class="font-mono bg-surface-raised px-1 rounded">azurekv://&lt;vault-name&gt;/&lt;secret-name&gt;</code>
+          — e.g. <code class="font-mono bg-surface-raised px-1 rounded">azurekv://kv-prod-ipsolis/ad-bind-password</code>.
+          Append <code class="font-mono">?version=&lt;id&gt;</code> to pin a specific version (rarely needed).
+        </p>
+      </div>
+
+      <!-- AWS Secrets Manager fields -->
+      <div id="secret-awssm-fields" class="hidden space-y-3 border-l-2 border-orange-300/40 dark:border-orange-500/30 pl-3">
+        <p class="text-[11px] text-muted/70 leading-snug">
+          Authenticates via AWS Signature Version 4. The IAM principal needs both
+          <code class="font-mono">secretsmanager:GetSecretValue</code> on each referenced secret
+          AND <code class="font-mono">secretsmanager:ListSecrets</code> for the test-connection probe.
+          Use STS-issued temporary credentials (with session token) where possible.
+        </p>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Region</label>
+            <input type="text" id="secret-awssm-region"
+                   value="{{ secret_config.get('secret.awssm.region', 'us-east-1') if secret_config else 'us-east-1' }}"
+                   placeholder="eu-central-1"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Access Key ID</label>
+            <input type="text" id="secret-awssm-access-key-id"
+                   value="{{ secret_config.get('secret.awssm.access_key_id', '') if secret_config else '' }}"
+                   placeholder="AKIA…"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Secret Access Key</label>
+          <input type="password" id="secret-awssm-secret-access-key" value=""
+                 placeholder="{% if secret_config and secret_config.get('secret.awssm.secret_access_key') == '***' %}(configured — leave blank to keep current){% else %}IAM secret access key{% endif %}"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <p class="text-[11px] text-muted/60 mt-1">Stored as a secret. Mask <code class="font-mono">***</code> means "configured — leave blank to keep current".</p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Session Token <span class="text-muted/50">(optional, static mode only)</span></label>
+          <input type="password" id="secret-awssm-session-token" value=""
+                 placeholder="{% if secret_config and secret_config.get('secret.awssm.session_token') == '***' %}(configured — leave blank to keep current){% else %}STS session token (for AssumeRole / instance profile creds){% endif %}"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <p class="text-[11px] text-muted/60 mt-1">Required when using STS temporary credentials in <strong>static</strong> mode. Leave blank for long-lived IAM user keys, and ignored entirely in <strong>assume_role</strong> mode (ip·Solis mints its own session).</p>
+        </div>
+
+        <div class="pt-1">
+          <label class="block text-xs font-medium text-muted mb-1">Authentication method</label>
+          {% set _aam = (secret_config.get('secret.awssm.auth_method', 'static') if secret_config else 'static').lower() %}
+          <select id="secret-awssm-auth-method" onchange="onAwsAuthMethodChange()"
+                  class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <option value="static"      {% if _aam == 'static' %}selected{% endif %}>Static IAM keys (lab / legacy)</option>
+            <option value="assume_role" {% if _aam == 'assume_role' %}selected{% endif %}>AssumeRole (auto-renewing session)</option>
+          </select>
+          <p class="text-[11px] text-muted/60 mt-1">
+            Production installs should pick <strong>AssumeRole</strong>: the keys above become a
+            bootstrap identity that only needs <code class="font-mono">sts:AssumeRole</code> on the
+            target role; ip·Solis refreshes the derived session credentials automatically.
+          </p>
+        </div>
+
+        <!-- AssumeRole sub-fields -->
+        <div id="secret-awssm-assume-role-fields" class="hidden space-y-3">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Role ARN</label>
+            <input type="text" id="secret-awssm-role-arn"
+                   value="{{ secret_config.get('secret.awssm.role_arn', '') if secret_config else '' }}"
+                   placeholder="arn:aws:iam::123456789012:role/ipsolis-secrets-reader"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">Target role; carries the Secrets Manager permissions ip·Solis actually uses.</p>
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">Role session name</label>
+              <input type="text" id="secret-awssm-role-session-name"
+                     value="{{ secret_config.get('secret.awssm.role_session_name', 'ipsolis') if secret_config else 'ipsolis' }}"
+                     placeholder="ipsolis"
+                     class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <p class="text-[11px] text-muted/60 mt-1">Appears in CloudTrail.</p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">External ID <span class="text-muted/50">(optional)</span></label>
+              <input type="text" id="secret-awssm-role-external-id"
+                     value="{{ secret_config.get('secret.awssm.role_external_id', '') if secret_config else '' }}"
+                     placeholder=""
+                     class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <p class="text-[11px] text-muted/60 mt-1">Third-party-IAM trust pattern.</p>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">Session duration (s)</label>
+              <input type="number" id="secret-awssm-role-duration-seconds" min="900" max="43200"
+                     value="{{ secret_config.get('secret.awssm.role_duration_seconds', '3600') if secret_config else '3600' }}"
+                     class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <p class="text-[11px] text-muted/60 mt-1">Capped by role's MaxSessionDuration.</p>
+            </div>
+          </div>
+        </div>
+
+        <p class="text-[11px] text-muted/70 leading-snug">
+          Reference shapes:
+          <code class="font-mono bg-surface-raised px-1 rounded">awssm://&lt;secret-name&gt;</code>
+          (returns <code class="font-mono">SecretString</code> as-is) or
+          <code class="font-mono bg-surface-raised px-1 rounded">awssm://&lt;secret-name&gt;#&lt;field&gt;</code>
+          (parses <code class="font-mono">SecretString</code> as JSON, extracts the named field — useful when AWS stores
+          <code class="font-mono">{"username":"…","password":"…"}</code>).
+        </p>
+      </div>
+
+      <!-- CyberArk Conjur fields -->
+      <div id="secret-conjur-fields" class="hidden space-y-3 border-l-2 border-rose-300/40 dark:border-rose-500/30 pl-3">
+        <p class="text-[11px] text-muted/70 leading-snug">
+          Authenticates via Conjur host API-key login (the host's API key is exchanged for a
+          short-lived access token, cached for ~7 minutes). The host needs read permission on every
+          variable that ip·Solis references. Works against on-prem Conjur and Conjur Cloud alike.
+        </p>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Conjur URL</label>
+          <input type="text" id="secret-conjur-url"
+                 value="{{ secret_config.get('secret.conjur.url', '') if secret_config else '' }}"
+                 placeholder="https://conjur.example.com  or  https://&lt;account&gt;.secretsmgr.cyberark.cloud"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <p class="text-[11px] text-muted/60 mt-1">No trailing slash. Authentication paths are appended automatically.</p>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Account / organisation</label>
+            <input type="text" id="secret-conjur-account"
+                   value="{{ secret_config.get('secret.conjur.account', '') if secret_config else '' }}"
+                   placeholder="cyberark"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">First path segment in every Conjur API call.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Host ID</label>
+            <input type="text" id="secret-conjur-host-id"
+                   value="{{ secret_config.get('secret.conjur.host_id', '') if secret_config else '' }}"
+                   placeholder="ipsolis-prod"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <p class="text-[11px] text-muted/60 mt-1">The <code class="font-mono">host/</code> prefix is added automatically if missing.</p>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">API Key</label>
+          <input type="password" id="secret-conjur-api-key" value=""
+                 placeholder="{% if secret_config and secret_config.get('secret.conjur.api_key') == '***' %}(configured — leave blank to keep current){% else %}host API key{% endif %}"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <p class="text-[11px] text-muted/60 mt-1">Stored as a secret. Rotate from the Conjur side and paste the new value here.</p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Verify TLS</label>
+          <select id="secret-conjur-verify-tls"
+                  class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+            {% set _conjur_vt = (secret_config.get('secret.conjur.verify_tls', 'true') if secret_config else 'true').lower() %}
+            <option value="true"  {% if _conjur_vt != 'false' %}selected{% endif %}>Verify (recommended)</option>
+            <option value="false" {% if _conjur_vt == 'false' %}selected{% endif %}>Skip — self-signed lab only</option>
+          </select>
+        </div>
+        <p class="text-[11px] text-muted/70 leading-snug">
+          Reference shapes:
+          <code class="font-mono bg-surface-raised px-1 rounded">conjur://&lt;identifier&gt;</code>
+          (returns the variable's value as-is) or
+          <code class="font-mono bg-surface-raised px-1 rounded">conjur://&lt;identifier&gt;#&lt;field&gt;</code>
+          (parses the value as JSON and extracts the named field). Identifier may include slashes —
+          e.g. <code class="font-mono bg-surface-raised px-1 rounded">conjur://prod/ipsolis/ad-bind-password</code>.
+        </p>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6 items-center">
+      <button onclick="saveSecretBackend()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save
+      </button>
+      <button onclick="testSecretBackend()"
+              class="px-5 py-2 bg-surface-raised text-body text-sm font-medium rounded hover:bg-surface border border-token-border">
+        Test connection
+      </button>
+      <span class="text-xs text-muted/70">
+        Last verified: <span id="secret-last-test" class="font-mono">{{ secret_config.get('secret.last_test_at', '—') or '—' if secret_config else '—' }}</span>
+        {% set _err = secret_config.get('secret.last_test_error', '') if secret_config else '' %}
+        {% if _err %}
+          · <span class="text-red-600 dark:text-red-300">{{ _err }}</span>
+        {% endif %}
+      </span>
+    </div>
+
+    <!-- One-shot migration tool — pushes plaintext is_secret=true rows
+         to the configured backend and replaces each value with the
+         matching reference. -->
+    <div class="mt-6 pt-5 border-t border-token-border/60">
+      <h3 class="text-xs font-semibold text-body mb-1">Migrate plaintext secrets to backend</h3>
+      <p class="text-[11px] text-muted/70 mb-3 leading-snug">
+        Walks every <code class="font-mono">is_secret=true</code> config row, pushes the plaintext
+        value to the active backend, and replaces the row with the matching reference
+        (<code class="font-mono">vault://…</code> / <code class="font-mono">azurekv://…</code> / <code class="font-mono">awssm://…</code> / <code class="font-mono">conjur://…</code>).
+        CCP is read-only by design — Safes are managed via PVWA, not the API. Always
+        run <strong>Dry run</strong> first to review the per-row plan before any backend writes happen.
+      </p>
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Migration prefix</label>
+          <input type="text" id="secret-migration-prefix"
+                 value="{{ secret_config.get('secret.migration_prefix', 'ipsolis') if secret_config else 'ipsolis' }}"
+                 placeholder="ipsolis"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <p class="text-[11px] text-muted/60 mt-1">Prepended to every key (e.g. <code class="font-mono">ipsolis/ad/password</code>).</p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Azure KV destination vault</label>
+          <input type="text" id="secret-azurekv-migration-vault"
+                 value="{{ secret_config.get('secret.azurekv.migration_vault', '') if secret_config else '' }}"
+                 placeholder="kv-prod-ipsolis"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <p class="text-[11px] text-muted/60 mt-1">Required when the backend is Azure KV (other backends ignore this).</p>
+        </div>
+      </div>
+      <div class="flex gap-3 items-center">
+        <button onclick="saveMigrationPrefix()"
+                class="px-4 py-1.5 bg-surface-raised text-body text-xs font-medium rounded hover:bg-surface border border-token-border">
+          Save prefix
+        </button>
+        <button onclick="migrateSecrets(true)"
+                class="px-4 py-1.5 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700">
+          Dry run
+        </button>
+        <button onclick="migrateSecrets(false)"
+                class="px-4 py-1.5 bg-amber-600 text-white text-xs font-medium rounded hover:bg-amber-700">
+          Migrate now
+        </button>
+      </div>
+      <div id="secret-migrate-result" class="hidden mt-4 text-xs"></div>
     </div>
   </div>
 </div>
@@ -832,7 +2154,7 @@
   </div>
 {% else %}
 {{ teaser_pane(
-    "VMware vSphere &amp; XenServer / XCP-ng Integration",
+    "VMware vSphere & XenServer / XCP-ng Integration",
     "Run VM lifecycle operations via PowerCLI against VMware vSphere and XenServer / XCP-ng: power state, console, snapshots, rename, destroy. Credentials configured here flow into PowerShell runbook steps."
 ) }}
 {% endif %}
@@ -842,7 +2164,7 @@
 
 <script>
 // ── Tab switching ──────────────────────────────────────────────────────────────
-var _ALL_TABS = ['general', 'ad', 'vars', 'email', 'sccm', 'hosting'];
+var _ALL_TABS = ['general', 'ad', 'vars', 'email', 'compliance', 'sccm', 'hosting'];
 
 function showTab(name) {
   _ALL_TABS.forEach(function(t) {
@@ -867,7 +2189,7 @@ async function saveAppTitle() {
   var resp = await fetch('/admin/config/app.title', {
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({value: title || 'Ipsolis'}),
+    body: JSON.stringify({value: title || 'ip·Solis'}),
   });
   var banner = document.getElementById('general-banner');
   if (resp.ok) {
@@ -883,6 +2205,42 @@ async function saveAppTitle() {
 }
 
 // ── Order Settings ────────────────────────────────────────────────────────────
+async function saveUpdateNotifier() {
+  // Update notifier — opt-in toggle + repository URL + optional token.
+  // The toggle drives both the daily Beat task (which short-circuits
+  // when off) and the banner partial (which only renders when on AND
+  // outdated). Token is only sent when the operator typed something —
+  // a blank field preserves the existing value (matches the
+  // SMTP / AD / SCCM password handling pattern).
+  var fields = {
+    'updates.check_enabled': document.getElementById('updates-enabled').value,
+    'updates.repo_url':      document.getElementById('updates-repo-url').value.trim() ||
+                             'https://api.github.com/repos/XenPool/ipSolis',
+  };
+  var token = document.getElementById('updates-github-token').value;
+  if (token) fields['updates.github_token'] = token;
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  var banner = document.getElementById('general-banner');
+  if (errors.length === 0) {
+    banner.className = 'mb-4 px-4 py-3 rounded-lg text-sm font-medium bg-green-50 text-green-800 border border-green-200 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/30';
+    banner.textContent = fields['updates.check_enabled'] === 'true'
+      ? 'Update notifier enabled. First check runs at the next daily Beat tick (04:30 Europe/Berlin).'
+      : 'Update notifier disabled. No outbound calls will be made.';
+  } else {
+    banner.className = 'mb-4 px-4 py-3 rounded-lg text-sm font-medium bg-red-50 text-red-800 border border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30';
+    banner.textContent = 'Failed to save: ' + errors.join(', ');
+  }
+  banner.classList.remove('hidden');
+}
+
 async function saveOrderSettings() {
   var val = document.getElementById('cfg-max-advance-days').value.trim() || '30';
   var resp = await fetch('/admin/config/portal.max_advance_days', {
@@ -1043,6 +2401,28 @@ async function testAdConnection() {
   var resp = await fetch('/admin/config/ad/test', {method: 'POST'});
   var data = await resp.json();
   showBanner(data);
+}
+
+async function saveAdAttributeMapping() {
+  var fields = {
+    'ad.attribute.department':  document.getElementById('ad-attr-department').value.trim(),
+    'ad.attribute.cost_center': document.getElementById('ad-attr-cost-center').value.trim(),
+    'ad.attribute.company':     document.getElementById('ad-attr-company').value.trim(),
+    'ad.attribute.employee_id': document.getElementById('ad-attr-employee-id').value.trim(),
+    'ad.attribute.title':       document.getElementById('ad-attr-title').value.trim(),
+  };
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showBanner(errors.length === 0
+    ? {ok: true,  message: 'AD attribute mapping saved. Snapshot applies to new orders going forward.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
 }
 
 function showBanner(data) {
@@ -1236,6 +2616,639 @@ async function testEmailConfig() {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({to: toAddr}),
   });
+  var data = await resp.json();
+  showEmailBanner(data);
+}
+
+// ── External Secret Backend (Vault / CyberArk CCP) ─────────────────────────────
+function onSecretBackendChange() {
+  var b = document.getElementById('secret-backend').value;
+  // Generic show/hide so adding a future backend is one entry, not three lines per case.
+  var groups = {
+    'vault':   document.getElementById('secret-vault-fields'),
+    'ccp':     document.getElementById('secret-ccp-fields'),
+    'azurekv': document.getElementById('secret-azurekv-fields'),
+    'awssm':   document.getElementById('secret-awssm-fields'),
+    'conjur':  document.getElementById('secret-conjur-fields'),
+  };
+  Object.keys(groups).forEach(function(key) {
+    var el = groups[key];
+    if (!el) return;
+    if (key === b) el.classList.remove('hidden'); else el.classList.add('hidden');
+  });
+}
+
+function onAwsAuthMethodChange() {
+  // Show the AssumeRole sub-fields only when auth_method = assume_role.
+  // Static mode uses the same access_key / secret_key / session_token
+  // fields rendered above the dropdown, so no toggle there.
+  var select = document.getElementById('secret-awssm-auth-method');
+  if (!select) return;
+  var assumeRoleFields = document.getElementById('secret-awssm-assume-role-fields');
+  if (!assumeRoleFields) return;
+  if (select.value === 'assume_role') assumeRoleFields.classList.remove('hidden');
+  else                                assumeRoleFields.classList.add('hidden');
+}
+
+// ── CCP mTLS upload UX ────────────────────────────────────────────────────
+function toggleCcpMtlsAdvanced() {
+  var upload = document.getElementById('secret-ccp-mtls-upload');
+  var paste  = document.getElementById('secret-ccp-mtls-paste');
+  if (!upload || !paste) return;
+  var showPaste = upload.classList.contains('hidden') === false;
+  if (showPaste) {
+    upload.classList.add('hidden');
+    paste.classList.remove('hidden');
+  } else {
+    paste.classList.add('hidden');
+    upload.classList.remove('hidden');
+  }
+}
+
+function _readFileText(file) {
+  return new Promise(function(resolve, reject) {
+    var fr = new FileReader();
+    fr.onload  = function() { resolve(String(fr.result || '')); };
+    fr.onerror = function() { reject(fr.error || new Error('read failed')); };
+    fr.readAsText(file);
+  });
+}
+
+function _showCcpFileStatus(state) {
+  // state: {ok: true|false|null, message: string}
+  var el = document.getElementById('secret-ccp-mtls-file-status');
+  if (!el) return;
+  el.classList.remove('hidden', 'text-green-700', 'dark:text-green-300',
+                      'text-red-700', 'dark:text-red-300', 'text-muted/70');
+  if (state.ok === true) {
+    el.classList.add('text-green-700', 'dark:text-green-300');
+  } else if (state.ok === false) {
+    el.classList.add('text-red-700', 'dark:text-red-300');
+  } else {
+    el.classList.add('text-muted/70');
+  }
+  el.textContent = state.message;
+  el.classList.remove('hidden');
+}
+
+async function onCcpFileChange() {
+  var certInput = document.getElementById('secret-ccp-cert-file');
+  var keyInput  = document.getElementById('secret-ccp-key-file');
+  var pemArea   = document.getElementById('secret-ccp-client-cert-pem');
+  if (!certInput || !keyInput || !pemArea) return;
+
+  var certFile = certInput.files && certInput.files[0];
+  var keyFile  = keyInput.files && keyInput.files[0];
+
+  // Both fields empty → user cancelled, clear the staging textarea so
+  // the save path falls back to "leave current value alone".
+  if (!certFile && !keyFile) {
+    pemArea.value = '';
+    _showCcpFileStatus({ok: null, message: ''});
+    document.getElementById('secret-ccp-mtls-file-status').classList.add('hidden');
+    return;
+  }
+  if (!certFile || !keyFile) {
+    _showCcpFileStatus({ok: null, message: 'Pick both the certificate and the private key.'});
+    pemArea.value = '';
+    return;
+  }
+
+  var certText, keyText;
+  try {
+    certText = (await _readFileText(certFile)).trim();
+    keyText  = (await _readFileText(keyFile)).trim();
+  } catch (e) {
+    _showCcpFileStatus({ok: false, message: 'Could not read one of the files: ' + e.message});
+    pemArea.value = '';
+    return;
+  }
+
+  // PEM-shape sanity checks — catches the most common operator
+  // mistakes (wrong file, swapped order, encrypted key) before
+  // the value reaches the resolver where the failure mode is a
+  // 4xx from CCP that's harder to diagnose.
+  if (!/-----BEGIN CERTIFICATE-----/.test(certText) ||
+      !/-----END CERTIFICATE-----/.test(certText)) {
+    _showCcpFileStatus({
+      ok: false,
+      message: "Certificate file doesn't contain a PEM CERTIFICATE block. " +
+               "Did you pick the wrong file?",
+    });
+    pemArea.value = '';
+    return;
+  }
+  if (/-----BEGIN ENCRYPTED PRIVATE KEY-----/.test(keyText)) {
+    _showCcpFileStatus({
+      ok: false,
+      message: "Private key is encrypted. ipSolis can't decrypt it on the wire — " +
+               "decrypt the key first (e.g. openssl pkcs8 -in encrypted.key -out unencrypted.key).",
+    });
+    pemArea.value = '';
+    return;
+  }
+  if (!/-----BEGIN ([A-Z]+ )?PRIVATE KEY-----/.test(keyText) ||
+      !/-----END ([A-Z]+ )?PRIVATE KEY-----/.test(keyText)) {
+    _showCcpFileStatus({
+      ok: false,
+      message: "Private key file doesn't contain a PEM PRIVATE KEY block. " +
+               "Did you swap the cert and key files?",
+    });
+    pemArea.value = '';
+    return;
+  }
+
+  // Concatenate cert + key with a single trailing newline between
+  // them — matches what `cat client.crt client.key` produces and
+  // what `ssl.load_cert_chain` expects.
+  var bundle = certText.replace(/\s+$/, '') + '\n' + keyText.replace(/\s+$/, '') + '\n';
+  pemArea.value = bundle;
+
+  _showCcpFileStatus({
+    ok: true,
+    message: 'Cert + key bundle assembled (' + bundle.length + ' bytes). ' +
+             'Click Save to apply.',
+  });
+}
+
+function onVaultAuthMethodChange() {
+  // Inner show/hide for the Vault auth_method dropdown — same pattern
+  // as the outer backend dropdown but scoped to the Vault sub-card.
+  var select = document.getElementById('secret-vault-auth-method');
+  if (!select) return;
+  var m = select.value;
+  var groups = {
+    'token':      document.getElementById('secret-vault-auth-token-fields'),
+    'approle':    document.getElementById('secret-vault-auth-approle-fields'),
+    'kubernetes': document.getElementById('secret-vault-auth-kubernetes-fields'),
+  };
+  Object.keys(groups).forEach(function(key) {
+    var el = groups[key];
+    if (!el) return;
+    if (key === m) el.classList.remove('hidden'); else el.classList.add('hidden');
+  });
+}
+
+async function saveSecretBackend() {
+  var fields = {
+    'secret.backend':            document.getElementById('secret-backend').value,
+    // Always persist all backend inputs so admins can flip between them without retyping.
+    'secret.vault.url':          document.getElementById('secret-vault-url').value.trim(),
+    'secret.vault.auth_method':  document.getElementById('secret-vault-auth-method').value,
+    'secret.vault.approle_role_id': document.getElementById('secret-vault-approle-role-id').value.trim(),
+    'secret.vault.approle_path':    document.getElementById('secret-vault-approle-path').value.trim() || 'approle',
+    'secret.vault.k8s_role':        document.getElementById('secret-vault-k8s-role').value.trim(),
+    'secret.vault.k8s_path':        document.getElementById('secret-vault-k8s-path').value.trim() || 'kubernetes',
+    'secret.vault.k8s_jwt_path':    document.getElementById('secret-vault-k8s-jwt-path').value.trim() || '/var/run/secrets/kubernetes.io/serviceaccount/token',
+    'secret.vault.kv_mount':     document.getElementById('secret-vault-kv-mount').value.trim() || 'secret',
+    'secret.vault.namespace':    document.getElementById('secret-vault-namespace').value.trim(),
+    'secret.ccp.url':            document.getElementById('secret-ccp-url').value.trim(),
+    'secret.ccp.app_id':         document.getElementById('secret-ccp-app-id').value.trim(),
+    'secret.ccp.safe':           document.getElementById('secret-ccp-safe').value.trim(),
+    'secret.ccp.verify_tls':     document.getElementById('secret-ccp-verify-tls').value,
+    'secret.azurekv.tenant_id':  document.getElementById('secret-azurekv-tenant-id').value.trim(),
+    'secret.azurekv.client_id':  document.getElementById('secret-azurekv-client-id').value.trim(),
+    'secret.azurekv.api_version': document.getElementById('secret-azurekv-api-version').value.trim() || '7.4',
+    'secret.awssm.region':         document.getElementById('secret-awssm-region').value.trim() || 'us-east-1',
+    'secret.awssm.access_key_id':  document.getElementById('secret-awssm-access-key-id').value.trim(),
+    'secret.awssm.auth_method':           document.getElementById('secret-awssm-auth-method').value,
+    'secret.awssm.role_arn':              document.getElementById('secret-awssm-role-arn').value.trim(),
+    'secret.awssm.role_session_name':     document.getElementById('secret-awssm-role-session-name').value.trim() || 'ipsolis',
+    'secret.awssm.role_external_id':      document.getElementById('secret-awssm-role-external-id').value.trim(),
+    'secret.awssm.role_duration_seconds': document.getElementById('secret-awssm-role-duration-seconds').value.trim() || '3600',
+    'secret.conjur.url':           document.getElementById('secret-conjur-url').value.trim(),
+    'secret.conjur.account':       document.getElementById('secret-conjur-account').value.trim(),
+    'secret.conjur.host_id':       document.getElementById('secret-conjur-host-id').value.trim(),
+    'secret.conjur.verify_tls':    document.getElementById('secret-conjur-verify-tls').value,
+  };
+  var vaultToken = document.getElementById('secret-vault-token').value;
+  if (vaultToken) fields['secret.vault.token'] = vaultToken;
+  var vaultApproleSecret = document.getElementById('secret-vault-approle-secret-id').value;
+  if (vaultApproleSecret) fields['secret.vault.approle_secret_id'] = vaultApproleSecret;
+  var ccpPem = document.getElementById('secret-ccp-client-cert-pem').value;
+  if (ccpPem) fields['secret.ccp.client_cert_pem'] = ccpPem;
+  var azClientSecret = document.getElementById('secret-azurekv-client-secret').value;
+  if (azClientSecret) fields['secret.azurekv.client_secret'] = azClientSecret;
+  var awsSecretKey = document.getElementById('secret-awssm-secret-access-key').value;
+  if (awsSecretKey) fields['secret.awssm.secret_access_key'] = awsSecretKey;
+  var awsSessionToken = document.getElementById('secret-awssm-session-token').value;
+  if (awsSessionToken) fields['secret.awssm.session_token'] = awsSessionToken;
+  var conjurApiKey = document.getElementById('secret-conjur-api-key').value;
+  if (conjurApiKey) fields['secret.conjur.api_key'] = conjurApiKey;
+
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showComplianceBanner(errors.length === 0
+    ? {ok: true,  message: 'Secret backend settings saved.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
+
+async function testSecretBackend() {
+  showComplianceBanner({ok: null, message: 'Testing backend connection…'});
+  var resp = await fetch('/admin/config/secret-backend/test', {method: 'POST'});
+  var data = await resp.json();
+  showComplianceBanner(data);
+  if (data.ok) {
+    document.getElementById('secret-last-test').textContent = new Date().toISOString();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('secret-backend')) onSecretBackendChange();
+  if (document.getElementById('secret-vault-auth-method')) onVaultAuthMethodChange();
+  if (document.getElementById('secret-awssm-auth-method')) onAwsAuthMethodChange();
+});
+
+// ── Secret-backend migration tool ─────────────────────────────────────────────
+async function saveMigrationPrefix() {
+  var fields = {
+    'secret.migration_prefix':         document.getElementById('secret-migration-prefix').value.trim() || 'ipsolis',
+    'secret.azurekv.migration_vault':  document.getElementById('secret-azurekv-migration-vault').value.trim(),
+  };
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showComplianceBanner(errors.length === 0
+    ? {ok: true,  message: 'Migration prefix saved.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
+
+async function migrateSecrets(dryRun) {
+  // Confirm dialog only for the destructive ("real") path. The plain
+  // dry-run is read-only-ish (it doesn't touch app_config or the
+  // backend) so it doesn't need a guard.
+  if (!dryRun) {
+    var ok = window.confirm(
+      'Migrate every is_secret=true row to the configured backend?\n\n' +
+      'Each plaintext row will be pushed to the backend and replaced ' +
+      'with a backend reference. This is reversible only by manually ' +
+      'restoring values from the backend or a database backup.'
+    );
+    if (!ok) return;
+  }
+  var panel = document.getElementById('secret-migrate-result');
+  panel.classList.remove('hidden');
+  panel.innerHTML = '<div class="text-muted">Running ' + (dryRun ? 'dry run' : 'migration') + '…</div>';
+
+  var resp = await fetch('/admin/config/secret-backend/migrate?dry_run=' + (dryRun ? 'true' : 'false'),
+                         {method: 'POST'});
+  var data = await resp.json();
+  renderMigrationResult(panel, data);
+}
+
+function renderMigrationResult(panel, data) {
+  var lines = [];
+  if (data.error) {
+    panel.innerHTML = '<div class="px-3 py-2 rounded bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300">' +
+      escapeHtml(data.error) + '</div>';
+    return;
+  }
+  var s = data.summary || {};
+  var head = 'Backend: <strong>' + escapeHtml(data.backend) + '</strong>';
+  if (data.prefix) head += ' · Prefix: <code class="font-mono">' + escapeHtml(data.prefix) + '</code>';
+  head += ' · Mode: <strong>' + (data.dry_run ? 'dry run' : 'live migration') + '</strong>';
+  lines.push('<div class="mb-2 text-muted/80">' + head + '</div>');
+
+  var summaryParts = [];
+  if (s.migrated)       summaryParts.push('<span class="text-green-700 dark:text-green-300">migrated: ' + s.migrated + '</span>');
+  if (s.would_migrate)  summaryParts.push('<span class="text-blue-700 dark:text-blue-300">would migrate: ' + s.would_migrate + '</span>');
+  if (s.skipped)        summaryParts.push('<span class="text-muted">skipped: ' + s.skipped + '</span>');
+  if (s.failed)         summaryParts.push('<span class="text-red-700 dark:text-red-300">failed: ' + s.failed + '</span>');
+  if (summaryParts.length) lines.push('<div class="mb-2">' + summaryParts.join(' · ') + '</div>');
+
+  if (data.items && data.items.length) {
+    lines.push('<table class="w-full text-[11px] font-mono"><thead><tr class="text-left text-muted/60 border-b border-token-border/50"><th class="py-1 pr-2">Key</th><th class="py-1 pr-2">Status</th><th class="py-1">Details</th></tr></thead><tbody>');
+    data.items.forEach(function(it) {
+      var color = (
+        it.status === 'migrated'      ? 'text-green-700 dark:text-green-300' :
+        it.status === 'would_migrate' ? 'text-blue-700 dark:text-blue-300'   :
+        it.status === 'failed'        ? 'text-red-700 dark:text-red-300'     :
+                                        'text-muted'
+      );
+      var detail = it.reference ? '<code>' + escapeHtml(it.reference) + '</code>'
+                  : it.reason   ? escapeHtml(it.reason)
+                  : '';
+      lines.push(
+        '<tr class="border-b border-token-border/30">' +
+        '<td class="py-1 pr-2">' + escapeHtml(it.key) + '</td>' +
+        '<td class="py-1 pr-2 ' + color + '">' + escapeHtml(it.status) + '</td>' +
+        '<td class="py-1 break-all">' + detail + '</td>' +
+        '</tr>'
+      );
+    });
+    lines.push('</tbody></table>');
+  } else {
+    lines.push('<div class="text-muted">No is_secret=true rows to migrate.</div>');
+  }
+  panel.innerHTML = lines.join('');
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ── SIEM Settings ───────────────────────────────────────────────────────────────
+async function savePasswordPolicy() {
+  // RBAC slice 4 — write the three policy keys; the API stores them as
+  // strings so we coerce-to-int upstream. Negative numbers are clamped
+  // by the input ``min``; bigger values are clamped server-side too.
+  var fields = {
+    'rbac.password_rotation_days':   document.getElementById('rbac-rotation-days').value.trim() || '0',
+    'rbac.lockout_threshold':        document.getElementById('rbac-lockout-threshold').value.trim() || '0',
+    'rbac.lockout_duration_minutes': document.getElementById('rbac-lockout-duration').value.trim() || '30',
+  };
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showComplianceBanner(errors.length === 0
+    ? {ok: true,  message: 'Password policy saved. Enforcement requires an Enterprise license.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
+
+async function saveClassificationPolicy() {
+  // Persist all five keys unconditionally (matching the pattern used
+  // for SIEM / secret backend) so an admin who flips PII back to none
+  // doesn't have to re-clear orphaned values.
+  var fields = {
+    'approval.classification_policy.pii': document.getElementById('approval-class-policy-pii').value,
+    'approval.classification_policy.phi': document.getElementById('approval-class-policy-phi').value,
+    'approval.classification_policy.pci': document.getElementById('approval-class-policy-pci').value,
+    'approval.compliance_officer_email':  document.getElementById('approval-compliance-officer-email').value.trim(),
+    'approval.compliance_officer_name':   document.getElementById('approval-compliance-officer-name').value.trim() || 'Compliance Officer',
+  };
+  // Soft-validate on the client: if any class is "compliance_officer" the
+  // email must be set. The order-creation path also guards against this
+  // (no email → no auto-step), but a clear save-time message is friendlier.
+  // The owner_of_record mode doesn't need the global email; it routes
+  // to the asset type's approval_owners list, validated per-order at
+  // dispatch time (silent skip + INFO log when the list is empty).
+  var anyComplianceOfficer = ['pii', 'phi', 'pci'].some(function(c) {
+    return fields['approval.classification_policy.' + c] === 'compliance_officer';
+  });
+  if (anyComplianceOfficer && !fields['approval.compliance_officer_email']) {
+    showComplianceBanner({
+      ok: false,
+      message: 'Set the compliance officer email when any classification is set to "Compliance officer (centralised)".',
+    });
+    return;
+  }
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showComplianceBanner(errors.length === 0
+    ? {ok: true,  message: 'Per-classification approval routing saved.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
+
+async function saveRetentionConfig() {
+  var fields = {
+    'retention.audit_log_days': document.getElementById('retention-days').value.trim() || '0',
+    'retention.pii_days':       document.getElementById('retention-pii-days').value.trim() || '0',
+    'retention.phi_days':       document.getElementById('retention-phi-days').value.trim() || '0',
+    'retention.pci_days':       document.getElementById('retention-pci-days').value.trim() || '0',
+  };
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showComplianceBanner(errors.length === 0
+    ? {ok: true,  message: 'Retention settings saved. Pruning runs daily at 03:00 (Europe/Berlin).'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
+
+async function saveOtelConfig() {
+  var fields = {
+    'otel.enabled':          document.getElementById('otel-enabled').value,
+    'otel.service_name':     document.getElementById('otel-service-name').value.trim() || 'ipsolis-api',
+    'otel.endpoint':         document.getElementById('otel-endpoint').value.trim(),
+    'otel.console_exporter': document.getElementById('otel-console').checked ? 'true' : 'false',
+  };
+  // Headers may be empty (clears) or populated (replaces).
+  var hdrs = document.getElementById('otel-headers').value;
+  fields['otel.headers'] = hdrs;
+
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showComplianceBanner(errors.length === 0
+    ? {ok: true,  message: 'Tracing settings saved. Restart the API to apply: docker compose restart api'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
+
+function onSiemFormatChange() {
+  var fmt = document.getElementById('siem-format').value;
+  var groups = {
+    splunk_hec:             {fields: 'siem-splunk-fields',                  help: 'siem-help-splunk'},
+    sentinel:               {fields: 'siem-sentinel-fields',                help: 'siem-help-sentinel'},
+    sentinel_log_ingestion: {fields: 'siem-sentinel-log-ingestion-fields',  help: 'siem-help-sentinel-log-ingestion'},
+    webhook:                {fields: 'siem-webhook-fields',                 help: 'siem-help-webhook'},
+  };
+  Object.keys(groups).forEach(function(key) {
+    var f = document.getElementById(groups[key].fields);
+    var h = document.getElementById(groups[key].help);
+    if (key === fmt) {
+      if (f) f.classList.remove('hidden');
+      if (h) h.classList.remove('hidden');
+    } else {
+      if (f) f.classList.add('hidden');
+      if (h) h.classList.add('hidden');
+    }
+  });
+}
+
+async function saveSiemConfig() {
+  var fmt = document.getElementById('siem-format').value;
+  var fields = {
+    'siem.enabled':     document.getElementById('siem-enabled').value,
+    'siem.format':      fmt,
+    'siem.batch_size':  document.getElementById('siem-batch-size').value.trim() || '200',
+    'siem.verify_tls':  document.getElementById('siem-verify-tls').value,
+  };
+  // Always persist all adapter inputs so admins can flip back without retyping.
+  fields['siem.endpoint_url'] = document.getElementById('siem-endpoint-url').value.trim();
+  fields['siem.workspace_id'] = document.getElementById('siem-workspace-id').value.trim();
+  fields['siem.log_type']     = document.getElementById('siem-log-type').value.trim() || 'IpsolisAudit';
+  fields['siem.webhook_url']  = document.getElementById('siem-webhook-url').value.trim();
+  fields['siem.webhook_signature_header'] =
+    document.getElementById('siem-webhook-signature-header').value.trim() || 'X-Hub-Signature-256';
+  fields['siem.webhook_extra_headers'] =
+    document.getElementById('siem-webhook-extra-headers').value.trim();
+  // Sentinel Logs Ingestion API path.
+  fields['siem.sentinel_dce_endpoint'] =
+    document.getElementById('siem-sentinel-dce-endpoint').value.trim();
+  fields['siem.sentinel_dcr_immutable_id'] =
+    document.getElementById('siem-sentinel-dcr-immutable-id').value.trim();
+  fields['siem.sentinel_stream_name'] =
+    document.getElementById('siem-sentinel-stream-name').value.trim() || 'Custom-IpsolisAudit_CL';
+  fields['siem.sentinel_tenant_id'] =
+    document.getElementById('siem-sentinel-tenant-id').value.trim();
+  fields['siem.sentinel_client_id'] =
+    document.getElementById('siem-sentinel-client-id').value.trim();
+
+  var splunkToken = document.getElementById('siem-token').value;
+  if (splunkToken) fields['siem.token'] = splunkToken;
+  var sentinelKey = document.getElementById('siem-shared-key').value;
+  if (sentinelKey) fields['siem.shared_key'] = sentinelKey;
+  var webhookSecret = document.getElementById('siem-webhook-secret').value;
+  if (webhookSecret) fields['siem.webhook_secret'] = webhookSecret;
+  var sentinelClientSecret = document.getElementById('siem-sentinel-client-secret').value;
+  if (sentinelClientSecret) fields['siem.sentinel_client_secret'] = sentinelClientSecret;
+
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showComplianceBanner(errors.length === 0
+    ? {ok: true,  message: 'SIEM settings saved.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+  refreshSiemStatus();
+}
+
+async function testSiemConfig() {
+  await saveSiemConfig();
+  showComplianceBanner({ok: null, message: 'Posting test event to SIEM…'});
+  var resp = await fetch('/admin/config/siem/test', {method: 'POST'});
+  var data = await resp.json();
+  showComplianceBanner(data);
+}
+
+async function refreshSiemStatus() {
+  try {
+    var resp = await fetch('/admin/config/siem/status');
+    if (!resp.ok) return;
+    var data = await resp.json();
+    document.getElementById('siem-status-last-id').textContent = data.last_id;
+    document.getElementById('siem-status-backlog').textContent =
+      data.backlog + (data.backlog > 0 ? ' rows pending' : ' (caught up)');
+    document.getElementById('siem-status-last-success').textContent = data.last_success_at || '—';
+    document.getElementById('siem-status-last-error').textContent = data.last_error || '—';
+  } catch (e) { /* swallow */ }
+}
+
+function showComplianceBanner(data) {
+  var el = document.getElementById('compliance-banner');
+  if (!el) return;
+  el.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'border', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30',
+                       'bg-red-50', 'text-red-800', 'border-red-200',
+                       'bg-blue-50', 'text-blue-800', 'border-blue-200');
+  if (data.ok === true) {
+    el.classList.add('bg-green-50', 'text-green-800', 'border', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30');
+  } else if (data.ok === false) {
+    el.classList.add('bg-red-50', 'text-red-800', 'border', 'border-red-200', 'dark:bg-red-500/10', 'dark:text-red-300', 'dark:border-red-500/30');
+  } else {
+    el.classList.add('bg-blue-50', 'text-blue-800', 'border', 'border-blue-200', 'dark:bg-blue-500/10', 'dark:text-blue-300', 'dark:border-blue-500/30');
+  }
+  el.textContent = data.message;
+  el.classList.remove('hidden');
+}
+
+// Refresh SIEM status when the Compliance tab is opened (delegated showTab observer).
+document.addEventListener('DOMContentLoaded', function() {
+  var btn = document.getElementById('tab-btn-compliance');
+  if (btn) btn.addEventListener('click', function() { setTimeout(refreshSiemStatus, 50); });
+  // Also fetch once on initial page load so the status is fresh on direct deeplink.
+  setTimeout(refreshSiemStatus, 100);
+  // Sync visible adapter fields with the saved siem.format on page load.
+  onSiemFormatChange();
+});
+
+// ── Approval Reminder Settings ──────────────────────────────────────────────────
+async function saveApprovalReminderConfig() {
+  var fields = {
+    'approval.reminders_enabled':      document.getElementById('approval-reminders-enabled').value,
+    'approval.reminder_after_hours':   document.getElementById('approval-reminder-hours').value.trim() || '24',
+    'approval.max_reminders':          document.getElementById('approval-max-reminders').value.trim() || '3',
+    'approval.escalation_email':       document.getElementById('approval-escalation-email').value.trim(),
+    'approval.escalation_assign':      document.getElementById('approval-escalation-assign').value,
+    'approval.auto_decline_enabled':   document.getElementById('approval-auto-decline-enabled').value,
+    'approval.auto_decline_after_days': document.getElementById('approval-auto-decline-days').value.trim() || '0',
+    'approval.auto_decline_message':   document.getElementById('approval-auto-decline-message').value.trim(),
+  };
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showEmailBanner(errors.length === 0
+    ? {ok: true,  message: 'Approval reminder settings saved.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
+
+// ── Teams Settings ──────────────────────────────────────────────────────────────
+async function saveTeamsConfig() {
+  var fields = {
+    'teams.mode': document.getElementById('teams-mode').value,
+  };
+  var url = document.getElementById('teams-webhook-url').value.trim();
+  // Only PUT the webhook URL when the user actually entered a new value;
+  // an empty field on a re-render means "keep the current secret".
+  if (url) fields['teams.webhook_url'] = url;
+
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showEmailBanner(errors.length === 0
+    ? {ok: true,  message: 'Teams settings saved.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
+
+async function testTeamsConfig() {
+  await saveTeamsConfig();
+  showEmailBanner({ok: null, message: 'Posting test card to Teams…'});
+  var resp = await fetch('/admin/config/teams/test', {method: 'POST'});
   var data = await resp.json();
   showEmailBanner(data);
 }
