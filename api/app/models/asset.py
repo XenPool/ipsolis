@@ -31,8 +31,7 @@ class AssetCategory(str, enum.Enum):
 
 
 class AssignmentModel(str, enum.Enum):
-    CAPACITY_POOLED = "capacity_pooled"       # Pool/quota, no dedicated instance (RDS, SaaS license)
-    DEDICATED_SHARED = "dedicated_shared"     # Instance exists, no fixed owner (jump host)
+    CAPACITY_POOLED = "capacity_pooled"       # Pool/quota, no dedicated instance (RDS, SaaS license, jump host)
     ASSIGNED_PERSONAL = "assigned_personal"   # Instance 1:1 user-owned (personal VDI, laptop)
 
 
@@ -93,7 +92,7 @@ class AssetType(Base):
     )
     # Structured attributes: [{"key": "cpu", "label": "CPU count", "options": ["2", "4", "8"]}]
     config: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
-    # Assignment model: capacity_pooled / dedicated_shared / assigned_personal
+    # Assignment model: capacity_pooled / assigned_personal
     assignment_model: Mapped[str] = mapped_column(
         String(30), nullable=False, default="assigned_personal", server_default="assigned_personal"
     )

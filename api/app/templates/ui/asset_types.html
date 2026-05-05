@@ -74,8 +74,6 @@
         <td class="px-4 py-3">
           {% if t.assignment_model == 'capacity_pooled' %}
           <span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700" title="capacity_pooled">Pooled</span>
-          {% elif t.assignment_model == 'dedicated_shared' %}
-          <span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700" title="dedicated_shared">Shared</span>
           {% else %}
           <span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700" title="assigned_personal">Personal</span>
           {% endif %}
@@ -98,7 +96,7 @@
           </a>
         </td>
         <td class="px-4 py-3 text-xs">
-          {% if t.assignment_model in ('assigned_personal', 'dedicated_shared') %}
+          {% if t.assignment_model == 'assigned_personal' %}
             {% set pc = pool_counts.get(t.id, {'free': 0, 'total': 0}) %}
             <a href="/ui/asset-pool?asset_type_id={{ t.id }}"
                class="text-blue-600 hover:underline whitespace-nowrap">

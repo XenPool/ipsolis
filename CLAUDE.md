@@ -187,7 +187,7 @@ runtime; no build step needed.
 | Group Targets | `asset_types.targets` JSONB: `[{type, identifier, principal_source}]`, executed by `target_executor` |
 | Composite Order | `asset_types.composite_steps` JSONB: ordered list of `GROUP_TARGETS` / `RUNBOOK` steps |
 | Deprovision Policy | `asset_types.deprovision_policy`: access_only / return_to_pool / return_to_pool_reinstall / deallocate / delete / custom_runbook |
-| Assignment Model | `asset_types.assignment_model`: `capacity_pooled` (quota) / `dedicated_shared` (shared instance) / `assigned_personal` (1:1) |
+| Assignment Model | `asset_types.assignment_model`: `capacity_pooled` (quota / group access, no dedicated instance) / `assigned_personal` (1:1 dedicated instance) |
 | Configuration | `app_config` table (live-editable) + `.env` (infra only) |
 | Inbound Dispatch | FastAPI `/webhook` (ServiceNow HMAC) or `/orders` (portal/API) |
 | Audit Log | `audit_log` table (append-only) |

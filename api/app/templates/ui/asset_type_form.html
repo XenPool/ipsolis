@@ -173,14 +173,11 @@
         ("assigned_personal", "Personal",
          "One dedicated instance per user; the asset belongs to them while assigned.",
          "Personal VDI · Company laptop · Dedicated mailbox"),
-        ("dedicated_shared",  "Shared",
-         "One instance, many users — access via group membership.",
-         "Jump host · Shared workstation · Lab PC · Team mailbox · Project SharePoint"),
         ("capacity_pooled",   "Pooled",
-         "No instance per user — just a counted slot from a license pool.",
-         "Citrix XenApp seat · Microsoft 365 E5 · SAP CAL · RDS user CAL · Concurrent-user license")
+         "No dedicated instance — users get an access slot via group membership or license pool.",
+         "Jump host · RDS session · Citrix XenApp seat · Microsoft 365 E5 · SAP CAL · Team mailbox"),
       ] %}
-      <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {% for am_val, am_label, am_desc, am_examples in assignment_models %}
         <label class="relative flex cursor-pointer rounded-lg border border-token-border p-3 hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50 dark:has-[:checked]:bg-blue-500/20 has-[:checked]:[&_p]:text-blue-900 dark:has-[:checked]:[&_p]:text-blue-200"
                title="{{ am_desc }}">
@@ -248,8 +245,8 @@
              class="w-32 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
     </div>
 
-    <!-- Per-user quota (personal + pooled; hidden for dedicated_shared where everyone shares one instance) -->
-    <div id="max-per-user-row" class="{% if asset_type and asset_type.assignment_model == 'dedicated_shared' %}hidden{% endif %}">
+    <!-- Per-user quota (personal + pooled) -->
+    <div id="max-per-user-row" class="">
       <label class="block text-xs font-medium text-muted mb-1">
         Max. Instances per User
         <span class="text-muted/70">(prevents one user from exhausting the pool)</span>
@@ -1022,7 +1019,6 @@ function showTargetsEditor(show) { updateAutomationUI(); }
 // Mapping: assignment_model → sensible deprovision_policy default
 var _dpDefaults = {
   'capacity_pooled':   'access_only',
-  'dedicated_shared':  'access_only',
   'assigned_personal': 'return_to_pool',
 };
 
@@ -1036,9 +1032,8 @@ function toggleAssignmentDependents() {
   // Personal assignment only for assigned_personal
   document.getElementById('personal-provision-section').classList.toggle('hidden', val !== 'assigned_personal');
 
-  // Per-user quota: meaningful for personal + pooled, irrelevant for dedicated_shared
   var maxPerUserRow = document.getElementById('max-per-user-row');
-  if (maxPerUserRow) maxPerUserRow.classList.toggle('hidden', val === 'dedicated_shared');
+  if (maxPerUserRow) maxPerUserRow.classList.remove('hidden');
 
   // RDP/admin user lists only relevant for Personal; hide + uncheck for Shared/Pooled
   var userListsRow = document.getElementById('allow-user-lists-row');
@@ -1137,9 +1132,9 @@ function onProvisioningStrategyChange() {
 var _CATEGORY_DEFAULT_MODEL = {
   'platform_access':       'assigned_personal',   // VDI / Server / Cloud  → personal VDI most common
   'application_access':    'capacity_pooled',     // Business & SaaS Apps  → SaaS license slots
-  'data_access':           'dedicated_shared',    // Data & Collaboration  → team shares
+  'data_access':           'capacity_pooled',     // Data & Collaboration  → shared access slot
   'device_access':         'assigned_personal',   // Clients / MDM / WLAN  → personal laptop
-  'infrastructure_access': 'dedicated_shared',    // Network / Firewall / Admin → shared admin access
+  'infrastructure_access': 'capacity_pooled',     // Network / Firewall / Admin → shared admin access
 };
 
 // Called from the category radios' onchange (user click) and once on DOMContentLoaded.

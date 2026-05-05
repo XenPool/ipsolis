@@ -209,7 +209,7 @@
 <!-- Pool Summary -->
 <div class="mb-8">
   <div class="flex items-center justify-between mb-3">
-    <h1 class="text-lg font-semibold text-heading">Asset Pool Status</h1>
+    <h1 class="text-lg font-semibold text-heading">Personal Assets Status</h1>
     <span class="text-xs text-muted" id="pool-last-updated">
       Updated: {{ now.strftime("%Y-%m-%d %H:%M:%S") }} UTC
     </span>
@@ -328,7 +328,6 @@
             {% endif %}
             <span class="text-[10px] uppercase tracking-wider {{ _model_badge_classes }} ml-1 shrink-0">
               {% if t.assignment_model == 'capacity_pooled' %}Pooled
-              {% elif t.assignment_model == 'dedicated_shared' %}Shared
               {% else %}Personal
               {% endif %}
             </span>

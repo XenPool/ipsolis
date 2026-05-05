@@ -187,7 +187,7 @@ def _run_targets_mode(
     if isinstance(requested_from, str):
         requested_from = datetime.fromisoformat(requested_from)
 
-    needs_asset = assignment_model in ("assigned_personal", "dedicated_shared")
+    needs_asset = assignment_model == "assigned_personal"
 
     if action == "provision":
         # Detect if this was a scheduled (future-dated) order
@@ -825,7 +825,7 @@ def _run_runbook_path(
     # Auto-reserve from pool for provision + pool-based asset types
     if (
         action == "provision"
-        and assignment_model in ("assigned_personal", "dedicated_shared")
+        and assignment_model == "assigned_personal"
         and not pre_asset_id
     ):
         from tasks.modules.pool_manager import reserve_asset as _reserve_asset

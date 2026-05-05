@@ -3028,6 +3028,26 @@ Extend `target_executor` to manage Entra cloud-only security groups for asset ty
 that define `{"type": "entra_group", "group_id": "..."}` targets. Requires
 Microsoft Graph API integration (separate sprint).
 
+### [open] Okta as 2nd Identity Provider — future
+Add Okta as an optional second IDP alongside Entra ID for portal SSO. Estimated effort: 4–6 days.
+
+**Context:** Okta uses standard OIDC (same protocol as Entra underneath MSAL), so no exotic library is needed. The main work is abstracting the auth layer away from Entra-specific assumptions.
+
+**Key design decisions to resolve before starting:**
+- [ ] IDP routing strategy: domain-based auto-routing (e.g. `@corp-a.com` → Entra, `@partner.com` → Okta) vs. a picker page at `/portal/login/select`
+- [ ] Whether `entra_with_onprem` mode (UPN → on-prem LDAP check) needs a per-IDP equivalent for Okta users
+
+**Implementation slices:**
+- [ ] Extract generic OIDC helper (`api/app/utils/oidc.py`) — authlib or httpx + raw OIDC; covers auth URL, code exchange, claim extraction (Entra can be refactored to use it too)
+- [ ] New `okta.*` app_config keys: `okta.mode`, `okta.domain`, `okta.client_id`, `okta.client_secret`, `okta.redirect_uri`, `okta.allowed_domains`
+- [ ] DB migration for new config keys
+- [ ] Auth routing: IDP selection logic in `/portal/login`, second callback endpoint `/portal/auth/okta/callback`
+- [ ] Okta logout support (`https://{okta.domain}/oauth2/v1/logout`)
+- [ ] Admin UI: Okta settings section + "Test connection" button (same pattern as Entra)
+- [ ] Make `entra.mode` / portal auth gate provider-agnostic (currently hardcoded to `entra.mode` in `portal.py`)
+
+**No user-table impact:** ipSolis is session-only; identity is keyed by `email`. Same email via Okta = same user in order history. No account-merging complexity.
+
 ---
 
 ## Done

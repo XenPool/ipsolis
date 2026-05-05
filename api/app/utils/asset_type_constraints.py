@@ -7,7 +7,6 @@ Mapping (spec → codebase string values):
     RUNBOOK_ONLY   → "runbook_only"
     COMPOSITE      → "composite"
     PERSONAL       → "assigned_personal"
-    SHARED         → "dedicated_shared"
     POOLED         → "capacity_pooled"
     RETURN_TO_POOL → "return_to_pool"
     RUNBOOK (policy) → "custom_runbook"

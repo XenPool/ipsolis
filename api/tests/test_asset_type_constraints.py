@@ -68,15 +68,6 @@ class TestMustPass:
         )
         assert errors == []
 
-    def test_shared_composite_access_only(self):
-        """SHARED + COMPOSITE + ACCESS_ONLY → valid."""
-        errors = _valid(
-            assignment_model="dedicated_shared",
-            automation_strategy="composite",
-            deprovision_policy="access_only",
-        )
-        assert errors == []
-
     def test_personal_composite_return_to_pool_assign_existing_free(self):
         """PERSONAL + COMPOSITE + RETURN_TO_POOL + ASSIGN_EXISTING_FREE → valid."""
         errors = _valid(
@@ -125,16 +116,6 @@ class TestMustFail:
             personal_provisioning_strategy="create_new",
         )
         assert "RETURN_TO_POOL_REQUIRES_PERSONAL_ASSIGN_EXISTING_FREE" in _codes(errors)
-
-    def test_shared_delete_instance(self):
-        """SHARED + DELETE_INSTANCE → Rule 3 violation."""
-        errors = _valid(
-            assignment_model="dedicated_shared",
-            automation_strategy="runbook_only",
-            deprovision_policy="delete_instance",
-            runbook_provision_id=5,
-        )
-        assert "SHARED_FORBIDS_DELETE_INSTANCE" in _codes(errors)
 
     def test_runbook_only_missing_provision_runbook(self):
         """RUNBOOK_ONLY missing runbookProvisionId → Rule 4 violation."""
