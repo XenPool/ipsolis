@@ -22,7 +22,9 @@
       "Bash(docker exec xp_postgres psql -U xpuser -d itselfservice -c \"SELECT id, status, error_message FROM orders WHERE id=12;\")",
       "Bash(xargs grep -l \"order_change_log\")",
       "Bash(docker exec:*)",
-      "Read(//c/Users/StefanvanBoxmer-Fisc/OneDrive - XenPool GmbH/Dokumente/XenPool/Projekte/XenPool/**)"
+      "Read(//c/Users/StefanvanBoxmer-Fisc/OneDrive - XenPool GmbH/Dokumente/XenPool/Projekte/XenPool/**)",
+      "Bash(mkdir -p \"c:\\\\Users\\\\StefanvanBoxmer-Fisc\\\\OneDrive - XenPool GmbH\\\\Dokumente\\\\XenPool\\\\Projekte\\\\XenPool\\\\ipSolis-web\\\\src\\\\content\\\\docs\")",
+      "Bash(touch \"c:\\\\Users\\\\StefanvanBoxmer-Fisc\\\\OneDrive - XenPool GmbH\\\\Dokumente\\\\XenPool\\\\Projekte\\\\XenPool\\\\ipSolis-web\\\\src\\\\content\\\\docs\\\\.gitkeep\")"
     ]
   }
 }
