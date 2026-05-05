@@ -54,9 +54,8 @@ async def enforce_max_per_user(
     """Raise HTTP 409 if user_email already holds max_per_user active orders
     of asset_type_id.
 
-    Caller is responsible for guarding on assignment_model — for
-    dedicated_shared the limit is meaningless (one shared instance).
-    """
+    Caller is responsible for guarding on assignment_model.
+"""
     if not max_per_user or max_per_user < 1:
         return  # disabled / unbounded
     normalized = (user_email or "").strip().lower()

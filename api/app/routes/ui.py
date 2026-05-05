@@ -124,7 +124,7 @@ async def _pool_warnings(db: AsyncSession) -> list[dict]:
             used = pooled_used.get(at.id, 0)
             total = cap
             kind = "pooled"
-        elif at.assignment_model in ("dedicated_shared", "assigned_personal"):
+        elif at.assignment_model == "assigned_personal":
             counts = pool_by_type.get(at.id, {})
             total = sum(counts.values())
             if total == 0:
@@ -215,7 +215,7 @@ async def dashboard(
     pooled_in_use: dict[int, int] = {}
     if dashboard_types:
         # Per-(type, status) row counts from asset_pool — the breakdown
-        # source for ``assigned_personal`` / ``dedicated_shared`` types.
+        # source for ``assigned_personal`` types.
         pool_rows = await db.execute(
             text(
                 "SELECT asset_type_id, status, COUNT(*) "
@@ -605,7 +605,7 @@ async def asset_types_list(
         )
         rb_counts = {row[0]: row[1] for row in rows}
 
-    # Pool counts per asset type (assigned_personal / dedicated_shared)
+    # Pool counts per asset type (assigned_personal)
     pool_counts: dict[int, dict] = {}
     if asset_types:
         count_rows = (await db.execute(

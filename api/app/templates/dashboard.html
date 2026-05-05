@@ -328,7 +328,6 @@
             {% endif %}
             <span class="text-[10px] uppercase tracking-wider {{ _model_badge_classes }} ml-1 shrink-0">
               {% if t.assignment_model == 'capacity_pooled' %}Pooled
-              {% elif t.assignment_model == 'dedicated_shared' %}Shared
               {% else %}Personal
               {% endif %}
             </span>

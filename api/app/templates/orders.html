@@ -65,8 +65,6 @@
         <td class="px-4 py-3 text-body">
           {% if order.assigned_asset_id %}
             {{ asset_names.get(order.assigned_asset_id, "–") }}
-          {% elif asset_type_models.get(order.asset_type_id) == "dedicated_shared" %}
-            <span class="text-xs text-muted">Shared</span>
           {% elif asset_type_models.get(order.asset_type_id) == "capacity_pooled" %}
             <span class="text-xs text-muted">Pooled</span>
           {% else %}–{% endif %}

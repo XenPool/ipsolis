@@ -208,8 +208,8 @@ async def _get_unavailable_type_ids(db: AsyncSession, asset_types: list) -> set[
     A type is considered out of stock when:
     - it has pool assets but 0 in ``Free`` status, OR
     - it has 0 pool assets AND its model requires picking an existing one
-      (``dedicated_shared``; or ``assigned_personal`` with strategy
-      ``assign_existing_free``). Types whose strategy provisions on demand
+      (``assigned_personal`` with strategy ``assign_existing_free``). Types
+      whose strategy provisions on demand
       (``create_new``) are NOT marked unavailable on an empty pool.
     - capacity_pooled with ``pool_capacity`` set: active orders >= capacity.
     """
@@ -246,12 +246,9 @@ async def _get_unavailable_type_ids(db: AsyncSession, asset_types: list) -> set[
         if not has_pool:
             # Empty pool: only a problem when the type can't conjure new assets.
             needs_existing = (
-                t.assignment_model == "dedicated_shared"
-                or (
-                    t.assignment_model == "assigned_personal"
-                    and (t.personal_provisioning_strategy or "assign_existing_free")
-                    == "assign_existing_free"
-                )
+                t.assignment_model == "assigned_personal"
+                and (t.personal_provisioning_strategy or "assign_existing_free")
+                == "assign_existing_free"
             )
             if needs_existing:
                 unavailable.add(t.id)
@@ -319,16 +316,6 @@ async def portal_new_order_form(
     asset_types = _filter_eligible_asset_types(all_types, current_user["email"])
     unavailable_ids = await _get_unavailable_type_ids(db, asset_types)
 
-    # Leaver check — show error banner instead of order form
-    from app.models.hr_leaver_event import HrLeaverEvent
-    leaver_row = await db.execute(
-        select(HrLeaverEvent)
-        .where(HrLeaverEvent.user_email == current_user["email"].lower())
-        .where(HrLeaverEvent.status == "processed")
-        .limit(1)
-    )
-    leaver_blocked = leaver_row.scalar_one_or_none() is not None
-
     # Load max advance days setting
     max_adv_row = await db.execute(
         select(AppConfig.value).where(AppConfig.key == "portal.max_advance_days")
@@ -345,10 +332,7 @@ async def portal_new_order_form(
         "today": date.today().isoformat(),
         "max_advance_days": max_advance_days,
         "max_from_date": max_from_date,
-        "error": (
-            "Your account has been flagged as a leaver. New orders are blocked. "
-            "Please contact your IT administrator."
-        ) if leaver_blocked else None,
+        "error": None,
     })
 
 
@@ -501,20 +485,6 @@ async def portal_create_order(
     asset_type = at_result.scalar_one_or_none()
     if not asset_type:
         return await _render_error("Unknown asset type.")
-
-    # Leaver check — block new orders for users who have been processed as leavers
-    from app.models.hr_leaver_event import HrLeaverEvent
-    leaver_result = await db.execute(
-        select(HrLeaverEvent)
-        .where(HrLeaverEvent.user_email == user_email.lower())
-        .where(HrLeaverEvent.status == "processed")
-        .limit(1)
-    )
-    if leaver_result.scalar_one_or_none():
-        return await _render_error(
-            "This account has been flagged as a leaver and cannot place new orders. "
-            "Please contact your IT administrator."
-        )
 
     # Eligibility check — ensure user is member of the required group
     if asset_type.eligible_requestors_dn:
@@ -758,7 +728,7 @@ async def portal_create_order(
 
     elif is_future:
         # Future-dated: reserve asset now, dispatch runbook later on start date
-        needs_asset = asset_type.assignment_model in ("assigned_personal", "dedicated_shared")
+        needs_asset = asset_type.assignment_model == "assigned_personal"
         if needs_asset:
             # Reserve a free asset immediately so it's guaranteed on start day
             reserve_row = await db.execute(sql_text("""
@@ -1437,7 +1407,7 @@ async def _post_approval_dispatch(order: Order, db: AsyncSession, celery_app) ->
     if is_future:
         order.status = OrderStatus.SCHEDULED
         # Reserve asset for future-dated orders
-        if asset_type and asset_type.assignment_model in ("assigned_personal", "dedicated_shared"):
+        if asset_type and asset_type.assignment_model == "assigned_personal":
             reserve_row = await db.execute(sql_text("""
                 SELECT id, name FROM asset_pool
                 WHERE asset_type_id = :at AND status = 'Free'
