@@ -566,6 +566,20 @@ async def run_cleanup(
         if dry_run:
             summary[table] = {"days": days, "would_delete": n}
         else:
+            if table == "audit_log":
+                # Append-only trigger requires this session flag to allow deletes.
+                await db.execute(text("SET LOCAL ipsolis.allow_audit_mutation = 'true'"))
+            if table == "orders":
+                # order_steps and asset_pool.current_order_id lack DB-level CASCADE;
+                # clear them before the parent delete so FK constraints don't block.
+                await db.execute(
+                    text("DELETE FROM order_steps WHERE order_id IN (SELECT id FROM orders WHERE created_at < :c)"),  # noqa: S608
+                    {"c": cutoff},
+                )
+                await db.execute(
+                    text("UPDATE asset_pool SET current_order_id = NULL WHERE current_order_id IN (SELECT id FROM orders WHERE created_at < :c)"),  # noqa: S608
+                    {"c": cutoff},
+                )
             await db.execute(
                 text(f"DELETE FROM {table} WHERE {col} < :c"),  # noqa: S608 — table is from the fixed _RETENTION_KEYS list, not user input
                 {"c": cutoff},
