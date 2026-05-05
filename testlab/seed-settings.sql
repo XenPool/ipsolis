@@ -2,7 +2,7 @@
 -- (Vault, mock-receiver, rsyslog). Idempotent: safe to re-run.
 --
 -- Run from the host:
---   docker exec -i xp_postgres psql -U xpuser -d ipsolis < testlab/seed-settings.sql
+--   docker exec -i ipsolis-postgres psql -U xpuser -d ipsolis < testlab/seed-settings.sql
 --
 -- Notes:
 --   • Endpoints use ``host.docker.internal`` so api / worker containers

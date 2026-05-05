@@ -98,7 +98,7 @@ docker compose exec api alembic upgrade head
 ```
 
 **Important:** Migration files are baked into the image at build time.
-For a running container without rebuild: `docker cp <file> xp_api:/app/alembic/versions/`,
+For a running container without rebuild: `docker cp <file> ipsolis-api:/app/alembic/versions/`,
 then run `alembic upgrade head` directly.
 Enum types (e.g. `order_action`, `asset_status`) already exist in the DB — use
 `op.execute(raw SQL)` instead of `op.create_table()` with `sa.Enum` to avoid
@@ -107,12 +107,12 @@ Enum types (e.g. `order_action`, `asset_status`) already exist in the DB — use
 Current head: `0093_seed_api_token_purge.py`.
 
 ### Template changes require image rebuild
-`api/app/templates/` and `api/app/routes/` are baked into the `xp_api` image, not
+`api/app/templates/` and `api/app/routes/` are baked into the `ipsolis-api` image, not
 bind-mounted. After editing any template or route file:
 ```bash
 docker compose up -d --build api
 ```
-Or hot-copy the file in: `docker cp <file> xp_api:/app/app/...` + `docker compose restart api`.
+Or hot-copy the file in: `docker cp <file> ipsolis-api:/app/app/...` + `docker compose restart api`.
 
 ### Jinja2 + JavaScript Templates
 JS template literals using `{{` / `}}` conflict with Jinja2 syntax.

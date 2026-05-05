@@ -9,7 +9,7 @@ BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
 
 app = Celery(
-    "xp_worker",
+    "ipsolis_worker",
     broker=BROKER_URL,
     backend=RESULT_BACKEND,
     include=[
