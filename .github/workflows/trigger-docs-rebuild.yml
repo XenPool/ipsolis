@@ -1,0 +1,21 @@
+name: Trigger ipsolis-web docs rebuild
+
+on:
+  push:
+    branches: [prelive]
+    paths:
+      - 'docs/web/**'
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.IPSOLIS_WEB_DISPATCH_PAT }}
+          script: |
+            await github.rest.repos.createDispatchEvent({
+              owner: 'XenPool',
+              repo: 'ipsolis-web',
+              event_type: 'docs-updated',
+            })
