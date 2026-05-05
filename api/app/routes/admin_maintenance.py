@@ -566,6 +566,8 @@ async def run_cleanup(
         if dry_run:
             summary[table] = {"days": days, "would_delete": n}
         else:
+            if table == "audit_log":
+                await db.execute(text("SET LOCAL ipsolis.allow_audit_mutation = 'true'"))
             await db.execute(
                 text(f"DELETE FROM {table} WHERE {col} < :c"),  # noqa: S608 — table is from the fixed _RETENTION_KEYS list, not user input
                 {"c": cutoff},
