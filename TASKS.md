@@ -3014,6 +3014,30 @@ library; pure server-side detection from current DB state.
 
 ---
 
+## Open — Distribution & Licensing Architecture
+
+### [open] Open Core Modell: Community + Business (zwei Tiers, ein Repo)
+
+**Entscheidung:** ip·Solis wird als Open Core Produkt angeboten.
+- **Community Edition** — öffentliches GitHub-Repo, frei verwendbar, kein Feature-Gating im Code
+- **Business Edition** — pre-built Images aus privater Registry (ghcr.io), enthält alle zusätzlichen Module; kein separater Enterprise-Tier mehr
+
+Alle aktuellen Enterprise- und Business-Features wandern in die Business Edition.
+Feature-Flags im Code (`require_enterprise`, `require_business`, `BUSINESS_FEATURE_KEYS`, `ENTERPRISE_ONLY_FEATURE_KEYS`) entfallen vollständig — der Schutz entsteht durch Abwesenheit des Codes in der Community Edition, nicht durch Runtime-Gates.
+
+**Schritte:**
+
+- [ ] **Modul-Inventar:** Alle Module/Dateien die Business-only sind identifizieren und dokumentieren (vsphere, xenserver, sccm, ServiceNow-Webhook, SCIM, HR-Webhook, Leaver Events, Audit Retention, Custom Deprovision, RBAC-Erweiterungen, Password Policy)
+- [ ] **Zwei Dockerfiles:** `Dockerfile.community` (kopiert nur Community-Dateien) und `Dockerfile.pro` (kopiert alles) aus einem gemeinsamen Mono-Repo bauen
+- [ ] **Feature-Gates entfernen:** `require_enterprise()`, `require_business()`, `BUSINESS_FEATURE_KEYS`, `ENTERPRISE_ONLY_FEATURE_KEYS` aus dem Code entfernen; `is_feature_enabled()` und alle `{% if is_enterprise %}` / `{% if is_business %}` Template-Checks bereinigen
+- [ ] **Lizenz-Mechanismus vereinfachen:** Ed25519-Signatur und Install-UUID behalten (für Ablaufdaten + User-Limits), aber Feature-Kontrolle über Lizenz-Datei entfernen — die Lizenz steuert nur noch `max_users`, `max_asset_types`, `expires_at`
+- [ ] **GitHub Actions Pipeline:** CI baut bei jedem Release automatisch beide Images und pusht sie in die private Registry; Community-Mirror-Repo wird automatisch mit gefilterten Dateien befüllt
+- [ ] **Registry-Token-Management:** Pro-Kunden bekommen einen widerrufbaren Registry-Token; Prozess für Ausstellung (nach Kauf) und Widerruf (bei Kündigung) definieren
+- [ ] **Kunden-Onboarding-Docs:** `docker-compose.yml` + `.env.example` + Installationsanleitung für Business-Kunden (docker login → compose up, fertig)
+- [ ] **Öffentliches Community-Repo aufsetzen:** github.com/xenpool/ipsolis als öffentlicher Mirror ohne Business-Module
+
+---
+
 ## Pre-existing open tasks
 
 ### [open] Entra ID Connect / Cloud Sync setup — infrastructure (no code change needed)

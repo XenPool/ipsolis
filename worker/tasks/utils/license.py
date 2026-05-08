@@ -51,12 +51,12 @@ BUSINESS_FEATURE_KEYS: frozenset[str] = frozenset({
     "deputy_support", "scheduled_orders", "app_owner_approval", "reapproval_on_modify",
     "email_template_editor", "app_branding", "eligible_requestors", "global_variables",
     "audit_log_viewer", "change_log_viewer", "api_token_management", "certifications",
+    "vsphere_integration", "xenserver_integration", "sccm_integration",
 })
 
 # Features that require an Enterprise license; hard-blocked on Business.
 ENTERPRISE_ONLY_FEATURE_KEYS: frozenset[str] = frozenset({
     "servicenow_webhook", "hr_webhook", "hr_leaver_events", "scim",
-    "vsphere_integration", "xenserver_integration", "sccm_integration",
     "audit_retention", "advanced_maintenance", "custom_deprovision",
     "rbac_asset_type_grants", "rbac_token_role_binding", "rbac_sod_enforcement",
     "password_policy",

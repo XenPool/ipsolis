@@ -36,7 +36,7 @@
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Compliance
     </button>
-    {% if is_enterprise %}
+    {% if is_business %}
     <button onclick="showTab('sccm')" id="tab-btn-sccm"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       SCCM
@@ -1975,7 +1975,7 @@
 
 <!-- ── Tab: SCCM ─────────────────────────────────────────────────────────── -->
 <div id="tab-sccm" class="hidden space-y-6">
-{% if is_enterprise %}
+{% if is_business %}
 
   <div id="sccm-banner" class="hidden mb-2 px-4 py-3 rounded text-sm font-medium"></div>
 
@@ -2065,7 +2065,7 @@
 
 <!-- ── Tab: Hosting Infra ────────────────────────────────────────────────── -->
 <div id="tab-hosting" class="hidden space-y-6">
-{% if is_enterprise %}
+{% if is_business %}
 
   <div id="hosting-banner" class="hidden mb-2 px-4 py-3 rounded text-sm font-medium"></div>
 

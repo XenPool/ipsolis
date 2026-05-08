@@ -30,6 +30,9 @@ BUSINESS_FEATURES: dict[str, str] = {
     "change_log_viewer":        "Order Change Log Viewer",
     "api_token_management":     "Per-Integration API Tokens",
     "certifications":           "Access Certification Campaigns",
+    "vsphere_integration":      "VMware vSphere Integration",
+    "xenserver_integration":    "XenServer / XCP-ng Integration",
+    "sccm_integration":         "SCCM Integration",
 }
 
 # Features that require an Enterprise license (hard-blocked on Business).
@@ -38,9 +41,6 @@ ENTERPRISE_FEATURES: dict[str, str] = {
     "hr_webhook":               "HR Leaver Webhook",
     "hr_leaver_events":         "HR Leaver Events Viewer",
     "scim":                     "SCIM 2.0 Provisioning",
-    "vsphere_integration":      "VMware vSphere Integration",
-    "xenserver_integration":    "XenServer / XCP-ng Integration",
-    "sccm_integration":         "SCCM Integration",
     # Per-classification audit retention (PII / PHI / PCI 7+ yr windows).
     "audit_retention":          "Audit Log Retention Policy",
     "advanced_maintenance":     "Advanced Maintenance",

@@ -615,7 +615,7 @@ async def migrate_secret_backend(
     return report
 
 
-@router.post("/config/sccm/test", dependencies=[require_enterprise("sccm_integration"), require_role("admin")])
+@router.post("/config/sccm/test", dependencies=[require_business("sccm_integration"), require_role("admin")])
 async def test_sccm_connection() -> dict:
     """Enqueues a Celery task that runs a pwsh+Kerberos probe inside the worker
     container (where krb5 libs and pwsh are installed) and waits for the result."""
