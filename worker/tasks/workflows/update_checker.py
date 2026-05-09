@@ -66,7 +66,7 @@ def _fetch_latest_release(repo_url: str, token: str | None = None) -> dict:
     """GET ``<repo_url>/releases/latest`` and return a parsed dict.
 
     ``repo_url`` is expected to be the GitHub API root for a repo, e.g.
-    ``https://api.github.com/repos/XenPool/ipSolis``. The trailing
+    ``https://api.github.com/repos/XenPool/ipsolis``. The trailing
     ``/releases/latest`` is appended here so operators don't have to
     encode that boilerplate in config.
 

@@ -45,4 +45,4 @@ Features that require a specific edition are marked throughout these docs.
 
 - [Deployment guide](../DEPLOYMENT.md) — Docker Compose setup, environment variables, first-run checklist
 - [REST API](http://localhost:8000/docs) — Interactive Swagger documentation (requires a running instance)
-- [GitHub repository](https://github.com/XenPool/ipSolis) — Source code, issues, and releases
+- [GitHub repository](https://github.com/XenPool/ipsolis) — Source code, issues, and releases

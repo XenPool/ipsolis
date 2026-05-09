@@ -44,7 +44,7 @@ def upgrade() -> None:
         VALUES
           ('updates.check_enabled', 'false', false,
            'Update notifier — when ON, a daily Beat task checks the configured GitHub releases endpoint and shows a banner if a newer version is available. OFF by default so air-gapped tenants don''t make outbound calls.'),
-          ('updates.repo_url', 'https://api.github.com/repos/XenPool/ipSolis', false,
+          ('updates.repo_url', 'https://api.github.com/repos/XenPool/ipsolis', false,
            'GitHub API URL the update notifier queries (must end in /repos/<owner>/<repo>). Repoint at a private fork if you ship internal patches.'),
           ('updates.latest_version', '', false,
            'Latest release tag observed by the update notifier. Filled in by the daily Beat task; empty when the toggle is off or no successful check has run yet.'),
