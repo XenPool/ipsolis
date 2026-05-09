@@ -14,6 +14,23 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.4.5]
+
+  Range:  v0.4.4..HEAD
+  Date:   2026-05-09
+
+### Added
+
+- add installation guide and environment variable setup (`3dc57ff`)
+
+### Documentation
+
+- remove completed compose-rename migration runbook (`1ed6c96`)
+
+### Other
+
+- remove orphaned and obsolete files (`738964f`)
+
 ## [0.4.3] — 2026-04-28
 
 ### Added
