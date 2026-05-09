@@ -13,7 +13,7 @@ Give your users a self-service portal to request, extend, and return IT assets (
 | Asset lifecycle + cost reporting | ✓ | ✓ |
 | Admin RBAC + audit log | ✓ | ✓ |
 | Active Directory / Entra ID / SMTP | ✓ | ✓ |
-| vSphere / XenServer automation | ✓ | ✓ |
+| vSphere / XenServer automation | — | ✓ |
 | SCCM integration + ServiceNow webhook | — | ✓ |
 | SCIM 2.0 + HR leaver feed | — | ✓ |
 | Access certification campaigns | — | ✓ |

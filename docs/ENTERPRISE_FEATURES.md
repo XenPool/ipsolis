@@ -17,6 +17,10 @@ explicit *Enterprise license* note appears.
 
 - [HR leaver webhook + SCIM 2.0 deprovisioning](#hr-leaver-webhook--scim-20-deprovisioning)
 
+**Virtualization** *(Business Edition)*
+
+- [vSphere / XenServer automation](#vsphere--xenserver-automation)
+
 **Approvals**
 
 - [Microsoft Teams approval cards](#microsoft-teams-approval-cards)
@@ -3100,3 +3104,47 @@ orders so flagging them as "full" is noise.
 Both widgets are auto-rendered from current DB state. The
 checklist hides itself when everything is done; the capacity band
 hides itself when no pool is at ≥80%.
+
+
+---
+
+## vSphere / XenServer automation
+
+> **Business Edition only.** Community Edition includes the runbook engine and
+> PowerShell module system, but the vSphere and XenServer script libraries
+> (`scripts/modules/xenserver/`, `scripts/modules/vmware/`) ship only with the
+> Business image.
+
+Automate full VM lifecycle operations against VMware vSphere and Citrix
+XenServer / XCP-ng from runbooks:
+
+| Script | Purpose |
+|--------|---------|
+| `XS - Get VMs` | List available VMs in a pool |
+| `XS - Clone VM` | Clone a template to a new named VM |
+| `XS - Start VM` | Power on a VM |
+| `XS - Shutdown VM` | Graceful shutdown |
+| `XS - Delete VM` | Remove a VM and its disks |
+| `XS - Get VM Status` | Check power state |
+| `VS - *` | Equivalent VMware vSphere variants via PowerCLI |
+
+**How it works**
+
+Scripts are stored in the `script_modules` table and executed by the Celery
+worker via `pwsh` (PowerShell 7 on Linux). Each script returns JSON on stdout.
+SSL certificate prompts are automatically answered via stdin so self-signed
+certificates on the hypervisor API endpoint are handled without manual
+intervention.
+
+**Where to configure**
+
+Admin UI → *Settings* → *vSphere* / *XenServer* — set the server address,
+credentials, and (optionally) SSL verification mode. Settings take effect
+immediately without a container restart.
+
+**Adding scripts to runbooks**
+
+Admin UI → *Asset Definitions* → edit a definition → *Runbook* tab →
+add steps selecting the `XS -` or `VS -` script modules. Parameters
+(VM name, template, pool) can be bound to order attributes or
+set as fixed values.

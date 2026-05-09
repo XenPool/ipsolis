@@ -192,6 +192,9 @@ jobs:
             worker/tasks/workflows/certification_reminders.py \
             worker/tasks/modules/siem_export.py
 
+          # vSphere / XenServer automation scripts (Business Edition only)
+          rm -rf scripts/modules/xenserver scripts/modules/vmware
+
           # Pro Dockerfiles (community users only need Dockerfile.community)
           rm -f api/Dockerfile.pro worker/Dockerfile.pro
 
