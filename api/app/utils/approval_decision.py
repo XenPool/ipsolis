@@ -17,7 +17,6 @@ from app.models.approval import OrderApproval
 from app.models.asset import AssetType
 from app.models.order import Order, OrderStatus
 from app.utils.audit import _order_snap, aaudit, classify_asset_type
-from app.utils.license import is_feature_enabled
 from app.utils.sod import is_configurer_of_asset_type
 
 logger = logging.getLogger(__name__)
@@ -222,14 +221,7 @@ async def apply_approval_decision(
             db, order.asset_type_id, approval.approver_email,
         )
         if is_config:
-            if is_feature_enabled("rbac_sod_enforcement"):
-                raise SoDViolation(approval.approver_email, order.asset_type_id, excerpt)
-            logger.warning(
-                "SoD informational (community license — not blocking): "
-                "approver=%s configured asset_type_id=%s "
-                "(upgrade to Enterprise to enforce)",
-                approval.approver_email, order.asset_type_id,
-            )
+            raise SoDViolation(approval.approver_email, order.asset_type_id, excerpt)
     elif decision == "approve" and bypass_sod:
         logger.warning(
             "SoD bypassed by superadmin: actor=%s approval_id=%s order_id=%s",

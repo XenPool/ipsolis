@@ -31,12 +31,9 @@
         <th class="px-4 py-2.5 text-left text-xs font-semibold text-muted uppercase tracking-wide">Username</th>
         <th class="px-4 py-2.5 text-left text-xs font-semibold text-muted uppercase tracking-wide">Role</th>
         <th class="px-4 py-2.5 text-left text-xs font-semibold text-muted uppercase tracking-wide">Status</th>
-        {% if is_enterprise %}
         <th class="px-4 py-2.5 text-left text-xs font-semibold text-muted uppercase tracking-wide">
           Asset-type scope
-          <span class="text-muted/50 normal-case font-normal ml-1" title="Per-asset-type ACL grants — empty means &quot;see all&quot;.">Enterprise</span>
         </th>
-        {% endif %}
         <th class="px-4 py-2.5 text-left text-xs font-semibold text-muted uppercase tracking-wide">Last sign-in</th>
         <th class="px-4 py-2.5 text-left text-xs font-semibold text-muted uppercase tracking-wide">Created</th>
         <th class="px-4 py-2.5"></th>
@@ -122,9 +119,7 @@
 <script>
 const ROLES = ['superadmin', 'admin', 'approver', 'auditor', 'helpdesk'];
 // Per-asset-type ACL grants are an Enterprise feature. The flag below is
-// rendered server-side from the Jinja ``is_enterprise`` global so the JS
-// can skip the scope cell + grant-summary fetches that would 403 anyway.
-const IS_ENTERPRISE = {{ 'true' if is_enterprise else 'false' }};
+const IS_ENTERPRISE = true;
 let _grantsModalUserId = null;
 
 function showBanner(data) {

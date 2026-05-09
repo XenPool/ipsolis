@@ -31,7 +31,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin_user import AdminUser
 from app.models.admin_user_grant import AdminUserAssetTypeGrant
-from app.utils.license import is_feature_enabled
 
 
 # Roles that participate in scoping. Adding a role here makes it
@@ -45,15 +44,6 @@ async def visible_asset_type_ids(
     db: AsyncSession,
 ) -> set[int] | None:
     """Return ``None`` (unrestricted) or the set of asset_type ids the actor sees."""
-    # Per-asset-type ACL grants are an Enterprise feature. Without an
-    # Enterprise license, every actor sees every asset type — any rows
-    # already present in ``admin_user_asset_type_grants`` are ignored
-    # (so an enterprise → community downgrade doesn't silently hide
-    # types). The grant CRUD endpoints are 403'd separately, so no new
-    # rows can land while unlicensed.
-    if not is_feature_enabled("rbac_asset_type_grants"):
-        return None
-
     actor = getattr(request.state, "actor", "") or ""
 
     # Bypass paths — same shape as ``require_role``'s skip rules.

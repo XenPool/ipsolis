@@ -3016,25 +3016,25 @@ library; pure server-side detection from current DB state.
 
 ## Open — Distribution & Licensing Architecture
 
-### [open] Open Core Modell: Community + Business (zwei Tiers, ein Repo)
+### [open] Open Core Model: Community + Business (two tiers, one repo)
 
-**Entscheidung:** ip·Solis wird als Open Core Produkt angeboten.
-- **Community Edition** — öffentliches GitHub-Repo, frei verwendbar, kein Feature-Gating im Code
-- **Business Edition** — pre-built Images aus privater Registry (ghcr.io), enthält alle zusätzlichen Module; kein separater Enterprise-Tier mehr
+**Decision:** ip·Solis will be offered as an Open Core product.
+- **Community Edition** — public GitHub repo, free to use, no feature-gating in code
+- **Business Edition** — pre-built images from private registry (ghcr.io), includes all additional modules; no separate Enterprise tier
 
-Alle aktuellen Enterprise- und Business-Features wandern in die Business Edition.
-Feature-Flags im Code (`require_enterprise`, `require_business`, `BUSINESS_FEATURE_KEYS`, `ENTERPRISE_ONLY_FEATURE_KEYS`) entfallen vollständig — der Schutz entsteht durch Abwesenheit des Codes in der Community Edition, nicht durch Runtime-Gates.
+All current Enterprise and Business features move into the Business Edition.
+Feature flags in code (`require_enterprise`, `require_business`, `BUSINESS_FEATURE_KEYS`, `ENTERPRISE_ONLY_FEATURE_KEYS`) are removed entirely — protection is achieved by the absence of code in the Community Edition, not by runtime gates.
 
-**Schritte:**
+**Steps:**
 
-- [ ] **Modul-Inventar:** Alle Module/Dateien die Business-only sind identifizieren und dokumentieren (vsphere, xenserver, sccm, ServiceNow-Webhook, SCIM, HR-Webhook, Leaver Events, Audit Retention, Custom Deprovision, RBAC-Erweiterungen, Password Policy)
-- [ ] **Zwei Dockerfiles:** `Dockerfile.community` (kopiert nur Community-Dateien) und `Dockerfile.pro` (kopiert alles) aus einem gemeinsamen Mono-Repo bauen
-- [ ] **Feature-Gates entfernen:** `require_enterprise()`, `require_business()`, `BUSINESS_FEATURE_KEYS`, `ENTERPRISE_ONLY_FEATURE_KEYS` aus dem Code entfernen; `is_feature_enabled()` und alle `{% if is_enterprise %}` / `{% if is_business %}` Template-Checks bereinigen
-- [ ] **Lizenz-Mechanismus vereinfachen:** Ed25519-Signatur und Install-UUID behalten (für Ablaufdaten + User-Limits), aber Feature-Kontrolle über Lizenz-Datei entfernen — die Lizenz steuert nur noch `max_users`, `max_asset_types`, `expires_at`
-- [ ] **GitHub Actions Pipeline:** CI baut bei jedem Release automatisch beide Images und pusht sie in die private Registry; Community-Mirror-Repo wird automatisch mit gefilterten Dateien befüllt
-- [ ] **Registry-Token-Management:** Pro-Kunden bekommen einen widerrufbaren Registry-Token; Prozess für Ausstellung (nach Kauf) und Widerruf (bei Kündigung) definieren
-- [ ] **Kunden-Onboarding-Docs:** `docker-compose.yml` + `.env.example` + Installationsanleitung für Business-Kunden (docker login → compose up, fertig)
-- [ ] **Öffentliches Community-Repo aufsetzen:** github.com/xenpool/ipsolis als öffentlicher Mirror ohne Business-Module
+- [x] **Module inventory:** Identify and document all Business-only modules/files (vsphere, xenserver, sccm, ServiceNow webhook, SCIM, HR webhook, Leaver Events, Audit Retention, Custom Deprovision, RBAC extensions, Password Policy)
+- [x] **Two Dockerfiles:** Build `Dockerfile.community` (copies only Community files) and `Dockerfile.pro` (copies everything) from a shared mono-repo
+- [x] **Remove feature gates:** Remove `require_enterprise()`, `require_business()`, `BUSINESS_FEATURE_KEYS`, `ENTERPRISE_ONLY_FEATURE_KEYS` from code; clean up `is_feature_enabled()` and all `{% if is_enterprise %}` / `{% if is_business %}` template checks
+- [x] **Simplify license mechanism:** Keep Ed25519 signature and install UUID (for expiry dates + user limits), but remove feature control via license file — the license only controls `max_users`, `max_asset_types`, `expires_at`
+- [ ] **GitHub Actions pipeline:** CI automatically builds both images on every release and pushes them to the private registry; community mirror repo is automatically populated with filtered files
+- [ ] **Registry token management:** Pro customers get a revocable registry token; define process for issuance (after purchase) and revocation (on cancellation)
+- [ ] **Customer onboarding docs:** `docker-compose.yml` + `.env.example` + installation guide for Business customers (docker login → compose up, done)
+- [ ] **Set up public community repo:** github.com/xenpool/ipsolis as a public mirror without Business modules
 
 ---
 

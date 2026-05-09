@@ -14,7 +14,6 @@ from app.utils.ad_lookup import snapshot_requester_attrs
 from app.utils.audit import _order_snap, aaudit, actor_by, classify_for_asset_type_id
 from app.utils.auth import attribute_actor_if_present
 from app.utils.capacity import enforce_max_per_user, enforce_pool_capacity
-from app.utils.license import is_feature_enabled
 
 logger = logging.getLogger(__name__)
 # Public-by-design router: order creation accepts unauthenticated calls
@@ -81,30 +80,6 @@ async def create_order(
     Erstellt eine neue Bestellung via Self-Service-Portal.
     (For ServiceNow webhooks: POST /webhook/servicenow)
     """
-    # Enterprise gates — deputy ordering and scheduled orders
-    from datetime import datetime as _dt, timezone as _tz
-    is_deputy = bool(
-        payload.owner_email
-        and str(payload.owner_email).strip().lower() != str(payload.user_email).strip().lower()
-    )
-    if is_deputy and not is_feature_enabled("deputy_support"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Deputy Support requires an ip·Solis Enterprise license. "
-                "Contact info@xenpool.com for licensing options."
-            ),
-        )
-    if payload.requested_from and payload.requested_from > _dt.now(_tz.utc):
-        if not is_feature_enabled("scheduled_orders"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    "Scheduled Orders require an ip·Solis Enterprise license. "
-                    "Contact info@xenpool.com for licensing options."
-                ),
-            )
-
     # Pre-flight capacity check — PROVISION only
     if payload.action == OrderAction.PROVISION:
         at_result = await db.execute(

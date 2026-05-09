@@ -50,10 +50,8 @@ def _license_info_dict() -> dict[str, Any]:
     """Fresh snapshot of the current license state, suitable for JSON.
 
     Side effect: also refreshes the Jinja2 template globals
-    (``edition`` / ``is_enterprise`` / ``license_info``) so the Dashboard
-    and enterprise-feature gates reflect the new state without an api
-    restart. Without this the file changes but every rendered template
-    keeps the startup-frozen edition forever.
+    (``edition`` / ``license_info``) so the Dashboard reflects the new
+    state without an api restart.
     """
     from app.license.trusted_keys import TRUSTED_KEYS_BY_ID
     from datetime import date

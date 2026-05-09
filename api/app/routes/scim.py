@@ -51,7 +51,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.order import Order
 from app.utils.api_tokens import token_has_scope, verify_raw_token, mark_used
-from app.utils.features import require_enterprise
 from app.utils.leaver import process_leaver
 
 logger = logging.getLogger(__name__)
@@ -59,7 +58,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/scim/v2",
     tags=["scim"],
-    dependencies=[require_enterprise("scim")],
 )
 
 

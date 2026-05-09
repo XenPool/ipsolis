@@ -21,17 +21,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.db_backup import DbBackup
 from app.utils.auth import require_admin_key
-from app.utils.features import require_enterprise
 from app.utils.rbac import require_role
-
-# Backups + health probes + queue inspection + alert config are
-# community-tier — they're operational hygiene every install needs.
-# The *audit-retention policy* knob is the only Enterprise gate left
-# in this router; per-classification PII/PHI/PCI windows are the
-# compliance feature, while routine prune behaviour with the global
-# default is community.
-_ENT = Depends(lambda: None)               # legacy alias — kept for back-compat with any in-flight code
-_ENT_RETENTION = require_enterprise("audit_retention")
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +115,7 @@ def _safe_upload_filename(orig: str) -> str:
     return f"xp_backup_uploaded_{ts}_{cleaned}.sql.gz"
 
 
-@router.post("/backups/upload", dependencies=[_ENT, _WRITE_GATE])
+@router.post("/backups/upload", dependencies=[_WRITE_GATE])
 async def upload_backup(
     request: Request,
     file: UploadFile = File(..., description="The .sql.gz dump previously downloaded from another instance."),
@@ -238,7 +228,7 @@ async def upload_backup(
     }
 
 
-@router.post("/backups", dependencies=[_ENT, _WRITE_GATE])
+@router.post("/backups", dependencies=[_WRITE_GATE])
 async def create_backup(
     request: Request,
     payload: BackupCreate,
@@ -275,7 +265,7 @@ async def create_backup(
     }
 
 
-@router.get("/backups/{backup_id}/download", dependencies=[_ENT, _WRITE_GATE])
+@router.get("/backups/{backup_id}/download", dependencies=[_WRITE_GATE])
 async def download_backup(
     backup_id: int, db: AsyncSession = Depends(get_db)
 ) -> FileResponse:
@@ -313,7 +303,7 @@ class RestoreRequest(BaseModel):
     confirm_filename: str = Field(min_length=1, max_length=255)
 
 
-@router.post("/backups/{backup_id}/restore", dependencies=[_ENT, _WRITE_GATE])
+@router.post("/backups/{backup_id}/restore", dependencies=[_WRITE_GATE])
 async def restore_backup(
     backup_id: int,
     payload: RestoreRequest,
@@ -414,7 +404,7 @@ async def restore_backup(
     }
 
 
-@router.delete("/backups/{backup_id}", dependencies=[_ENT, _WRITE_GATE])
+@router.delete("/backups/{backup_id}", dependencies=[_WRITE_GATE])
 async def delete_backup(
     backup_id: int, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -498,7 +488,7 @@ async def list_beat_schedule() -> list[dict]:
     return [dict(entry) for entry in BEAT_INVENTORY]
 
 
-@router.put("/retention", dependencies=[_ENT_RETENTION, _WRITE_GATE])
+@router.put("/retention", dependencies=[_WRITE_GATE])
 async def set_retention(
     payload: RetentionUpdate, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -830,7 +820,7 @@ class QueuePurge(BaseModel):
     queue: str
 
 
-@router.post("/queue/purge", dependencies=[_ENT, _WRITE_GATE])
+@router.post("/queue/purge", dependencies=[_WRITE_GATE])
 async def purge_queue(payload: QueuePurge) -> dict:
     if payload.queue not in _KNOWN_QUEUES:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown queue: {payload.queue}")
@@ -873,7 +863,7 @@ async def _upsert_cfg(db: AsyncSession, key: str, value: str) -> None:
     )
 
 
-@router.get("/schedule", dependencies=[_ENT])
+@router.get("/schedule", )
 async def get_schedule(db: AsyncSession = Depends(get_db)) -> dict:
     rows = await db.execute(text(
         "SELECT key, value FROM app_config "
@@ -886,7 +876,7 @@ async def get_schedule(db: AsyncSession = Depends(get_db)) -> dict:
     }
 
 
-@router.put("/schedule", dependencies=[_ENT, _WRITE_GATE])
+@router.put("/schedule", dependencies=[_WRITE_GATE])
 async def set_schedule(
     payload: ScheduleUpdate, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -911,7 +901,7 @@ class AlertUpdate(BaseModel):
     cooldown_minutes: int | None = None
 
 
-@router.get("/alerts", dependencies=[_ENT])
+@router.get("/alerts", )
 async def get_alerts(db: AsyncSession = Depends(get_db)) -> dict:
     rows = await db.execute(text(
         "SELECT key, value FROM app_config WHERE key IN ("
@@ -929,7 +919,7 @@ async def get_alerts(db: AsyncSession = Depends(get_db)) -> dict:
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-@router.put("/alerts", dependencies=[_ENT, _WRITE_GATE])
+@router.put("/alerts", dependencies=[_WRITE_GATE])
 async def set_alerts(
     payload: AlertUpdate, db: AsyncSession = Depends(get_db)
 ) -> dict:
@@ -948,7 +938,7 @@ async def set_alerts(
     return {"success": True}
 
 
-@router.post("/alerts/test", dependencies=[_ENT, _WRITE_GATE])
+@router.post("/alerts/test", dependencies=[_WRITE_GATE])
 async def test_alert(db: AsyncSession = Depends(get_db)) -> dict:
     """Sends a test email to the configured alert recipient."""
     row = await db.execute(

@@ -33,7 +33,6 @@ from app.models.admin_user_grant import AdminUserAssetTypeGrant
 from app.models.asset import AssetType
 from app.utils.audit import aaudit, actor_by
 from app.utils.auth import require_admin_key
-from app.utils.features import require_enterprise
 from app.utils.password import hash_password, verify_password
 from app.utils.password_policy import record_password_change
 from app.utils.rbac import VALID_ROLES, require_role
@@ -329,7 +328,7 @@ class GrantSet(BaseModel):
 @router.get(
     "/{user_id}/grants",
     response_model=list[GrantRow],
-    dependencies=[require_enterprise("rbac_asset_type_grants")],
+
 )
 async def list_user_grants(
     user_id: int,
@@ -364,7 +363,7 @@ async def list_user_grants(
 @router.put(
     "/{user_id}/grants",
     response_model=list[GrantRow],
-    dependencies=[require_enterprise("rbac_asset_type_grants")],
+
 )
 async def set_user_grants(
     request: Request,

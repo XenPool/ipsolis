@@ -24,7 +24,6 @@ from app.models.order import Order, OrderAction, OrderStatus
 from app.routes.portal import require_portal_auth
 from app.templates_instance import templates
 from app.utils.audit import aaudit, portal_actor_by
-from app.utils.features import is_feature_enabled, require_business
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["portal-certifications"])
@@ -37,11 +36,6 @@ async def my_certifications_page(
     current_user: dict = Depends(require_portal_auth),
 ):
     """Render the manager's pending review queue."""
-    # Defense-in-depth: nav entry is hidden on community installs, but bounce
-    # any direct URL navigation back to the portal home rather than rendering
-    # a JSON 403 (uglier than the silent redirect for end-user flows).
-    if not is_feature_enabled("certifications"):
-        return RedirectResponse(url="/portal/orders", status_code=status.HTTP_303_SEE_OTHER)
     email = (current_user.get("email") or "").lower()
     return templates.TemplateResponse("portal/certifications.html", {
         "request": request,
@@ -53,7 +47,7 @@ async def my_certifications_page(
 
 @router.get(
     "/portal/api/certifications/reviews",
-    dependencies=[require_business("certifications")],
+
 )
 async def api_my_reviews(
     db: AsyncSession = Depends(get_db),
@@ -101,7 +95,7 @@ async def api_my_reviews(
 
 @router.post(
     "/portal/api/certifications/reviews/{review_id}/decide",
-    dependencies=[require_business("certifications")],
+
 )
 async def api_decide_review(
     review_id: int,

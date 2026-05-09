@@ -49,7 +49,6 @@ from app.config import settings
 from app.database import get_db
 from app.models.hr_leaver_event import HrLeaverEvent
 from app.utils.auth import require_admin_key, require_scopes
-from app.utils.features import require_enterprise
 from app.utils.leaver import process_leaver
 from app.utils.rbac import require_role
 
@@ -58,7 +57,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/hr",
     tags=["hr-webhook"],
-    dependencies=[require_enterprise("hr_webhook")],
 )
 
 
@@ -252,7 +250,6 @@ _admin_router = APIRouter(
     # webhook/SCIM events can land — gating prevents confusion.
     dependencies=[
         Depends(require_admin_key),
-        require_enterprise("hr_leaver_events"),
         require_scopes("audit:read"),
         require_role("auditor"),
     ],

@@ -1205,16 +1205,6 @@ def run(self: Task, order_id: int) -> dict:
                 )
                 automation_strategy = snap_strategy
 
-        # Community-license fallback: custom_runbook deprovision is Enterprise-only.
-        # Downgrade to return_to_pool so the order still completes cleanly.
-        if deprovision_policy == "custom_runbook":
-            from tasks.utils.license import is_feature_enabled
-            if not is_feature_enabled("custom_deprovision"):
-                logger.info(
-                    "[dynamic_runner] custom_runbook deprovision requires Enterprise; "
-                    "downgrading to return_to_pool for order %s", order_id,
-                )
-                deprovision_policy = "return_to_pool"
 
         logger.info(
             "[dynamic_runner] automation_strategy=%s assignment_model=%s deprovision_policy=%s",
@@ -1764,11 +1754,6 @@ def check_scheduled_orders() -> dict:
     Finds orders with status='scheduled' where requested_from <= NOW(),
     transitions them to 'processing', and dispatches dynamic_runner.run.
     """
-    from tasks.utils.license import is_feature_enabled
-    if not is_feature_enabled("scheduled_orders"):
-        # No scheduled orders can exist under Community; skip the scan entirely.
-        return {"status": "skipped", "reason": "enterprise_only", "dispatched": 0}
-
     logger.info("=== check_scheduled_orders: Looking for due scheduled orders ===")
 
     db = _get_db_session()

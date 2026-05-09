@@ -115,10 +115,6 @@ def _install_from_upload(db: Session, ps_module_id: int, module_name: str, uploa
 )
 def install_ps_module(self, ps_module_id: int) -> dict:
     """Install or reinstall a PS module from PSGallery."""
-    from tasks.utils.license import is_feature_enabled
-    if not is_feature_enabled("ps_module_management"):
-        logger.info("ps_module_installer.install_ps_module skipped: Enterprise license required")
-        return {"status": "skipped", "reason": "enterprise_only", "feature": "ps_module_management"}
     db = _get_db_session()
     try:
         row = db.execute(

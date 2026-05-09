@@ -89,9 +89,12 @@ templates.env.globals["app_logo_title_size"] = "12"
 # License / edition globals — set at startup by main.py lifespan. Default to
 # Community so any early render before load_license() runs is safe.
 templates.env.globals["edition"] = "community"
-templates.env.globals["is_enterprise"] = False
-templates.env.globals["is_business"] = False
 templates.env.globals["license_info"] = None
+
+# Feature availability globals — overridden by main.py after try/except imports.
+# False means the Business-only route file was not present in this image.
+templates.env.globals["has_certifications"] = False
+templates.env.globals["has_leaver_events"] = False
 
 # Module-level cache so the /portal/logo endpoint can read the raw data URL
 # without hitting the DB on every request.
@@ -238,13 +241,9 @@ def set_license_globals(info) -> None:
     """
     if info is None:
         templates.env.globals["edition"] = "community"
-        templates.env.globals["is_enterprise"] = False
-        templates.env.globals["is_business"] = False
         templates.env.globals["license_info"] = None
         return
     templates.env.globals["edition"] = info.edition
-    templates.env.globals["is_enterprise"] = (info.edition == "enterprise" and info.valid)
-    templates.env.globals["is_business"] = (info.edition in ("business", "enterprise") and info.valid)
     templates.env.globals["license_info"] = info
 
 
@@ -298,11 +297,8 @@ async def refresh_app_config_if_stale(force: bool = False) -> None:
                 set_update_globals(update_rows)
             # Refresh license globals on the same TTL. ``load_license`` is
             # cheap when nothing changed (mtime-cached) — re-reads only
-            # when the .lic file actually moves. This is what keeps a
-            # mid-life license upload visible to every uvicorn worker
-            # (each worker has its own ``templates.env.globals``; without
-            # this hook only the worker that handled the upload would
-            # flip ``is_enterprise``).
+            # when the .lic file actually moves. Keeps license globals
+            # current across all uvicorn workers without an api restart.
             try:
                 from app.utils.license import load_license  # local import — avoid module-load cycle
                 set_license_globals(load_license())

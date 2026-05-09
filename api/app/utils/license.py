@@ -1,14 +1,16 @@
-"""Ipsolis license module (Community / Business / Enterprise edition gating).
+"""Ipsolis license module — expiry, user limits, and install binding.
 
 Offline, trust-based license system:
 - Reads a signed JSON license file at ``/app/license/ipsolis.lic``
 - Verifies the signature against the multi-key trust list in ``app.license``
-- Checks expiry
+- Checks expiry and enforces ``max_users`` / ``max_asset_types`` limits
 - Optionally enforces an install-bound ``install_uuid`` (see below)
 - Caches the result in a process-local variable
 
 Missing file or any validation failure silently falls back to Community edition.
 No phone-home, no telemetry, no online checks.
+No runtime feature gating — feature availability is controlled by which code is
+present in the Docker image (Community vs. Business), not by license key checks.
 
 Install binding
 ---------------
@@ -43,23 +45,6 @@ LICENSE_PATH = Path(os.environ.get("IPSOLIS_LICENSE_PATH", "/app/license/ipsolis
 COMMUNITY_EDITION  = "community"
 BUSINESS_EDITION   = "business"
 ENTERPRISE_EDITION = "enterprise"
-
-# Features available on Business and Enterprise licenses.
-BUSINESS_FEATURE_KEYS: frozenset[str] = frozenset({
-    "standalone_runbooks", "visual_runbook_builder", "ps_module_management",
-    "deputy_support", "scheduled_orders", "app_owner_approval", "reapproval_on_modify",
-    "email_template_editor", "app_branding", "eligible_requestors", "global_variables",
-    "audit_log_viewer", "change_log_viewer", "api_token_management", "certifications",
-    "vsphere_integration", "xenserver_integration", "sccm_integration",
-})
-
-# Features that require an Enterprise license; hard-blocked on Business.
-ENTERPRISE_ONLY_FEATURE_KEYS: frozenset[str] = frozenset({
-    "servicenow_webhook", "hr_webhook", "hr_leaver_events", "scim",
-    "audit_retention", "advanced_maintenance", "custom_deprovision",
-    "rbac_asset_type_grants", "rbac_token_role_binding", "rbac_sod_enforcement",
-    "password_policy",
-})
 
 
 class LicenseInfo(BaseModel):
@@ -319,42 +304,3 @@ def get_license_info() -> LicenseInfo:
     return load_license()
 
 
-def is_enterprise() -> bool:
-    """True iff the instance runs with a valid Enterprise license."""
-    info = get_license_info()
-    return info.edition == ENTERPRISE_EDITION and info.valid
-
-
-def is_business() -> bool:
-    """True iff the instance runs with a valid Business or Enterprise license.
-
-    Enterprise is a strict superset of Business, so Enterprise licenses
-    also satisfy Business-tier gates.
-    """
-    info = get_license_info()
-    return info.edition in (BUSINESS_EDITION, ENTERPRISE_EDITION) and info.valid
-
-
-def is_feature_enabled(feature: str) -> bool:
-    """True iff the feature is available under the current license.
-
-    Tier hierarchy: Enterprise ⊇ Business ⊇ Community.
-    - Enterprise with features=["all"] or empty list → all features (legacy behaviour preserved).
-    - Enterprise with explicit list → honour the list.
-    - Business → enables BUSINESS_FEATURE_KEYS; ENTERPRISE_ONLY_FEATURE_KEYS always blocked.
-    - Community → all gated features disabled.
-    """
-    info = get_license_info()
-    if not info.valid:
-        return False
-    if info.edition == ENTERPRISE_EDITION:
-        if "all" in info.features or not info.features:
-            return True
-        return feature in info.features
-    if info.edition == BUSINESS_EDITION:
-        if feature in ENTERPRISE_ONLY_FEATURE_KEYS:
-            return False
-        if "all" in info.features or not info.features:
-            return feature in BUSINESS_FEATURE_KEYS
-        return feature in info.features
-    return False

@@ -1,4 +1,3 @@
-{% from "_partials/enterprise_teaser.html" import nav_locked, tab_locked, teaser_pane, card_teaser %}
 <!DOCTYPE html>
 <html lang="en" class="h-full">
 <head>
@@ -94,7 +93,6 @@
         </svg>
         Modules
       </a>
-      {% if is_business %}
       <a href="/ui/ps-modules"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'ps-modules' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -113,7 +111,6 @@
         </svg>
         Runbooks
       </a>
-      {% endif %}
       <a href="/ui/settings"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'settings' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -146,7 +143,6 @@
         </svg>
         Cost Report
       </a>
-      {% if is_business %}
       <a href="/ui/audit-log"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'audit-log' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -157,11 +153,9 @@
         Audit Log
       </a>
       {% endif %}
-      {% endif %}
 
       {# ── Authority-level — superadmin only ───────────────────────────── #}
       {% if admin_role_at_least(request, 'superadmin') %}
-      {% if is_business %}
       <a href="/ui/api-tokens"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'api-tokens' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -171,7 +165,6 @@
         </svg>
         API Tokens
       </a>
-      {% endif %}
       <a href="/ui/admin-users"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'admin-users' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -198,8 +191,7 @@
       </a>
       {% endif %}
 
-      {# Access Certifications — Business+; auditor+ read floor #}
-      {% if admin_role_at_least(request, 'auditor') and is_business %}
+      {% if admin_role_at_least(request, 'auditor') and has_certifications %}
       <a href="/ui/certifications"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'certifications' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -210,8 +202,7 @@
         Certifications
       </a>
       {% endif %}
-      {# Leaver Events — Enterprise-only (hr_leaver_events) #}
-      {% if admin_role_at_least(request, 'auditor') and is_enterprise %}
+      {% if admin_role_at_least(request, 'auditor') and has_leaver_events %}
       <a href="/ui/leaver-events"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'leaver-events' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -223,56 +214,6 @@
       </a>
       {% endif %}
 
-      {# ── Enterprise Features (community installs only) ────────────────
-         Locked items are corralled into a single collapsible group so the
-         sidebar stays compact for community operators. Default-collapsed;
-         expanded state persisted in localStorage so the operator's choice
-         survives navigation. RBAC mirrored from the original gates above
-         — helpdesk has no Enterprise items to advertise, so the group
-         renders only for admin+. #}
-      {% if not is_business and admin_role_at_least(request, 'admin') %}
-      <details id="ent-features-group"
-               class="group mt-3 pt-2 border-t border-token-border [&_summary::-webkit-details-marker]:hidden">
-        <summary class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:bg-surface-raised hover:text-body cursor-pointer list-none">
-          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-          </svg>
-          <span class="flex-1 text-left">Business &amp; Enterprise Features</span>
-          <svg class="w-3.5 h-3.5 flex-shrink-0 transition-transform duration-150 group-open:rotate-90"
-               fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-          </svg>
-        </summary>
-        <div class="mt-1 space-y-0.5">
-          {% if admin_role_at_least(request, 'admin') %}
-            {{ nav_locked("PS Modules", "/ui/ps-modules", tier="business") }}
-            {{ nav_locked("Runbooks", "/ui/standalone-runbooks", tier="business") }}
-          {% endif %}
-          {% if admin_role_at_least(request, 'auditor') %}
-            {{ nav_locked("Audit Log", "/ui/audit-log", tier="business") }}
-          {% endif %}
-          {% if admin_role_at_least(request, 'superadmin') %}
-            {{ nav_locked("API Tokens", "/ui/api-tokens", tier="business") }}
-          {% endif %}
-          {% if admin_role_at_least(request, 'auditor') %}
-            {{ nav_locked("Certifications", "/ui/certifications", tier="business") }}
-            {{ nav_locked("Leaver Events", "/ui/leaver-events") }}
-          {% endif %}
-        </div>
-      </details>
-      <script>
-        (function() {
-          var k = 'ipsolis.entFeaturesOpen';
-          var d = document.getElementById('ent-features-group');
-          if (!d) return;
-          try { d.open = localStorage.getItem(k) === '1'; } catch (e) {}
-          d.addEventListener('toggle', function() {
-            try { localStorage.setItem(k, d.open ? '1' : '0'); } catch (e) {}
-          });
-        })();
-      </script>
-      {% endif %}
 
       {# ── User portal — opens in a new tab so the admin session stays put ── #}
       <a href="/portal/" target="_blank" rel="noopener"

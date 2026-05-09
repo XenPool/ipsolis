@@ -34,10 +34,8 @@ from app.utils.audit import (
     aaudit, actor_by, classify_asset_type, classify_for_asset_type_id,
 )
 from app.utils.auth import require_admin_key, require_scopes
-from app.utils.features import require_business, require_enterprise
 from app.utils.rbac import require_role
 from app.utils.rbac_grants import assert_asset_type_visible
-from app.utils.license import is_feature_enabled
 from app.templates_instance import set_app_title, set_app_logo_config
 
 logger = logging.getLogger(__name__)
@@ -58,68 +56,6 @@ _SECRET_MASK = "***"
 # how to bucket on ``classification`` (not entity_type chains).
 _classify_for_asset_type_id = classify_for_asset_type_id
 
-
-def _enterprise_gate_for_config_key(key: str) -> str | None:
-    """Return the feature name to check for a given app_config key, or None if Community.
-
-    Keys in `app_config` reused for Enterprise-only customisations are gated here so
-    community users cannot bypass the dedicated endpoints by writing to /config.
-    """
-    if key == "app.title" or key.startswith("app.logo"):
-        return "app_branding"
-    if key.startswith("email.tpl."):
-        return "email_template_editor"
-    if key.startswith("global."):
-        return "global_variables"
-    return None
-
-
-def _require_config_key_licensed(key: str) -> None:
-    feature = _enterprise_gate_for_config_key(key)
-    if feature and not is_feature_enabled(feature):
-        label = feature.replace("_", " ").title()
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                f"{label} requires an ip·Solis Business or Enterprise license. "
-                f"Contact info@xenpool.com for licensing options."
-            ),
-        )
-
-
-def _require_asset_type_fields_licensed(payload) -> None:
-    """Reject payloads setting Enterprise-only asset-type fields under Community license.
-
-    Accepts either AssetTypeCreate or AssetTypeUpdate (both Pydantic). Fields that
-    are None / False / empty are treated as unset and pass.
-    """
-    violations: list[str] = []
-    if getattr(payload, "eligible_requestors_dn", None):
-        violations.append("eligible_requestors")
-    if getattr(payload, "allow_rdp_users", False):
-        violations.append("eligible_requestors")
-    if getattr(payload, "allow_admin_users", False):
-        violations.append("eligible_requestors")
-    if getattr(payload, "requires_approval_on_modify", False):
-        violations.append("reapproval_on_modify")
-    if getattr(payload, "requires_owner_approval", False):
-        violations.append("app_owner_approval")
-    if getattr(payload, "deprovision_policy", "") == "custom_runbook":
-        violations.append("custom_deprovision")
-
-    blocked = [f for f in violations if not is_feature_enabled(f)]
-    if blocked:
-        # Dedup while preserving order
-        seen: set[str] = set()
-        unique = [f for f in blocked if not (f in seen or seen.add(f))]
-        labels = ", ".join(f.replace("_", " ").title() for f in unique)
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                f"{labels} require an ip·Solis Enterprise license. "
-                f"Contact info@xenpool.com for licensing options."
-            ),
-        )
 
 
 async def _maybe_auto_grant_creator(
@@ -229,7 +165,6 @@ async def get_config(key: str, db: AsyncSession = Depends(get_db)) -> AppConfigR
 async def create_config(
     request: Request, payload: AppConfigCreate, db: AsyncSession = Depends(get_db)
 ) -> AppConfigRead:
-    _require_config_key_licensed(payload.key)
     existing = await db.execute(select(AppConfig).where(AppConfig.key == payload.key))
     if existing.scalar_one_or_none():
         raise HTTPException(
@@ -260,7 +195,6 @@ async def create_config(
 async def update_config(
     request: Request, key: str, payload: AppConfigUpdate, db: AsyncSession = Depends(get_db)
 ) -> AppConfigRead:
-    _require_config_key_licensed(key)
     result = await db.execute(select(AppConfig).where(AppConfig.key == key))
     cfg = result.scalar_one_or_none()
     if not cfg:
@@ -287,7 +221,6 @@ async def update_config(
     dependencies=[require_scopes("config:write"), require_role("admin")],
 )
 async def delete_config(request: Request, key: str, db: AsyncSession = Depends(get_db)) -> None:
-    _require_config_key_licensed(key)
     result = await db.execute(select(AppConfig).where(AppConfig.key == key))
     cfg = result.scalar_one_or_none()
     if not cfg:
@@ -615,7 +548,7 @@ async def migrate_secret_backend(
     return report
 
 
-@router.post("/config/sccm/test", dependencies=[require_business("sccm_integration"), require_role("admin")])
+@router.post("/config/sccm/test", dependencies=[require_role("admin")])
 async def test_sccm_connection() -> dict:
     """Enqueues a Celery task that runs a pwsh+Kerberos probe inside the worker
     container (where krb5 libs and pwsh are installed) and waits for the result."""
@@ -666,7 +599,6 @@ async def asset_type_logo(type_id: int, db: AsyncSession = Depends(get_db)):
 async def create_asset_type(
     request: Request, payload: AssetTypeCreate, db: AsyncSession = Depends(get_db)
 ) -> AssetType:
-    _require_asset_type_fields_licensed(payload)
     existing = await db.execute(select(AssetType).where(AssetType.name == payload.name))
     if existing.scalar_one_or_none():
         raise HTTPException(
@@ -747,7 +679,6 @@ async def create_asset_type(
 async def update_asset_type(
     request: Request, type_id: int, payload: AssetTypeUpdate, db: AsyncSession = Depends(get_db)
 ) -> AssetType:
-    _require_asset_type_fields_licensed(payload)
     # RBAC slice 2: scoped admins get a clean 404 for out-of-scope ids
     # before any further work — same response shape as a missing id, so
     # the existence of unrelated teams' types isn't leaked.
@@ -1372,7 +1303,6 @@ async def list_assets(
     "/audit-log",
     response_model=list[AuditLogRead],
     dependencies=[
-        require_business("audit_log_viewer"),
         require_scopes("audit:read"),
         require_role("auditor"),
     ],
@@ -1411,7 +1341,7 @@ async def list_audit_log(
 
 @router.get(
     "/email-templates",
-    dependencies=[require_business("email_template_editor"), require_scopes("config:read")],
+    dependencies=[require_scopes("config:read")],
 )
 async def list_email_templates(db: AsyncSession = Depends(get_db)) -> list[dict]:
     """Lists all email templates (without body, for table display)."""
@@ -1432,7 +1362,7 @@ async def list_email_templates(db: AsyncSession = Depends(get_db)) -> list[dict]
 
 @router.get(
     "/email-templates/{event_key}",
-    dependencies=[require_business("email_template_editor"), require_scopes("config:read")],
+    dependencies=[require_scopes("config:read")],
 )
 async def get_email_template(event_key: str, db: AsyncSession = Depends(get_db)) -> dict:
     """Returns a single email template including body and available_variables."""
@@ -1458,7 +1388,6 @@ async def get_email_template(event_key: str, db: AsyncSession = Depends(get_db))
 @router.put(
     "/email-templates/{event_key}",
     dependencies=[
-        require_business("email_template_editor"),
         require_scopes("config:write"),
         require_role("admin"),
     ],
@@ -1505,7 +1434,7 @@ async def update_email_template(
 
 @router.post(
     "/config/email/test",
-    dependencies=[require_business("email_template_editor"), require_role("admin")],
+    dependencies=[require_role("admin")],
 )
 async def test_email(payload: dict = None, db: AsyncSession = Depends(get_db)) -> dict:
     """Sends a test email using the current email.* config settings."""

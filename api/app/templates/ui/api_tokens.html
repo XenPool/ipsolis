@@ -1,16 +1,7 @@
 {% extends "base.html" %}
-{% from "_partials/enterprise_teaser.html" import teaser_pane %}
-
 {% block title %}API Tokens – {{ app_title }}{% endblock %}
 
 {% block content %}
-{% if not is_business %}
-{{ teaser_pane(
-    "Per-integration API tokens",
-    "Replace the single shared X-Admin-Key with named, expiring, revocable bearer tokens — each scoped to the endpoints a specific integration actually needs (e.g. ServiceNow needs only 'webhook:in', a reporting tool only 'orders:read'). Token-role binding caps the privilege a token can wield even when the calling endpoint is broader. Every audit-log row records which token drove the change ('token:servicenow-int') so a compliance review can trace any mutation back to the specific integration. Optional hard-delete retention purges revoked tokens after a configurable window for tenants under strict record-retention rules. Community installs keep the legacy X-Admin-Key fallback so existing scripts don't break — you upgrade for the auditability.",
-    tier="business"
-) }}
-{% else %}
 <div class="mb-6 flex items-center justify-between">
   <div>
     <h1 class="text-lg font-semibold text-heading">API Tokens</h1>
@@ -93,9 +84,7 @@
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Name</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Prefix</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Scopes</th>
-        {% if is_enterprise %}
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Role</th>
-        {% endif %}
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Status</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Last used</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Expires</th>
@@ -136,7 +125,6 @@
         <p class="text-[11px] text-muted/60 mt-1">Pick a horizon that matches your rotation policy.</p>
       </div>
 
-      {% if is_enterprise %}
       <div>
         <label class="block text-xs font-medium text-muted mb-1">Role</label>
         <select id="new-token-role"
@@ -153,13 +141,6 @@
           on top of the scopes below. You can only mint tokens at or below your own role.
         </p>
       </div>
-      {% else %}
-      {# Role-bound tokens are an Enterprise feature; community gets
-         scope-only authz which is still meaningful (admin:*,
-         audit_log:read, config:read, etc.). The hidden input keeps the
-         submit handler's ``fields.role`` lookup working without branching. #}
-      <input type="hidden" id="new-token-role" value="">
-      {% endif %}
 
       <div>
         <label class="block text-xs font-medium text-muted mb-1">Scopes</label>
@@ -235,9 +216,7 @@ function renderScopeGrid() {
   }).join('');
 }
 
-// Role-bound API tokens are an Enterprise feature; suppress the role
-// column on community so the table shape matches the gated header.
-const IS_ENTERPRISE = {{ 'true' if is_enterprise else 'false' }};
+const IS_ENTERPRISE = true;
 
 function roleBadge(role) {
   if (!role) {
@@ -469,5 +448,4 @@ document.addEventListener('DOMContentLoaded', async function() {
   await loadPurgePolicy();
 });
 </script>
-{% endif %}
 {% endblock %}

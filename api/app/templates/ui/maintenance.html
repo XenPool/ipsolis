@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "_partials/enterprise_teaser.html" import tab_locked, teaser_pane, card_teaser %}
 
 {% block title %}Maintenance – {{ app_title }}{% endblock %}
 
@@ -34,14 +33,10 @@
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Recurring Tasks
     </button>
-    {% if is_enterprise %}
     <button onclick="showTab('retention')" id="tab-btn-retention"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Retention
     </button>
-    {% else %}
-    {{ tab_locked("Retention", "retention") }}
-    {% endif %}
     <button onclick="showTab('seed')" id="tab-btn-seed"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Seed
@@ -536,7 +531,6 @@
 
 <!-- ── Tab: Retention ───────────────────────────────────────────────────── -->
 <div id="tab-retention" class="hidden">
-{% if is_enterprise %}
   <div class="flex items-center justify-between mb-3">
     <h2 class="text-sm font-semibold text-body">Retention &amp; Cleanup</h2>
     <div class="flex items-center gap-2">
@@ -600,12 +594,6 @@
   </div>
 
   <div id="cleanup-result" class="mt-4 max-w-3xl"></div>
-{% else %}
-{{ teaser_pane(
-    "Retention & Cleanup",
-    "Keep the database lean with configurable retention windows for orders, audit log, standalone-runbook runs, and backup files. Dry-run preview before execution; scheduled cleanup built in."
-) }}
-{% endif %}
 </div>
 
 <!-- ── Tab: Seed ────────────────────────────────────────────────────────── -->
@@ -677,7 +665,7 @@
   }
 
   // Set at render time so the renderer knows whether to dim ENT-locked rows.
-  var _isEnterprise = {{ 'true' if is_enterprise else 'false' }};
+  var _isEnterprise = true;
 
   function _renderBeatRow(r) {
     var queueClass = {
@@ -759,7 +747,7 @@
       var resp = await fetch('/admin/maintenance/health');
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       var data = await resp.json();
-      var labels = {database: 'PostgreSQL', redis: 'Redis', entra: 'Entra ID'{% if is_business %}, sccm: 'SCCM'{% endif %}, smtp: 'SMTP'};
+      var labels = {database: 'PostgreSQL', redis: 'Redis', entra: 'Entra ID', sccm: 'SCCM', smtp: 'SMTP'};
       var html = '';
       Object.keys(labels).forEach(function(key) {
         var p = data[key] || {};
@@ -1060,9 +1048,7 @@
                 + '  <div class="text-xs text-muted font-mono">' + q + '</div>'
                 + '  <div class="flex items-center gap-2">'
                 + '    <span class="px-2 py-0.5 text-xs rounded bg-surface-raised text-body">' + n + '</span>'
-                {% if is_enterprise %}
                 + '    <button onclick="purgeQueue(\'' + q + '\')" class="text-[10px] text-red-600 hover:underline">purge</button>'
-                {% endif %}
                 + '  </div>'
                 + '</div>';
         });
