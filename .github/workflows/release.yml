@@ -164,6 +164,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history needed — shallow clone breaks the push
 
       - name: Remove Business-only files
         run: |
