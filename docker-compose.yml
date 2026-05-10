@@ -47,7 +47,7 @@ services:
   api:
     build:
       context: ./api
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.pro
       args:
         # Bake APP_VERSION into the image as a fallback. Runtime prefers
         # /app/VERSION (bind-mounted below) so the canonical VERSION
@@ -87,7 +87,7 @@ services:
   worker:
     build:
       context: ./worker
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.pro
     container_name: ipsolis-worker
     restart: unless-stopped
     env_file: .env
@@ -125,7 +125,7 @@ services:
   beat:
     build:
       context: ./worker
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.pro
     # No ``container_name`` so this service can be scaled to N replicas
     # (``docker compose up -d --scale beat=2``). RedBeat's distributed
     # lock keeps the dispatch single-leader regardless of replica count.
@@ -156,7 +156,7 @@ services:
   flower:
     build:
       context: ./worker
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.pro
     container_name: ipsolis-flower
     restart: unless-stopped
     env_file: .env
