@@ -457,10 +457,6 @@ def _run_script_with_step_vars(
 @app.task(name="tasks.workflows.standalone_runner.run", bind=True, max_retries=0)
 def run(self: Task, run_id: int) -> dict:
     """Execute a standalone runbook run."""
-    from tasks.utils.license import is_feature_enabled
-    if not is_feature_enabled("standalone_runbooks"):
-        logger.info("standalone_runner.run skipped: Enterprise license required")
-        return {"status": "skipped", "reason": "enterprise_only", "feature": "standalone_runbooks"}
     db = _get_sync_session()
     try:
         return _execute_run(db, run_id)
@@ -770,9 +766,6 @@ def _skip_remaining_steps(db: Session, run_id: int, steps: list, failed_position
 @app.task(name="tasks.workflows.standalone_runner.check_cron_schedules")
 def check_cron_schedules() -> dict:
     """Runs every minute via Beat. Checks if any standalone runbooks need to fire."""
-    from tasks.utils.license import is_feature_enabled
-    if not is_feature_enabled("standalone_runbooks"):
-        return {"status": "skipped", "reason": "enterprise_only", "dispatched": 0}
     from croniter import croniter
 
     db = _get_sync_session()

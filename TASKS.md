@@ -3014,6 +3014,30 @@ library; pure server-side detection from current DB state.
 
 ---
 
+## Open — Distribution & Licensing Architecture
+
+### [open] Open Core Model: Community + Business (two tiers, one repo)
+
+**Decision:** ip·Solis will be offered as an Open Core product.
+- **Community Edition** — public GitHub repo, free to use, no feature-gating in code
+- **Business Edition** — pre-built images from private registry (ghcr.io), includes all additional modules; no separate Enterprise tier
+
+All current Enterprise and Business features move into the Business Edition.
+Feature flags in code (`require_enterprise`, `require_business`, `BUSINESS_FEATURE_KEYS`, `ENTERPRISE_ONLY_FEATURE_KEYS`) are removed entirely — protection is achieved by the absence of code in the Community Edition, not by runtime gates.
+
+**Steps:**
+
+- [x] **Module inventory:** Identify and document all Business-only modules/files (vsphere, xenserver, sccm, ServiceNow webhook, SCIM, HR webhook, Leaver Events, Audit Retention, Custom Deprovision, RBAC extensions, Password Policy)
+- [x] **Two Dockerfiles:** Build `Dockerfile.community` (copies only Community files) and `Dockerfile.pro` (copies everything) from a shared mono-repo
+- [x] **Remove feature gates:** Remove `require_enterprise()`, `require_business()`, `BUSINESS_FEATURE_KEYS`, `ENTERPRISE_ONLY_FEATURE_KEYS` from code; clean up `is_feature_enabled()` and all `{% if is_enterprise %}` / `{% if is_business %}` template checks
+- [x] **Simplify license mechanism:** Keep Ed25519 signature and install UUID (for expiry dates + user limits), but remove feature control via license file — the license only controls `max_users`, `max_asset_types`, `expires_at`
+- [x] **GitHub Actions pipeline:** CI automatically builds both images on every release and pushes them to the private registry; community mirror repo is automatically populated with filtered files
+- [x] **Registry token management:** Pro customers get a revocable registry token; define process for issuance (after purchase) and revocation (on cancellation)
+- [x] **Customer onboarding docs:** `docker-compose.yml` + `.env.example` + installation guide for Business customers (docker login → compose up, done)
+- [x] **Set up public community repo:** github.com/xenpool/ipsolis as a public mirror without Business modules
+
+---
+
 ## Pre-existing open tasks
 
 ### [open] Entra ID Connect / Cloud Sync setup — infrastructure (no code change needed)

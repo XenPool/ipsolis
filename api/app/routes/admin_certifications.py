@@ -36,7 +36,6 @@ from app.models.order import Order, OrderStatus
 from app.utils.audit import _order_snap, aaudit, actor_by
 from app.utils.auth import require_admin_key, require_scopes
 from app.utils.certification_token import make_review_token
-from app.utils.features import require_business
 from app.utils.rbac import require_role
 
 logger = logging.getLogger(__name__)
@@ -44,15 +43,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/admin/certifications",
     tags=["admin-certifications"],
-    # Business-gated: access certification campaigns are an
-    # ISO 27001 / SOX / PCI compliance feature available from Business tier.
-    # Read floor: auditor+. Per-route ``require_role("admin")`` raises
-    # the bar on writes. Bearer tokens still need explicit scopes —
-    # ``approvals:read`` is the closest existing scope (cert reviews
-    # are an approval-style workflow).
     dependencies=[
         Depends(require_admin_key),
-        require_business("certifications"),
         require_scopes("approvals:read"),
         require_role("auditor"),
     ],

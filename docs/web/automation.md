@@ -134,7 +134,7 @@ Secret-typed variables are stored encrypted and their values are never rendered 
 
 ## PowerShell Execution Environment
 
-Scripts run inside the Celery worker container (`xp_worker`) using `pwsh` (PowerShell 7 on Linux). The worker handles:
+Scripts run inside the Celery worker container (`ipsolis-worker`) using `pwsh` (PowerShell 7 on Linux). The worker handles:
 
 - **SSL certificate bypass** — injected globally for self-signed cert environments (XenServer, vSphere, SCCM)
 - **Interactive prompt suppression** — stdin is pre-answered to prevent scripts from hanging on prompts

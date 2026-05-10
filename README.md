@@ -4,6 +4,23 @@ Open-source platform for IT asset lifecycle automation. Built for on-premises da
 
 Give your users a self-service portal to request, extend, and return IT assets (VDIs, application access, infrastructure resources) while your IT team keeps full control through configurable approval workflows, runbooks, and audit trails.
 
+## Editions
+
+| | Community | Business |
+|---|---|---|
+| Self-service portal + approval workflows | ✓ | ✓ |
+| Runbook engine + PowerShell modules | ✓ | ✓ |
+| Asset lifecycle + cost reporting | ✓ | ✓ |
+| Admin RBAC + audit log | ✓ | ✓ |
+| Active Directory / Entra ID / SMTP | ✓ | ✓ |
+| vSphere / XenServer automation | — | ✓ |
+| SCCM integration + ServiceNow webhook | — | ✓ |
+| SCIM 2.0 + HR leaver feed | — | ✓ |
+| Access certification campaigns | — | ✓ |
+| SIEM streaming (Splunk / Sentinel / webhook) | — | ✓ |
+
+Community is free and open-source (AGPL-3.0). Business adds enterprise integrations and ships as a pre-built image via the XenPool container registry. Contact **info@xenpool.com** for pricing.
+
 ## Why This Exists
 
 Enterprise IT automation shouldn't require a 6-month implementation project and a six-figure license. This platform was born from 30 years of datacenter operations experience and is designed to be deployed in an afternoon.
@@ -175,8 +192,8 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 ## Quick Start (Development)
 
 ```bash
-git clone https://github.com/XenPool/ip·Solis.git
-cd ip·Solis
+git clone https://github.com/XenPool/ipsolis-community.git
+cd ipsolis-community
 
 cp .env.example .env
 # Edit .env -- set database credentials and API secrets
@@ -242,7 +259,7 @@ api/
                     admin_api_tokens, admin_license, admin_setup,
                     admin_seed_export, admin_cost_report,
                     admin_approval_delegations, approvals_external,
-                    portal, portal_delegations, auth, orders, webhook,
+                    portal, portal_delegations, auth, orders,
                     metrics, ui)
     schemas/        Pydantic request/response schemas
     templates/      Jinja2 templates (Admin UI + Portal + admin login)
@@ -257,16 +274,15 @@ api/
                     history` for the full chain)
 worker/
   tasks/
-    modules/        Atomic workflow modules (pool_manager, vsphere, sccm,
+    modules/        Atomic workflow modules (pool_manager, vsphere,
                     active_directory, notifications, target_executor,
                     teams_notify, maintenance, config_reader, secrets,
-                    siem_export, audit_helper, step_helper, registry)
+                    audit_helper, step_helper, registry)
     workflows/      Orchestration (dynamic_runner, standalone_runner,
-                    ps_module_installer, sccm_probe, license_check,
-                    siem_streamer, audit_retention, api_token_purge,
+                    ps_module_installer, license_check,
+                    audit_retention, api_token_purge,
                     approval_reminders, approval_auto_decline,
                     cost_threshold_alerter, cost_report_snapshot,
-                    certification_notifications, certification_reminders,
                     update_checker)
     tracing.py      OpenTelemetry setup for the worker side
 scripts/
@@ -275,16 +291,14 @@ scripts/
                     material only, runtime reads from the DB
   runbooks/         Standalone runbook JSON snapshots (seed material)
 tools/
-  license/          Ed25519 keypair generator + license signer for
-                    Enterprise .lic files
   validate_locales.py  Portal i18n JSON key-tree validator
 locales/            Portal i18n (de/en/es/fr/it JSON)
 nginx/              Reverse-proxy + TLS config (production overlay)
 backups/            Persisted DB dumps (bind-mounted into api + worker)
-licenses/           Signed `.lic` Enterprise license file (read-write)
+licenses/           Signed `.lic` license file (read-write)
 docs/
   DEPLOYMENT.md             Production deployment guide
-  ENTERPRISE_FEATURES.md    Per-feature setup walkthroughs
+  ENTERPRISE_FEATURES.md    Business edition feature walkthroughs
   grafana/                  Ready-to-import dashboard + Prometheus alerts
   runbooks/                 Operational runbooks (e.g. compose project rename)
 ```
@@ -380,7 +394,7 @@ Contributions are welcome! Please open an issue first to discuss what you'd like
 
 ## Support
 
-- **Community**: [GitHub Issues](https://github.com/XenPool/ip·Solis/issues) for bug reports and feature requests
+- **Community**: [GitHub Issues](https://github.com/XenPool/ipsolis-community/issues) for bug reports and feature requests
 - **Commercial support**: Contact info@xenpool.com for SLA-backed support contracts and consulting
 
 ---

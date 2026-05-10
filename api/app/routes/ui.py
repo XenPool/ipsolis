@@ -1165,13 +1165,6 @@ async def maintenance_page(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/license", response_class=HTMLResponse)
-async def license_page(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request,
-        "ui/license.html",
-        {"active_page": "license"},
-    )
 
 
 @router.get("/api-tokens", response_class=HTMLResponse)

@@ -25,7 +25,6 @@ from app.utils.ad_lookup import lookup_user, snapshot_requester_attrs
 from app.utils.audit import (
     _order_snap, aaudit, classify_for_asset_type_id, portal_actor_by,
 )
-from app.utils.license import is_feature_enabled
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -520,16 +519,7 @@ async def portal_create_order(
     # Determine if this is a future-dated order
     is_future = from_dt.date() > date.today()
 
-    # Enterprise gates — deputy ordering and scheduled (future-dated) orders
     is_deputy = bool(owner_email.strip() and owner_email.strip().lower() != user_email.strip().lower())
-    if is_deputy and not is_feature_enabled("deputy_support"):
-        return await _render_error(
-            "Ordering on behalf of another user requires an ip·Solis Enterprise license."
-        )
-    if is_future and not is_feature_enabled("scheduled_orders"):
-        return await _render_error(
-            "Scheduled (future-dated) orders require an ip·Solis Enterprise license."
-        )
 
     # ── Approval gate ────────────────────────────────────────────────────────
     needs_manager_approval = asset_type.requires_manager_approval

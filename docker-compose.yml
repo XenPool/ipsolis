@@ -5,7 +5,7 @@ services:
   # ─────────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
-    container_name: xp_postgres
+    container_name: ipsolis-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ipsolis}
@@ -27,7 +27,7 @@ services:
   # ─────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: xp_redis
+    container_name: ipsolis-redis
     restart: unless-stopped
     command: redis-server --appendonly yes
     volumes:
@@ -54,7 +54,7 @@ services:
         # file is the single source of truth — bump it once and every
         # restart picks up the new number without a rebuild.
         APP_VERSION: ${APP_VERSION:-unknown-build}
-    container_name: xp_api
+    container_name: ipsolis-api
     restart: unless-stopped
     env_file: .env
     environment:
@@ -88,7 +88,7 @@ services:
     build:
       context: ./worker
       dockerfile: Dockerfile
-    container_name: xp_worker
+    container_name: ipsolis-worker
     restart: unless-stopped
     env_file: .env
     environment:
@@ -157,7 +157,7 @@ services:
     build:
       context: ./worker
       dockerfile: Dockerfile
-    container_name: xp_flower
+    container_name: ipsolis-flower
     restart: unless-stopped
     env_file: .env
     environment:

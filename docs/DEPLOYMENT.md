@@ -13,6 +13,7 @@ This guide walks you through setting up the ip·Solis platform on a fresh on-pre
 5. [Create the Production Compose Overlay](#5-create-the-production-compose-overlay)
 6. [Start the Stack](#6-start-the-stack)
 7. [Initial Admin Setup](#7-initial-admin-setup)
+   - [Install Your License (Business / Enterprise)](#install-your-license-business--enterprise)
 8. [Entra ID SSO (Portal Authentication)](#8-entra-id-sso-portal-authentication)
 9. [Verify the Deployment](#9-verify-the-deployment)
 10. [Backup & Maintenance](#10-backup--maintenance)
@@ -57,7 +58,7 @@ The server needs outbound access to:
 |-------------|---------|
 | Your Active Directory / LDAP server (port 389 or 636) | User validation, manager lookup, group membership |
 | Your SMTP relay | Email notifications |
-| vSphere / XenServer (if applicable) | VM lifecycle automation |
+| vSphere / XenServer (if applicable, Business Edition) | VM lifecycle automation |
 | SCCM server (if applicable) | Task sequence triggers |
 
 Inbound: ports **80** and **443** must be reachable from your users' browsers.
@@ -174,7 +175,7 @@ Set up auto-renewal:
 certbot renew --dry-run
 
 # Add a cron job to reload nginx after renewal
-echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec xp_nginx nginx -s reload'" | crontab -
+echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx nginx -s reload'" | crontab -
 ```
 
 ### Configure nginx
@@ -248,7 +249,7 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: xp_nginx
+    container_name: ipsolis-nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -286,12 +287,12 @@ Expected output -- all services should show `Up (healthy)`:
 
 ```
 NAME             STATUS
-xp_postgres      Up (healthy)
-xp_redis         Up (healthy)
-xp_api           Up (healthy)
-xp_worker        Up (healthy)
+ipsolis-postgres      Up (healthy)
+ipsolis-redis         Up (healthy)
+ipsolis-api           Up (healthy)
+ipsolis-worker        Up (healthy)
 ipsolis-beat-1   Up
-xp_nginx         Up
+ipsolis-nginx         Up
 ```
 
 The beat container has no fixed `container_name` so it can be scaled
@@ -359,6 +360,39 @@ For new integrations prefer **Per-integration API tokens** (Admin UI
 → *API Tokens*) — named, expiring, revocable bearer tokens with
 optional role binding and scoped permissions. The legacy single
 shared key is kept for back-compat only.
+
+### Install Your License (Business / Enterprise)
+
+Community Edition runs with no license file — skip this step if you
+are evaluating on Community.
+
+For Business or Enterprise, XenPool delivers a signed `.lic` file
+after purchase. Install it through the Admin UI:
+
+1. Navigate to **Admin → License** (or open
+   `https://selfservice.yourcompany.com/ui/license`).
+2. Click **Upload license** and select your `ipsolis.lic` file.
+3. The page reloads showing edition, licensee, and expiry. Gated
+   features activate immediately — no restart required.
+
+**Install-bound licenses** (most production licenses) are tied to
+your instance's UUID. The License page shows the **Install UUID**
+to include in your license request if XenPool asks for it.
+
+**Overwriting**: upload a new `.lic` at any time to renew or upgrade.
+The old file is replaced in-place; the license cache refreshes on
+the next request (mtime-keyed, zero downtime).
+
+**Env-var override** (air-gapped / automated deployments): mount the
+`.lic` file into the container at an alternate path and set:
+
+```bash
+IPSOLIS_LICENSE_PATH=/run/secrets/ipsolis.lic
+```
+
+The default path is `/app/license/ipsolis.lic` (inside the `ipsolis-api`
+container). Docker secrets or a bind-mount both work — the file just
+needs to be readable by the api process.
 
 ### Configuration Checklist
 
@@ -751,7 +785,7 @@ standby. The patterns below assume that combination.
 
 #### 12.3.1 Streaming replication setup
 
-On the **primary** (`xp_postgres` container — bind-mount the config
+On the **primary** (`ipsolis-postgres` container — bind-mount the config
 overlay so it survives image rebuilds):
 
 ```ini
@@ -779,7 +813,7 @@ CREATE ROLE ipsolis_repl WITH REPLICATION LOGIN PASSWORD '<rotate-me>';
 SELECT pg_create_physical_replication_slot('ipsolis_standby_1');
 ```
 
-On the **standby** host (separate VM / container, not `xp_postgres`):
+On the **standby** host (separate VM / container, not `ipsolis-postgres`):
 
 ```bash
 # Bootstrap the standby's data dir from the primary

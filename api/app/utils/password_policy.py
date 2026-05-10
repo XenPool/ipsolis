@@ -27,7 +27,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin_user import AdminUser
 from app.models.config import AppConfig
-from app.utils.license import is_feature_enabled
 
 
 @dataclass(frozen=True)
@@ -74,7 +73,7 @@ async def read_policy(db: AsyncSession) -> PasswordPolicy:
             cfg.get("rbac.lockout_duration_minutes", str(_DEFAULT_LOCKOUT_MINUTES)),
             _DEFAULT_LOCKOUT_MINUTES,
         ),
-        enforced=is_feature_enabled("password_policy"),
+        enforced=True,
     )
 
 

@@ -25,24 +25,14 @@ from app.utils.api_tokens import (
     status as token_status,
 )
 from app.utils.auth import require_admin_key
-from app.utils.features import require_business
-from app.utils.license import is_feature_enabled
 from app.utils.rbac import VALID_ROLES, role_at_least, require_role
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/admin/api-tokens",
     tags=["admin-api-tokens"],
-    # Business-gated: per-integration named tokens with scopes / role
-    # binding / audit attribution are a Business feature. Community
-    # installs keep the legacy ``X-Admin-Key`` fallback so existing
-    # integrations don't break.
-    # RBAC: ``admin`` is the operational floor; the mint guard
-    # (creator role ≥ requested token role) in ``create_api_token``
-    # defends against privilege escalation via token issuance.
     dependencies=[
         Depends(require_admin_key),
-        require_business("api_token_management"),
         require_role("admin"),
     ],
 )
@@ -138,24 +128,8 @@ async def create_api_token(
     actor = getattr(request.state, "actor", "admin:unknown")
     requested_scopes = filter_valid_scopes(payload.scopes) or ["admin:*"]
 
-    # RBAC slice 3: optional role binding + mint guard. The creator can
-    # only issue tokens at or below their own role — superadmin can mint
-    # any role, an ``admin`` can't mint a superadmin-bound token.
-    # Role binding itself is an Enterprise feature; community tokens are
-    # scope-only (which is still a meaningful authz model — `admin:*`,
-    # `audit_log:read`, `config:read`, etc. all enforce). Without a
-    # license, supplying ``role`` is a 403 with the standard upsell.
     requested_role: str | None = None
     if payload.role:
-        if not is_feature_enabled("rbac_token_role_binding"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    "Role-Bound API Tokens require an ip·Solis Enterprise license. "
-                    "Issue a scope-only token instead, or contact info@xenpool.com "
-                    "for licensing options."
-                ),
-            )
         if payload.role not in VALID_ROLES:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

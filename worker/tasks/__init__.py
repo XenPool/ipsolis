@@ -1,5 +1,6 @@
 """Celery App – entry point for worker, beat, and flower."""
 
+import importlib.util
 import os
 
 from celery import Celery
@@ -8,28 +9,41 @@ from celery.schedules import crontab
 BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
 
+# Community-edition workflows — always present in both Community and Business images.
+_COMMUNITY_INCLUDE = [
+    "tasks.workflows.dynamic_runner",
+    "tasks.workflows.ps_module_installer",
+    "tasks.workflows.standalone_runner",
+    "tasks.workflows.license_check",
+    "tasks.workflows.approval_reminders",
+    "tasks.workflows.approval_auto_decline",
+    "tasks.workflows.cost_threshold_alerter",
+    "tasks.workflows.cost_report_snapshot",
+    "tasks.workflows.audit_retention",
+    "tasks.workflows.api_token_purge",
+    "tasks.workflows.update_checker",
+    "tasks.modules.maintenance",
+]
+
+# Business-only workflows — absent in Community images. Celery would fail to start
+# if a missing module appears in include=[], so we only add what's actually present.
+_BUSINESS_INCLUDE = [
+    "tasks.workflows.sccm_probe",
+    "tasks.workflows.siem_streamer",
+    "tasks.workflows.certification_notifications",
+    "tasks.workflows.certification_reminders",
+]
+
+_include = _COMMUNITY_INCLUDE + [
+    m for m in _BUSINESS_INCLUDE
+    if importlib.util.find_spec(m) is not None
+]
+
 app = Celery(
-    "xp_worker",
+    "ipsolis_worker",
     broker=BROKER_URL,
     backend=RESULT_BACKEND,
-    include=[
-        "tasks.workflows.dynamic_runner",
-        "tasks.workflows.ps_module_installer",
-        "tasks.workflows.standalone_runner",
-        "tasks.workflows.sccm_probe",
-        "tasks.workflows.license_check",
-        "tasks.workflows.siem_streamer",
-        "tasks.workflows.approval_reminders",
-        "tasks.workflows.approval_auto_decline",
-        "tasks.workflows.cost_threshold_alerter",
-        "tasks.workflows.cost_report_snapshot",
-        "tasks.workflows.certification_notifications",
-        "tasks.workflows.certification_reminders",
-        "tasks.workflows.audit_retention",
-        "tasks.workflows.api_token_purge",
-        "tasks.workflows.update_checker",
-        "tasks.modules.maintenance",
-    ],
+    include=_include,
 )
 
 # OpenTelemetry tracing — opt-in via otel.* config keys. Must run before the

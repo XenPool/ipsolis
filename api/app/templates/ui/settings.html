@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "_partials/enterprise_teaser.html" import tab_locked, teaser_pane, card_teaser %}
 
 {% block title %}Settings – {{ app_title }}{% endblock %}
 
@@ -20,14 +19,10 @@
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Active Directory
     </button>
-    {% if is_business %}
     <button onclick="showTab('vars')" id="tab-btn-vars"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Script Variables
     </button>
-    {% else %}
-    {{ tab_locked("Script Variables", "vars", tier="business") }}
-    {% endif %}
     <button onclick="showTab('email')" id="tab-btn-email"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       E-Mail
@@ -36,7 +31,6 @@
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Compliance
     </button>
-    {% if is_enterprise %}
     <button onclick="showTab('sccm')" id="tab-btn-sccm"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       SCCM
@@ -45,10 +39,6 @@
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Hosting Infra
     </button>
-    {% else %}
-    {{ tab_locked("SCCM", "sccm") }}
-    {{ tab_locked("Hosting Infra", "hosting") }}
-    {% endif %}
   </nav>
 </div>
 
@@ -56,8 +46,7 @@
 <div id="tab-general">
   <div id="general-banner" class="hidden mb-4 px-4 py-3 rounded text-sm font-medium"></div>
 
-  {% if is_business %}
-  <!-- Application Title (Business: app_branding) -->
+  <!-- Application Title -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-4">
     <h2 class="text-sm font-semibold text-body mb-1">Application</h2>
     <p class="text-xs text-muted mb-4">
@@ -167,13 +156,6 @@
       {% endif %}
     </div>
   </div>
-  {% else %}
-  {{ card_teaser(
-      "App Branding",
-      "Customise the application title, upload your own logo, control its position and size, and match the portal to your corporate identity. Includes branded email templates.",
-      tier="business"
-  ) }}
-  {% endif %}
 
   <!-- Update Notifier (opt-in; off by default for air-gapped tenants) -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mt-4">
@@ -473,7 +455,6 @@
 
 <!-- ── Tab: Script Variables ─────────────────────────────────────────────── -->
 <div id="tab-vars" class="hidden">
-{% if is_business %}
   <p class="text-xs text-muted mb-4">
     Central configuration values for scripts. Available as
     <code class="font-mono bg-surface-raised px-1 rounded text-xs">$VARS.key</code>.
@@ -559,8 +540,6 @@
     <div id="create-result" class="mt-2"></div>
   </div>
 
-  <!-- Edit modal -->
-  <div id="edit-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <div class="bg-surface rounded-lg p-6 w-96 shadow-xl">
       <h3 class="text-sm font-semibold text-heading mb-4">Edit Variable</h3>
       <input type="hidden" id="edit-var-id">
@@ -597,13 +576,6 @@
       <div id="edit-result" class="mt-2"></div>
     </div>
   </div>
-{% else %}
-{{ teaser_pane(
-    "Global Variables",
-    "Define reusable configuration values (API endpoints, service accounts, toggles, secrets) that all runbooks and in-app PowerShell scripts can read via $VARS.key. Centralise every environment-specific value in one place instead of hardcoding it into scripts.",
-    tier="business"
-) }}
-{% endif %}
 </div>
 
 <!-- ── Tab: E-Mail ───────────────────────────────────────────────────────── -->
@@ -843,8 +815,7 @@
     </div>
   </div>
 
-  {% if is_business %}
-  <!-- Section B: Email Templates (Business: email_template_editor) -->
+  <!-- Section B: Email Templates -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 overflow-hidden">
     <div class="px-5 py-3 border-b border-token-border bg-surface-raised">
       <h2 class="text-sm font-semibold text-body">Email Templates</h2>
@@ -883,13 +854,6 @@
       </tbody>
     </table>
   </div>
-  {% else %}
-  {{ card_teaser(
-      "Email Template Editor",
-      "Customise subject and body for every notification event (order confirmation, approval request, expiry reminder, reclaim, …) with variable placeholders. Send test emails from the UI before going live.",
-      tier="business"
-  ) }}
-  {% endif %}
 </div>
 
 <!-- ── Email Template Edit Modal ─────────────────────────────────────────── -->
@@ -943,18 +907,11 @@
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
     <div class="flex items-start justify-between mb-1">
       <h2 class="text-sm font-semibold text-body">RBAC — Password Policy</h2>
-      {% if not is_enterprise %}
-      <span class="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
-        Enterprise
-      </span>
-      {% endif %}
     </div>
     <p class="text-xs text-muted/70 mb-4 leading-snug">
       Force admin password rotation and lock accounts after repeated bad logins. Both
-      knobs are off by default ({{ "0" }} = disabled). Enforcement requires an Enterprise
-      license — community installs can configure the values but they're inert until a
-      license is uploaded. Lockouts auto-expire after the configured window so a brief
-      flurry of bad attempts doesn't require admin intervention.
+      knobs are off by default ({{ "0" }} = disabled). Lockouts auto-expire after the
+      configured window so a brief flurry of bad attempts doesn't require admin intervention.
     </p>
 
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1975,7 +1932,6 @@
 
 <!-- ── Tab: SCCM ─────────────────────────────────────────────────────────── -->
 <div id="tab-sccm" class="hidden space-y-6">
-{% if is_enterprise %}
 
   <div id="sccm-banner" class="hidden mb-2 px-4 py-3 rounded text-sm font-medium"></div>
 
@@ -2055,17 +2011,10 @@
       </button>
     </div>
   </div>
-{% else %}
-{{ teaser_pane(
-    "SCCM Integration",
-    "Trigger task sequences for unattended reinstalls, import and delete devices, and poll task-sequence status via the SCCM AdminService (Kerberos / Negotiate). Automates the complete VDI rebuild lifecycle."
-) }}
-{% endif %}
 </div>
 
 <!-- ── Tab: Hosting Infra ────────────────────────────────────────────────── -->
 <div id="tab-hosting" class="hidden space-y-6">
-{% if is_enterprise %}
 
   <div id="hosting-banner" class="hidden mb-2 px-4 py-3 rounded text-sm font-medium"></div>
 
@@ -2152,12 +2101,6 @@
       </button>
     </div>
   </div>
-{% else %}
-{{ teaser_pane(
-    "VMware vSphere & XenServer / XCP-ng Integration",
-    "Run VM lifecycle operations via PowerCLI against VMware vSphere and XenServer / XCP-ng: power state, console, snapshots, rename, destroy. Credentials configured here flow into PowerShell runbook steps."
-) }}
-{% endif %}
 
 </div>
 
