@@ -181,8 +181,7 @@ jobs:
           # API templates
           rm -f \
             api/app/templates/ui/certifications.html \
-            api/app/templates/ui/leaver_events.html \
-            api/app/templates/_partials/enterprise_teaser.html
+            api/app/templates/ui/leaver_events.html
 
           # Worker workflows and modules
           rm -f \

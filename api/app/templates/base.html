@@ -43,6 +43,7 @@
     {# min-h-0 + overflow-y-auto is the flexbox idiom for "shrink past
        content height and scroll instead". Without min-h-0 the flex child
        refuses to shrink below its intrinsic content height. #}
+    {% from "_partials/enterprise_teaser.html" import nav_locked %}
     <nav class="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-0.5">
       {# ── Operational visibility — visible to every signed-in admin ──── #}
       <a href="/ui/"
@@ -191,7 +192,8 @@
       </a>
       {% endif %}
 
-      {% if admin_role_at_least(request, 'auditor') and has_certifications %}
+      {% if admin_role_at_least(request, 'auditor') %}
+        {% if edition == 'pro' and has_certifications %}
       <a href="/ui/certifications"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'certifications' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -201,8 +203,10 @@
         </svg>
         Certifications
       </a>
-      {% endif %}
-      {% if admin_role_at_least(request, 'auditor') and has_leaver_events %}
+        {% else %}
+      {{ nav_locked("Certifications", icon_svg='<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>') }}
+        {% endif %}
+        {% if edition == 'pro' and has_leaver_events %}
       <a href="/ui/leaver-events"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'leaver-events' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -212,6 +216,9 @@
         </svg>
         Leaver Events
       </a>
+        {% else %}
+      {{ nav_locked("Leaver Events", icon_svg='<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7H7v6h6V7z M9 1v6m6-6v6M1 9h6m6-6v6M9 13v8m6-8v8m-6-4h6m-6 4h6M1 17h6"/></svg>') }}
+        {% endif %}
       {% endif %}
 
 

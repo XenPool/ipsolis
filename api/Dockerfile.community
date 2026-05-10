@@ -30,8 +30,7 @@ RUN rm -f \
     /app/app/routes/certifications_external.py \
     /app/app/routes/portal_certifications.py \
     /app/app/templates/ui/certifications.html \
-    /app/app/templates/ui/leaver_events.html \
-    /app/app/templates/_partials/enterprise_teaser.html
+    /app/app/templates/ui/leaver_events.html
 
 # Version (passed from docker-compose via build arg)
 ARG APP_VERSION=0.0.0

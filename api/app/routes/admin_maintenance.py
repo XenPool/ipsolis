@@ -633,6 +633,9 @@ async def _probe_entra(db: AsyncSession) -> dict:
 
 
 async def _probe_sccm(db: AsyncSession) -> dict:
+    from app.utils.license import get_license_info
+    if get_license_info().edition != "pro":
+        return {"ok": None, "detail": "PRO feature"}
     row = await db.execute(text(
         "SELECT key, value FROM app_config WHERE key IN "
         "('sccm.base_url', 'sccm.username', 'sccm.realm', 'sccm.kdc')"

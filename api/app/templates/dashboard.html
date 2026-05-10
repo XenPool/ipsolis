@@ -38,9 +38,9 @@
   The instance is running in Community mode. Contact
   <a href="mailto:info@xenpool.com" class="underline">info@xenpool.com</a> to renew.
 </div>
-{% elif license_info and license_info.valid %}
+{% elif license_info and license_info.valid and edition == 'pro' %}
 <div class="mb-6 rounded-lg border border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 px-4 py-3 text-sm text-blue-700 dark:text-blue-300">
-  <strong>Business Edition</strong> &middot; Licensed to {{ license_info.licensee }}
+  <strong>PRO Edition</strong> &middot; Licensed to {{ license_info.licensee }}
   {% if license_info.expires_at %}
     &middot; expires {{ license_info.expires_at.strftime("%Y-%m-%d") }}
   {% endif %}
