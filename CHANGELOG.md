@@ -14,6 +14,42 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.4.6] — 2026-05-10
+
+### Fixed
+
+- **PRO feature gating in Community edition.** Community installs now
+  show locked PRO badges (violet) on all PRO-only nav items and settings
+  sections instead of either hiding them completely or granting full access.
+  Affected surfaces: Certifications, Leaver Events (sidebar nav), SIEM
+  (Settings → Compliance), SCCM (Settings → SCCM tab), and
+  vSphere / XenServer (Settings → Hosting Infra tab).
+- **Settings page layout broken for E-Mail, Compliance, SCCM, and
+  Hosting Infra tabs.** A missing `<div id="edit-modal">` outer wrapper
+  in the Script Variables tab caused a stray `</div>` to close the main
+  content container early, pushing every subsequent tab panel outside
+  the page layout.
+- **Dashboard banner incorrectly showed "PRO Edition" on Community
+  installs.** The edition check now requires `edition == 'pro'`; Community
+  installs show no banner.
+- **Certifications and Leaver Events appeared as active links in Community
+  when running a non-stripped image** (e.g. dev). Nav logic now gates
+  on `edition` rather than `has_certifications` / `has_leaver_events`.
+- **SCCM health probe called a stripped worker task on Community.**
+  `_probe_sccm` now short-circuits with `{"ok": null, "detail": "PRO feature"}`
+  when `edition != "pro"`, matching the N/A display of unconfigured services.
+
+### Changed
+
+- `enterprise_teaser.html` unified to a single **PRO** tier (previously
+  had separate ENT / BUS tiers with amber / blue distinction). All gated
+  features now show a consistent violet PRO badge. The partial is no
+  longer stripped from the Community Docker image so teasers render
+  correctly without the PRO code present.
+- Community mirror workflow updated to retain `enterprise_teaser.html`
+  in the public source tree (required for teaser rendering in community
+  builds from source).
+
 ## [0.4.5]
 
   Range:  v0.4.4..HEAD
