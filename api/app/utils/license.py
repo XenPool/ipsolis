@@ -42,9 +42,11 @@ logger = logging.getLogger(__name__)
 LICENSE_PATH = Path(os.environ.get("IPSOLIS_LICENSE_PATH", "/app/license/ipsolis.lic"))
 
 # ── Edition constants ───────────────────────────────────────────────────────
-COMMUNITY_EDITION  = "community"
-BUSINESS_EDITION   = "business"
-ENTERPRISE_EDITION = "enterprise"
+COMMUNITY_EDITION = "community"
+PRO_EDITION       = "pro"
+
+# Legacy aliases emitted by older signing tools — normalised to PRO_EDITION on load.
+_LEGACY_PRO_ALIASES = {"business", "enterprise"}
 
 
 class LicenseInfo(BaseModel):
@@ -54,7 +56,7 @@ class LicenseInfo(BaseModel):
 
     license_id: str = "community"
     licensee: str = "Community Edition"
-    edition: Literal["community", "business", "enterprise"] = "community"
+    edition: Literal["community", "pro"] = "community"
     max_users: int = 0
     max_asset_types: int = 0
     issued_at: datetime | None = None
@@ -268,7 +270,9 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
             return _CACHED_INFO
 
     edition = str(data.get("edition") or COMMUNITY_EDITION)
-    if edition not in (COMMUNITY_EDITION, BUSINESS_EDITION, ENTERPRISE_EDITION):
+    if edition in _LEGACY_PRO_ALIASES:
+        edition = PRO_EDITION
+    elif edition != PRO_EDITION:
         edition = COMMUNITY_EDITION
 
     features_raw = data.get("features") or []

@@ -46,7 +46,7 @@ def main() -> None:
         demo_payload = {
             "license_id": "test-demo-001",
             "licensee": "Test Organisation",
-            "edition": "enterprise",
+            "edition": "pro",
             "max_users": 0,
             "max_asset_types": 0,
             "issued_at": "2025-01-01T00:00:00+00:00",
@@ -70,7 +70,7 @@ def main() -> None:
             "type": "commercial",
             "license_id": "test-commercial-001",
             "licensee": "Test Organisation",
-            "edition": "enterprise",
+            "edition": "pro",
             "max_users": 0,
             "max_asset_types": 0,
             "issued_at": "2026-01-01T00:00:00+00:00",

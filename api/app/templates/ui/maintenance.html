@@ -521,8 +521,8 @@
 
   <p class="text-[11px] text-muted/60 mt-3 leading-snug max-w-3xl">
     All times are in <strong>Europe/Berlin</strong> — set in the worker's Celery config.
-    Tasks marked <span class="text-[9px] tracking-widest uppercase bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-semibold align-middle">ENT</span>
-    are no-ops on community installs (the underlying feature is gated).
+    Tasks marked <span class="text-[9px] tracking-widest uppercase bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded font-semibold align-middle">PRO</span>
+    are only meaningful on Pro installs — they run on Community too but have nothing to act on.
     Need a different cadence? See <em>Tuning Beat schedules</em> in
     <a href="/docs" class="text-blue-600 hover:underline">DEPLOYMENT.md §12</a> — or
     open a feature request for an editable scheduler if your use case is recurring.
@@ -664,8 +664,7 @@
     }
   }
 
-  // Set at render time so the renderer knows whether to dim ENT-locked rows.
-  var _isEnterprise = true;
+  var _isPro = true;
 
   function _renderBeatRow(r) {
     var queueClass = {
@@ -674,21 +673,10 @@
       reclaim:       'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
       'default':     'bg-surface-raised text-muted',
     }[r.queue] || 'bg-surface-raised text-muted';
-    // ENT-locked: task is gated behind an Enterprise feature. The ENT badge always
-    // renders for these rows so operators see *why* the task is gated. On community
-    // installs we additionally dim the row and append a "No-op" tag so it's clear
-    // the task fires but does nothing each tick.
-    var entLocked = !r.community;
-    var entBadge = '';
-    if (entLocked) {
-      entBadge = ' <span class="text-[9px] tracking-widest uppercase bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded font-semibold align-middle ml-1">ENT</span>';
-      if (!_isEnterprise) {
-        entBadge += ' <span class="text-[10px] italic text-muted/70 align-middle ml-2">No-op — feature locked</span>';
-      }
-    }
-    var rowClass = (entLocked && !_isEnterprise)
-      ? 'opacity-60 hover:bg-surface-raised/20'
-      : 'hover:bg-surface-raised/30';
+    var proBadge = !r.community
+      ? ' <span class="text-[9px] tracking-widest uppercase bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded font-semibold align-middle ml-1">PRO</span>'
+      : '';
+    var rowClass = 'hover:bg-surface-raised/30';
     var configKnobs = (r.config_keys || []).length === 0
       ? '<span class="text-[11px] text-muted/50 italic">no operator knobs</span>'
       : (r.config_keys || []).map(function(k) {
@@ -697,7 +685,7 @@
     return ''
       + '<tr class="' + rowClass + '">'
       +   '<td class="px-4 py-3 align-top">'
-      +     '<div class="font-medium text-body text-sm">' + _escBeat(r.name) + entBadge + '</div>'
+      +     '<div class="font-medium text-body text-sm">' + _escBeat(r.name) + proBadge + '</div>'
       +     '<div class="text-[10px] text-muted/60 font-mono mt-0.5 break-all">' + _escBeat(r.task) + '</div>'
       +   '</td>'
       +   '<td class="px-4 py-3 align-top whitespace-nowrap text-xs text-body">' + _escBeat(r.cadence) + '</td>'
@@ -1458,8 +1446,8 @@
     const validity = document.getElementById('validity-badge');
     const filePresent = !!info.file_present;
 
-    if (info.edition === 'enterprise' && info.valid) {
-      editionBadge.textContent = 'Enterprise';
+    if (info.edition === 'pro' && info.valid) {
+      editionBadge.textContent = 'Pro';
       editionBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ' +
         'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300';
     } else {
@@ -1625,8 +1613,8 @@
           const info = body.info || {};
           if (body.already_expired) {
             showBanner('License installed, but it is already expired (' + licFmtDate(info.expires_at) + '). Running as Community.', 'warn');
-          } else if (info.edition === 'enterprise' && info.valid) {
-            showBanner('Enterprise license installed for ' + info.licensee + '.', 'success');
+          } else if (info.edition === 'pro' && info.valid) {
+            showBanner('Pro license installed for ' + info.licensee + '.', 'success');
           } else {
             showBanner('License installed.', 'success');
           }

@@ -102,7 +102,7 @@ def test_ed25519_legacy_no_key_id_verifies(test_ed25519):
     payload = {
         "license_id": "lic-001",
         "licensee": "Acme",
-        "edition": "enterprise",
+        "edition": "pro",
         "max_users": 0,
         "max_asset_types": 0,
         "issued_at": "2025-01-01T00:00:00+00:00",
@@ -127,7 +127,7 @@ def test_commercial_ed25519_with_key_id_verifies(test_commercial_ed25519):
         "type": "commercial",
         "license_id": "lic-002",
         "licensee": "Acme",
-        "edition": "enterprise",
+        "edition": "pro",
         "max_users": 0,
         "max_asset_types": 0,
         "issued_at": "2026-01-01T00:00:00+00:00",
@@ -151,7 +151,7 @@ def test_demo_key_rejects_commercial_type(test_ed25519):
         "type": "commercial",   # not in key.accepted_license_types ({"demo"})
         "license_id": "lic-003",
         "licensee": "Attacker",
-        "edition": "enterprise",
+        "edition": "pro",
         "max_users": 0,
         "max_asset_types": 0,
         "issued_at": "2026-01-01T00:00:00+00:00",
@@ -172,7 +172,7 @@ def test_unknown_key_id_rejected():
         "key_id": "nonexistent-key",
         "license_id": "lic-004",
         "licensee": "Nobody",
-        "edition": "enterprise",
+        "edition": "pro",
         "issued_at": "2026-01-01T00:00:00+00:00",
         "expires_at": "2099-12-31T00:00:00+00:00",
         "features": [],
@@ -189,7 +189,7 @@ def test_corrupted_signature_rejected(test_ed25519):
     payload = {
         "license_id": "lic-005",
         "licensee": "Acme",
-        "edition": "enterprise",
+        "edition": "pro",
         "max_users": 0,
         "max_asset_types": 0,
         "issued_at": "2025-01-01T00:00:00+00:00",
@@ -210,7 +210,7 @@ def test_missing_type_falls_back_to_demo(test_ed25519):
     payload = {
         "license_id": "lic-006",
         "licensee": "Acme",
-        "edition": "enterprise",
+        "edition": "pro",
         "max_users": 0,
         "max_asset_types": 0,
         "issued_at": "2025-01-01T00:00:00+00:00",
@@ -248,7 +248,7 @@ def test_verified_by_propagates_to_license_info(test_ed25519, tmp_path, monkeypa
     payload = {
         "license_id": "lic-007",
         "licensee": "Acme",
-        "edition": "enterprise",
+        "edition": "pro",
         "max_users": 0,
         "max_asset_types": 0,
         "issued_at": "2025-01-01T00:00:00+00:00",
@@ -302,7 +302,7 @@ def test_operator_yaml_appends_key(tmp_path, monkeypatch):
         payload = {
             "license_id": "op-001",
             "licensee": "Operator",
-            "edition": "enterprise",
+            "edition": "pro",
             "max_users": 0,
             "max_asset_types": 0,
             "issued_at": "2026-01-01T00:00:00+00:00",

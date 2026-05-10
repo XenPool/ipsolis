@@ -8,7 +8,7 @@ The payload must be a JSON object with at least the following fields:
 
     license_id   – UUID or unique identifier
     licensee     – Customer / organization name
-    edition      – "enterprise" (use "community" for test fallbacks)
+    edition      – "pro" (use "community" for test/community fallbacks)
     max_users    – 0 = unlimited
     max_asset_types – 0 = unlimited
     issued_at    – ISO-8601 timestamp
