@@ -18,7 +18,7 @@ from app.routes import (
     admin, admin_api_tokens, admin_approval_delegations, admin_auth,
     admin_cost_report, admin_license, admin_maintenance, admin_modules,
     admin_runbooks, admin_seed_export, admin_self, admin_setup,
-    admin_standalone_runbooks, admin_users,
+    admin_users,
     approvals_external, assets, auth,
     health,
     metrics as metrics_route,
@@ -50,6 +50,13 @@ try:
 except ImportError:
     _ROUTER_HR = None
     _ROUTER_HR_ADMIN = None
+
+_ROUTER_STANDALONE_RUNBOOKS = None
+try:
+    from app.routes import admin_standalone_runbooks as _standalone_runbooks_mod
+    _ROUTER_STANDALONE_RUNBOOKS = _standalone_runbooks_mod.router
+except ImportError:
+    pass
 
 _HAS_CERTIFICATIONS = False
 try:
@@ -245,7 +252,8 @@ app.include_router(assets.router)
 app.include_router(admin.router)
 app.include_router(admin_modules.router)
 app.include_router(admin_runbooks.router)
-app.include_router(admin_standalone_runbooks.router)
+if _ROUTER_STANDALONE_RUNBOOKS:
+    app.include_router(_ROUTER_STANDALONE_RUNBOOKS)
 app.include_router(admin_maintenance.router)
 app.include_router(admin_license.router)
 app.include_router(admin_api_tokens.router)

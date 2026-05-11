@@ -29,8 +29,11 @@ RUN rm -f \
     /app/app/routes/admin_certifications.py \
     /app/app/routes/certifications_external.py \
     /app/app/routes/portal_certifications.py \
+    /app/app/routes/admin_standalone_runbooks.py \
     /app/app/templates/ui/certifications.html \
-    /app/app/templates/ui/leaver_events.html
+    /app/app/templates/ui/leaver_events.html \
+    /app/app/templates/ui/standalone_runbook_editor.html \
+    /app/app/templates/ui/standalone_runbook_runs.html
 
 # Version (passed from docker-compose via build arg)
 ARG APP_VERSION=0.0.0

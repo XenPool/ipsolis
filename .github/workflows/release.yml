@@ -191,8 +191,23 @@ jobs:
             worker/tasks/workflows/certification_reminders.py \
             worker/tasks/modules/siem_export.py
 
-          # vSphere / XenServer automation scripts (Business Edition only)
-          rm -rf scripts/modules/xenserver scripts/modules/vmware
+          # PRO-only script modules — Community ships with examples/ only
+          rm -rf \
+            scripts/modules/ad \
+            scripts/modules/sccm \
+            scripts/modules/xenserver \
+            scripts/modules/vmware \
+            scripts/modules/sql \
+            scripts/modules/test
+
+          # PRO-only standalone runbooks (Community edition lacks the feature)
+          rm -rf scripts/runbooks
+
+          # PRO-only API routes and templates
+          rm -f \
+            api/app/routes/admin_standalone_runbooks.py \
+            api/app/templates/ui/standalone_runbook_editor.html \
+            api/app/templates/ui/standalone_runbook_runs.html
 
           # Pro Dockerfiles (community users only need Dockerfile.community)
           rm -f api/Dockerfile.pro worker/Dockerfile.pro

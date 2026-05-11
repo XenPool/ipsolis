@@ -44,6 +44,7 @@ COPY tasks/ ./tasks/
 # importlib.util.find_spec() to skip missing modules in include=[], so
 # the worker starts cleanly without them.
 RUN rm -f \
+    /app/tasks/workflows/standalone_runner.py \
     /app/tasks/workflows/sccm_probe.py \
     /app/tasks/workflows/siem_streamer.py \
     /app/tasks/workflows/certification_notifications.py \
