@@ -61,7 +61,7 @@ _DEMO_LEGACY_RAW: bytes = bytes.fromhex(
 # Commercial Ed25519 key introduced with the ipsolis-web shop (2026).
 # Private half lives in the shop deployment as ``LICENSE_PRIVATE_KEY``.
 _COMMERCIAL_2026_RAW: bytes = bytes.fromhex(
-    "9afe5aaccc2a7e3b22148ad80a3d7128a80090edd448c105991cf1650a016338"
+    "a3483ce7706bd18c6176aa6eab320beda9761bd5b715d5b40323892b52205e27"
 )
 
 # ---------------------------------------------------------------------------
