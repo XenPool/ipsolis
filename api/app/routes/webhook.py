@@ -131,11 +131,9 @@ async def receive_servicenow_webhook(
         ):
             await enforce_pool_capacity(db, asset_type.id, asset_type.pool_capacity)
 
-        # Per-user quota — applies to personal + pooled (not shared instances).
-        if asset_type.assignment_model != AssignmentModel.DEDICATED_SHARED:
-            await enforce_max_per_user(
-                db, asset_type.id, str(payload.user_email), asset_type.max_per_user
-            )
+        await enforce_max_per_user(
+            db, asset_type.id, str(payload.user_email), asset_type.max_per_user
+        )
 
     # Check for duplicate ServiceNow reference (idempotency)
     existing = await db.execute(

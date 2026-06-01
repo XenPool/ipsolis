@@ -46,7 +46,7 @@ COMMUNITY_EDITION = "community"
 PRO_EDITION       = "pro"
 
 # Legacy aliases emitted by older signing tools — normalised to PRO_EDITION on load.
-_LEGACY_PRO_ALIASES = {"business", "enterprise"}
+_LEGACY_PRO_ALIASES = {"business", "enterprise", "professional"}
 
 
 class LicenseInfo(BaseModel):

@@ -499,15 +499,14 @@ async def portal_create_order(
             f"No free assets available for \"{asset_type.name}\". Please try again later."
         )
 
-    # Per-user quota — applies to personal + pooled, not shared instances
-    if asset_type.assignment_model != AssignmentModel.DEDICATED_SHARED:
-        from app.utils.capacity import enforce_max_per_user
-        try:
-            await enforce_max_per_user(
-                db, asset_type.id, user_email, asset_type.max_per_user
-            )
-        except HTTPException as exc:
-            return await _render_error(exc.detail)
+    # Per-user quota check
+    from app.utils.capacity import enforce_max_per_user
+    try:
+        await enforce_max_per_user(
+            db, asset_type.id, user_email, asset_type.max_per_user
+        )
+    except HTTPException as exc:
+        return await _render_error(exc.detail)
 
     order_config, attr_error = _validate_order_attrs(form_data, asset_type.config or [])
     if attr_error:

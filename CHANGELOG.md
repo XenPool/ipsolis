@@ -14,6 +14,23 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.4.9] — 2026-06-01
+
+### Fixed
+
+- **Order creation 500 error.** Placing an order via the portal, the `/orders` API, or
+  the ServiceNow webhook raised `AttributeError: AssignmentModel has no attribute
+  'DEDICATED_SHARED'` because that enum value was removed in a prior refactor but the
+  per-user quota guard in `portal.py`, `orders.py`, and `webhook.py` still referenced it.
+  The dead conditional has been removed; `enforce_max_per_user` is now always applied.
+- **License key rotation (commercial-2026).** Updated Ed25519 signing key used to verify
+  Enterprise and PRO license files.
+
+### Changed
+
+- **Maintenance › License tab.** Added `showBanner()` helper for consistent inline
+  feedback messages on the license status panel.
+
 ## [0.4.8] — 2026-05-11
 
 ### Changed

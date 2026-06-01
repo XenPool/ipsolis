@@ -29,13 +29,13 @@ class VerificationResult:
 def _canonical(payload: dict) -> bytes:
     """Deterministic serialization matching the ipsolis-web issuer.
 
-    Python ``json.dumps(sort_keys=True, separators=(',',':'))`` byte-matches
-    JavaScript ``JSON.stringify`` for ASCII-only values.  Non-ASCII licensee
-    names are escaped to ``\\uXXXX`` by Python's default ``ensure_ascii=True``
-    which may diverge from the Node.js issuer for non-ASCII content — flagged
-    as an open item; all current issuers produce ASCII-safe payloads.
+    Must use ensure_ascii=False so non-ASCII characters (e.g. the middle dot
+    in "ip·Solis") are serialized as literal UTF-8 bytes, matching
+    JavaScript JSON.stringify which never escapes non-ASCII characters.
+    Python's default ensure_ascii=True would produce \\uXXXX escapes,
+    causing a byte mismatch and a failed signature check.
     """
-    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
 def _verify_ed25519(key: TrustedKey, message: bytes, signature: bytes) -> bool:
