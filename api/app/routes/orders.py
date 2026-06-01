@@ -97,11 +97,9 @@ async def create_order(
         ):
             await enforce_pool_capacity(db, asset_type.id, asset_type.pool_capacity)
 
-        # Per-user quota — applies to personal + pooled (not shared instances).
-        if asset_type.assignment_model != AssignmentModel.DEDICATED_SHARED:
-            await enforce_max_per_user(
-                db, asset_type.id, str(payload.user_email), asset_type.max_per_user
-            )
+        await enforce_max_per_user(
+            db, asset_type.id, str(payload.user_email), asset_type.max_per_user
+        )
 
     # Best-effort AD snapshot — chargeback report needs requester HR
     # attributes for non-portal-driven orders too. lookup_user is sync;
