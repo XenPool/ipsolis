@@ -14,6 +14,20 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.4.10] — 2026-06-02
+
+### Changed
+
+- **Migration squash.** All 96 incremental Alembic migrations have been consolidated
+  into a single `0001_initial_schema.py`. Fresh installs are unaffected. Existing
+  instances (dev / prelive) require a one-time version stamp:
+  `UPDATE alembic_version SET version_num = '0001';`
+- **README.** Quick Start section renamed from "Development" to "Local".
+- **ORM model registry.** Seven models previously missing from `models/__init__.py`
+  (`ScriptModule`, `RunbookDefinition`, `RunbookStep`, `PsModule`, `GlobalVar`,
+  `DbBackup`, `OrderChangeLog`) are now registered, fixing FK resolution in
+  `alembic autogenerate`.
+
 ## [0.4.9] — 2026-06-01
 
 ### Fixed

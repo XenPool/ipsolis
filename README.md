@@ -189,7 +189,7 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 | Directory Services | Active Directory (msldap) |
 | Deployment | Docker Compose |
 
-## Quick Start (Development)
+## Quick Start (Local)
 
 ```bash
 git clone https://github.com/XenPool/ipsolis-community.git
