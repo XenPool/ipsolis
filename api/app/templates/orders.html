@@ -102,10 +102,12 @@
               Actions ▾
             </button>
             <div class="admin-dropdown hidden absolute right-0 z-20 mt-1 w-44 bg-surface rounded-lg border border-token-border shadow-lg shadow-slate-900/10 dark:shadow-black/40 py-1">
+              {% if not order.assigned_asset_id or asset_statuses.get(order.assigned_asset_id) == 'busy' %}
               <a href="/ui/orders/{{ order.id }}#admin-actions"
                  class="block px-4 py-2 text-xs text-body hover:bg-surface-raised">
                 Extend / Modify
               </a>
+              {% endif %}
               <form method="post" action="/ui/orders/{{ order.id }}/cancel"
                     onsubmit="return confirm('Really cancel order #{{ order.id }}?')">
                 <button type="submit"

@@ -305,14 +305,17 @@ async def orders_list(
         count_query = count_query.where(Order.user_email.ilike(f"%{user_email}%"))
     total_count = (await db.execute(count_query)).scalar_one()
 
-    # Asset name lookup (for personal assets with assigned_asset_id)
+    # Asset name + status lookup (for personal assets with assigned_asset_id)
     asset_ids = [o.assigned_asset_id for o in orders if o.assigned_asset_id]
     asset_names: dict[int, str] = {}
+    asset_statuses: dict[int, str] = {}
     if asset_ids:
         asset_rows = await db.execute(
-            select(AssetPool.id, AssetPool.name).where(AssetPool.id.in_(asset_ids))
+            select(AssetPool.id, AssetPool.name, AssetPool.status).where(AssetPool.id.in_(asset_ids))
         )
-        asset_names = {row.id: row.name for row in asset_rows}
+        for row in asset_rows:
+            asset_names[row.id] = row.name
+            asset_statuses[row.id] = row.status.value if row.status else ""
 
     # Assignment model lookup (for shared/pooled assets without assigned_asset_id)
     type_ids = list({o.asset_type_id for o in orders if o.asset_type_id})
@@ -328,6 +331,7 @@ async def orders_list(
         {
             "orders": orders,
             "asset_names": asset_names,
+            "asset_statuses": asset_statuses,
             "asset_type_models": asset_type_models,
             "status_colors": _STATUS_COLORS,
             "status_filter": status_filter or "",
@@ -474,6 +478,19 @@ async def admin_change_order(
             status_code=422,
             detail="Only active orders (DELIVERED/PROVISIONED) can be modified",
         )
+
+    # Guard: reject if the assigned asset is no longer busy (already deprovisioned)
+    if original.assigned_asset_id:
+        asset = await db.get(AssetPool, original.assigned_asset_id)
+        if not asset or asset.status != AssetStatus.BUSY:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Asset {original.assigned_asset_id} is no longer active "
+                    f"(status: {asset.status.value if asset else 'not found'}). "
+                    "Cannot modify a deprovisioned asset."
+                ),
+            )
 
     if new_until:
         try:
