@@ -1263,14 +1263,13 @@ def run(self: Task, order_id: int) -> dict:
                             UPDATE orders
                             SET status = 'revoked'
                             WHERE assigned_asset_id = :aid
-                              AND action = 'provision'
                               AND status IN ('delivered', 'provisioned')
                         """),
                         {"aid": asset_id},
                     )
                     db.commit()
                     logger.info(
-                        "[dynamic_runner] PROVISION orders for asset %s set to revoked", asset_id
+                        "[dynamic_runner] Active orders for asset %s set to revoked", asset_id
                     )
                 except Exception as _e:
                     logger.warning(
