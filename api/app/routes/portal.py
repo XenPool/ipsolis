@@ -572,6 +572,11 @@ async def portal_create_order(
     db.add(order)
     await db.flush()
 
+    # Capture id/action before any commit — ORM objects are expired after commit.
+    # Used later to dispatch after the transaction is committed.
+    _new_order_id = order.id
+    _new_order_action = order.action
+
     # Conditional approval rules — may add approvers regardless of the
     # static manager / owner toggles. We evaluate after the order row
     # exists so dates and requester attrs are available in the context.
@@ -596,6 +601,7 @@ async def portal_create_order(
     classification_policy = await load_classification_policy(db)
     classification_extra = classification_approvers(asset_type, classification_policy)
 
+    _immediate_dispatch = False
     if needs_any_approval or rule_approvers or classification_extra:
         # Create approval records, applying delegation re-routing if active
         from app.models.approval import OrderApproval
@@ -755,11 +761,9 @@ async def portal_create_order(
             order.id, order.user_email, from_dt.date().isoformat(),
         )
     else:
-        # Immediate: dispatch runbook now
-        from app.routes.webhook import _dispatch_runbook
-        task_id = _dispatch_runbook(order)
-        order.celery_task_id = task_id
+        # Immediate: dispatch runbook now, but only AFTER commit below
         order.status = OrderStatus.PROCESSING
+        _immediate_dispatch = True
         logger.info("Portal: Order created id=%s user=%s", order.id, order.user_email)
 
     # Audit row written after the routing branch so the snapshot captures
@@ -774,8 +778,19 @@ async def portal_create_order(
         classification=await classify_for_asset_type_id(db, order.asset_type_id),
     )
 
+    # Commit FIRST so the row is visible to the worker before dispatch
     await db.commit()
-    return RedirectResponse(url=f"/portal/orders/{order.id}", status_code=303)
+
+    if _immediate_dispatch:
+        from app.routes.webhook import _dispatch_runbook
+        task_id = _dispatch_runbook(_new_order_id, _new_order_action)
+        await db.execute(
+            sql_text("UPDATE orders SET celery_task_id = :t WHERE id = :id"),
+            {"t": task_id, "id": _new_order_id},
+        )
+        await db.commit()
+
+    return RedirectResponse(url=f"/portal/orders/{_new_order_id}", status_code=303)
 
 
 # ── Order Detail ───────────────────────────────────────────────────────────────
@@ -969,6 +984,11 @@ async def portal_change_order(
     db.add(new_order)
     await db.flush()
 
+    # Capture id/action before commit — ORM objects are expired after commit
+    _modify_order_id = new_order.id
+    _modify_order_action = new_order.action
+    _modify_dispatch = False
+
     if needs_reapproval:
         # Create approval records (same logic as new-order approval gate),
         # applying delegation re-routing where applicable.
@@ -1019,9 +1039,8 @@ async def portal_change_order(
         )
         logger.info("Portal: Modify order %s requires re-approval, user=%s", new_order.id, original.user_email)
     else:
-        from app.routes.webhook import _dispatch_runbook
-        new_order.celery_task_id = _dispatch_runbook(new_order)
         new_order.status = OrderStatus.PROCESSING
+        _modify_dispatch = True
 
     await aaudit(
         db, "order", new_order.id, "created",
@@ -1031,10 +1050,20 @@ async def portal_change_order(
         classification=await classify_for_asset_type_id(db, new_order.asset_type_id),
     )
 
+    # Commit FIRST so the row is visible to the worker before dispatch
     await db.commit()
 
-    logger.info("Portal: Change order id=%s from order=%s", new_order.id, order_id)
-    return RedirectResponse(url=f"/portal/orders/{new_order.id}", status_code=303)
+    if _modify_dispatch:
+        from app.routes.webhook import _dispatch_runbook
+        task_id = _dispatch_runbook(_modify_order_id, _modify_order_action)
+        await db.execute(
+            sql_text("UPDATE orders SET celery_task_id = :t WHERE id = :id"),
+            {"t": task_id, "id": _modify_order_id},
+        )
+        await db.commit()
+
+    logger.info("Portal: Change order id=%s from order=%s", _modify_order_id, order_id)
+    return RedirectResponse(url=f"/portal/orders/{_modify_order_id}", status_code=303)
 
 
 # ── Cancel ─────────────────────────────────────────────────────────────────────
@@ -1105,8 +1134,9 @@ async def portal_cancel_order(
     db.add(cancel_order)
     await db.flush()
 
-    from app.routes.webhook import _dispatch_runbook
-    cancel_order.celery_task_id = _dispatch_runbook(cancel_order)
+    # Capture id/action before commit — ORM objects are expired after commit
+    _cancel_order_id = cancel_order.id
+    _cancel_order_action = cancel_order.action
     cancel_order.status = OrderStatus.PROCESSING
 
     # Mark original provision order as cancelled so it disappears from My IT
@@ -1132,10 +1162,19 @@ async def portal_cancel_order(
         classification=cls,
     )
 
+    # Commit FIRST so the row is visible to the worker before dispatch
     await db.commit()
 
-    logger.info("Portal: Cancel order id=%s from order=%s", cancel_order.id, order_id)
-    return RedirectResponse(url=f"/portal/orders/{cancel_order.id}", status_code=303)
+    from app.routes.webhook import _dispatch_runbook
+    task_id = _dispatch_runbook(_cancel_order_id, _cancel_order_action)
+    await db.execute(
+        sql_text("UPDATE orders SET celery_task_id = :t WHERE id = :id"),
+        {"t": task_id, "id": _cancel_order_id},
+    )
+    await db.commit()
+
+    logger.info("Portal: Cancel order id=%s from order=%s", _cancel_order_id, order_id)
+    return RedirectResponse(url=f"/portal/orders/{_cancel_order_id}", status_code=303)
 
 
 # ── My IT – Active Assets Overview ────────────────────────────────────────────
@@ -1389,9 +1428,20 @@ async def portal_decide_approval(
 
 
 async def _post_approval_dispatch(order: Order, db: AsyncSession, celery_app) -> None:
-    """After all approvals granted, transition order to normal flow."""
+    """After all approvals granted, transition order to normal flow.
+
+    This function mutates ``order`` status fields and may flush asset
+    reservations, but does NOT commit. The caller (approval_decision.py)
+    owns the final commit, which happens AFTER this function returns.
+    For the immediate-dispatch path the runbook is sent AFTER the caller
+    commits so the order row is visible to the worker.
+    """
     asset_type = await db.get(AssetType, order.asset_type_id)
     is_future = order.requested_from and order.requested_from.date() > date.today()
+
+    # Capture before commit — ORM objects are expired after commit
+    _order_id = order.id
+    _order_action = order.action
 
     if is_future:
         order.status = OrderStatus.SCHEDULED
@@ -1418,11 +1468,13 @@ async def _post_approval_dispatch(order: Order, db: AsyncSession, celery_app) ->
             queue="provision",
         )
     else:
-        order.status = OrderStatus.PENDING
-        from app.routes.webhook import _dispatch_runbook
-        task_id = _dispatch_runbook(order)
-        order.celery_task_id = task_id
         order.status = OrderStatus.PROCESSING
+        # Store the ids for post-commit dispatch on the object so the
+        # caller (approval_decision.py) can dispatch after committing.
+        # We use a private attribute to pass them through without the
+        # ORM expiry problem.
+        order._pending_dispatch_id = _order_id
+        order._pending_dispatch_action = _order_action
 
 
 # ── HTMX: User Validation ──────────────────────────────────────────────────────

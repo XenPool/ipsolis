@@ -92,7 +92,7 @@ async def process_leaver(
     await db.flush()
 
     try:
-        orders_revoked = await _revoke_active_orders(
+        orders_revoked, _revoke_ids = await _revoke_active_orders(
             db, email=email, triggered_by=triggered_by, leaver_event_id=event.id,
         )
         approvals_superseded = await _supersede_pending_approvals(
@@ -120,8 +120,15 @@ async def process_leaver(
             },
             by=triggered_by,
         )
+        # Commit FIRST so all order rows are visible to workers before dispatch
         await db.commit()
         await db.refresh(event)
+
+        # Dispatch revoke runbooks after commit so workers find the orders
+        if _revoke_ids:
+            from app.routes.webhook import _dispatch_runbook
+            for _oid in _revoke_ids:
+                _dispatch_runbook(_oid, "delete")
 
         logger.info(
             "leaver: processed %s (source=%s) — orders_revoked=%d, "
@@ -162,10 +169,13 @@ async def _revoke_active_orders(
     email: str,
     triggered_by: str,
     leaver_event_id: int,
-) -> int:
-    """Find every active order owned by ``email`` and dispatch revoke."""
-    from app.routes.webhook import _dispatch_runbook  # local — avoid circular at import time
+) -> tuple[int, list[int]]:
+    """Find every active order owned by ``email``, stage them for revoke.
 
+    Returns ``(count, order_ids)`` so the caller can dispatch runbooks
+    AFTER committing (commit-before-dispatch pattern prevents race conditions
+    where a worker starts before the DB transaction is visible).
+    """
     rows = await db.execute(
         select(Order)
         .where(Order.user_email.ilike(email))
@@ -173,9 +183,11 @@ async def _revoke_active_orders(
     )
     orders = list(rows.scalars().all())
     if not orders:
-        return 0
+        return 0, []
 
     revoked = 0
+    # Collect ids for post-commit dispatch — ORM objects are expired after commit
+    _pending_revoke_ids: list[int] = []
     for order in orders:
         old_status = order.status.value
         order.status = OrderStatus.REVOKING
@@ -183,7 +195,7 @@ async def _revoke_active_orders(
         order.error_message = (
             f"Leaver flow #{leaver_event_id}: user {email} marked as having left the organisation"
         )
-        _dispatch_runbook(order)
+        _pending_revoke_ids.append(order.id)
 
         await aaudit(
             db, "order", order.id, "status_changed",
@@ -195,7 +207,9 @@ async def _revoke_active_orders(
             by=triggered_by,
         )
         revoked += 1
-    return revoked
+    # Return both the count and the list of ids so the caller can dispatch
+    # revoke runbooks AFTER committing (commit-before-dispatch pattern).
+    return revoked, _pending_revoke_ids
 
 
 async def _supersede_pending_approvals(

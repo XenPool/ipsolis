@@ -161,6 +161,7 @@ async def api_decide_review(
         by=actor,
     )
 
+    _revoke_order_id = None
     if decision_norm == "revoked":
         order = await db.get(Order, review.order_id)
         if order and order.status not in (
@@ -169,8 +170,8 @@ async def api_decide_review(
             old_status = order.status.value
             order.status = OrderStatus.REVOKING
             order.action = OrderAction.DELETE
-            from app.routes.webhook import _dispatch_runbook
-            _dispatch_runbook(order)
+            # Capture id before commit — ORM objects are expired after commit
+            _revoke_order_id = order.id
             await aaudit(
                 db, "order", order.id, "status_changed",
                 old={"status": old_status},
@@ -181,5 +182,10 @@ async def api_decide_review(
                 by=actor,
             )
 
+    # Commit FIRST so the row is visible to the worker before dispatch
     await db.commit()
+
+    if _revoke_order_id is not None:
+        from app.routes.webhook import _dispatch_runbook
+        _dispatch_runbook(_revoke_order_id, "delete")
     return {"id": review.id, "status": review.status, "decided_at": review.decided_at.isoformat()}

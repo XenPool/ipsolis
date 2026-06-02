@@ -509,13 +509,24 @@ async def admin_change_order(
     db.add(new_order)
     await db.flush()
 
-    from app.routes.webhook import _dispatch_runbook
-    new_order.celery_task_id = _dispatch_runbook(new_order)
+    # Capture id/action before commit — ORM objects are expired after commit
+    _new_order_id = new_order.id
+    _new_order_action = new_order.action
     new_order.status = OrderStatus.PROCESSING
+
+    # Commit FIRST so the row is visible to the worker before dispatch
     await db.commit()
 
-    logger.info("Admin: Change order id=%s from order=%s", new_order.id, order_id)
-    return RedirectResponse(url=f"/ui/orders/{new_order.id}", status_code=303)
+    from app.routes.webhook import _dispatch_runbook
+    task_id = _dispatch_runbook(_new_order_id, _new_order_action)
+    await db.execute(
+        text("UPDATE orders SET celery_task_id = :t WHERE id = :id"),
+        {"t": task_id, "id": _new_order_id},
+    )
+    await db.commit()
+
+    logger.info("Admin: Change order id=%s from order=%s", _new_order_id, order_id)
+    return RedirectResponse(url=f"/ui/orders/{_new_order_id}", status_code=303)
 
 
 @router.post("/orders/{order_id}/cancel")
@@ -553,13 +564,24 @@ async def admin_cancel_order(
     db.add(cancel_order)
     await db.flush()
 
-    from app.routes.webhook import _dispatch_runbook
-    cancel_order.celery_task_id = _dispatch_runbook(cancel_order)
+    # Capture id/action before commit — ORM objects are expired after commit
+    _cancel_order_id = cancel_order.id
+    _cancel_order_action = cancel_order.action
     cancel_order.status = OrderStatus.PROCESSING
+
+    # Commit FIRST so the row is visible to the worker before dispatch
     await db.commit()
 
-    logger.info("Admin: Cancel order id=%s from order=%s", cancel_order.id, order_id)
-    return RedirectResponse(url=f"/ui/orders/{cancel_order.id}", status_code=303)
+    from app.routes.webhook import _dispatch_runbook
+    task_id = _dispatch_runbook(_cancel_order_id, _cancel_order_action)
+    await db.execute(
+        text("UPDATE orders SET celery_task_id = :t WHERE id = :id"),
+        {"t": task_id, "id": _cancel_order_id},
+    )
+    await db.commit()
+
+    logger.info("Admin: Cancel order id=%s from order=%s", _cancel_order_id, order_id)
+    return RedirectResponse(url=f"/ui/orders/{_cancel_order_id}", status_code=303)
 
 
 # ── Asset Types UI ─────────────────────────────────────────────────────────────
