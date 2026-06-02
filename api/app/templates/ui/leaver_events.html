@@ -2,6 +2,14 @@
 {% block title %}Leaver Events – {{ app_title }}{% endblock %}
 
 {% block content %}
+{% if edition == 'community' %}
+{% from "_partials/enterprise_teaser.html" import teaser_pane %}
+{{ teaser_pane(
+    "HR Leaver Automation",
+    "Automatically revoke all active access when an employee leaves. ip·Solis receives leaver signals via SCIM 2.0 (DELETE / PATCH active=false) or a dedicated HR webhook and immediately triggers deprovision runbooks for every open order. Full audit trail with per-event status, revoked order counts, and superseded approval records.",
+    "https://ipsolis.com"
+) }}
+{% else %}
 <div class="mb-6">
   <h1 class="text-lg font-semibold text-heading">Leaver Events</h1>
   <p class="text-xs text-muted/70 mt-1 max-w-2xl">
@@ -119,4 +127,5 @@ function onFilterChange() {
 
 document.addEventListener('DOMContentLoaded', loadEvents);
 </script>
+{% endif %}
 {% endblock %}
