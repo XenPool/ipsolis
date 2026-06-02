@@ -906,6 +906,8 @@ async def portal_change_order(
     new_until: str | None = Form(default=None),
     rdp_users: list[str] = Form(default=[]),
     admin_users: list[str] = Form(default=[]),
+    new_owner_email: str = Form(default=""),
+    new_owner_name: str = Form(default=""),
 ):
     result = await db.execute(select(Order).where(Order.id == order_id))
     original = result.scalar_one_or_none()
@@ -936,6 +938,15 @@ async def portal_change_order(
     rdp_clean = [u.strip() for u in rdp_users if u.strip()]
     admin_clean = [u.strip() for u in admin_users if u.strip()]
 
+    # Deputy change is only allowed for the original requester, not the deputy themselves
+    is_requester = current_user["email"].lower() == (original.user_email or "").lower()
+    new_owner_email_clean = new_owner_email.strip() or None
+    new_owner_name_clean = new_owner_name.strip() or None
+    if new_owner_email_clean and not is_requester:
+        raise HTTPException(status_code=403, detail="Only the original requester can change the deputy.")
+    resolved_owner_email = new_owner_email_clean if is_requester and new_owner_email_clean is not None else original.owner_email
+    resolved_owner_name = new_owner_name_clean if is_requester and new_owner_email_clean is not None else original.owner_name
+
     # Sync asset expires_at when the date changed
     if original.assigned_asset_id and requested_until != original.requested_until:
         from app.models.asset import AssetPool
@@ -961,8 +972,8 @@ async def portal_change_order(
     new_order = Order(
         user_email=original.user_email,
         user_name=original.user_name,
-        owner_email=original.owner_email,
-        owner_name=original.owner_name,
+        owner_email=resolved_owner_email,
+        owner_name=resolved_owner_name,
         asset_type_id=original.asset_type_id,
         assigned_asset_id=original.assigned_asset_id,
         rdp_users=rdp_clean,
@@ -1289,6 +1300,7 @@ async def portal_my_it_detail(
             effective_rdp_users = list(latest_modify.rdp_users or [])
             effective_admin_users = list(latest_modify.admin_users or [])
 
+    _is_requester = current_user["email"].lower() == (order.user_email or "").lower()
     return templates.TemplateResponse("portal/my_it_detail.html", {
         "request": request,
         "active_page": "my-it",
@@ -1301,6 +1313,7 @@ async def portal_my_it_detail(
         "status_colors": _STATUS_COLORS,
         "effective_rdp_users": effective_rdp_users,
         "effective_admin_users": effective_admin_users,
+        "is_requester": _is_requester,
     })
 
 

@@ -357,6 +357,8 @@ def _run_targets_mode(
                 user_name=order.get("user_name") or "",
                 asset_name=_revoke_display,
                 asset_type_name=asset_type_name,
+                owner_email=order.get("owner_email") or None,
+                owner_name=order.get("owner_name") or None,
             ),
             critical=False,
         )
@@ -1695,6 +1697,8 @@ def check_expiring_assets() -> dict:
                 SELECT o.id            AS order_id,
                        o.user_email,
                        o.user_name,
+                       o.owner_email,
+                       o.owner_name,
                        o.requested_until,
                        at.name          AS type_name,
                        ap.name          AS host_name
@@ -1726,6 +1730,8 @@ def check_expiring_assets() -> dict:
                 asset_name=asset_name,
                 expires_at=row.requested_until,
                 hours_remaining=hours_remaining,
+                owner_email=row.owner_email or None,
+                owner_name=row.owner_name or None,
             )
             if result.get("success"):
                 db.execute(

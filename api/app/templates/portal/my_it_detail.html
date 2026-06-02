@@ -108,7 +108,32 @@
       </div>
       {% endif %}
 
-      <button type="submit"
+      {% if is_requester %}
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Deputy (Stellvertreter)</label>
+        <div class="flex gap-2 items-start">
+          <div class="flex-1">
+            <input type="text" id="deputy-input"
+                   placeholder="user@domain.com or sAMAccountName"
+                   value="{{ order.owner_email or '' }}"
+                   autocomplete="off"
+                   class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 w-full focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <div id="deputy-validate-msg" class="min-h-[1.25rem] mt-1 text-xs"></div>
+          </div>
+          <button type="button" id="deputy-clear-btn"
+                  class="text-xs px-2 py-1.5 rounded border border-token-border text-muted hover:bg-surface-raised whitespace-nowrap mt-0"
+                  title="Remove deputy">✕</button>
+        </div>
+        <input type="hidden" name="new_owner_email" id="deputy-email-hidden" value="{{ order.owner_email or '' }}">
+        <input type="hidden" name="new_owner_name" id="deputy-name-hidden" value="{{ order.owner_name or '' }}">
+        <p class="text-xs text-muted/70 mt-1">
+          {% if order.owner_email %}Currently: <span class="font-medium">{{ order.owner_name or order.owner_email }}</span>{% else %}No deputy set.{% endif %}
+          Leave blank to keep current or clear to remove.
+        </p>
+      </div>
+      {% endif %}
+
+      <button type="submit" id="modify-submit-btn"
               class="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 focus:outline-none"
               data-i18n="portal.common.update">
         Update
@@ -218,9 +243,80 @@
         e.preventDefault();
         alert('Please confirm all user inputs with Enter before saving, or clear them.');
         pending[0].input.focus();
+        return;
+      }
+      // Block submit if deputy field has unconfirmed text
+      var deputyInput = document.getElementById('deputy-input');
+      var deputyHidden = document.getElementById('deputy-email-hidden');
+      if (deputyInput && deputyHidden && deputyInput.value.trim() !== deputyHidden.value) {
+        e.preventDefault();
+        alert('Please validate the deputy email with the Validate button before saving.');
+        deputyInput.focus();
       }
     });
   }
+
+  // Deputy field logic
+  (function() {
+    var deputyInput = document.getElementById('deputy-input');
+    if (!deputyInput) return;
+    var deputyEmailHidden = document.getElementById('deputy-email-hidden');
+    var deputyNameHidden = document.getElementById('deputy-name-hidden');
+    var deputyMsg = document.getElementById('deputy-validate-msg');
+    var clearBtn = document.getElementById('deputy-clear-btn');
+    var _debounce = null;
+
+    function setDeputy(email, name) {
+      deputyEmailHidden.value = email;
+      deputyNameHidden.value = name;
+    }
+
+    async function validateDeputy(value) {
+      value = value.trim();
+      if (!value) { setDeputy('', ''); deputyMsg.innerHTML = ''; return; }
+      deputyMsg.innerHTML = '<span class="text-muted/70">Validating…</span>';
+      try {
+        var r = await fetch('/portal/_validate-user?q=' + encodeURIComponent(value));
+        var html = await r.text();
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var badge = doc.querySelector('span[data-valid]');
+        if (!badge || badge.dataset.valid !== 'true') {
+          setDeputy('', '');
+          deputyMsg.innerHTML = '<span class="text-red-600">Not found in directory</span>';
+          return;
+        }
+        var resolvedEmail = badge.dataset.email || value;
+        var resolvedName = badge.dataset.name || badge.textContent.trim() || resolvedEmail;
+        deputyInput.value = resolvedEmail;
+        setDeputy(resolvedEmail, resolvedName);
+        deputyMsg.innerHTML = '<span class="text-green-600">✓ ' + resolvedName + '</span>';
+      } catch(e) {
+        setDeputy('', '');
+        deputyMsg.innerHTML = '<span class="text-red-600">Validation error</span>';
+      }
+    }
+
+    deputyInput.addEventListener('input', function() {
+      clearTimeout(_debounce);
+      var v = deputyInput.value.trim();
+      if (!v) { setDeputy('', ''); deputyMsg.innerHTML = ''; return; }
+      // Clear hidden until validated
+      setDeputy('', '');
+      deputyMsg.innerHTML = '';
+      _debounce = setTimeout(function() { validateDeputy(v); }, 500);
+    });
+
+    deputyInput.addEventListener('blur', function() {
+      clearTimeout(_debounce);
+      validateDeputy(deputyInput.value);
+    });
+
+    clearBtn.addEventListener('click', function() {
+      deputyInput.value = '';
+      setDeputy('', '');
+      deputyMsg.innerHTML = '<span class="text-muted/70">Deputy cleared — save to apply.</span>';
+    });
+  }());
 }());
 </script>
 {% endblock %}

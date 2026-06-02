@@ -268,8 +268,10 @@ def send_expiry_reminder(
     asset_name: str,
     expires_at: datetime,
     hours_remaining: float,
+    owner_email: str | None = None,
+    owner_name: str | None = None,
 ) -> dict:
-    """Sends expiry reminder email."""
+    """Sends expiry reminder email to the requester and deputy (if set)."""
     from tasks.modules.config_reader import get_config
 
     company_name = get_config(db, "company.name", "XenPool")
@@ -282,6 +284,8 @@ def send_expiry_reminder(
         "app_title": app_title,
         "requester_name": user_name,
         "requester_email": user_email,
+        "owner_name": owner_name or "",
+        "owner_email": owner_email or "",
         "asset_name": asset_name,
         "expires_at": expires_at.strftime("%d.%m.%Y %H:%M"),
         "hours_remaining": str(int(hours_remaining)),
@@ -291,8 +295,12 @@ def send_expiry_reminder(
     if subject is None:
         return {"success": True, "skipped": True, "reason": "template inactive"}
 
+    recipients = [user_email]
+    if owner_email and owner_email.lower() != user_email.lower():
+        recipients.append(owner_email)
+
     html = _build_branded_html(body, app_title, subject)
-    return _send_html_email_multi(db, [user_email], bcc, mail_from, subject, html)
+    return _send_html_email_multi(db, recipients, bcc, mail_from, subject, html)
 
 
 def send_reclaim_notification(
@@ -301,8 +309,10 @@ def send_reclaim_notification(
     user_name: str,
     asset_name: str,
     asset_type_name: str | None = None,
+    owner_email: str | None = None,
+    owner_name: str | None = None,
 ) -> dict:
-    """Notifies user about resource being revoked / returned to the pool."""
+    """Notifies requester and deputy (if set) about resource being revoked / returned to the pool."""
     from tasks.modules.config_reader import get_config
 
     company_name = get_config(db, "company.name", "XenPool")
@@ -315,6 +325,8 @@ def send_reclaim_notification(
         "app_title": app_title,
         "requester_name": user_name,
         "requester_email": user_email,
+        "owner_name": owner_name or "",
+        "owner_email": owner_email or "",
         "asset_name": asset_name or "",
         "asset_type_name": asset_type_name or "",
     }
@@ -323,8 +335,12 @@ def send_reclaim_notification(
     if subject is None:
         return {"success": True, "skipped": True, "reason": "template inactive"}
 
+    recipients = [user_email]
+    if owner_email and owner_email.lower() != user_email.lower():
+        recipients.append(owner_email)
+
     html = _build_branded_html(body, app_title, subject)
-    return _send_html_email_multi(db, [user_email], bcc, mail_from, subject, html)
+    return _send_html_email_multi(db, recipients, bcc, mail_from, subject, html)
 
 
 def send_approval_request(
