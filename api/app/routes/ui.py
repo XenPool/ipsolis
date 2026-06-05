@@ -305,14 +305,17 @@ async def orders_list(
         count_query = count_query.where(Order.user_email.ilike(f"%{user_email}%"))
     total_count = (await db.execute(count_query)).scalar_one()
 
-    # Asset name lookup (for personal assets with assigned_asset_id)
+    # Asset name + status lookup (for personal assets with assigned_asset_id)
     asset_ids = [o.assigned_asset_id for o in orders if o.assigned_asset_id]
     asset_names: dict[int, str] = {}
+    asset_statuses: dict[int, str] = {}
     if asset_ids:
         asset_rows = await db.execute(
-            select(AssetPool.id, AssetPool.name).where(AssetPool.id.in_(asset_ids))
+            select(AssetPool.id, AssetPool.name, AssetPool.status).where(AssetPool.id.in_(asset_ids))
         )
-        asset_names = {row.id: row.name for row in asset_rows}
+        for row in asset_rows:
+            asset_names[row.id] = row.name
+            asset_statuses[row.id] = row.status.value if row.status else ""
 
     # Assignment model lookup (for shared/pooled assets without assigned_asset_id)
     type_ids = list({o.asset_type_id for o in orders if o.asset_type_id})
@@ -328,6 +331,7 @@ async def orders_list(
         {
             "orders": orders,
             "asset_names": asset_names,
+            "asset_statuses": asset_statuses,
             "asset_type_models": asset_type_models,
             "status_colors": _STATUS_COLORS,
             "status_filter": status_filter or "",
@@ -475,6 +479,19 @@ async def admin_change_order(
             detail="Only active orders (DELIVERED/PROVISIONED) can be modified",
         )
 
+    # Guard: reject if the assigned asset is no longer busy (already deprovisioned)
+    if original.assigned_asset_id:
+        asset = await db.get(AssetPool, original.assigned_asset_id)
+        if not asset or asset.status != AssetStatus.BUSY:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Asset {original.assigned_asset_id} is no longer active "
+                    f"(status: {asset.status.value if asset else 'not found'}). "
+                    "Cannot modify a deprovisioned asset."
+                ),
+            )
+
     if new_until:
         try:
             requested_until = datetime.fromisoformat(new_until).replace(tzinfo=timezone.utc)
@@ -509,13 +526,24 @@ async def admin_change_order(
     db.add(new_order)
     await db.flush()
 
-    from app.routes.webhook import _dispatch_runbook
-    new_order.celery_task_id = _dispatch_runbook(new_order)
+    # Capture id/action before commit — ORM objects are expired after commit
+    _new_order_id = new_order.id
+    _new_order_action = new_order.action
     new_order.status = OrderStatus.PROCESSING
+
+    # Commit FIRST so the row is visible to the worker before dispatch
     await db.commit()
 
-    logger.info("Admin: Change order id=%s from order=%s", new_order.id, order_id)
-    return RedirectResponse(url=f"/ui/orders/{new_order.id}", status_code=303)
+    from app.routes.webhook import _dispatch_runbook
+    task_id = _dispatch_runbook(_new_order_id, _new_order_action)
+    await db.execute(
+        text("UPDATE orders SET celery_task_id = :t WHERE id = :id"),
+        {"t": task_id, "id": _new_order_id},
+    )
+    await db.commit()
+
+    logger.info("Admin: Change order id=%s from order=%s", _new_order_id, order_id)
+    return RedirectResponse(url=f"/ui/orders/{_new_order_id}", status_code=303)
 
 
 @router.post("/orders/{order_id}/cancel")
@@ -553,13 +581,24 @@ async def admin_cancel_order(
     db.add(cancel_order)
     await db.flush()
 
-    from app.routes.webhook import _dispatch_runbook
-    cancel_order.celery_task_id = _dispatch_runbook(cancel_order)
+    # Capture id/action before commit — ORM objects are expired after commit
+    _cancel_order_id = cancel_order.id
+    _cancel_order_action = cancel_order.action
     cancel_order.status = OrderStatus.PROCESSING
+
+    # Commit FIRST so the row is visible to the worker before dispatch
     await db.commit()
 
-    logger.info("Admin: Cancel order id=%s from order=%s", cancel_order.id, order_id)
-    return RedirectResponse(url=f"/ui/orders/{cancel_order.id}", status_code=303)
+    from app.routes.webhook import _dispatch_runbook
+    task_id = _dispatch_runbook(_cancel_order_id, _cancel_order_action)
+    await db.execute(
+        text("UPDATE orders SET celery_task_id = :t WHERE id = :id"),
+        {"t": task_id, "id": _cancel_order_id},
+    )
+    await db.commit()
+
+    logger.info("Admin: Cancel order id=%s from order=%s", _cancel_order_id, order_id)
+    return RedirectResponse(url=f"/ui/orders/{_cancel_order_id}", status_code=303)
 
 
 # ── Asset Types UI ─────────────────────────────────────────────────────────────

@@ -178,14 +178,15 @@
   <section class="bg-surface-raised rounded-lg border border-token-border p-5 text-xs text-muted leading-relaxed">
     <h3 class="text-xs font-semibold uppercase tracking-wider text-body mb-2">How it works</h3>
     <ol class="list-decimal pl-5 space-y-1">
-      <li>Request a license from <a class="underline hover:text-body" href="mailto:info@xenpool.com">info@xenpool.com</a>.
-        We send you a signed <code class="px-1 bg-surface rounded">.lic</code> file by email.</li>
-      <li>Upload it here. The signature is checked against the public key baked
-        into this build — if the file is corrupt or from a different issuer, the
-        upload is rejected and your current license stays untouched.</li>
+      <li>Copy your <strong class="text-body">Install ID</strong> from the section above, then visit the
+        <a class="underline hover:text-body ipsolis-shop-link" href="https://ipsolis.com/en/shop" target="_blank" rel="noopener">ip·Solis Shop</a>
+        and paste it during checkout.</li>
+      <li>Download the signed <code class="px-1 bg-surface rounded">.lic</code> file and upload it below.
+        The signature is checked against the public key baked into this build — if the file is corrupt
+        or from a different issuer, the upload is rejected and your current license stays untouched.</li>
       <li>On success, the new license takes effect immediately across all
         processes (api, worker, beat). No restart needed.</li>
-      <li>Enterprise features (scheduled orders, deputy support, standalone runbooks,
+      <li>Enterprise features (scheduled orders, asset owner support, standalone runbooks,
         advanced maintenance, …) unlock as soon as the new license is active.</li>
     </ol>
   </section>
@@ -605,9 +606,7 @@
       standalone runbooks. Use this to snapshot the current DB state to
       <code class="px-1 py-0.5 bg-surface-raised rounded text-[11px]">scripts/modules/</code> and
       <code class="px-1 py-0.5 bg-surface-raised rounded text-[11px]">scripts/runbooks/</code> on the
-      host, then <code class="px-1 py-0.5 bg-surface-raised rounded text-[11px]">git commit</code>
-      the result. Fresh deployments import what has been committed via migration
-      <code class="px-1 py-0.5 bg-surface-raised rounded text-[11px]">0046</code>.
+      host.
     </p>
     <button type="button" onclick="exportSeed()" id="seed-export-btn"
             class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
@@ -1421,9 +1420,23 @@
     }
   }
 
+  // ── Shop links — language-aware URL ────────────────────────────────────
+  (function(){
+    var l=(navigator.language||'en').split('-')[0].toLowerCase();
+    var supported=['de','en','es','fr','it'];
+    if(supported.indexOf(l)===-1)l='en';
+    document.querySelectorAll('.ipsolis-shop-link').forEach(function(a){a.href='https://ipsolis.com/'+l+'/shop';});
+  }());
+
   // ── Init ───────────────────────────────────────────────────────────────
-  loadHealth();
-  loadAlerts();
+  var _validTabs = ['health', 'license', 'backups', 'queue', 'schedule', 'retention', 'seed'];
+  var _initTab = (location.hash.slice(1) || '');
+  if (_validTabs.indexOf(_initTab) !== -1) {
+    showTab(_initTab);
+  } else {
+    loadHealth();
+    loadAlerts();
+  }
   refreshTimer = setInterval(function() {
     var visible = document.getElementById('tab-health');
     if (visible && !visible.classList.contains('hidden')) loadHealth();

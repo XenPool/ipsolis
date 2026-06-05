@@ -73,16 +73,19 @@
           <span data-i18n="portal.my_it_detail.rdp_field_label">RDP Users</span>
           <span class="text-muted/70 font-normal ml-1" data-i18n="portal.my_it_detail.members_hint">Current members · add or remove, then click Update</span>
         </label>
-        <div class="tag-editor rounded border border-token-border bg-surface px-2 py-1.5 flex flex-wrap gap-1 min-h-[2.5rem] focus-within:ring-1 focus-within:ring-blue-400 cursor-text"
-             data-field="rdp_users" data-validate-result="rdp-validate-msg">
-          {% for u in effective_rdp_users %}
-          <span class="tag inline-flex items-center gap-1 bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300 text-xs px-2 py-0.5 rounded">
-            {{ u }}
-            <button type="button" class="tag-remove text-blue-500 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-100 leading-none">&times;</button>
-            <input type="hidden" name="rdp_users" value="{{ u }}">
-          </span>
-          {% endfor %}
-          <input type="text" class="tag-input text-sm outline-none flex-1 min-w-[8rem] bg-transparent" placeholder="user@domain.com" autocomplete="off">
+        <div class="flex gap-2 items-start">
+          <div class="tag-editor flex-1 rounded border border-token-border bg-surface px-2 py-1.5 flex flex-wrap gap-1 min-h-[2.5rem] focus-within:ring-1 focus-within:ring-blue-400 cursor-text"
+               data-field="rdp_users" data-validate-result="rdp-validate-msg">
+            {% for u in effective_rdp_users %}
+            <span class="tag inline-flex items-center gap-1 bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300 text-xs px-2 py-0.5 rounded">
+              {{ u }}
+              <button type="button" class="tag-remove text-blue-500 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-100 leading-none">&times;</button>
+              <input type="hidden" name="rdp_users" value="{{ u }}">
+            </span>
+            {% endfor %}
+            <input type="text" class="tag-input text-sm outline-none flex-1 min-w-[8rem] bg-transparent" placeholder="user@domain.com" autocomplete="off">
+          </div>
+          <button type="button" class="add-tag-btn px-3 py-1.5 text-xs font-medium rounded border border-token-border text-muted hover:bg-surface-raised whitespace-nowrap">+ Add</button>
         </div>
         <div id="rdp-validate-msg" class="min-h-[1.25rem] mt-1"></div>
       </div>
@@ -93,22 +96,52 @@
           <span data-i18n="portal.my_it_detail.admin_field_label">Admin Users</span>
           <span class="text-muted/70 font-normal ml-1" data-i18n="portal.my_it_detail.members_hint">Current members · add or remove, then click Update</span>
         </label>
-        <div class="tag-editor rounded border border-token-border bg-surface px-2 py-1.5 flex flex-wrap gap-1 min-h-[2.5rem] focus-within:ring-1 focus-within:ring-blue-400 cursor-text"
-             data-field="admin_users" data-validate-result="adm-validate-msg">
-          {% for u in effective_admin_users %}
-          <span class="tag inline-flex items-center gap-1 bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-300 text-xs px-2 py-0.5 rounded">
-            {{ u }}
-            <button type="button" class="tag-remove text-purple-500 hover:text-purple-800 dark:text-purple-300 dark:hover:text-purple-100 leading-none">&times;</button>
-            <input type="hidden" name="admin_users" value="{{ u }}">
-          </span>
-          {% endfor %}
-          <input type="text" class="tag-input text-sm outline-none flex-1 min-w-[8rem] bg-transparent" placeholder="user@domain.com" autocomplete="off">
+        <div class="flex gap-2 items-start">
+          <div class="tag-editor flex-1 rounded border border-token-border bg-surface px-2 py-1.5 flex flex-wrap gap-1 min-h-[2.5rem] focus-within:ring-1 focus-within:ring-blue-400 cursor-text"
+               data-field="admin_users" data-validate-result="adm-validate-msg">
+            {% for u in effective_admin_users %}
+            <span class="tag inline-flex items-center gap-1 bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-300 text-xs px-2 py-0.5 rounded">
+              {{ u }}
+              <button type="button" class="tag-remove text-purple-500 hover:text-purple-800 dark:text-purple-300 dark:hover:text-purple-100 leading-none">&times;</button>
+              <input type="hidden" name="admin_users" value="{{ u }}">
+            </span>
+            {% endfor %}
+            <input type="text" class="tag-input text-sm outline-none flex-1 min-w-[8rem] bg-transparent" placeholder="user@domain.com" autocomplete="off">
+          </div>
+          <button type="button" class="add-tag-btn px-3 py-1.5 text-xs font-medium rounded border border-token-border text-muted hover:bg-surface-raised whitespace-nowrap">+ Add</button>
         </div>
         <div id="adm-validate-msg" class="min-h-[1.25rem] mt-1"></div>
       </div>
       {% endif %}
 
-      <button type="submit"
+      {% if is_requester %}
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1" data-i18n="portal.my_it_detail.owner_field_label">Owner</label>
+        <div class="flex gap-2 items-start">
+          <div class="flex-1">
+            <input type="text" id="deputy-input"
+                   placeholder="user@domain.com or sAMAccountName"
+                   value="{{ effective_owner_email or '' }}"
+                   autocomplete="off"
+                   class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 w-full focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <div id="deputy-validate-msg" class="min-h-[1.25rem] mt-1 text-xs"></div>
+          </div>
+          <button type="button" id="deputy-add-btn"
+                  class="px-3 py-1.5 text-xs font-medium rounded border border-token-border text-muted hover:bg-surface-raised whitespace-nowrap">+ Add</button>
+          <button type="button" id="deputy-clear-btn"
+                  class="text-xs px-2 py-1.5 rounded border border-token-border text-muted hover:bg-surface-raised whitespace-nowrap mt-0"
+                  title="Remove owner">✕</button>
+        </div>
+        <input type="hidden" name="new_owner_email" id="deputy-email-hidden" value="{{ effective_owner_email or '' }}">
+        <input type="hidden" name="new_owner_name" id="deputy-name-hidden" value="{{ effective_owner_name or '' }}">
+        <p class="text-xs text-muted/70 mt-1">
+          {% if effective_owner_email %}Currently: <span class="font-medium">{{ effective_owner_name or effective_owner_email }}</span>{% else %}No owner set.{% endif %}
+          Leave blank to keep current or clear to remove.
+        </p>
+      </div>
+      {% endif %}
+
+      <button type="submit" id="modify-submit-btn"
               class="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 focus:outline-none"
               data-i18n="portal.common.update">
         Update
@@ -207,6 +240,14 @@
     editor.querySelectorAll('.tag-remove').forEach(function(btn) {
       btn.addEventListener('click', function() { btn.closest('.tag').remove(); });
     });
+
+    var addBtn = editor.parentElement.querySelector('.add-tag-btn');
+    if (addBtn) {
+      addBtn.addEventListener('click', function() {
+        addTagValidated(input.value);
+        input.focus();
+      });
+    }
   });
 
   // Block submit if any input still has unconfirmed text
@@ -218,9 +259,88 @@
         e.preventDefault();
         alert('Please confirm all user inputs with Enter before saving, or clear them.');
         pending[0].input.focus();
+        return;
+      }
+      // Block submit if deputy field has unconfirmed text
+      var deputyInput = document.getElementById('deputy-input');
+      var deputyHidden = document.getElementById('deputy-email-hidden');
+      if (deputyInput && deputyHidden && deputyInput.value.trim() !== deputyHidden.value) {
+        e.preventDefault();
+        alert('Please validate the owner email with the + Add button before saving.');
+        deputyInput.focus();
       }
     });
   }
+
+  // Deputy field logic
+  (function() {
+    var deputyInput = document.getElementById('deputy-input');
+    if (!deputyInput) return;
+    var deputyEmailHidden = document.getElementById('deputy-email-hidden');
+    var deputyNameHidden = document.getElementById('deputy-name-hidden');
+    var deputyMsg = document.getElementById('deputy-validate-msg');
+    var clearBtn = document.getElementById('deputy-clear-btn');
+    var _debounce = null;
+
+    function setDeputy(email, name) {
+      deputyEmailHidden.value = email;
+      deputyNameHidden.value = name;
+    }
+
+    async function validateDeputy(value) {
+      value = value.trim();
+      if (!value) { setDeputy('', ''); deputyMsg.innerHTML = ''; return; }
+      deputyMsg.innerHTML = '<span class="text-muted/70">Validating…</span>';
+      try {
+        var r = await fetch('/portal/_validate-user?q=' + encodeURIComponent(value));
+        var html = await r.text();
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var badge = doc.querySelector('span[data-valid]');
+        if (!badge || badge.dataset.valid !== 'true') {
+          setDeputy('', '');
+          deputyMsg.innerHTML = '<span class="text-red-600">Not found in directory</span>';
+          return;
+        }
+        var resolvedEmail = badge.dataset.email || value;
+        var resolvedName = badge.dataset.name || badge.textContent.trim() || resolvedEmail;
+        deputyInput.value = resolvedEmail;
+        setDeputy(resolvedEmail, resolvedName);
+        deputyMsg.innerHTML = '<span class="text-green-600">✓ ' + resolvedName + '</span>';
+      } catch(e) {
+        setDeputy('', '');
+        deputyMsg.innerHTML = '<span class="text-red-600">Validation error</span>';
+      }
+    }
+
+    deputyInput.addEventListener('input', function() {
+      clearTimeout(_debounce);
+      var v = deputyInput.value.trim();
+      if (!v) { setDeputy('', ''); deputyMsg.innerHTML = ''; return; }
+      // Clear hidden until validated
+      setDeputy('', '');
+      deputyMsg.innerHTML = '';
+      _debounce = setTimeout(function() { validateDeputy(v); }, 500);
+    });
+
+    deputyInput.addEventListener('blur', function() {
+      clearTimeout(_debounce);
+      validateDeputy(deputyInput.value);
+    });
+
+    clearBtn.addEventListener('click', function() {
+      deputyInput.value = '';
+      setDeputy('', '');
+      deputyMsg.innerHTML = '<span class="text-muted/70">Owner cleared — save to apply.</span>';
+    });
+
+    var deputyAddBtn = document.getElementById('deputy-add-btn');
+    if (deputyAddBtn) {
+      deputyAddBtn.addEventListener('click', function() {
+        clearTimeout(_debounce);
+        validateDeputy(deputyInput.value);
+      });
+    }
+  }());
 }());
 </script>
 {% endblock %}

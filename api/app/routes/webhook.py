@@ -3,7 +3,7 @@ import hmac
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -174,9 +174,9 @@ async def receive_servicenow_webhook(
     db.add(order)
     await db.flush()  # generate ID without commit
 
-    # Dispatch Celery task
-    task_id = _dispatch_runbook(order)
-    order.celery_task_id = task_id
+    # Capture action before commit (ORM objects are expired after commit)
+    _order_id = order.id
+    _action = order.action
     order.status = OrderStatus.PROCESSING
 
     await aaudit(
@@ -185,6 +185,15 @@ async def receive_servicenow_webhook(
         by=f"api:servicenow_webhook ({actor})",
         ctx=order.servicenow_ref,
         classification=await classify_for_asset_type_id(db, order.asset_type_id),
+    )
+    # Commit FIRST so the row is visible to the worker before dispatch
+    await db.commit()
+
+    # Dispatch Celery task after commit
+    task_id = _dispatch_runbook(_order_id, _action)
+    await db.execute(
+        text("UPDATE orders SET celery_task_id = :t WHERE id = :id"),
+        {"t": task_id, "id": _order_id},
     )
     await db.commit()
 
@@ -205,8 +214,12 @@ async def receive_servicenow_webhook(
     return order
 
 
-def _dispatch_runbook(order: Order) -> str:
+def _dispatch_runbook(order_id: int, action) -> str:
     """Dispatches the dynamic runbook task for the order.
+
+    Accepts the order id and action as plain values (not an ORM object) so
+    this function can be called safely AFTER the DB transaction has been
+    committed — the row is visible to the worker before it starts.
 
     All actions run via dynamic_runner.run, which loads the appropriate
     runbook from the DB. Queue remains action-dependent.
@@ -216,10 +229,10 @@ def _dispatch_runbook(order: Order) -> str:
     celery_app = Celery(broker=settings.CELERY_BROKER_URL)
 
     # DELETE/reclaim on separate queue for priority
-    queue = "reclaim" if order.action == OrderAction.DELETE else "provision"
+    queue = "reclaim" if str(action).lower() in ("delete", "orderaction.delete") else "provision"
     result = celery_app.send_task(
         "tasks.workflows.dynamic_runner.run",
-        args=[order.id],
+        args=[order_id],
         queue=queue,
     )
     return result.id

@@ -1,7 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -128,16 +128,25 @@ async def create_order(
     db.add(order)
     await db.flush()
 
-    # Celery-Task dispatchen
-    from app.routes.webhook import _dispatch_runbook
-    task_id = _dispatch_runbook(order)
-    order.celery_task_id = task_id
+    # Capture action before commit (ORM objects are expired after commit)
+    _order_id = order.id
+    _action = order.action
     order.status = OrderStatus.PROCESSING
 
     await aaudit(
         db, "order", order.id, "created", new=_order_snap(order),
         by=actor_by(request, "create_order"),
         classification=await classify_for_asset_type_id(db, order.asset_type_id),
+    )
+    # Commit FIRST so the row is visible to the worker before dispatch
+    await db.commit()
+
+    # Dispatch Celery task after commit
+    from app.routes.webhook import _dispatch_runbook
+    task_id = _dispatch_runbook(_order_id, _action)
+    await db.execute(
+        text("UPDATE orders SET celery_task_id = :t WHERE id = :id"),
+        {"t": task_id, "id": _order_id},
     )
     await db.commit()
 
@@ -209,18 +218,24 @@ async def cancel_order(
 
     old_status = order.status.value
 
-    if order.status in (OrderStatus.DELIVERED, OrderStatus.PROCESSING, OrderStatus.PROVISIONED):
-        # Bei PROCESSING: Reclaim-Runbook triggern
-        from app.routes.webhook import _dispatch_runbook
-        from app.models.order import OrderAction
-        order.action = OrderAction.DELETE
-        _dispatch_runbook(order)
+    needs_runbook = order.status in (OrderStatus.DELIVERED, OrderStatus.PROCESSING, OrderStatus.PROVISIONED)
+    _order_id = order.id
 
     order.status = OrderStatus.CANCELLED
+    if needs_runbook:
+        # Bei PROCESSING: Reclaim-Runbook triggern
+        from app.models.order import OrderAction
+        order.action = OrderAction.DELETE
+
     await aaudit(
         db, "order", order.id, "status_changed",
         old={"status": old_status}, new={"status": "cancelled"},
         by=actor_by(request, "cancel_order"),
         classification=await classify_for_asset_type_id(db, order.asset_type_id),
     )
+    # Commit FIRST so the row is visible to the worker before dispatch
     await db.commit()
+
+    if needs_runbook:
+        from app.routes.webhook import _dispatch_runbook
+        _dispatch_runbook(_order_id, "delete")

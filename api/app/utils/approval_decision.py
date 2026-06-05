@@ -370,6 +370,9 @@ async def apply_approval_decision(
 
         # Local import — _post_approval_dispatch lives in the portal route module
         # so the side-effects (asset reservation, runbook dispatch) stay there.
+        # NOTE: _post_approval_dispatch does NOT commit; it only mutates ORM state
+        # and (for immediate-dispatch orders) stores the pending dispatch ids on
+        # private object attributes so we can dispatch after committing below.
         from app.routes.portal import _post_approval_dispatch
         await _post_approval_dispatch(order, db, celery_app)
         # Capture the post-dispatch status (typically PROCESSING / SCHEDULED).
@@ -390,10 +393,31 @@ async def apply_approval_decision(
             args=[order.id, True],
             queue="provision",
         )
+
+        # Stash any pending dispatch metadata before commit expires ORM attrs
+        _pending_dispatch_id = getattr(order, "_pending_dispatch_id", None)
+        _pending_dispatch_action = getattr(order, "_pending_dispatch_action", None)
+
         logger.info(
             "Order %s approval threshold met (%s, %d approved, %d superseded) — dispatching",
             order.id, mode, approved_count, superseded,
         )
+
+        # Commit FIRST so the order row is visible to the worker
+        await db.commit()
+
+        # Dispatch after commit when _post_approval_dispatch flagged an immediate run
+        if _pending_dispatch_id is not None:
+            from app.routes.webhook import _dispatch_runbook
+            from sqlalchemy import text as _text
+            task_id = _dispatch_runbook(_pending_dispatch_id, _pending_dispatch_action)
+            await db.execute(
+                _text("UPDATE orders SET celery_task_id = :t WHERE id = :id"),
+                {"t": task_id, "id": _pending_dispatch_id},
+            )
+            await db.commit()
+
+        return DecisionResult(status="approved", all_granted=threshold_met)
     else:
         logger.info(
             "Order %s approval %d approved (%s) — still waiting",

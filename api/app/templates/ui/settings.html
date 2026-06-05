@@ -78,6 +78,13 @@
   </div>
 
   <!-- Portal Logo -->
+  {% if edition == 'community' %}
+  {% from "_partials/enterprise_teaser.html" import card_teaser %}
+  {{ card_teaser(
+      "Custom Portal Logo",
+      "Upload your company logo to replace the default ip·Solis branding in the self-service portal sidebar. Control position, size, and whether the application title is shown alongside it."
+  ) }}
+  {% else %}
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl">
     <h2 class="text-sm font-semibold text-body mb-1">Portal Logo</h2>
     <p class="text-xs text-muted mb-4">
@@ -166,6 +173,7 @@
       {% endif %}
     </div>
   </div>
+  {% endif %}
 
   <!-- Update Notifier (opt-in; off by default for air-gapped tenants) -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mt-4">
@@ -1002,7 +1010,7 @@
   {{ card_teaser(
       "SIEM — Audit Log Streaming",
       "Stream every audit log entry in real-time to Splunk, Microsoft Sentinel, or any HMAC-signed webhook receiver. Elastic, Datadog, Sumo Logic, Loki, and custom endpoints are all supported. The worker forwards new rows once a minute with at-least-once delivery and automatic resume on failure.",
-      "https://xenpool.de"
+      "https://ipsolis.com"
   ) }}
   {% else %}
   <!-- SIEM audit-log streaming (Splunk HEC + Microsoft Sentinel + Generic Webhook) -->
@@ -1933,7 +1941,7 @@
   {{ teaser_pane(
       "SCCM Integration",
       "Trigger SCCM task sequences via the AdminService REST API with Kerberos authentication. Automate OS deployments, device imports, and deletion workflows. Includes health monitoring and a status probe on the Maintenance page.",
-      "https://xenpool.de"
+      "https://ipsolis.com"
   ) }}
   {% else %}
   <div id="sccm-banner" class="hidden mb-2 px-4 py-3 rounded text-sm font-medium"></div>
@@ -2024,7 +2032,7 @@
   {{ teaser_pane(
       "Hosting Infrastructure",
       "Connect ip·Solis to your hypervisor layer: vSphere / vCenter credentials for VMware automation and XenServer / XCP-ng credentials for Citrix environments. Credentials are injected into PowerShell runbooks as $PARAMS variables at execution time.",
-      "https://xenpool.de"
+      "https://ipsolis.com"
   ) }}
   {% else %}
   <div id="hosting-banner" class="hidden mb-2 px-4 py-3 rounded text-sm font-medium"></div>
