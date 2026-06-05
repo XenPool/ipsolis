@@ -14,6 +14,57 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.4.11] — 2026-06-05
+
+### Added
+
+- **Asset Owner concept.** The portal's "Deputy / Stellvertreter" field is renamed to
+  **Owner / Besitzende** (all five locales: en/de/es/fr/it) to reflect its real purpose:
+  the person an asset is ordered *for* (e.g. an external user who lacks portal access),
+  not a substitute approver.
+- **Owner access to portal.** Owners set via a MODIFY order now see the asset in
+  My IT, My Orders, and the order detail/change/cancel pages — previously only the
+  original provision order's `owner_email` was checked; a correlated EXISTS subquery
+  now covers ownership established by any completed MODIFY.
+- **+ Add buttons** on all user/group fields in the portal modify form (RDP Users,
+  Admin Users, Owner) for discoverability alongside the existing Enter-key shortcut.
+- **Asset type form hint.** Amber warning below the "Enable RDP/Admin user list"
+  checkboxes explains that these only show the portal fields; actual AD group writes
+  require matching Group Targets with `principal_source: rdp_users` / `admin_users`.
+- **Maintenance deep-link.** `/ui/maintenance#license` now opens directly on the
+  License tab via hash-based tab activation.
+
+### Changed
+
+- **Approval gate on MODIFY is add-only.** Re-approval is now triggered only when
+  users are *added* to the RDP/Admin lists — removals (privilege de-escalation) go
+  straight through without requiring approval. Comparison baseline fixed to use the
+  latest completed MODIFY order rather than the original provision order.
+- **Delegation self-approval prevention.** When creating re-approval records for a
+  MODIFY order, delegation is skipped if the resolved delegate is the same person who
+  submitted the change, preventing self-approval loops.
+- **Pro edition gating: portal logo.** Custom portal logo settings are now gated
+  behind the Pro license; Community installs see a `card_teaser` upgrade prompt.
+- **Enterprise teasers: shop-first flow.** All PRO teasers now link to the
+  language-aware ip·Solis Shop (`/de|en|es|fr|it/shop` via `navigator.language`)
+  with step-by-step Install ID checkout instructions. `sales@ipsolis.com` removed.
+- **Maintenance License tab "How it works"** updated: copy Install ID → visit shop →
+  upload `.lic`. `sales@ipsolis.com` removed.
+
+### Fixed
+
+- **Owner field persistence.** My IT detail page now reads `owner_email` /
+  `owner_name` from the latest completed MODIFY order, so the set owner is correctly
+  displayed after page reload (previously the provision order's empty value was shown).
+- **Approval routing for owner-submitted changes.** When the owner (not the requester)
+  submits a MODIFY and the configured application-owner approver has a delegation
+  active pointing back to the submitter, delegation is now skipped so the approval
+  stays with the original approver.
+
+### Removed
+
+- **Orphaned `license.html` template** (no serving route existed) deleted.
+
 ## [0.4.10] — 2026-06-02
 
 ### Changed
