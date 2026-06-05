@@ -17,7 +17,7 @@ explicit *Enterprise license* note appears.
 
 - [HR leaver webhook + SCIM 2.0 deprovisioning](#hr-leaver-webhook--scim-20-deprovisioning)
 
-**Virtualization** *(Business Edition)*
+**Virtualization** *(Pro Edition)*
 
 - [vSphere / XenServer automation](#vsphere--xenserver-automation)
 
@@ -3110,7 +3110,7 @@ hides itself when no pool is at ≥80%.
 
 ## vSphere / XenServer automation
 
-> **Business Edition only.** Community Edition includes the runbook engine and
+> **Pro Edition only.** Community Edition includes the runbook engine and
 > PowerShell module system, but the vSphere and XenServer script libraries
 > (`scripts/modules/xenserver/`, `scripts/modules/vmware/`) ship only with the
 > Business image.
