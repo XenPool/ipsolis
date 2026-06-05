@@ -227,14 +227,14 @@
     <input type="hidden" name="user_name" value="{{ user.name }}">
     <input type="hidden" name="user_email" value="{{ user.email }}">
 
-    <!-- Deputy (optional, must be a valid AD user) -->
+    <!-- Owner (optional, must be a valid AD user) -->
     <details class="mt-4" {% if form and form.owner_email %}open{% endif %}>
       <summary class="text-xs text-muted cursor-pointer hover:text-body select-none" data-i18n="portal.order_new.deputy_toggle">
-        + Specify deputy (optional)
+        + Specify owner (optional)
       </summary>
       <div class="mt-3">
         <label class="block text-xs font-medium text-muted mb-1">
-          <span data-i18n="portal.order_new.deputy_label">Deputy</span>
+          <span data-i18n="portal.order_new.deputy_label">Owner</span>
           <span class="text-muted/70 font-normal ml-1" data-i18n="portal.order_new.deputy_hint">sAMAccountName or email · must be a valid domain user</span>
         </label>
 
@@ -593,11 +593,11 @@ document.addEventListener('DOMContentLoaded', function() {
         alert('Please first confirm ' + pending.join(' and ') + ' with "+ Add" (or clear the field).');
         return;
       }
-      // Block if deputy input has text but was not confirmed with "+ Add"
+      // Block if owner input has text but was not confirmed with "+ Add"
       var deputyInput = document.getElementById('deputy-input');
       if (deputyInput && deputyInput.value.trim()) {
         e.preventDefault();
-        alert('Please confirm the deputy with "+ Add" or clear the field.');
+        alert('Please confirm the owner with "+ Add" or clear the field.');
         deputyInput.focus();
         return;
       }

@@ -9,9 +9,9 @@ import base64
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import or_, select, text as sql_text
+from sqlalchemy import exists, or_, select, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from sqlalchemy import func as sa_func
 
@@ -71,9 +71,27 @@ def _user_order_filter(email: str):
 
 
 def _assert_owns_order(order: Order, email: str) -> None:
-    """Raises HTTP 403 if the current user is not the requester or owner of the order."""
+    """Raises HTTP 403 if the current user is not the requester or original owner of the order."""
     if order.user_email != email and order.owner_email != email:
         raise HTTPException(status_code=403, detail="Access denied")
+
+
+async def _assert_owns_order_async(order: Order, email: str, db: AsyncSession) -> None:
+    """Like _assert_owns_order but also accepts ownership established via a MODIFY order."""
+    if order.user_email == email or order.owner_email == email:
+        return
+    if order.assigned_asset_id:
+        row = await db.execute(
+            select(Order.id).where(
+                Order.assigned_asset_id == order.assigned_asset_id,
+                Order.action == OrderAction.MODIFY,
+                Order.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED]),
+                Order.owner_email == email,
+            ).limit(1)
+        )
+        if row.scalar_one_or_none() is not None:
+            return
+    raise HTTPException(status_code=403, detail="Access denied")
 
 
 ANONYMOUS_PORTAL_USER = {
@@ -148,10 +166,26 @@ async def portal_index(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_portal_auth),
 ):
+    _email = current_user["email"]
+    _m = aliased(Order)
+    _owner_via_modify = (
+        select(_m.id).where(
+            _m.action == OrderAction.MODIFY,
+            _m.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED]),
+            _m.owner_email == _email,
+            _m.assigned_asset_id == Order.assigned_asset_id,
+        ).exists()
+    )
     result = await db.execute(
         select(Order)
         .options(selectinload(Order.steps))
-        .where(_user_order_filter(current_user["email"]))
+        .where(
+            or_(
+                Order.user_email == _email,
+                Order.owner_email == _email,
+                _owner_via_modify,
+            )
+        )
         .order_by(Order.created_at.desc())
         .limit(100)
     )
@@ -808,7 +842,7 @@ async def portal_order_detail(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    _assert_owns_order(order, current_user["email"])
+    await _assert_owns_order_async(order, current_user["email"], db)
 
     asset_type_name = None
     asset_type = None
@@ -913,7 +947,7 @@ async def portal_change_order(
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Order not found")
-    _assert_owns_order(original, current_user["email"])
+    await _assert_owns_order_async(original, current_user["email"], db)
 
     is_active = original.status in (OrderStatus.DELIVERED, OrderStatus.PROVISIONED)
     is_failed_change = (
@@ -956,14 +990,38 @@ async def portal_change_order(
 
     # ── Check if re-approval is needed on user-list changes ────────────────────
     asset_type = await db.get(AssetType, original.asset_type_id)
-    users_changed = (
-        sorted(rdp_clean) != sorted(original.rdp_users or [])
-        or sorted(admin_clean) != sorted(original.admin_users or [])
-    )
+
+    # Baseline: use the latest completed MODIFY for this asset, falling back to
+    # the provision order. Comparing against the provision order is wrong because
+    # any change introduced by a MODIFY would be invisible to the comparison.
+    _effective_rdp: set[str] = set(original.rdp_users or [])
+    _effective_admin: set[str] = set(original.admin_users or [])
+    if original.assigned_asset_id:
+        _latest = await db.execute(
+            select(Order)
+            .where(
+                Order.assigned_asset_id == original.assigned_asset_id,
+                Order.action == OrderAction.MODIFY,
+                Order.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED]),
+            )
+            .order_by(Order.id.desc())
+            .limit(1)
+        )
+        _latest_mod = _latest.scalar_one_or_none()
+        if _latest_mod:
+            _effective_rdp = set(_latest_mod.rdp_users or [])
+            _effective_admin = set(_latest_mod.admin_users or [])
+
+    # Approval is only required when users are *added* — removing access is safe
+    # and should not be gated behind an approval workflow.
+    _rdp_added = set(rdp_clean) - _effective_rdp
+    _admin_added = set(admin_clean) - _effective_admin
+    users_added = bool(_rdp_added or _admin_added)
+
     needs_reapproval = (
         asset_type
         and asset_type.requires_approval_on_modify
-        and users_changed
+        and users_added
         and (asset_type.requires_manager_approval or asset_type.requires_owner_approval)
     )
 
@@ -1006,8 +1064,19 @@ async def portal_change_order(
         from app.models.approval import OrderApproval
         from app.utils.approval_delegation import resolve_active_delegate
 
+        _submitter_email = current_user["email"].strip().lower()
+
         async def _make_reapproval(approver_type: str, email: str, name: str) -> OrderApproval:
             d = await resolve_active_delegate(db, email)
+            if d is not None and d.delegate_email.strip().lower() == _submitter_email:
+                # Skip delegation: the delegate is the person who submitted this
+                # change — routing to them would create a self-approval loop.
+                logger.info(
+                    "Portal: re-approval for order %s delegation skipped (%s → %s): "
+                    "delegate is the submitter",
+                    new_order.id, email, d.delegate_email,
+                )
+                d = None
             if d is None:
                 return OrderApproval(
                     order_id=new_order.id, approver_type=approver_type,
@@ -1089,7 +1158,7 @@ async def portal_cancel_order(
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Order not found")
-    _assert_owns_order(original, current_user["email"])
+    await _assert_owns_order_async(original, current_user["email"], db)
 
     if original.status not in (OrderStatus.DELIVERED, OrderStatus.PROVISIONED, OrderStatus.SCHEDULED):
         raise HTTPException(
@@ -1198,10 +1267,26 @@ async def portal_my_it(
 ):
 
 
+    _email = current_user["email"]
+    _modify = aliased(Order)
+    _owner_via_modify = (
+        select(_modify.id).where(
+            _modify.action == OrderAction.MODIFY,
+            _modify.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED]),
+            _modify.owner_email == _email,
+            _modify.assigned_asset_id == Order.assigned_asset_id,
+        ).exists()
+    )
     result = await db.execute(
         select(Order)
         .options(selectinload(Order.steps))
-        .where(_user_order_filter(current_user["email"]))
+        .where(
+            or_(
+                Order.user_email == _email,
+                Order.owner_email == _email,
+                _owner_via_modify,
+            )
+        )
         .where(Order.action == OrderAction.PROVISION)
         .where(Order.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED, OrderStatus.SCHEDULED]))
         .order_by(Order.created_at.desc())
@@ -1262,7 +1347,7 @@ async def portal_my_it_detail(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    _assert_owns_order(order, current_user["email"])
+    await _assert_owns_order_async(order, current_user["email"], db)
 
     if order.status not in (OrderStatus.DELIVERED, OrderStatus.PROVISIONED, OrderStatus.SCHEDULED):
         raise HTTPException(status_code=422, detail="Only active or scheduled assets can be managed here")
@@ -1284,6 +1369,8 @@ async def portal_my_it_detail(
     # order (if any), otherwise fall back to the provision order's lists.
     effective_rdp_users = list(order.rdp_users or [])
     effective_admin_users = list(order.admin_users or [])
+    effective_owner_email = order.owner_email
+    effective_owner_name = order.owner_name
     if order.asset_type_id and order.assigned_asset_id:
         latest_modify_result = await db.execute(
             select(Order)
@@ -1299,6 +1386,8 @@ async def portal_my_it_detail(
         if latest_modify:
             effective_rdp_users = list(latest_modify.rdp_users or [])
             effective_admin_users = list(latest_modify.admin_users or [])
+            effective_owner_email = latest_modify.owner_email
+            effective_owner_name = latest_modify.owner_name
 
     _is_requester = current_user["email"].lower() == (order.user_email or "").lower()
     return templates.TemplateResponse("portal/my_it_detail.html", {
@@ -1313,6 +1402,8 @@ async def portal_my_it_detail(
         "status_colors": _STATUS_COLORS,
         "effective_rdp_users": effective_rdp_users,
         "effective_admin_users": effective_admin_users,
+        "effective_owner_email": effective_owner_email,
+        "effective_owner_name": effective_owner_name,
         "is_requester": _is_requester,
     })
 

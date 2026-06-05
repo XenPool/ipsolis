@@ -78,6 +78,13 @@
   </div>
 
   <!-- Portal Logo -->
+  {% if edition == 'community' %}
+  {% from "_partials/enterprise_teaser.html" import card_teaser %}
+  {{ card_teaser(
+      "Custom Portal Logo",
+      "Upload your company logo to replace the default ip·Solis branding in the self-service portal sidebar. Control position, size, and whether the application title is shown alongside it."
+  ) }}
+  {% else %}
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl">
     <h2 class="text-sm font-semibold text-body mb-1">Portal Logo</h2>
     <p class="text-xs text-muted mb-4">
@@ -166,6 +173,7 @@
       {% endif %}
     </div>
   </div>
+  {% endif %}
 
   <!-- Update Notifier (opt-in; off by default for air-gapped tenants) -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mt-4">
