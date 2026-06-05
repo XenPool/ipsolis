@@ -1,4 +1,4 @@
-# ip·Solis Business Edition — docker-compose.pro.yml
+# ip·Solis Pro Edition — docker-compose.pro.yml
 #
 # Pull-based deployment: all images come from the XenPool container registry.
 # No source code or build toolchain needed on your server.

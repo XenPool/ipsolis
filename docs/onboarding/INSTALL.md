@@ -1,4 +1,4 @@
-# ip·Solis Business Edition — Installation Guide
+# ip·Solis Pro Edition — Installation Guide
 
 Deploy a production instance in under 30 minutes.  
 You do **not** need to clone the repository or install any build tools.
