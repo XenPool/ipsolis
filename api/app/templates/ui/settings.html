@@ -2931,7 +2931,7 @@ async function savePasswordPolicy() {
     if (!resp.ok) errors.push(key);
   }
   showComplianceBanner(errors.length === 0
-    ? {ok: true,  message: 'Password policy saved. Enforcement requires an Enterprise license.'}
+    ? {ok: true,  message: 'Password policy saved.'}
     : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
 }
 

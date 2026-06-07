@@ -39,7 +39,7 @@ def check_license_expiry(self) -> dict:
         _maybe_send_alert(
             subject="[ip·Solis] License expired",
             html_body=(
-                f"<p>The ip·Solis Enterprise license has <strong>expired</strong>.</p>"
+                f"<p>The ip·Solis Pro license has <strong>expired</strong>.</p>"
                 f"<p>Licensee: {info.licensee}<br>"
                 f"Expired on: {info.expires_at.date().isoformat()}</p>"
                 f"<p>The instance has fallen back to Community edition. "
@@ -61,7 +61,7 @@ def check_license_expiry(self) -> dict:
     _maybe_send_alert(
         subject=f"[ip·Solis] License expires in {days_remaining} days",
         html_body=(
-            f"<p>The ip·Solis Enterprise license will expire in "
+            f"<p>The ip·Solis Pro license will expire in "
             f"<strong>{days_remaining} day(s)</strong>.</p>"
             f"<p>Licensee: {info.licensee}<br>"
             f"Expires on: {info.expires_at.date().isoformat()}</p>"

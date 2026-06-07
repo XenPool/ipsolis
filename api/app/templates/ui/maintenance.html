@@ -114,7 +114,7 @@
     <h2 class="text-sm font-semibold text-heading mb-1">Install identity</h2>
     <p class="text-xs text-muted mb-3">
       Stable per-install UUID. Provide this value when requesting a new
-      Enterprise license — we'll bake it into the signed file so the
+      Pro license — we'll bake it into the signed file so the
       license only validates on this deployment and can't be re-used
       elsewhere. The UUID was generated when the database was first
       migrated and never changes for the life of this install.
@@ -186,8 +186,9 @@
         or from a different issuer, the upload is rejected and your current license stays untouched.</li>
       <li>On success, the new license takes effect immediately across all
         processes (api, worker, beat). No restart needed.</li>
-      <li>Enterprise features (scheduled orders, asset owner support, standalone runbooks,
-        advanced maintenance, …) unlock as soon as the new license is active.</li>
+      <li>Pro Edition features (standalone runbooks, SCCM, ServiceNow webhook, SCIM,
+        HR leaver feed, access certifications, SIEM streaming) unlock as soon as the Pro license is active.
+        All other features are available in Community.</li>
     </ol>
   </section>
 

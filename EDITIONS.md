@@ -1,16 +1,14 @@
 # ip·Solis – Edition Feature Matrix
 
-This document defines the feature split across the three editions of ip·Solis:
-**Community** (open-source, AGPL-3.0), **Business** (commercial), and **Enterprise** (commercial).
-It is the canonical reference for edition gating throughout the codebase.
+This document defines the feature split across the two editions of ip·Solis:
+**Community** (open-source, AGPL-3.0) and **Pro** (commercial).
 
 ## Guiding Principles
 
-- The Community Edition must be **fully functional** for small-to-mid-sized teams — not a crippled demo.
-- Business features target organizations with **operational automation, compliance basics, and custom integrations**.
-- Enterprise features target organizations with **identity sync, ITSM integration, hypervisor lifecycle management, and regulated compliance requirements**.
-- Edition gating is implemented via **runtime license checks and feature flags**, not separate codebases or branches.
-- All features ship in a **single codebase**. Business and Enterprise features are present but gated.
+- The Community Edition is **fully functional** for on-premises IT asset lifecycle management — not a crippled demo.
+- Pro features target organizations requiring advanced operational integrations: ITSM, identity sync, SIEM, and access certification workflows.
+- Edition split is implemented via **separate Docker images** — the Community image simply does not contain the Pro-only files. There is no runtime feature gating; absent routes return HTTP 404, not HTTP 403.
+- Legacy license edition values (`business`, `enterprise`, `professional`) are normalised to `pro` on load for backwards compatibility with older signing tools.
 
 ---
 
@@ -21,191 +19,174 @@ It is the canonical reference for edition gating throughout the codebase.
 - "My IT" dashboard (active assets overview)
 - Multi-language UI (EN, DE, FR, ES, IT)
 - Entra ID (Azure AD) single sign-on
-- Up to 3 asset types · up to 100 managed users
+- Deputy support (order on behalf of another user)
+- Catalog search and category filter
+- Long-form help text per asset definition (admin-authored markdown)
+- Per-order cost projection shown to the requester before submission
 
 ### Approval Workflows
 - Manager approval (auto-resolved from Active Directory)
+- Application owner approval (second approval tier)
+- Re-approval on asset modification (configurable per asset type)
+- N-of-M approvals + conditional approval rules (per-bucket quorum with recursive AND/OR/NOT rule editor)
+- Per-classification approval routing (PII / PHI / PCI, centralised or owner-of-record mode)
+- Approval reminders with configurable intervals and escalation
+- Approval delegation (admin-managed and portal self-service OOO)
+- Auto-decline on extended inactivity (opt-in)
+- Microsoft Teams approval cards (Adaptive Card via Workflows webhook)
 - Email notifications with one-click approve / decline
 
 ### Runbook Engine
 - Three automation strategies: Group Access, Runbook, Composite
-- Runbook definition with ordered steps (list-based configuration)
+- Visual runbook builder with drag-and-drop step ordering
 - PowerShell script execution via Celery workers
 - Step-by-step execution tracking with structured JSON logs
 - In-app PowerShell script editor
+- PowerShell module management (install from Gallery or upload custom `.zip`, with Linux compatibility flag)
+- Global variables for runbooks and scripts
 
 ### Asset Lifecycle Management
 - All three assignment models: capacity-pooled, dedicated-shared, assigned-personal
+- Per-user quota (`max_per_user`)
+- Active / inactive flag on asset definitions
 - Asset statuses: Free, Reserved, Busy, Reinstall, Reinstalling, Failed, Maintenance
-- Standard deprovision policies: access_only, return_to_pool, return_to_pool_reinstall, deallocate, delete
+- Deprovision policies: access_only, return_to_pool, return_to_pool_reinstall, deallocate, delete, custom runbook
+- Scheduled orders (future-dated provisioning with asset reservation)
 - Automatic expiry checks and reminder emails (Celery Beat)
+- Eligible requestors (restrict asset types to specific AD groups)
+
+### Finance & Chargeback
+- Cost / chargeback per asset definition (`monthly_cost`, `currency`, `cost_center`)
+- Cost Report page with projected monthly spend per cost center, CSV export
+- AD-driven consumer breakdown (department, cost center, company, employeeID)
+- Cost-threshold alerts per cost center with email and Teams notifications
+- Historical cost snapshots with `as-of` date picker
+- FX conversion via configurable rate map
+
+### Hypervisor & OS Deployment
+- VMware vSphere (VM lifecycle operations via PowerCLI)
+- XenServer / XCP-ng (VM lifecycle operations)
 
 ### Admin UI
-- Asset type configuration (categories, attributes, automation strategy)
-- Asset pool management
+- Dashboard with live pool status tiles, setup checklist, pool capacity warnings
+- Full asset type configuration (categories, attributes, automation strategy)
+- Asset pool management with bulk import
 - Order overview and management
-- Settings for AD, SMTP, Entra ID
-- Dashboard with live pool status tiles
+- Email template editor with variable placeholders (per-action templates)
+- App branding (title, logo, logo position and size)
+- Central settings for AD, SMTP, vSphere, XenServer, Entra ID
+- Session-based login (plus `X-Admin-Key` header for API access)
+- Admin RBAC — five-tier role ladder (`superadmin > admin > approver > auditor > helpdesk`)
+- Per-asset-type ACL grants (scope admins to a subset of asset types)
+- Separation-of-Duties enforcement (block self-approval on admin-configured types)
+- Per-integration API tokens with scopes and role binding (replaces shared `X-Admin-Key`)
+- API token hard-delete retention policy (opt-in)
+- Admin self-service password change
+- Password policy + lockout (configurable rotation days, failed-attempt lockout)
 
 ### Integrations
 - Active Directory / LDAP (user validation, manager lookup, group membership)
+- Microsoft Entra ID (SSO for the portal)
 - SMTP (transactional email notifications)
+- Microsoft Teams (approval cards and cost-threshold alerts)
+- External secret management (HashiCorp Vault, CyberArk CCP/AIM, Azure Key Vault, AWS Secrets Manager, CyberArk Conjur)
+
+### Compliance & Audit
+- Append-only audit log with tamper-evident BEFORE-statement triggers
+- Audit log viewer (filterable, coloured actor badges, before/after JSON diff)
+- Order change log viewer
+- Audit retention pruning (per-classification windows: PII / PHI / PCI)
+- Field-level data classification badges (internal / PII / PHI / PCI)
+- Full audit attribution (token, session, portal user, signed-link)
+- Admin RBAC audit trail with role attribution
+
+### Observability
+- Prometheus `/metrics` endpoint (request rate, latency, business gauges)
+- OpenTelemetry tracing (api + Celery worker, OTLP HTTP exporter)
+- Grafana dashboard + Prometheus alert rules (drop-in)
 
 ### Infrastructure
 - PostgreSQL database with Alembic migrations
 - REST API with OpenAPI / Swagger documentation
 - Docker Compose deployment
-- Basic health probes (DB, Redis connectivity)
-- Append-only audit log (data written in all editions)
+- Health probes (DB, Redis, Beat liveness, external system reachability) with email alerts
+- Celery queue inspection and targeted purge
+- Scheduled PostgreSQL backups with retention policy
+- HA Celery Beat scheduler (celery-redbeat, Redis-backed distributed lock)
 
 ---
 
-## Business Edition (Commercial License)
+## Pro Edition (Commercial License)
 
 *Includes everything in Community Edition, plus:*
 
-### Advanced Workflows
-- Application owner approval (second approval tier)
-- Re-approval on asset modification (configurable per asset type)
-- Deputy support (order on behalf of another user)
-- Scheduled orders (future-dated provisioning with asset reservation)
-- Eligible requestors (restrict asset types to specific AD groups)
-- Custom runbook deprovision policy
-
-### Visual Runbook Builder
-- Drag-and-drop step ordering
-- Visual workflow composition
-
 ### Standalone Runbooks
-- Ad-hoc runbooks (not tied to asset types)
+- Ad-hoc runbooks not tied to asset types
 - Cron-scheduled runbooks with per-run history, logs, and notes
 
-### PowerShell Module Management
-- Install modules from PowerShell Gallery
-- Upload custom modules (.zip)
-- Module registry with metadata
+### ITSM Integration
+- ServiceNow inbound HMAC-signed webhook (`POST /webhook`) for order dispatch
 
-### Customization
-- Email template editor with variable placeholders (per-action templates)
-- App branding (title, logo, logo position and size)
-- Global variables for runbooks and scripts
-
-### Audit & Compliance
-- Audit log viewer (UI)
-- Order change log viewer (UI)
-- Access certification campaigns (ISO 27001 / SOX / PCI)
-
-### API & Integration
-- Per-integration named API tokens with scopes and role binding
-
-### Limits
-- Up to 2,000 managed users · unlimited asset type definitions
-
----
-
-## Enterprise Edition (Commercial License)
-
-*Includes everything in Business Edition, plus:*
+### OS Deployment Integration
+- SCCM (task sequence triggers, device import/delete, status polling via `sccm_probe`)
 
 ### Identity Sync & HR Integration
-- SCIM 2.0 deprovisioning (Okta, Ping, SailPoint)
-- HR leaver webhook (Workday, SAP, custom HR systems)
-- HR leaver events viewer
+- HR leaver webhook (`POST /hr/leaver`) — Workday, SAP SuccessFactors, MS Graph adapters
+- HR leaver events viewer (`/ui/leaver-events`)
+- SCIM 2.0 endpoint (`/scim/v2/*`) — leaver-focused subset of RFC 7644, drop-in for Okta / SailPoint / Ping
 
-### ITSM Integration
-- ServiceNow inbound HMAC-signed webhook for order dispatch
+### Access Certification Campaigns
+- Campaign creation with scope filter (asset types / cost centers / departments)
+- Reviewer email + Teams card with signed-token review URL (no login required)
+- Per-row Confirm / Revoke decisions (revoke triggers deprovision runbook immediately)
+- Reminder emails at configurable offsets, overdue email, escalation summary
+- Auto-revoke on overdue (opt-in)
+- Admin drill-down at `/ui/certifications`
+- Manager portal page at `/portal/certifications`
 
-### Hypervisor & OS Deployment
-- VMware vSphere (VM lifecycle operations via PowerCLI)
-- XenServer / XCP-ng (VM lifecycle operations)
-- SCCM (task sequence triggers, device import/delete, status polling)
-
-### Advanced Maintenance & Operations
-- Scheduled PostgreSQL backups with configurable retention
-- Manual backup / restore / download via Admin UI
-- Celery queue inspection and targeted purge
-- Email alerts on health state transitions
-- Audit log retention policies (PII / PHI / PCI classification)
-
-### Advanced Access Control
-- Per-asset-type ACL grants (restrict asset-type management to specific admin groups)
-- Role-bound API tokens (issue tokens locked to a specific admin role)
-- Separation-of-Duties enforcement (block self-approval and cross-role conflicts)
-- Password rotation and lockout policy
-
-### Limits & Deployment
-- Unlimited users and asset type definitions
-- On-premises / air-gapped deployment support
-- Dedicated solution architect
-- Custom SLA and security review
+### SIEM Audit-Log Streaming
+- Splunk HTTP Event Collector (HEC)
+- Microsoft Sentinel — legacy Data Collector API and newer Logs Ingestion API (DCE / DCR + AAD SPN)
+- Generic JSON webhook with HMAC-SHA256 body signing (`X-Hub-Signature-256`)
+- Persistent cursor, automatic retry, "Send Test Event" connectivity check
 
 ---
 
-## Edition Gating – Implementation Guide
+## Edition Gating — Implementation
 
 ### License Model
 
-```python
-# License check pseudocode
-EDITION = load_license()  # "community" | "business" | "enterprise"
+```
+edition = "community" | "pro"
 ```
 
-### Feature Key Registry
+Legacy aliases emitted by older signing tools (`business`, `enterprise`, `professional`) are normalised to `pro` on load.
 
-Feature keys are split into two frozensets in `api/app/utils/license.py`:
+Missing license file or any verification failure silently falls back to Community — no runtime blocking.
 
-```python
-BUSINESS_FEATURE_KEYS: frozenset[str] = frozenset({
-    "standalone_runbooks",    "visual_runbook_builder", "ps_module_management",
-    "deputy_support",         "scheduled_orders",       "app_owner_approval",
-    "reapproval_on_modify",   "email_template_editor",  "app_branding",
-    "eligible_requestors",    "global_variables",        "audit_log_viewer",
-    "change_log_viewer",      "api_token_management",   "certifications",
-})
+### Feature Availability Mechanism
 
-ENTERPRISE_ONLY_FEATURE_KEYS: frozenset[str] = frozenset({
-    "servicenow_webhook",     "hr_webhook",             "hr_leaver_events",
-    "scim",                   "vsphere_integration",    "xenserver_integration",
-    "sccm_integration",       "audit_retention",        "advanced_maintenance",
-    "custom_deprovision",     "rbac_asset_type_grants", "rbac_token_role_binding",
-    "rbac_sod_enforcement",   "password_policy",
-})
-```
+Feature availability is controlled by **which code is present in the Docker image**, not by runtime license checks:
 
-### Gating Hierarchy
+- **Community image** (`Dockerfile.community`): Pro-only files are removed at build time.
+- **Pro image** (`Dockerfile.pro` / default): all files present.
 
-- **Enterprise license** → all features enabled (backward-compatible with `features: ["all"]`)
-- **Business license** → `BUSINESS_FEATURE_KEYS` enabled, `ENTERPRISE_ONLY_FEATURE_KEYS` blocked
-- **Community (no license / invalid)** → all gated features disabled
+Pro-only routes absent from the Community image return HTTP 404 (the router was never registered), not HTTP 403. No `try/except ImportError` gates exist in the routing layer — if the file isn't there, the endpoint simply doesn't exist.
 
-### Gating Pattern
+### Pro-only files stripped from the Community image
 
-Features are gated at three levels:
+**API routes:**
+- `routes/webhook.py` — ServiceNow inbound webhook
+- `routes/scim.py` — SCIM 2.0 endpoint
+- `routes/hr_webhook.py` — HR leaver webhook
+- `routes/admin_certifications.py` + `certifications_external.py` + `portal_certifications.py` — Access Certifications
+- `routes/admin_standalone_runbooks.py` + related templates — Standalone Runbooks
 
-1. **UI layer** — Menu items and pages are conditionally rendered:
-   ```jinja2
-   {% if is_business %}  {# Business-tier nav item #}
-     <a href="/ui/standalone-runbooks">Standalone Runbooks</a>
-   {% endif %}
-   {% if is_enterprise %}  {# Enterprise-only nav item #}
-     <a href="/ui/leaver-events">Leaver Events</a>
-   {% endif %}
-   ```
-
-2. **API layer** — Endpoints return `HTTP 403` with an upgrade message:
-   ```python
-   # Business-tier endpoint
-   dependencies=[require_business("standalone_runbooks")]
-
-   # Enterprise-only endpoint
-   dependencies=[require_enterprise("scim")]
-   ```
-
-3. **Worker layer** — Tasks check edition before execution:
-   ```python
-   if not is_feature_enabled("servicenow_webhook"):
-       return {"status": "skipped", "reason": "enterprise_only"}
-   ```
+**Worker workflows/modules:**
+- `workflows/standalone_runner.py` — standalone runbook executor
+- `workflows/sccm_probe.py` — SCCM task-sequence status polling
+- `workflows/siem_streamer.py` + `modules/siem_export.py` — SIEM streaming
+- `workflows/certification_notifications.py` + `certification_reminders.py` — certification Beat tasks
 
 ---
 
@@ -215,3 +196,4 @@ Features are gated at three levels:
 |---------|------|--------|
 | 1.0 | 2026-04-23 | Initial two-tier edition split (Community / Enterprise) |
 | 2.0 | 2026-05-02 | Three-tier system: added Business Edition between Community and Enterprise |
+| 3.0 | 2026-06-07 | Consolidated to two tiers: Community / Pro (Business and Enterprise merged into Pro) |
