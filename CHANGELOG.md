@@ -14,6 +14,18 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.4.13] — 2026-06-07
+
+### Fixed
+
+- **Web docs: Owner Ordering terminology.** `docs/web/self-service.md` section renamed
+  from "Deputy Ordering" to "Owner Ordering" to match the v0.4.11 UI rename. Description
+  updated to clarify the Owner field identifies the beneficiary of the order, not a
+  substitute approver.
+- **Web docs: asset status label clarification.** `docs/web/lifecycle.md` notes that the
+  admin dashboard "In Use" tile and the asset pool list "Assigned" label both map to the
+  underlying `busy` status.
+
 ## [0.4.12] — 2026-06-07
 
 ### Changed

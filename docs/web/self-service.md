@@ -39,7 +39,7 @@ The catalog (`/portal/orders/new`) shows all active asset definitions the logged
 
 **Help text** — admins can attach a markdown-formatted description to each asset definition. When a requester selects a type, the rendered help text appears above the attribute fields. Use this to document pre-installed software, eligibility requirements, expected provision time, and support contacts.
 
-### Eligible Requestors *(Business)*
+### Eligible Requestors
 
 Asset types can be restricted to specific Active Directory groups. Users who are not members of the configured group do not see the definition in the catalog.
 
@@ -51,7 +51,7 @@ After selecting an asset type, the requester fills in any user-supplied attribut
 
 If the asset type has a `max_per_user` limit set, the portal returns an error if the user already holds that many active instances of that type. The check covers all non-terminal states (pending, processing, provisioned, etc.) so users cannot bypass the limit with stacked future-dated orders.
 
-### Per-Order Cost Projection *(Business)*
+### Per-Order Cost Projection
 
 When an asset type has a `monthly_cost` configured, the order form shows the projected total (`monthly_cost × months_requested`) before the user submits. This appears in the **Access & Duration** card.
 
@@ -63,13 +63,13 @@ Orders that require approval enter a `pending_approval` state. The portal displa
 
 Approvers receive an email with one-click **Approve** and **Decline** links. No portal login is required for the approver — the link contains a signed token that works from any email client.
 
-**Microsoft Teams cards** *(Business)* — when Teams integration is enabled, the same approve/decline prompt is also delivered as an Adaptive Card to the configured Teams channel.
+**Microsoft Teams cards** — when Teams integration is enabled, the same approve/decline prompt is also delivered as an Adaptive Card to the configured Teams channel.
 
-**Reminders** *(Business)* — if an approver hasn't responded after the configured interval (default: 24 hours), the system re-sends the notification. Up to three reminders are sent before escalation.
+**Reminders** — if an approver hasn't responded after the configured interval (default: 24 hours), the system re-sends the notification. Up to three reminders are sent before escalation.
 
-**Escalation** *(Business)* — after reminders are exhausted, the configured escalation contacts are notified. In assignment mode, they receive their own one-click approval link.
+**Escalation** — after reminders are exhausted, the configured escalation contacts are notified. In assignment mode, they receive their own one-click approval link.
 
-**Auto-decline** *(Business)* — stale pending approvals past the configured inactivity window are automatically declined by a daily background task.
+**Auto-decline** — stale pending approvals past the configured inactivity window are automatically declined by a daily background task.
 
 ---
 
@@ -88,15 +88,15 @@ From here, users can:
 
 ---
 
-## Deputy Ordering *(Business)*
+## Owner Ordering
 
-Deputy ordering lets one user place an order on behalf of another. The requester selects the target user in the order form. The resulting order is attributed to the beneficiary, not the submitting user, so AD group membership, approvals, and audit rows all reference the correct person.
+Owner ordering lets one user place an order on behalf of another. The requester selects the **Owner** (the person the asset is ordered *for*) in the order form. The resulting order is attributed to the owner, not the submitting user, so AD group membership, approvals, and audit rows all reference the correct person.
 
 Use cases: IT admin ordering a VDI for a new hire before their first day; a manager ordering on behalf of a team member who cannot access the portal.
 
 ---
 
-## Scheduled Orders *(Business)*
+## Scheduled Orders
 
 Orders can be dated in the future. A scheduled order reserves the asset immediately (so no one else can claim it) but does not trigger provisioning until the scheduled start date arrives. The Celery Beat task `check-scheduled-orders` runs hourly to dispatch ready orders.
 
@@ -108,11 +108,11 @@ Scheduled orders appear in My IT with a `scheduled` status badge and the target 
 
 **Admin-configured delegation** — an administrator can configure a deputy window for any approver (e.g., "Stefan is on leave 1–15 August; route his approvals to Jupp"). New orders during the window automatically address the deputy. The original assignee is captured in the audit trail.
 
-**Self-service delegation** *(Business)* — managers can configure their own delegation windows directly from the portal at `/portal/delegations`, without going through an admin. The server enforces that a user can only configure delegation for their own approvals.
+**Self-service delegation** — managers can configure their own delegation windows directly from the portal at `/portal/delegations`, without going through an admin. The server enforces that a user can only configure delegation for their own approvals.
 
 ---
 
-## Access Certifications *(Business)*
+## Access Certifications *(Pro)*
 
 When an access certification campaign is active and the logged-in user is a reviewer, a notification appears in the portal directing them to `/portal/certifications`. This page shows all pending review rows assigned to the user, with one-click **Confirm** (user keeps access) or **Revoke** (access is pulled immediately) for each.
 
