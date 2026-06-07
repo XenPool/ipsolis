@@ -1,8 +1,8 @@
-# Enterprise & operability features
+# Pro & operability features
 
 This page covers the per-feature setup for capabilities that go beyond the
-default install. Everything below is community-licensed unless an
-explicit *Enterprise license* note appears.
+default install. Features marked *(Pro Edition)* require the Pro image; everything
+else is available in Community.
 
 **Catalog & portal**
 
@@ -17,7 +17,7 @@ explicit *Enterprise license* note appears.
 
 - [HR leaver webhook + SCIM 2.0 deprovisioning](#hr-leaver-webhook--scim-20-deprovisioning)
 
-**Virtualization** *(Pro Edition)*
+**Virtualization**
 
 - [vSphere / XenServer automation](#vsphere--xenserver-automation)
 
@@ -278,8 +278,8 @@ Cross-link any event's `user_email` to the Audit Log viewer
 | `scim:write` token scope | Authorises SCIM `POST` / `PUT` / `PATCH` / `DELETE` |
 | `WEBHOOK_SECRET_TOKEN` env var | Shared HMAC secret for the HR webhook fallback path |
 
-Both endpoints are **Enterprise-gated** (feature keys `hr_webhook`
-and `scim`); community installs see HTTP 403 on access.
+Both endpoints are **Pro Edition only** — the routes are absent from the Community
+image. Community installs receive HTTP 404.
 
 ### Idempotency
 
@@ -1511,7 +1511,7 @@ Admin UI → *Settings* → *E-Mail* tab → *Approval Reminders*:
   `approval_escalation_assigned` template (reassign) both carry
   the full variable set (original approver name+email, requester,
   asset, dates, approval URL) — customise via *Settings → E-Mail
-  Templates* (Enterprise license).
+  Templates*.
 
 ---
 
@@ -1991,8 +1991,7 @@ links to the same `/review-queue/<token>` URL as the email.
 | `certification_overdue` | Past due, gated on `overdue_reminder_enabled` |
 | `certification_escalation` | Past due, once per campaign, to `escalation_email` |
 
-All four templates customisable via *Settings → Email Templates*
-(Enterprise license).
+All four templates customisable via *Settings → Email Templates*.
 
 ### Audit trail
 
@@ -2214,9 +2213,7 @@ approver (matched on email, local-part, or admin username).
   is also an admin and that's OK" scenarios. Captured in the
   `order_approvals.sod_exempt` column at order-creation time so
   subsequent rule edits don't shift past orders' SoD logic.
-- SoD *enforcement* is itself an Enterprise feature; community
-  installs get the audit-trail breadcrumb (warning log) but the
-  decision is allowed to proceed.
+- SoD *enforcement* is a Community Edition feature — it ships in all installs.
 
 ### Bearer-token role binding
 
@@ -2251,8 +2248,7 @@ clear HTTP 409 directing them to rotate via `.env`. Audit row is
 
 All three default to off so existing installs are unchanged.
 Settings UI section in the *Compliance* tab; values writable on
-community but **enforcement gated on the `password_policy`
-Enterprise feature key**.
+community and all installs — there is no edition gate on this feature.
 
 Lockout responses use HTTP 423 with an "unlock at <UTC>" hint.
 Auto-unlock fires on the next attempt past the duration window so
@@ -3110,10 +3106,9 @@ hides itself when no pool is at ≥80%.
 
 ## vSphere / XenServer automation
 
-> **Pro Edition only.** Community Edition includes the runbook engine and
-> PowerShell module system, but the vSphere and XenServer script libraries
-> (`scripts/modules/xenserver/`, `scripts/modules/vmware/`) ship only with the
-> Business image.
+> **Community Edition included.** Both the runbook engine and the vSphere /
+> XenServer script libraries (`scripts/modules/xenserver/`,
+> `scripts/modules/vmware/`) ship with the Community image.
 
 Automate full VM lifecycle operations against VMware vSphere and Citrix
 XenServer / XCP-ng from runbooks:

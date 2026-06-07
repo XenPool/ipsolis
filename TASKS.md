@@ -8,7 +8,7 @@ and historical "done" entries at the bottom.
 
 ## Status — 2026-04-30
 
-Prio-0 enterprise-procurement push **complete**. The 2026-04-26 round shipped
+Prio-0 Pro-edition feature push **complete**. The 2026-04-26 round shipped
 the headline features (RBAC, external secret management, audit + SIEM,
 conditional approval rules, per-classification retention, HA Beat); the
 2026-04-30 follow-on round closed every queued slice-2 / slice-3 enrichment:
@@ -26,7 +26,7 @@ conditional approval rules, per-classification retention, HA Beat); the
 * HA: multi-replica api / worker docs + Postgres standby + failover docs
   (section 12 of `docs/DEPLOYMENT.md`).
 
-The *Deferred Enterprise Backlog* below is now empty of functional items —
+The *Deferred Pro Backlog* below is now empty of functional items —
 everything previously queued has shipped. The two genuinely-external items
 in the *Pre-existing open tasks* section (Entra ID Connect setup; Cloud
 group management via Microsoft Graph) remain — both deliberately scoped
@@ -34,10 +34,10 @@ outside the application codebase.
 
 ---
 
-## Deferred Enterprise Backlog
+## Deferred Pro Backlog
 
 Items here are **not actively planned** — they're the slices we deliberately
-deferred from the 2026-04-26 enterprise push. Each is independently slice-able;
+deferred from the 2026-04-26 Pro-edition feature push. Each is independently slice-able;
 pull one when there's a procurement need or a quiet week.
 
 ### RBAC slice 4 — **shipped 2026-04-27**
@@ -57,7 +57,7 @@ pull one when there's a procurement need or a quiet week.
       next attempt past the duration window so brief flurries clear
       themselves. Settings UI section in the Compliance tab; values
       writable on community but enforcement gated on the
-      `password_policy` Enterprise feature key.
+      `password_policy` setting (no edition gate — ships in all editions).
 - [x] **Auditor read paths on `admin/maintenance/*`.** Router floor
       relaxed from `admin` to `auditor`; every write/trigger route
       (`POST /backups`, `DELETE /backups/{id}`, `PUT /retention`,
@@ -525,7 +525,7 @@ pull one when there's a procurement need or a quiet week.
       provision isolation keeps a 30s SCCM call from blocking the
       cost-alerter), and a three-tier sizing table (Lab → single
       worker; Mid → 2 workers split provision vs. housekeeping;
-      Enterprise → dedicated provision replicas + dedicated
+      Large → dedicated provision replicas + dedicated
       notifications replica + housekeeping replica). Includes both
       the simple `--scale worker=3` shape (every replica consumes
       every queue) and the per-queue split via dedicated compose
@@ -782,10 +782,10 @@ pull one when there's a procurement need or a quiet week.
 
 ---
 
-## Strategic — Enterprise-class roadmap
+## Strategic — Pro-tier roadmap
 
 These are the gaps that block ipSolis from being drop-in for a 5,000-seat regulated
-enterprise. Order = priority (procurement-blocker first).
+organization. Order = priority (procurement-blocker first).
 
 ### [done] Admin RBAC — Prio 0 (show-stopper)
 Slice 1 — per-user accounts, role ladder, first-run setup, role-gated
@@ -1021,7 +1021,7 @@ enforcement (configurer ≠ approver) split into follow-up slices.
   * Helper unit-checks: matches `alice@xenpool.local`, matches `alice`
     (no @), correctly rejects `bob@example.com` and `ciso@example.com`.
 
-**Slice-4 enrichments → tracked in *Deferred Enterprise Backlog* (top of file).**
+**Slice-4 enrichments → tracked in *Deferred Pro Backlog* (top of file).**
 
 ### [done] External secret management — Prio 0 (show-stopper)
 Slice 1 — Vault + CyberArk CCP/AIM, on-read resolution, no plaintext
@@ -1029,7 +1029,7 @@ removal — **shipped 2026-04-26**. Slice 2 enrichment shipped Azure
 Key Vault, AWS Secrets Manager, and CyberArk Conjur (2026-04-30) —
 five backends total. Vault AppRole/JWT auth, AWS native AssumeRole,
 CCP mTLS bootstrap UX, and the one-shot migration tool stay queued
-(see *Deferred Enterprise Backlog* at top of file).
+(see *Deferred Pro Backlog* at top of file).
 
 **Done — secrets slice 1 (2026-04-26):**
 - Migration `0072_seed_secret_backend_config.py` seeds 11 keys for the
@@ -1296,7 +1296,7 @@ follow-up slices.
   * `portal_actor_by()` produces the right strings for all five
     cases (real user / anonymous / no email / None / mixed-case).
 
-**Hard-delete-vs-soft-delete policy → tracked in *Deferred Enterprise Backlog* (top of file).**
+**Hard-delete-vs-soft-delete policy → tracked in *Deferred Pro Backlog* (top of file).**
 
 ### [done] Tamper-evident audit + SIEM export — Prio 0
 SIEM streaming side **shipped 2026-04-26** (Splunk HEC + Microsoft
@@ -1443,7 +1443,7 @@ live table and is best paired with the RBAC work.
   * Switched format back to `splunk_hec` mid-test → no regression on
     the existing adapters.
 
-**Sentinel Logs Ingestion API + streaming-failure email alert → tracked in *Deferred Enterprise Backlog* (top of file).**
+**Sentinel Logs Ingestion API + streaming-failure email alert → tracked in *Deferred Pro Backlog* (top of file).**
 
 ### [done] Multi-instance HA — Prio 0 (show-stopper)
 Beat slice — **shipped 2026-04-26**. The remaining HA work
@@ -1496,7 +1496,7 @@ sliced independently rather than bundled.
     one, schedule keys still in Redis, dispatch resumed without
     re-seed.
 
-**Slice-2 enrichments all shipped (Postgres standby docs, multi-replica api docs, multi-replica worker docs + sizing table, Beat-alive health probe) — see *Deferred Enterprise Backlog* (top of file) for individual entries. The codebase HA story is now: api stateless cookie sessions + LB round-robin, workers per-queue scaling, Beat multi-replica with RedBeat lock, Postgres standby as a documented reference architecture awaiting a real failover drill on staging.**
+**Slice-2 enrichments all shipped (Postgres standby docs, multi-replica api docs, multi-replica worker docs + sizing table, Beat-alive health probe) — see *Deferred Pro Backlog* (top of file) for individual entries. The codebase HA story is now: api stateless cookie sessions + LB round-robin, workers per-queue scaling, Beat multi-replica with RedBeat lock, Postgres standby as a documented reference architecture awaiting a real failover drill on staging.**
 
 ---
 
@@ -1902,7 +1902,7 @@ delegation, N-of-M, conditional rules) remain.
   * Admin UI form renders the card structure, datalist with attr
     fields, combinator + quorum inputs.
 
-**Slice-3 enrichments (tree editor for nested compounds, per-bucket reminder optimisation, escalation v2 with assigned approval) → tracked in *Deferred Enterprise Backlog* (top of file).**
+**Slice-3 enrichments (tree editor for nested compounds, per-bucket reminder optimisation, escalation v2 with assigned approval) → tracked in *Deferred Pro Backlog* (top of file).**
 **Done — self-service portal delegation (2026-04-26):**
 - New router `app.routes.portal_delegations` exposes
   `GET /portal/delegations` (HTML page),
@@ -1998,9 +1998,8 @@ grammar, /Groups, bulk operations) queued.
   `(status, received_at)` so the admin list page is O(rows-per-page).
 - ORM `app.models.hr_leaver_event.HrLeaverEvent` mapped.
 - New api token scopes: `scim:read`, `scim:write`, `hr:leaver`.
-- Three new feature flags: `hr_webhook`, `scim` (both already
-  enabled in dev licenses; production tenants need the Enterprise
-  edition).
+- `hr_webhook` and `scim` endpoints are Pro Edition only (absent from
+  Community image; no runtime feature flag required).
 - Unified leaver helper `app.utils.leaver.process_leaver(...)` — the
   meat of the slice. For a given email it:
   * Marks every active order owned by the user as `revoking` and
@@ -2486,7 +2485,7 @@ is faster, deterministic, and works in air-gapped deployments.
   `unknown`. New `PsModuleCompatibilityUpdate` schema for the
   dedicated PUT.
 - New endpoint `PUT /admin/ps-modules/{id}/compatibility` (gated by
-  the existing `_GATE_PS_MODULES` enterprise feature) flips just the
+  the existing `_GATE_PS_MODULES` gate) flips just the
   flag without re-queueing an install. Refreshes the ORM row after
   commit so the response payload doesn't trip
   `MissingGreenlet` on async lazy-load.
@@ -2939,7 +2938,7 @@ retention windows + audit-log classification column — **shipped
     transaction — direct DELETE/UPDATE without the GUC bypass
     raises the original error.
 
-**Per-classification approval routing UX → tracked in *Deferred Enterprise Backlog* (top of file).**
+**Per-classification approval routing UX → tracked in *Deferred Pro Backlog* (top of file).**
 
 ### [done] Catalog search & filter in the portal — Prio 3 (2026-04-25)
 Pure client-side filter on `/portal/orders/new`: a search input matches
@@ -3016,25 +3015,24 @@ library; pure server-side detection from current DB state.
 
 ## Open — Distribution & Licensing Architecture
 
-### [open] Open Core Model: Community + Business (two tiers, one repo)
+### [done] Open Core Model: Community + Pro (two tiers, one repo)
 
-**Decision:** ip·Solis will be offered as an Open Core product.
+**Decision:** ip·Solis is offered as an Open Core product with two editions.
 - **Community Edition** — public GitHub repo, free to use, no feature-gating in code
-- **Business Edition** — pre-built images from private registry (ghcr.io), includes all additional modules; no separate Enterprise tier
+- **Pro Edition** — pre-built images from private registry (ghcr.io), includes all Pro-only modules
 
-All current Enterprise and Business features move into the Business Edition.
-Feature flags in code (`require_enterprise`, `require_business`, `BUSINESS_FEATURE_KEYS`, `ENTERPRISE_ONLY_FEATURE_KEYS`) are removed entirely — protection is achieved by the absence of code in the Community Edition, not by runtime gates.
+Feature availability is controlled by which code is present in the Docker image, not by runtime feature flags.
 
 **Steps:**
 
-- [x] **Module inventory:** Identify and document all Business-only modules/files (vsphere, xenserver, sccm, ServiceNow webhook, SCIM, HR webhook, Leaver Events, Audit Retention, Custom Deprovision, RBAC extensions, Password Policy)
+- [x] **Module inventory:** Identify and document all Pro-only modules/files (sccm, ServiceNow webhook, SCIM, HR webhook, Leaver Events, Certifications, Standalone Runbooks, SIEM streaming)
 - [x] **Two Dockerfiles:** Build `Dockerfile.community` (copies only Community files) and `Dockerfile.pro` (copies everything) from a shared mono-repo
 - [x] **Remove feature gates:** Remove `require_enterprise()`, `require_business()`, `BUSINESS_FEATURE_KEYS`, `ENTERPRISE_ONLY_FEATURE_KEYS` from code; clean up `is_feature_enabled()` and all `{% if is_enterprise %}` / `{% if is_business %}` template checks
 - [x] **Simplify license mechanism:** Keep Ed25519 signature and install UUID (for expiry dates + user limits), but remove feature control via license file — the license only controls `max_users`, `max_asset_types`, `expires_at`
 - [x] **GitHub Actions pipeline:** CI automatically builds both images on every release and pushes them to the private registry; community mirror repo is automatically populated with filtered files
 - [x] **Registry token management:** Pro customers get a revocable registry token; define process for issuance (after purchase) and revocation (on cancellation)
-- [x] **Customer onboarding docs:** `docker-compose.yml` + `.env.example` + installation guide for Business customers (docker login → compose up, done)
-- [x] **Set up public community repo:** github.com/xenpool/ipsolis as a public mirror without Business modules
+- [x] **Customer onboarding docs:** `docker-compose.yml` + `.env.example` + installation guide for Pro customers (docker login → compose up, done)
+- [x] **Set up public community repo:** github.com/xenpool/ipsolis as a public mirror without Pro modules
 
 ---
 

@@ -14,6 +14,25 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.4.12] — 2026-06-07
+
+### Changed
+
+- **Edition docs aligned to Community / Pro.** `EDITIONS.md` rewritten as a two-tier
+  Community / Pro model (the three-tier Community / Business / Enterprise system was
+  retired). `README.md` edition matrix updated: vSphere / XenServer moved to Community
+  (never Pro-only per the build), standalone runbooks added as a Pro-only row, column
+  renamed "Business" → "Pro". `docs/ENTERPRISE_FEATURES.md` renamed to
+  `docs/PRO_FEATURES.md`; vSphere / XenServer section corrected from "Pro Edition
+  only" to "Community Edition included"; stale "Enterprise license" and
+  "Enterprise-gated" notes removed throughout.
+- **Code comments and UI copy aligned.** Stale "Enterprise feature" comments in
+  `password_policy.py`, `approval_decision.py`, `beat_inventory.py`, `hr_webhook.py`,
+  `admin_users.html`, `maintenance.html`, and `settings.html` updated to reflect that
+  RBAC (ACL grants, SoD, password policy) and vSphere / XenServer are Community
+  features. License expiry email copy updated to "Pro license". `docker-compose.testlab.yml`
+  comment updated.
+
 ## [0.4.11] — 2026-06-05
 
 ### Added
@@ -45,7 +64,7 @@ the full upgrade procedure including DB backup recommendations.
   submitted the change, preventing self-approval loops.
 - **Pro edition gating: portal logo.** Custom portal logo settings are now gated
   behind the Pro license; Community installs see a `card_teaser` upgrade prompt.
-- **Enterprise teasers: shop-first flow.** All PRO teasers now link to the
+- **Pro teasers: shop-first flow.** All PRO teasers now link to the
   language-aware ip·Solis Shop (`/de|en|es|fr|it/shop` via `navigator.language`)
   with step-by-step Install ID checkout instructions. `sales@ipsolis.com` removed.
 - **Maintenance License tab "How it works"** updated: copy Install ID → visit shop →
@@ -89,7 +108,7 @@ the full upgrade procedure including DB backup recommendations.
   per-user quota guard in `portal.py`, `orders.py`, and `webhook.py` still referenced it.
   The dead conditional has been removed; `enforce_max_per_user` is now always applied.
 - **License key rotation (commercial-2026).** Updated Ed25519 signing key used to verify
-  Enterprise and PRO license files.
+  Pro license files.
 
 ### Changed
 
@@ -216,13 +235,10 @@ the full upgrade procedure including DB backup recommendations.
   `superadmin` to `admin`; the existing mint guard prevents privilege
   escalation. `/admin/maintenance/*` GET endpoints now reachable by
   `auditor` for compliance review; writes still require `admin`.
-- **RBAC enterprise gating.** Per-asset-type ACL grants, role-bound
-  API tokens, SoD enforcement, and the new password policy are now
-  Enterprise-only features. Community installs ship the full role
-  ladder, per-user accounts, and scope-based authz — anything an
-  ops team needs to run safely. The Enterprise upgrades target
-  auditor-grade compliance (scoped grants, role-bound tokens,
-  enforced SoD, password policy).
+- **RBAC (Community).** Per-asset-type ACL grants, role-bound
+  API tokens, SoD enforcement, and password policy ship in all editions.
+  Community installs include the full role ladder, per-user accounts,
+  scoped grants, role-bound tokens, enforced SoD, and password policy.
 - **Testlab compose stack** (`docker-compose.testlab.yml`) bundling
   Vault dev mode, rsyslog, and a mock SIEM/webhook receiver so SIEM
   / secret-backend / webhook integrations can be smoke-tested

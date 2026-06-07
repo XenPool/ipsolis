@@ -244,10 +244,9 @@ async def hr_leaver(
 _admin_router = APIRouter(
     prefix="/hr/admin",
     tags=["hr-admin"],
-    # Enterprise-gated: the leaver-events viewer is the read-side of
-    # the HR webhook + SCIM provisioning features (both already gated).
-    # On a community install the table is always empty anyway since no
-    # webhook/SCIM events can land — gating prevents confusion.
+    # Pro Edition only: the leaver-events viewer is the read-side of
+    # the HR webhook + SCIM provisioning features (both Pro-only routes).
+    # On a community install these routes are absent from the image.
     dependencies=[
         Depends(require_admin_key),
         require_scopes("audit:read"),

@@ -11,11 +11,9 @@ runtime via the Settings UI:
   locked before the next login attempt is allowed to start with a
   fresh counter. Default ``30`` minutes.
 
-Enforcement is itself an Enterprise feature; on a community license
-the helpers below short-circuit so the UX remains identical to
-slice-3 (no rotation, no lockout). Operators can still configure the
-values without an Enterprise license — they just won't be applied
-until a license is uploaded.
+Enforcement is active on all editions — both knobs default to ``0``
+(disabled) so existing installs are unaffected unless an operator
+explicitly enables them via the Settings UI.
 """
 from __future__ import annotations
 
@@ -33,10 +31,9 @@ from app.models.config import AppConfig
 class PasswordPolicy:
     """Effective policy for the current request.
 
-    Values come straight from ``app_config``; ``enforced`` reflects whether
-    the Enterprise feature flag is set. When ``enforced`` is False the
-    other fields are still populated (so the Settings UI can echo them)
-    but the helpers below treat the policy as inert.
+    Values come straight from ``app_config``; ``enforced`` is always
+    ``True`` — password policy ships in all editions. When the thresholds
+    are ``0`` the helpers are effectively no-ops.
     """
 
     rotation_days: int       # ``0`` = no rotation
@@ -49,7 +46,7 @@ _DEFAULT_LOCKOUT_MINUTES = 30
 
 
 async def read_policy(db: AsyncSession) -> PasswordPolicy:
-    """Return the policy as configured + whether Enterprise enforces it."""
+    """Return the active password policy from ``app_config``."""
     rows = await db.execute(
         select(AppConfig).where(AppConfig.key.in_([
             "rbac.password_rotation_days",

@@ -15,7 +15,7 @@ Each entry:
                     (or gate it off entirely). Empty list = no operator
                     knobs; the schedule is the only lever.
 * ``community``   — True when this task is meaningful on a community-tier
-                    install. Tasks gated behind Enterprise features are
+                    install. Tasks that depend on Pro-only routes are
                     flagged so the UI can render them as informational
                     only.
 

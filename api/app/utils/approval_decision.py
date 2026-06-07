@@ -211,11 +211,9 @@ async def apply_approval_decision(
     # specific approval is exempt from the SoD block (typical use:
     # a static compliance officer who is also an admin).
     #
-    # SoD *enforcement* is itself an Enterprise feature; community
-    # installs get the audit-trail breadcrumb (warning log) but the
-    # decision is allowed to proceed. This keeps small/single-team
-    # installs unblocked while still letting auditors see "this
-    # approver was also the configurer".
+    # SoD enforcement ships in all editions. The block below fires
+    # whenever the approver is also the configurer of the asset type
+    # (unless the approval row carries ``sod_exempt: true``).
     if decision == "approve" and not bypass_sod and not getattr(approval, "sod_exempt", False):
         is_config, excerpt = await is_configurer_of_asset_type(
             db, order.asset_type_id, approval.approver_email,

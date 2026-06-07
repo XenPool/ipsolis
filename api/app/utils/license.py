@@ -10,7 +10,7 @@ Offline, trust-based license system:
 Missing file or any validation failure silently falls back to Community edition.
 No phone-home, no telemetry, no online checks.
 No runtime feature gating — feature availability is controlled by which code is
-present in the Docker image (Community vs. Business), not by license key checks.
+present in the Docker image (Community vs. Pro), not by license key checks.
 
 Install binding
 ---------------

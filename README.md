@@ -6,20 +6,21 @@ Give your users a self-service portal to request, extend, and return IT assets (
 
 ## Editions
 
-| | Community | Business |
+| | Community | Pro |
 |---|---|---|
 | Self-service portal + approval workflows | ✓ | ✓ |
 | Runbook engine + PowerShell modules | ✓ | ✓ |
 | Asset lifecycle + cost reporting | ✓ | ✓ |
 | Admin RBAC + audit log | ✓ | ✓ |
 | Active Directory / Entra ID / SMTP | ✓ | ✓ |
-| vSphere / XenServer automation | — | ✓ |
+| vSphere / XenServer automation | ✓ | ✓ |
+| Standalone runbooks (ad-hoc + cron) | — | ✓ |
 | SCCM integration + ServiceNow webhook | — | ✓ |
 | SCIM 2.0 + HR leaver feed | — | ✓ |
 | Access certification campaigns | — | ✓ |
 | SIEM streaming (Splunk / Sentinel / webhook) | — | ✓ |
 
-Community is free and open-source (AGPL-3.0). Business adds enterprise integrations and ships as a pre-built image via the XenPool container registry. Contact **info@xenpool.com** for pricing.
+Community is free and open-source (AGPL-3.0). Pro adds operational integrations (ServiceNow, SCCM, SCIM, HR feed, standalone runbooks, SIEM streaming, access certifications) and ships as a pre-built image via the XenPool container registry. Contact **info@xenpool.com** for pricing.
 
 ## Why This Exists
 
@@ -237,7 +238,7 @@ The overlay is purely additive — same database, same migrations, same image ta
 
 See the full deployment guide: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**
 
-For per-feature setup walkthroughs (Admin RBAC, external secret management — including AppRole/Kubernetes/AssumeRole auth + bulk-migration tool, SIEM streaming — including Sentinel Logs Ingestion API, Teams approval cards, OpenTelemetry tracing, HA Beat, conditional approval rules with the recursive editor, per-classification approval routing, auto-decline, cost / chargeback, …) see **[docs/ENTERPRISE_FEATURES.md](docs/ENTERPRISE_FEATURES.md)**. High-availability deployment patterns (multi-replica api / worker, Postgres standby + failover) live in section 12 of **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. Grafana dashboard + Prometheus alerts in **[docs/grafana/](docs/grafana/)**; ops runbooks in **[docs/runbooks/](docs/runbooks/)**.
+For per-feature setup walkthroughs (Admin RBAC, external secret management — including AppRole/Kubernetes/AssumeRole auth + bulk-migration tool, SIEM streaming — including Sentinel Logs Ingestion API, Teams approval cards, OpenTelemetry tracing, HA Beat, conditional approval rules with the recursive editor, per-classification approval routing, auto-decline, cost / chargeback, …) see **[docs/PRO_FEATURES.md](docs/PRO_FEATURES.md)**. High-availability deployment patterns (multi-replica api / worker, Postgres standby + failover) live in section 12 of **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. Grafana dashboard + Prometheus alerts in **[docs/grafana/](docs/grafana/)**; ops runbooks in **[docs/runbooks/](docs/runbooks/)**.
 
 Summary:
 1. Provision a Linux server with Docker
@@ -298,7 +299,7 @@ backups/            Persisted DB dumps (bind-mounted into api + worker)
 licenses/           Signed `.lic` license file (read-write)
 docs/
   DEPLOYMENT.md             Production deployment guide
-  ENTERPRISE_FEATURES.md    Business edition feature walkthroughs
+  PRO_FEATURES.md           Pro edition feature walkthroughs
   grafana/                  Ready-to-import dashboard + Prometheus alerts
   runbooks/                 Operational runbooks (e.g. compose project rename)
 ```
