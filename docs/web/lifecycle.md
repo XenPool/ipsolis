@@ -51,7 +51,7 @@ Typical use: physical workstations, personally assigned licenses.
 | `Failed` | Reinstall runbook failed — manual intervention required |
 | `maintenance` | Taken offline by an operator |
 
-The admin dashboard shows tile counts for Free / In Use / Failed / Reinstall / Maintenance / Total, updated via live HTMX fragments.
+The admin dashboard shows tile counts for Free / In Use / Failed / Reinstall / Maintenance / Total, updated via live HTMX fragments. (The asset pool list labels the same state "Assigned" — both refer to the underlying `busy` status.)
 
 ---
 
@@ -71,7 +71,7 @@ Key fields:
 | **Deprovision policy** | What happens when an asset is returned or expired |
 | **Pool capacity** | Maximum pool size; capacity warnings appear on the dashboard at ≥80% / ≥95% fill |
 | **Lifecycle renewable** | Whether users can request extensions |
-| **Eligible requestors** *(Business)* | AD group restriction — only members can see and request this type |
+| **Eligible requestors** | AD group restriction — only members can see and request this type |
 | **Max per user** | Per-user quota (pooled and personal models) |
 | **Active / inactive** | Inactive types disappear from the portal but historical orders remain intact |
 
@@ -88,7 +88,7 @@ The deprovision policy controls what ip·Solis does when an order is returned, e
 | `return_to_pool_reinstall` | Removes access, marks as `Reinstall`, then runs the reinstall runbook before returning to `Free` |
 | `deallocate` | Removes access and deallocates the underlying resource (e.g., powers off a VM) |
 | `delete` | Removes access and deletes the underlying resource permanently |
-| `custom_runbook` *(Business)* | Runs a fully custom deprovision runbook defined per asset type |
+| `custom_runbook` | Runs a fully custom deprovision runbook defined per asset type |
 
 ---
 
@@ -103,7 +103,7 @@ Users can request an extension from the **My IT** portal page if the asset type 
 
 ---
 
-## Access Certification Campaigns *(Business)*
+## Access Certification Campaigns *(Pro)*
 
 Certification campaigns let compliance teams periodically review which users have active access to specific asset types — a requirement for ISO 27001, SOX, and PCI audits.
 
