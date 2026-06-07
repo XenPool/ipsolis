@@ -32,7 +32,9 @@ function Write-Log {
 }
 
 function Update-AssetStatus([string]$name, [string]$status) {
-    $sql = "UPDATE asset_pool SET status = %s::asset_status, updated_at = NOW() WHERE name = %s"
+    # Clear expires_at so a previous order's expiry date does not linger on a
+    # free/failed asset that is no longer assigned to anyone.
+    $sql = "UPDATE asset_pool SET status = %s::asset_status, expires_at = NULL, updated_at = NOW() WHERE name = %s"
     $raw = python /app/tasks/utils/db_execute.py $sql $status $name 2>&1
     $text = if ($raw -is [array]) { $raw -join "`n" } else { [string]$raw }
     try { $res = $text | ConvertFrom-Json } catch {
