@@ -183,7 +183,7 @@ Log in with:
 2. Upload the `.lic` file you received from XenPool.
 3. The page shows the license tier, seat count, and expiry date once accepted.
 
-Without a valid license the platform runs in Community mode — Business features
+Without a valid license the platform runs in Community mode — Pro features
 (SCCM, ServiceNow webhook, SIEM export, certifications) are inactive.
 
 ---
@@ -269,4 +269,4 @@ docker compose restart api worker beat
 
 - Documentation: `https://ipsolis.yourcompany.com/docs` (once running)
 - Email: support@xenpool.de
-- License issues: kontakt@xenpool.de
+- License issues: sales@xenpool.de

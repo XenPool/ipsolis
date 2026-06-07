@@ -38,7 +38,7 @@ Every audit row carries a `triggered_by` field that identifies the exact credent
 
 This means auditors can filter not just by *who* but by *with what authority* — distinguishing an admin using an API token from the same admin using their session.
 
-### Audit Log Viewer *(Business)*
+### Audit Log Viewer
 
 ![Audit log viewer](./screenshots/admin-audit-log.png)
 
@@ -55,7 +55,7 @@ PostgreSQL `BEFORE` statement triggers on the `audit_log` table block `DELETE`, 
 
 ---
 
-## Order Change Log *(Business)*
+## Order Change Log
 
 The `order_change_log` table captures every mutation to an order as a separate diff row — separate from the audit log to make order history easy to navigate without filtering by entity type. Visible in the admin UI's order detail page.
 
@@ -78,7 +78,7 @@ The classification is **written into every audit row** at the time the order is 
 
 ---
 
-## SIEM Audit-Log Streaming *(Enterprise)*
+## SIEM Audit-Log Streaming *(Pro)*
 
 Every `audit_log` row can be streamed in real time to an external SIEM. Configure the SIEM backend at **Admin → Settings → SIEM**.
 
@@ -97,7 +97,7 @@ The Celery Beat task `siem-stream-audit-log` runs every minute and forwards all 
 
 ---
 
-## Audit Retention Policies *(Enterprise)*
+## Audit Retention Policies
 
 A daily Beat task at 03:00 prunes audit rows past the configured retention windows. Configure retention at **Admin → Settings → Compliance → Retention**.
 
@@ -114,7 +114,7 @@ The task records `last_run_at`, `last_pruned` count, and a per-class breakdown i
 
 ---
 
-## Prometheus Metrics *(Community)*
+## Prometheus Metrics
 
 ip·Solis exposes a Prometheus-compatible `/metrics` endpoint with:
 
@@ -125,7 +125,7 @@ Enable with `metrics.enabled = true` in **Admin → Settings**. Route labels use
 
 ---
 
-## OpenTelemetry Tracing *(Community)*
+## OpenTelemetry Tracing
 
 Auto-instrumented FastAPI requests, SQLAlchemy queries, and Celery tasks produce spans exported via OTLP HTTP to any standard collector. A request that dispatches a runbook produces a single trace spanning the API and worker — making it possible to see end-to-end timing from HTTP request to runbook completion.
 

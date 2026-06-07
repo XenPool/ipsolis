@@ -119,7 +119,7 @@
 <script>
 const ROLES = ['superadmin', 'admin', 'approver', 'auditor', 'helpdesk'];
 // Per-asset-type ACL grants are a Community feature (all editions).
-const IS_ENTERPRISE = true;
+const SHOW_GRANTS_COL = true;
 let _grantsModalUserId = null;
 
 function showBanner(data) {
@@ -180,9 +180,9 @@ async function loadUsers() {
       // Scope cell: only meaningful for ``admin`` role today; superadmins
       // bypass scoping, others have no write authority anyway. We still
       // render the editor button for any role so admins can see the
-      // current grant set without changing it. Enterprise-only — on
-      // community the column header is suppressed and we drop the cell.
-      var scopeCell = IS_ENTERPRISE
+      // current grant set without changing it. Per-asset-type ACL grants
+      // are an all-editions feature, so the column is always rendered.
+      var scopeCell = SHOW_GRANTS_COL
         ? ('<td class="px-4 py-2.5">' +
              '<button onclick="openGrantsModal(' + u.id + ', ' + qUsername + ')" ' +
              '        class="text-xs text-blue-600 hover:underline">Edit grants…</button>' +
@@ -208,8 +208,7 @@ async function loadUsers() {
         '</tr>';
     }).join('');
     // Lazy-load grant counts so the table render isn't blocked on N requests.
-    // Enterprise-only — without a license, /admin/admin-users/{id}/grants 403s.
-    if (IS_ENTERPRISE) {
+    if (SHOW_GRANTS_COL) {
       users.forEach(function(u) { loadGrantSummary(u.id); });
     }
   } catch (e) {

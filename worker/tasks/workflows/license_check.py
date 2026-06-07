@@ -43,7 +43,7 @@ def check_license_expiry(self) -> dict:
                 f"<p>Licensee: {info.licensee}<br>"
                 f"Expired on: {info.expires_at.date().isoformat()}</p>"
                 f"<p>The instance has fallen back to Community edition. "
-                f"Contact info@xenpool.com to renew.</p>"
+                f"Contact sales@xenpool.de to renew.</p>"
             ),
         )
         return {"status": "expired", "days": days_remaining, "licensee": info.licensee}
@@ -65,7 +65,7 @@ def check_license_expiry(self) -> dict:
             f"<strong>{days_remaining} day(s)</strong>.</p>"
             f"<p>Licensee: {info.licensee}<br>"
             f"Expires on: {info.expires_at.date().isoformat()}</p>"
-            f"<p>Contact info@xenpool.com to renew before expiry.</p>"
+            f"<p>Contact sales@xenpool.de to renew before expiry.</p>"
         ),
     )
     return {"status": "warning", "days": days_remaining, "threshold": matched}

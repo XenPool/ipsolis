@@ -264,7 +264,7 @@ async def license_remove() -> Response:
             )
         # Reload the license cache AND push the now-Community edition into
         # the Jinja2 globals — without this the Dashboard / nav locks stay
-        # showing Enterprise until the api restarts.
+        # showing Pro until the api restarts.
         set_license_globals(license_utils.load_license(force_reload=True))
         logger.info("admin: license removed — instance is now Community edition")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

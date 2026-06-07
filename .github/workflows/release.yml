@@ -47,7 +47,7 @@ jobs:
           fi
 
   # ── Community images ──────────────────────────────────────────────────────────
-  # Built from Dockerfile.community — Business-only files stripped at build time.
+  # Built from Dockerfile.community — Pro-only files stripped at build time.
   # Set these packages to PUBLIC in GitHub org settings so anyone can pull them.
   community:
     name: Build community images
@@ -152,11 +152,11 @@ jobs:
 
   # ── Community mirror ──────────────────────────────────────────────────────────
   # Pushes a filtered copy of the source tree to the public community repo
-  # (github.com/xenpool/ipsolis) with Business-only files removed.
+  # (github.com/xenpool/ipsolis-community) with Pro-only files removed.
   #
   # Requires a repo secret: COMMUNITY_REPO_TOKEN
   #   A classic PAT (from any XenPool org member account) with scope: repo
-  #   Target repo: github.com/xenpool/ipsolis
+  #   Target repo: github.com/xenpool/ipsolis-community
   #   How to add: Settings → Secrets and variables → Actions → New repository secret
   community-mirror:
     name: Push community mirror
@@ -167,7 +167,7 @@ jobs:
         with:
           fetch-depth: 0   # full history needed — shallow clone breaks the push
 
-      - name: Remove Business-only files
+      - name: Remove Pro-only files
         run: |
           # API routes
           rm -f \
@@ -185,6 +185,7 @@ jobs:
 
           # Worker workflows and modules
           rm -f \
+            worker/tasks/workflows/standalone_runner.py \
             worker/tasks/workflows/sccm_probe.py \
             worker/tasks/workflows/siem_streamer.py \
             worker/tasks/workflows/certification_notifications.py \
@@ -217,6 +218,11 @@ jobs:
 
           # Pro customer onboarding docs
           rm -rf docs/onboarding
+
+          # Internal CI workflows must not be exposed in the public mirror
+          rm -f \
+            .github/workflows/deploy-prelive.yml \
+            .github/workflows/trigger-docs-rebuild.yml
 
           # This pipeline: replace with the community-only workflow
           # (stored as .github/community-release.yml in the private repo so the

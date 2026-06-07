@@ -20,7 +20,7 @@ Give your users a self-service portal to request, extend, and return IT assets (
 | Access certification campaigns | — | ✓ |
 | SIEM streaming (Splunk / Sentinel / webhook) | — | ✓ |
 
-Community is free and open-source (AGPL-3.0). Pro adds operational integrations (ServiceNow, SCCM, SCIM, HR feed, standalone runbooks, SIEM streaming, access certifications) and ships as a pre-built image via the XenPool container registry. Contact **info@xenpool.com** for pricing.
+Community is free and open-source (AGPL-3.0). Pro adds operational integrations (ServiceNow, SCCM, SCIM, HR feed, standalone runbooks, SIEM streaming, access certifications) and ships as a pre-built image via the XenPool container registry. Contact **sales@xenpool.de** for pricing.
 
 ## Why This Exists
 
@@ -382,7 +382,7 @@ This project is licensed under the **GNU Affero General Public License v3.0 (AGP
 
 You are free to use, modify, and distribute this software. If you run a modified version as a network service, you must make the source code available to your users.
 
-For commercial licensing options (e.g., proprietary use without AGPL obligations), contact: **info@xenpool.com**
+For commercial licensing options (e.g., proprietary use without AGPL obligations), contact: **sales@xenpool.de**
 
 See [LICENSE](LICENSE) for the full license text.
 
@@ -396,7 +396,7 @@ Contributions are welcome! Please open an issue first to discuss what you'd like
 ## Support
 
 - **Community**: [GitHub Issues](https://github.com/XenPool/ipsolis-community/issues) for bug reports and feature requests
-- **Commercial support**: Contact info@xenpool.com for SLA-backed support contracts and consulting
+- **Commercial support**: Contact sales@xenpool.de for SLA-backed support contracts and consulting
 
 ---
 

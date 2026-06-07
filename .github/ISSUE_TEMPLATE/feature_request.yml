@@ -1,0 +1,48 @@
+name: ✨ Feature request
+description: Propose a concrete, actionable improvement to ip·Solis.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        For early-stage or open-ended ideas, please start a thread in
+        [Discussions → Ideas](https://github.com/XenPool/ipsolis-community/discussions/categories/ideas)
+        first. Use this template once the idea is concrete enough to act on.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What are you trying to achieve, and where does ip·Solis fall short today?
+      placeholder: As an IT operator, I need to … but currently …
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like ip·Solis to do? UI, API, runbook, config — be specific.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you already use, or other approaches you weighed.
+  - type: dropdown
+    id: edition
+    attributes:
+      label: Which edition is this for?
+      options:
+        - Community
+        - Pro
+        - Either / not sure
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched existing issues and discussions and this is not a duplicate.
+          required: true

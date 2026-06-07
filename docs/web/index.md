@@ -29,15 +29,14 @@ Built for on-premises datacenters. Deployable in an afternoon.
 
 ## Editions
 
-ip·Solis ships as a single codebase with three edition tiers gated by a runtime license:
+ip·Solis ships in two editions. The split is built into the Docker image — the Community image simply omits the Pro-only files (absent endpoints return HTTP 404, not 403); there is no runtime feature-gating by license key.
 
 | Edition | Summary |
 |---|---|
-| **Community** | AGPL-3.0, fully functional for small-to-mid-sized teams — up to 3 asset types, 100 managed users |
-| **Business** | Commercial license — adds advanced workflows, standalone runbooks, PS module management, certifications, API tokens, and audit log viewer. Up to 2,000 users |
-| **Enterprise** | Commercial license — adds identity sync (SCIM/HR webhook), ServiceNow, hypervisor integrations, advanced RBAC, external secret backends, HA Beat, and more. Unlimited users |
+| **Community** | AGPL-3.0, free and fully functional for on-premises IT asset lifecycle management. Self-service portal, approval workflows, asset-type runbooks, PowerShell module store, cost reporting, audit log + viewer + retention, API tokens, RBAC, and Active Directory / Entra ID / SMTP / Teams / vSphere / XenServer integrations. |
+| **Pro** | Commercial license — adds the operational integrations stripped from the Community image: standalone (ad-hoc & cron) runbooks, access certification campaigns, SCIM 2.0, HR leaver webhook, ServiceNow inbound webhook, SCCM, and SIEM audit-log streaming. |
 
-Features that require a specific edition are marked throughout these docs.
+Pro-only features are marked *(Pro)* throughout these docs.
 
 ---
 

@@ -53,7 +53,7 @@ Steps are added from the module registry. Each step specifies:
 - **Module** — the script module to call
 - **Parameters** — values mapped to the module's PowerShell `param()` block. Parameters can be static values or dynamic references to order attributes (e.g., `{{order.username}}`), asset attributes, or global variables
 
-Steps can be reordered using the drag handle (`☰`) or the ↑/↓ keyboard buttons *(Business)*.
+Steps can be reordered using the drag handle (`☰`) or the ↑/↓ keyboard buttons.
 
 ### Step Execution Tracking
 
@@ -83,7 +83,7 @@ The in-app script editor at **Admin → Script Modules** supports:
 
 ---
 
-## Standalone Runbooks *(Business)*
+## Standalone Runbooks *(Pro)*
 
 Standalone runbooks are not tied to any asset type. They are useful for housekeeping tasks, one-off operations, bulk user management, and scheduled maintenance jobs.
 
@@ -107,7 +107,7 @@ The cron expression follows standard UNIX syntax (minute, hour, day-of-month, mo
 
 ---
 
-## PowerShell Module Store *(Business)*
+## PowerShell Module Store
 
 ip·Solis maintains a registry of PowerShell modules that can be loaded by script modules running in the worker container.
 
@@ -122,7 +122,7 @@ Installed modules are stored in the `ps_modules` table and are available to all 
 
 ---
 
-## Global Variables *(Business)*
+## Global Variables
 
 Global variables are key-value pairs stored in the database and injectable into runbook step parameters. They are useful for values that appear in many runbooks but may change over time — domain names, server addresses, organisation codes.
 
@@ -146,6 +146,6 @@ Scripts that call external systems (AD, vSphere, XenServer, SCCM) do so using th
 
 ## Observability
 
-- **OpenTelemetry tracing** *(Community)* — each Celery task produces a span linked to the originating API request trace. Traces flow to any OTLP-compatible collector (Jaeger, Tempo, SigNoz, Honeycomb)
+- **OpenTelemetry tracing** — each Celery task produces a span linked to the originating API request trace. Traces flow to any OTLP-compatible collector (Jaeger, Tempo, SigNoz, Honeycomb)
 - **Step logs** — available in the order detail page in the admin UI for every runbook execution
 - **Standalone run history** — each cron or ad-hoc run records start time, finish time, per-step status, and operator notes
