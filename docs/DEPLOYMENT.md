@@ -13,7 +13,7 @@ This guide walks you through setting up the ip·Solis platform on a fresh on-pre
 5. [Create the Production Compose Overlay](#5-create-the-production-compose-overlay)
 6. [Start the Stack](#6-start-the-stack)
 7. [Initial Admin Setup](#7-initial-admin-setup)
-   - [Install Your License (Business / Enterprise)](#install-your-license-business--enterprise)
+   - [Install Your License (Pro)](#install-your-license-pro)
 8. [Entra ID SSO (Portal Authentication)](#8-entra-id-sso-portal-authentication)
 9. [Verify the Deployment](#9-verify-the-deployment)
 10. [Backup & Maintenance](#10-backup--maintenance)
@@ -244,7 +244,7 @@ services:
       - ./scripts:/app/scripts:ro
 
   # Beat schedule lives in Redis (celery-redbeat); no on-disk schedule
-  # volume needed. See ENTERPRISE_FEATURES.md → "HA Beat scheduler" for
+  # volume needed. See PRO_FEATURES.md → "HA Beat scheduler" for
   # multi-replica scaling: `docker compose up -d --scale beat=2`.
 
   nginx:
@@ -296,7 +296,7 @@ ipsolis-nginx         Up
 ```
 
 The beat container has no fixed `container_name` so it can be scaled
-for HA — see [ENTERPRISE_FEATURES.md → HA Beat scheduler](ENTERPRISE_FEATURES.md#ha-beat-scheduler-multi-replica-with-celery-redbeat).
+for HA — see [PRO_FEATURES.md → HA Beat scheduler](PRO_FEATURES.md#ha-beat-scheduler-multi-replica-with-celery-redbeat).
 
 Verify the application:
 
@@ -343,7 +343,7 @@ to each operator:
 superadmin > admin > approver > auditor > helpdesk
 ```
 
-See **[ENTERPRISE_FEATURES.md → Admin RBAC](ENTERPRISE_FEATURES.md#admin-rbac-roles-acl-grants-sod-password-policy)**
+See **[PRO_FEATURES.md → Admin RBAC](PRO_FEATURES.md#admin-rbac-roles-acl-grants-sod-password-policy)**
 for the full role ladder, per-asset-type ACL grants, separation-of-duties
 enforcement, and password-policy options.
 
@@ -361,12 +361,12 @@ For new integrations prefer **Per-integration API tokens** (Admin UI
 optional role binding and scoped permissions. The legacy single
 shared key is kept for back-compat only.
 
-### Install Your License (Business / Enterprise)
+### Install Your License (Pro)
 
 Community Edition runs with no license file — skip this step if you
 are evaluating on Community.
 
-For Business or Enterprise, XenPool delivers a signed `.lic` file
+For Pro, XenPool delivers a signed `.lic` file
 after purchase. Install it through the Admin UI:
 
 1. Navigate to **Admin → License** (or open
@@ -587,7 +587,7 @@ snapshot is fresh when an unexpected regression appears.
 If you run multiple Beat replicas (`--scale beat=N`), `docker compose
 up --build -d` rolls the containers one at a time and the leader lock
 hands over to the surviving replica within ~13 s (see
-[ENTERPRISE_FEATURES.md → HA Beat scheduler](ENTERPRISE_FEATURES.md#ha-beat-scheduler-multi-replica-with-celery-redbeat)).
+[PRO_FEATURES.md → HA Beat scheduler](PRO_FEATURES.md#ha-beat-scheduler-multi-replica-with-celery-redbeat)).
 For single-Beat installs there's a brief gap during the restart
 where periodic tasks aren't running — usually invisible since cadences
 are minutes / hours.
@@ -599,7 +599,7 @@ are minutes / hours.
 ip·Solis is built to scale horizontally on every layer except Postgres
 (single-writer by design). The Beat scheduler shipped multi-replica in
 slice 1 — see
-[ENTERPRISE_FEATURES.md → HA Beat scheduler](ENTERPRISE_FEATURES.md#ha-beat-scheduler-multi-replica-with-celery-redbeat)
+[PRO_FEATURES.md → HA Beat scheduler](PRO_FEATURES.md#ha-beat-scheduler-multi-replica-with-celery-redbeat)
 — and this section covers the remaining three layers: API replicas
 behind a load balancer, worker replicas per Celery queue, and a
 Postgres read-replica + failover plan.
@@ -664,7 +664,7 @@ done
 * **Health check**: `GET /health` (unauthenticated). Returns
   `{status: ok | degraded}` aggregating database, redis, and beat
   liveness — see the *Beat-alive health probe* in
-  ENTERPRISE_FEATURES. The endpoint is fast (one Redis ping + one
+  PRO_FEATURES. The endpoint is fast (one Redis ping + one
   DB SELECT 1) so a 5–10s LB check interval is safe.
 * **TLS termination**: keep on the load balancer (or the existing
   nginx sidecar from section 5). Replicas serve plain HTTP

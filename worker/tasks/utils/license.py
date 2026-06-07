@@ -79,7 +79,7 @@ _CACHED_MTIME: float | None = None  # mtime of the license file at cache time (N
 # Per-install identifier registered by application bootstrap (api lifespan or
 # worker task init). When set, the verifier enforces install-bound licenses;
 # when None, install-bound licenses fail closed (treated as Community) so a
-# bootstrap-order race can't accidentally grant Enterprise without a binding
+# bootstrap-order race can't accidentally grant Pro without a binding
 # check.
 _INSTALL_UUID: str | None = None
 
@@ -229,7 +229,7 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
     # Install-bound licenses: ``install_uuid`` in the payload must match the
     # locally-registered install UUID. Fail closed if the binding can't be
     # checked (bootstrap hasn't registered it yet) — better to drop to
-    # Community than grant Enterprise to an install we can't verify.
+    # Community than grant Pro to an install we can't verify.
     license_install_uuid = data.get("install_uuid")
     if license_install_uuid:
         license_install_uuid = str(license_install_uuid).strip()

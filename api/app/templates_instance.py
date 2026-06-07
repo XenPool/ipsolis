@@ -92,7 +92,7 @@ templates.env.globals["edition"] = "community"
 templates.env.globals["license_info"] = None
 
 # Feature availability globals — overridden by main.py after try/except imports.
-# False means the Business-only route file was not present in this image.
+# False means the Pro-only route file was not present in this image.
 templates.env.globals["has_certifications"] = False
 templates.env.globals["has_leaver_events"] = False
 

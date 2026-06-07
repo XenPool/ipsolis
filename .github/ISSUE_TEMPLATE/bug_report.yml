@@ -1,0 +1,80 @@
+name: 🐞 Bug report
+description: Report a confirmed, reproducible defect in ip·Solis.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Thanks for taking the time to file a bug. Please search existing issues
+        first. For questions or "how do I…?", use
+        [Discussions](https://github.com/XenPool/ipsolis-community/discussions) instead.
+        **Never** paste secrets, license files, or unredacted audit logs.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including what you expected instead.
+      placeholder: When I approve an order via the Teams card, the order stays "Pending Approval"…
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: dropdown
+    id: edition
+    attributes:
+      label: Edition
+      options:
+        - Community
+        - Pro
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ip·Solis version
+      description: See the `VERSION` file or Admin → Maintenance → License.
+      placeholder: "0.4.11"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: How you run ip·Solis and the relevant external systems.
+      value: |
+        - Host OS / arch:
+        - Docker / Compose version:
+        - Reverse proxy (nginx / other):
+        - Run mode (direct / TLS-fronted):
+        - Relevant integrations (AD, Entra ID, vSphere, XenServer, SCCM, SMTP, Teams):
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: >-
+        Output from `docker compose logs api worker beat` around the failure.
+        Redact hostnames, credentials, tokens, and personal data.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I ran the latest database migrations (`alembic upgrade head`).
+          required: true
+        - label: This report contains no secrets, license files, or unredacted personal data.
+          required: true

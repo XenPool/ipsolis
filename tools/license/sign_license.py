@@ -13,7 +13,7 @@ The payload must be a JSON object with at least the following fields:
     max_asset_types – 0 = unlimited
     issued_at    – ISO-8601 timestamp
     expires_at   – ISO-8601 timestamp
-    features     – list; use ["all"] for full Enterprise access
+    features     – list; use ["all"] for full Pro access
 
 Optional install-binding field:
 

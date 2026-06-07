@@ -45,7 +45,7 @@ Each password change produces an audit row (`password_changed_self`) with no val
 
 ---
 
-## Password Policy *(Enterprise)*
+## Password Policy
 
 Operators can enforce a minimum password length and account lockout policy for admin accounts:
 
@@ -59,7 +59,7 @@ Configure in **Admin → Settings → Security**.
 
 ---
 
-## Per-Asset-Type ACL Grants *(Enterprise)*
+## Per-Asset-Type ACL Grants
 
 Scope individual `admin` users to a subset of asset types. When an admin has at least one ACL grant, they enter "scoped mode":
 
@@ -77,7 +77,7 @@ Manage grants in **Admin → Users → [user] → Asset Type Access**.
 
 ---
 
-## Separation of Duties *(Enterprise)*
+## Separation of Duties
 
 An admin who configured an asset type cannot also approve access requests against it. This prevents a single person from both defining what is granted and deciding who gets it.
 
@@ -89,11 +89,11 @@ An admin who configured an asset type cannot also approve access requests agains
 
 ---
 
-## Bearer Token Authentication *(Business)*
+## Bearer Token Authentication
 
 Named API tokens replace the global `X-Admin-Key` with individually managed, revocable, expiring credentials. See [Integrations → API Tokens](./integrations#api-tokens) for full documentation.
 
-### Role Binding *(Enterprise)*
+### Role Binding
 
 API tokens may be issued with a specific role in addition to their scopes. A token with `admin:*` scope but `auditor` role is blocked from write operations — the most restrictive of scope and role wins.
 

@@ -58,7 +58,7 @@ Use **Test Entra Credentials** to verify the client credentials via a token-flow
 
 ---
 
-## SCIM 2.0 *(Enterprise)*
+## SCIM 2.0 *(Pro)*
 
 ip·Solis exposes a leaver-focused SCIM 2.0 endpoint at `/scim/v2/*` for identity providers that support SCIM deprovisioning. Compatible with Okta, SailPoint, and Ping.
 
@@ -76,7 +76,7 @@ See [Lifecycle & Asset Pool → HR Leaver Flow](./lifecycle#hr-leaver-flow) for 
 
 ---
 
-## HR Leaver Webhook *(Enterprise)*
+## HR Leaver Webhook *(Pro)*
 
 A purpose-built webhook at `POST /hr/leaver` for HR systems that push termination events. Supported natively for Workday, SAP SuccessFactors, Microsoft Graph, and a generic ip·Solis-native format.
 
@@ -86,7 +86,7 @@ See [Lifecycle & Asset Pool → HR Leaver Flow](./lifecycle#hr-leaver-flow) for 
 
 ---
 
-## ServiceNow Webhook *(Enterprise)*
+## ServiceNow Webhook *(Pro)*
 
 ip·Solis can receive order dispatch requests from ServiceNow via an HMAC-signed inbound webhook at `POST /webhook/servicenow`.
 
@@ -96,7 +96,7 @@ The webhook payload maps directly to an order creation request. ServiceNow-origi
 
 ---
 
-## VMware vSphere *(Enterprise)*
+## VMware vSphere
 
 vSphere VM lifecycle operations are executed via PowerCLI scripts stored in the script module store (category: `vmware`). The worker container runs `pwsh` (PowerShell 7 on Linux) with SSL certificate bypass pre-configured for self-signed vCenter certificates.
 
@@ -111,7 +111,7 @@ vSphere operations (power on/off, clone, delete, reconfigure) are implemented as
 
 ---
 
-## XenServer / XCP-ng *(Enterprise)*
+## XenServer / XCP-ng
 
 XenServer and XCP-ng VM lifecycle operations follow the same pattern as vSphere — PowerShell scripts stored as script modules (category: `xenserver`) and executed via `pwsh` in the worker container.
 
@@ -126,7 +126,7 @@ SSL certificate prompts are auto-answered via stdin injection so scripts don't h
 
 ---
 
-## SCCM *(Enterprise)*
+## SCCM *(Pro)*
 
 SCCM integration enables automated OS deployment workflows:
 
@@ -167,7 +167,7 @@ Use **Send Test Email** to verify the connection before saving.
 
 ---
 
-## External Secret Backends *(Enterprise)*
+## External Secret Backends
 
 Replace plaintext credentials in `app_config` with references to an external secret manager. ip·Solis resolves references at read time with a 60-second process-local TTL cache.
 
@@ -193,7 +193,7 @@ Plain string values continue to work unchanged, so you can migrate one credentia
 
 ---
 
-## API Tokens *(Business)*
+## API Tokens
 
 Per-integration named API tokens replace the single shared `X-Admin-Key` with individually revocable, expiring, scoped bearer tokens.
 
@@ -213,7 +213,7 @@ Tokens are stored as SHA-256 hashes. The raw token (`xpat_…`) is shown once on
 | `scim:read` | SCIM GET operations |
 | `scim:write` | SCIM POST/PUT/PATCH/DELETE (triggers leaver flow) |
 
-### Role Binding *(Enterprise)*
+### Role Binding
 
 Tokens may be issued with a specific role (`superadmin`, `admin`, `approver`, `auditor`, `helpdesk`). Role-gated routes enforce both scope and role. A creator can only issue tokens at or below their own role — no privilege escalation.
 

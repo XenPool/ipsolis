@@ -40,13 +40,13 @@ The consumer breakdown relies on an AD attribute snapshot taken at order creatio
 
 ---
 
-## Per-Order Cost Projection *(Business)*
+## Per-Order Cost Projection
 
 When an asset type has a `monthly_cost` configured, the portal's order form shows the projected total before the user submits. The calculation is `monthly_cost × months_requested` and appears in the **Access & Duration** card. This gives requesters visibility into cost before committing to an order.
 
 ---
 
-## FX Conversion *(Business)*
+## FX Conversion
 
 When asset types are priced in different currencies, the cost report can convert everything to a single canonical reporting currency.
 
@@ -61,7 +61,7 @@ With FX enabled, the cost report gets a **Show in** currency selector that conve
 
 ---
 
-## Historical Snapshots *(Business)*
+## Historical Snapshots
 
 A daily Celery Beat task (`cost-report-snapshot-daily`) at 02:00 captures the current state of all cost report views into the `cost_report_snapshots` table. This enables retrospective analysis — answering questions like "what was our projected spend in March?" without losing the active-order data that only exists as a live moment in time.
 
@@ -71,7 +71,7 @@ Configure snapshot retention with `cost.snapshot_retention_days` (default: 365 d
 
 ---
 
-## Cost Threshold Alerts *(Business)*
+## Cost Threshold Alerts
 
 Operators can define monthly spend ceilings per `(cost_center, currency)` pair. When the projected monthly spend for a cost center crosses a threshold, ip·Solis sends an email alert to the configured recipients.
 

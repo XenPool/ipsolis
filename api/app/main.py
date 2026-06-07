@@ -28,7 +28,7 @@ from app.routes import (
 from app.utils import metrics as metrics_util
 from app.templates_instance import set_app_title, set_app_logo_config, set_license_globals, refresh_app_config_if_stale, templates as _templates
 
-# ── Business-only routes ──────────────────────────────────────────────────────
+# ── Pro-only routes ───────────────────────────────────────────────────────────
 # These modules are absent in the Community edition image. Each block tries the
 # import and registers the router only when the file is present.
 try:

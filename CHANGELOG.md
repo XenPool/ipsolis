@@ -14,6 +14,24 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-06-07
+
+### Changed
+
+- **CI: upgrade `actions/github-script` v7 → v8.** Fixes Node.js 20 deprecation on
+  GitHub Actions runners (required from June 16 2026). Adds `permissions: {}` block
+  and documents that `IPSOLIS_WEB_DISPATCH_PAT` needs `Contents: write` on
+  `XenPool/ipsolis-web` for cross-repo dispatch.
+- **Terminology sweep — Community / Pro (final pass).** All remaining "Business" /
+  "Enterprise" tier references updated across `release.yml`, `main.py`, templates,
+  license utilities, `docs/DEPLOYMENT.md`, `docs/onboarding/INSTALL.md`, and
+  `docs/web/*.md`. Community mirror strip list corrected: `standalone_runner.py` and
+  internal CI workflows (`deploy-prelive.yml`, `trigger-docs-rebuild.yml`) added.
+  Community mirror repo URL corrected to `ipsolis-community`.
+- **GitHub community health files.** Added `CODE_OF_CONDUCT.md`, `CONTRIBUTING.md`,
+  `SECURITY.md`, `SUPPORT.md`, issue templates (bug report, feature request), and
+  discussion template (Q&A).
+
 ## [0.4.13] — 2026-06-07
 
 ### Fixed

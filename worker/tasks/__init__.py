@@ -25,7 +25,7 @@ _COMMUNITY_INCLUDE = [
 ]
 
 # PRO-only workflows — absent in Community images. Celery only loads them when present.
-_BUSINESS_INCLUDE = [
+_PRO_INCLUDE = [
     "tasks.workflows.standalone_runner",
     "tasks.workflows.sccm_probe",
     "tasks.workflows.siem_streamer",
@@ -34,7 +34,7 @@ _BUSINESS_INCLUDE = [
 ]
 
 _include = _COMMUNITY_INCLUDE + [
-    m for m in _BUSINESS_INCLUDE
+    m for m in _PRO_INCLUDE
     if importlib.util.find_spec(m) is not None
 ]
 
