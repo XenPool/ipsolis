@@ -52,10 +52,10 @@ class TrustedKey:
 # Bundled key material
 # ---------------------------------------------------------------------------
 
-# Existing Ed25519 key — 32 bytes hex-encoded, embedded since initial release.
-# Generate a new keypair with: python tools/license/generate_keypair.py
+# Demo Ed25519 public key — corresponds to DEMO_LICENSE_PRIVATE_KEY in ipsolis-web.
+# Derived from the private key: python -c "from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey; ..."
 _DEMO_LEGACY_RAW: bytes = bytes.fromhex(
-    "e2b380f0d1c5205b119c96e7802165b55398c15f5b429e60c334a0e63315f23d"
+    "d6341922909a07880fc3e43ebb4c71eaa2f81d5ca82cd3c178d59d6513e81f7d"
 )
 
 # Commercial Ed25519 key introduced with the ipsolis-web shop (2026).
