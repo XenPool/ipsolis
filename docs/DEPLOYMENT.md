@@ -67,13 +67,31 @@ Inbound: ports **80** and **443** must be reachable from your users' browsers.
 
 ## 2. Get the Software
 
-Clone the repository onto your server:
+**Community Edition** — clone the public repository:
 
 ```bash
 cd /opt
-git clone <repository-url> ipsolis
+git clone https://github.com/XenPool/ipsolis-community.git ipsolis
 cd ipsolis
 ```
+
+**Pro Edition** — clone the community repository for the compose files and
+configuration, then authenticate with the XenPool container registry so Docker
+can pull the Pro images at startup:
+
+```bash
+cd /opt
+git clone https://github.com/XenPool/ipsolis-community.git ipsolis
+cd ipsolis
+
+# Log in with the registry token issued after purchase
+docker login ghcr.io -u <your-github-username> -p <your-registry-token>
+```
+
+The Pro images (`ghcr.io/xenpool/ipsolis-pro-api` and
+`ghcr.io/xenpool/ipsolis-pro-worker`) are pulled automatically when you
+start the stack. Contact **info@xenpool.com** if you have not received your
+registry token.
 
 ---
 
