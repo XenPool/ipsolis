@@ -5,6 +5,7 @@ on:
     branches: [prelive]
     paths:
       - 'docs/web/**'
+      - 'CHANGELOG.md'
 
 # No GITHUB_TOKEN permissions needed — dispatch uses a PAT secret.
 # Required secret: IPSOLIS_WEB_DISPATCH_PAT
