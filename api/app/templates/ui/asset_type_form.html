@@ -652,8 +652,13 @@
         Runbooks
         <span class="text-muted/70 font-normal ml-1">– one runbook per lifecycle action</span>
       </label>
+      <p class="text-xs text-muted/70 mb-3">
+        A runbook is an ordered sequence of automation steps that ip·Solis executes when an order reaches a lifecycle event (Provision, Modify, or Deprovision).
+        Each step calls a <strong class="text-muted font-medium">module</strong> — a reusable script block such as <em>Create AD Group</em>, <em>Run SCCM Task Sequence</em>, or <em>Send Email</em>.
+        ip·Solis ships with a library of example modules under <a href="/ui/script-modules" class="underline hover:text-body">Script Modules</a>; administrators can also write and upload their own.
+      </p>
       {% if not asset_type %}
-      <p class="text-xs text-muted/70 mb-2">Save the asset definition first, then configure its runbooks here.</p>
+      <p class="text-xs text-amber-500/80 mb-2">Save the asset definition first, then configure its runbooks here.</p>
       {% endif %}
       <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
         {% for slot in runbook_slots %}
@@ -769,7 +774,7 @@
                 <option value="pci"      {% if _cls == 'pci' %}selected{% endif %}>PCI (cardholder)</option>
               </select>
               <span class="col-span-7 text-[11px] text-muted/60 leading-snug pl-2">
-                Sensitive classes show a warning badge to requesters and surface in the audit trail for retention queries.
+                Sensitive classes show a warning badge to requesters and are flagged in the audit trail for easier compliance filtering.
               </span>
             </div>
           </div>
@@ -814,7 +819,7 @@
                 <option value="pci">PCI (cardholder)</option>
               </select>
               <span class="col-span-7 text-[11px] text-muted/60 leading-snug pl-2">
-                Sensitive classes show a warning badge to requesters and surface in the audit trail for retention queries.
+                Sensitive classes show a warning badge to requesters and are flagged in the audit trail for easier compliance filtering.
               </span>
             </div>
           </div>
@@ -827,7 +832,7 @@
     <!-- Deprovision Policy -->
     <div id="section-deprovision" class="scroll-mt-4 border-t border-token-border pt-5">
       <label class="block text-xs font-medium text-muted mb-2">Deprovision Strategy
-        <span class="text-muted/70 font-normal ml-1">– what happens on revoke/cancel?</span>
+        <span class="text-muted/70 font-normal ml-1">– what happens when an order is cancelled by the user, revoked by an admin, or automatically expired?</span>
       </label>
       {# 3-tuple: (value, short label, description) #}
       {% set dp_opts = [
@@ -1257,6 +1262,16 @@ function initSectionNav() {
     hit.classList.add('text-blue-600', 'dark:text-blue-300', 'border-blue-500', 'bg-blue-50/40', 'dark:bg-blue-500/10');
   }
 
+  // After a click, suppress the observer for 800 ms so it can't override the
+  // active state before the smooth-scroll settles (last-section edge case).
+  var _suppressUntil = 0;
+  links.forEach(function(a) {
+    a.addEventListener('click', function() {
+      _suppressUntil = Date.now() + 800;
+      setActive(a.dataset.target);
+    });
+  });
+
   // Track which sections are currently intersecting; pick the topmost one.
   var visible = new Set();
   var observer = new IntersectionObserver(function(entries) {
@@ -1264,6 +1279,7 @@ function initSectionNav() {
       if (e.isIntersecting) visible.add(e.target.id);
       else visible.delete(e.target.id);
     });
+    if (Date.now() < _suppressUntil) return;
     var ordered = Object.keys(byId).filter(function(id) { return visible.has(id); });
     if (ordered.length) setActive(ordered[0]);
   }, { rootMargin: '-10% 0px -70% 0px', threshold: 0 });
