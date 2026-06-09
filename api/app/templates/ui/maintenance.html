@@ -1522,16 +1522,16 @@
       msgEl.classList.add('hidden');
     }
 
-    document.getElementById(‘download-btn’).classList.toggle(‘hidden’, !filePresent);
-    document.getElementById(‘remove-btn’).classList.toggle(‘hidden’, !filePresent);
+    document.getElementById('download-btn').classList.toggle('hidden', !filePresent);
+    document.getElementById('remove-btn').classList.toggle('hidden', !filePresent);
 
-    var banner = document.getElementById(‘grace-period-banner’);
-    var detail = document.getElementById(‘grace-period-detail’);
+    var banner = document.getElementById('grace-period-banner');
+    var detail = document.getElementById('grace-period-detail');
     if (info.in_grace_period && info.message) {
       detail.textContent = info.message;
-      banner.classList.remove(‘hidden’);
+      banner.classList.remove('hidden');
     } else {
-      banner.classList.add(‘hidden’);
+      banner.classList.add('hidden');
     }
   }
 
