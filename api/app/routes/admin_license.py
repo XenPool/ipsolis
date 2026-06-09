@@ -245,6 +245,17 @@ async def license_download() -> FileResponse:
     )
 
 
+@router.get("/text")
+async def license_text() -> dict[str, str]:
+    """Return the software license text baked into this image."""
+    license_file = Path(__file__).parent.parent.parent / "LICENSE"
+    try:
+        text = license_file.read_text(encoding="utf-8")
+    except OSError:
+        text = "LICENSE file not found."
+    return {"text": text}
+
+
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 async def license_remove() -> Response:
     """Remove the currently installed license."""
