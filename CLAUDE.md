@@ -84,7 +84,7 @@ present — never overwrites user edits.
 - Not rely on interactive prompts (SSL cert prompts auto-answered via stdin)
 
 **Developer tools** (not runtime modules) live under `tools/`:
-- `tools/license/` — Ed25519 keypair generator + license signer for Pro .lic files
+- `tools/license/` — Ed25519 keypair generator + license signer for commercial .lic files
 - `tools/validate_locales.py` — portal i18n JSON key-tree validator
 
 ### Database Migrations

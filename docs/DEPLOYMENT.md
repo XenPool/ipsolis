@@ -67,7 +67,7 @@ Inbound: ports **80** and **443** must be reachable from your users' browsers.
 
 ## 2. Get the Software
 
-**Community Edition** — clone the public repository:
+Clone the repository and pull the images — no authentication required:
 
 ```bash
 cd /opt
@@ -75,23 +75,13 @@ git clone https://github.com/XenPool/ipsolis-community.git ipsolis
 cd ipsolis
 ```
 
-**Pro Edition** — clone the community repository for the compose files and
-configuration, then authenticate with the XenPool container registry so Docker
-can pull the Pro images at startup:
+The Docker images (`ghcr.io/xenpool/ipsolis-api` and
+`ghcr.io/xenpool/ipsolis-worker`) are public and pulled automatically when
+you start the stack.
 
-```bash
-cd /opt
-git clone https://github.com/XenPool/ipsolis-community.git ipsolis
-cd ipsolis
-
-# Log in with the registry token issued after purchase
-docker login ghcr.io -u <your-github-username> -p <your-registry-token>
-```
-
-The Pro images (`ghcr.io/xenpool/ipsolis-pro-api` and
-`ghcr.io/xenpool/ipsolis-pro-worker`) are pulled automatically when you
-start the stack. Contact **info@xenpool.com** if you have not received your
-registry token.
+> **Licensing:** ip·Solis is free for non-commercial and evaluation use.
+> Commercial use requires a license — see [LICENSE](../LICENSE) and
+> contact **sales@xenpool.de** to purchase.
 
 ---
 
@@ -379,29 +369,26 @@ For new integrations prefer **Per-integration API tokens** (Admin UI
 optional role binding and scoped permissions. The legacy single
 shared key is kept for back-compat only.
 
-### Install Your License (Pro)
+### Install Your License
 
-Community Edition runs with no license file — skip this step if you
-are evaluating on Community.
+Evaluation and non-commercial use require no license file. For commercial
+deployments, XenPool delivers a signed `.lic` file after purchase.
 
-For Pro, XenPool delivers a signed `.lic` file
-after purchase. Install it through the Admin UI:
+Install it through the Admin UI:
 
 1. Navigate to **Admin → License** (or open
    `https://selfservice.yourcompany.com/ui/license`).
 2. Click **Upload license** and select your `ipsolis.lic` file.
-3. The page reloads showing edition, licensee, and expiry. Gated
-   features activate immediately — no restart required.
+3. The page reloads showing licensee name and expiry — no restart required.
 
-**Grace period**: when a license expires, Pro features remain active
-for **30 days** to cover procurement delays. The admin UI shows an
-amber warning banner throughout this window and the daily health alert
-email fires each day. After 30 days the instance falls back to
-Community edition automatically.
+**Grace period**: when a license expires, a 30-day grace period applies
+before the license status reverts to unlicensed. The Admin UI shows an
+amber warning banner and the daily health alert email fires each day
+throughout the window.
 
-**Overwriting**: upload a new `.lic` at any time to renew or upgrade.
-The old file is replaced in-place; the license cache refreshes on
-the next request (mtime-keyed, zero downtime).
+**Overwriting**: upload a new `.lic` at any time to renew. The old file
+is replaced in-place; the license cache refreshes on the next request
+(mtime-keyed, zero downtime).
 
 **Env-var override** (air-gapped / automated deployments): mount the
 `.lic` file into the container at an alternate path and set:
@@ -411,8 +398,7 @@ IPSOLIS_LICENSE_PATH=/run/secrets/ipsolis.lic
 ```
 
 The default path is `/app/license/ipsolis.lic` (inside the `ipsolis-api`
-container). Docker secrets or a bind-mount both work — the file just
-needs to be readable by the api process.
+container). Docker secrets or a bind-mount both work.
 
 ### Configuration Checklist
 

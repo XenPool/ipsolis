@@ -16,62 +16,25 @@ from app.database import AsyncSessionLocal
 from app.models.config import AppConfig
 from app.routes import (
     admin, admin_api_tokens, admin_approval_delegations, admin_auth,
-    admin_cost_report, admin_license, admin_maintenance, admin_modules,
-    admin_runbooks, admin_seed_export, admin_self, admin_setup,
-    admin_users,
+    admin_certifications, admin_cost_report, admin_license, admin_maintenance,
+    admin_modules, admin_runbooks, admin_seed_export, admin_self, admin_setup,
+    admin_standalone_runbooks, admin_users,
     approvals_external, assets, auth,
+    certifications_external,
     health,
+    hr_webhook,
     metrics as metrics_route,
-    orders, portal, portal_delegations,
+    orders, portal, portal_certifications, portal_delegations,
+    scim,
     ui,
+    webhook,
 )
 from app.utils import metrics as metrics_util
 from app.templates_instance import set_app_title, set_app_logo_config, set_license_globals, refresh_app_config_if_stale, templates as _templates
-
-# ── Pro-only routes ───────────────────────────────────────────────────────────
-# These modules are absent in the Community edition image. Each block tries the
-# import and registers the router only when the file is present.
-try:
-    from app.routes import webhook as _webhook_mod
-    _ROUTER_WEBHOOK = _webhook_mod.router
-except ImportError:
-    _ROUTER_WEBHOOK = None
-
-try:
-    from app.routes import scim as _scim_mod
-    _ROUTER_SCIM = _scim_mod.router
-except ImportError:
-    _ROUTER_SCIM = None
-
-try:
-    from app.routes import hr_webhook as _hr_mod
-    _ROUTER_HR = _hr_mod.router
-    _ROUTER_HR_ADMIN = _hr_mod.admin_router
-except ImportError:
-    _ROUTER_HR = None
-    _ROUTER_HR_ADMIN = None
-
-_ROUTER_STANDALONE_RUNBOOKS = None
-try:
-    from app.routes import admin_standalone_runbooks as _standalone_runbooks_mod
-    _ROUTER_STANDALONE_RUNBOOKS = _standalone_runbooks_mod.router
-except ImportError:
-    pass
-
-_HAS_CERTIFICATIONS = False
-try:
-    from app.routes import admin_certifications as _admin_certifications_mod
-    from app.routes import certifications_external as _certifications_external_mod
-    from app.routes import portal_certifications as _portal_certifications_mod
-    _HAS_CERTIFICATIONS = True
-except ImportError:
-    pass
-
-# Publish feature availability to Jinja2 so nav links only appear when the
-# corresponding route files are present in this image.
-_templates.env.globals["has_certifications"] = _HAS_CERTIFICATIONS
-_templates.env.globals["has_leaver_events"] = _ROUTER_HR is not None
 from app.utils.license import load_license
+
+_templates.env.globals["has_certifications"] = True
+_templates.env.globals["has_leaver_events"] = True
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -230,31 +193,25 @@ else:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 app.include_router(health.router)
-if _ROUTER_WEBHOOK:
-    app.include_router(_ROUTER_WEBHOOK)
+app.include_router(webhook.router)
 app.include_router(orders.router)
 app.include_router(assets.router)
 app.include_router(admin.router)
 app.include_router(admin_modules.router)
 app.include_router(admin_runbooks.router)
-if _ROUTER_STANDALONE_RUNBOOKS:
-    app.include_router(_ROUTER_STANDALONE_RUNBOOKS)
+app.include_router(admin_standalone_runbooks.router)
 app.include_router(admin_maintenance.router)
 app.include_router(admin_license.router)
 app.include_router(admin_api_tokens.router)
 app.include_router(admin_users.router)
 app.include_router(admin_self.router)
 app.include_router(admin_cost_report.router)
-if _HAS_CERTIFICATIONS:
-    app.include_router(_admin_certifications_mod.router)
-    app.include_router(_certifications_external_mod.router)
-    app.include_router(_portal_certifications_mod.router)
-if _ROUTER_HR:
-    app.include_router(_ROUTER_HR)
-if _ROUTER_HR_ADMIN:
-    app.include_router(_ROUTER_HR_ADMIN)
-if _ROUTER_SCIM:
-    app.include_router(_ROUTER_SCIM)
+app.include_router(admin_certifications.router)
+app.include_router(certifications_external.router)
+app.include_router(portal_certifications.router)
+app.include_router(hr_webhook.router)
+app.include_router(hr_webhook.admin_router)
+app.include_router(scim.router)
 app.include_router(admin_setup.router)
 app.include_router(admin_approval_delegations.router)
 app.include_router(admin_seed_export.router)
@@ -262,6 +219,6 @@ app.include_router(admin_auth.router)  # admin login/logout — no auth, before 
 app.include_router(ui.router)
 app.include_router(auth.router)   # login / callback / logout — before portal
 app.include_router(portal.router)
-app.include_router(portal_delegations.router)  # /portal/delegations + /portal/api/delegations
+app.include_router(portal_delegations.router)
 app.include_router(approvals_external.router)  # tokenized /approve/{token} (no auth required)
 app.include_router(metrics_route.router)        # /metrics (Prometheus)
