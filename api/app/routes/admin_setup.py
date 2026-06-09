@@ -83,7 +83,7 @@ async def setup_state(db: AsyncSession = Depends(get_db)) -> dict:
         {
             "key": "branding",
             "label": "Set application title and logo",
-            "done": bool(app_title and app_title != "ip·Solis") or bool(app_logo),
+            "done": bool(app_title and app_title not in ("ip·Solis", "Ipsolis")) or bool(app_logo),
             "hint": "Customise the portal so users recognise your tenant's branding.",
             "link": "/ui/settings#general",
             "tier": "essential",
@@ -91,7 +91,7 @@ async def setup_state(db: AsyncSession = Depends(get_db)) -> dict:
         {
             "key": "email",
             "label": "Configure SMTP for notifications",
-            "done": bool(smtp_server and smtp_from),
+            "done": bool(smtp_server and smtp_server != "localhost" and smtp_from),
             "hint": "Approval requests, expiry reminders, and alerts go via SMTP.",
             "link": "/ui/settings#email",
             "tier": "essential",
@@ -99,7 +99,7 @@ async def setup_state(db: AsyncSession = Depends(get_db)) -> dict:
         {
             "key": "ad",
             "label": "Connect to Active Directory",
-            "done": bool(ad_server),
+            "done": bool(ad_server and ad_server != "dc.example.com"),
             "hint": "Required for user lookup, manager resolution, and group membership checks.",
             "link": "/ui/settings#ad",
             "tier": "essential",
