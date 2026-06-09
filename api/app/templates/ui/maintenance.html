@@ -121,7 +121,7 @@
         <p class="text-sm font-semibold text-amber-800 dark:text-amber-300">License expired — grace period active</p>
         <p id="grace-period-detail" class="mt-1 text-xs text-amber-700 dark:text-amber-400"></p>
         <p class="mt-1 text-xs text-amber-700 dark:text-amber-400">
-          Pro features remain enabled. Contact
+          All features remain enabled. Contact
           <a href="mailto:sales@xenpool.de" class="underline">sales@xenpool.de</a>
           to renew before the grace period ends.
         </p>
@@ -173,17 +173,14 @@
   <section class="bg-surface-raised rounded-lg border border-token-border p-5 text-xs text-muted leading-relaxed">
     <h3 class="text-xs font-semibold uppercase tracking-wider text-body mb-2">How it works</h3>
     <ol class="list-decimal pl-5 space-y-1">
-      <li>Copy your <strong class="text-body">Install ID</strong> from the section above, then visit the
-        <a class="underline hover:text-body ipsolis-shop-link" href="https://ipsolis.com/en/shop" target="_blank" rel="noopener">ip·Solis Shop</a>
-        and paste it during checkout.</li>
-      <li>Download the signed <code class="px-1 bg-surface rounded">.lic</code> file and upload it below.
+      <li>Purchase a license at the
+        <a class="underline hover:text-body ipsolis-shop-link" href="https://ipsolis.com/en/shop" target="_blank" rel="noopener">ip·Solis Shop</a>.
+        You will receive a signed <code class="px-1 bg-surface rounded">.lic</code> file by email.</li>
+      <li>Upload the <code class="px-1 bg-surface rounded">.lic</code> file below.
         The signature is checked against the public key baked into this build — if the file is corrupt
         or from a different issuer, the upload is rejected and your current license stays untouched.</li>
       <li>On success, the new license takes effect immediately across all
         processes (api, worker, beat). No restart needed.</li>
-      <li>Pro Edition features (standalone runbooks, SCCM, ServiceNow webhook, SCIM,
-        HR leaver feed, access certifications, SIEM streaming) unlock as soon as the Pro license is active.
-        All other features are available in Community.</li>
     </ol>
   </section>
 
@@ -518,8 +515,8 @@
 
   <p class="text-[11px] text-muted/60 mt-3 leading-snug max-w-3xl">
     All times are in <strong>Europe/Berlin</strong> — set in the worker's Celery config.
-    Tasks marked <span class="text-[9px] tracking-widest uppercase bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded font-semibold align-middle">PRO</span>
-    are only meaningful on Pro installs — they run on Community too but have nothing to act on.
+    Tasks marked <span class="text-[9px] tracking-widest uppercase bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded font-semibold align-middle">BUILT-IN</span>
+    are system maintenance tasks that run automatically on all installs.
     Need a different cadence? See <em>Tuning Beat schedules</em> in
     <a href="/docs" class="text-blue-600 hover:underline">DEPLOYMENT.md §12</a> — or
     open a feature request for an editable scheduler if your use case is recurring.
@@ -1468,12 +1465,16 @@
     const validity = document.getElementById('validity-badge');
     const filePresent = !!info.file_present;
 
-    if (info.edition === 'pro' && info.valid) {
-      editionBadge.textContent = 'Pro';
+    if (info.file_present && info.valid) {
+      editionBadge.textContent = 'Licensed';
       editionBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ' +
         'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300';
+    } else if (info.file_present && !info.valid) {
+      editionBadge.textContent = 'Unlicensed';
+      editionBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ' +
+        'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300';
     } else {
-      editionBadge.textContent = 'Community';
+      editionBadge.textContent = 'No License';
       editionBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ' +
         'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-200';
     }
@@ -1605,9 +1606,9 @@
         } else {
           const info = body.info || {};
           if (body.already_expired) {
-            showBanner('License installed, but it is already expired (' + licFmtDate(info.expires_at) + '). Running as Community.', 'warn');
-          } else if (info.edition === 'pro' && info.valid) {
-            showBanner('Pro license installed for ' + info.licensee + '.', 'success');
+            showBanner('License installed, but it is already expired (' + licFmtDate(info.expires_at) + '). Please renew.', 'warn');
+          } else if (info.valid) {
+            showBanner('License installed for ' + info.licensee + '.', 'success');
           } else {
             showBanner('License installed.', 'success');
           }
