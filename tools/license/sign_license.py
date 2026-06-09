@@ -6,23 +6,18 @@ private key, and writes the signed ``.lic`` file (JSON with an added
 
 The payload must be a JSON object with at least the following fields:
 
-    license_id   – UUID or unique identifier
-    licensee     – Customer / organization name
-    edition      – "pro" (use "community" for test/community fallbacks)
-    max_users    – 0 = unlimited
+    license_id      – UUID or unique identifier
+    licensee        – Customer / organization name
+    edition         – "pro" (use "community" for test/community fallbacks)
+    max_users       – 0 = unlimited
     max_asset_types – 0 = unlimited
-    issued_at    – ISO-8601 timestamp
-    expires_at   – ISO-8601 timestamp
-    features     – list; use ["all"] for full Pro access
+    issued_at       – ISO-8601 timestamp
+    expires_at      – ISO-8601 timestamp
+    features        – list; use ["all"] for full Pro access
 
-Optional install-binding field:
-
-    install_uuid – UUID copied from the customer's install (visible on the
-                   License page in the admin UI, or in the ``app_config``
-                   row keyed ``install.uuid``). When present, the runtime
-                   verifier rejects the license on any other install,
-                   preventing license-sharing across deployments.
-                   Omit the field for portable licenses (legacy behaviour).
+After expiry the runtime grants a 30-day grace period during which Pro features
+remain active. No install-binding is applied — licenses are portable across
+deployments and do not need to be reissued on reinstall.
 
 After signing, the script re-loads the output file and verifies the signature
 against the derived public key as a safety check.

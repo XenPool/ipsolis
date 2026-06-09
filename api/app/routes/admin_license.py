@@ -84,16 +84,10 @@ def _license_info_dict() -> dict[str, Any]:
         "issued_at": info.issued_at.isoformat() if info.issued_at else None,
         "expires_at": info.expires_at.isoformat() if info.expires_at else None,
         "features": list(info.features),
+        "in_grace_period": info.in_grace_period,
         "valid": info.valid,
         "message": info.message,
         "file_present": license_utils.LICENSE_PATH.exists(),
-        # ``install_uuid`` (license-side) is the binding the .lic file claims;
-        # ``local_install_uuid`` is the per-install identifier this deployment
-        # generated. They must match for an install-bound license to validate.
-        # The customer copies ``local_install_uuid`` when requesting a new
-        # license so we can bake it into the next .lic.
-        "install_uuid": info.install_uuid,
-        "local_install_uuid": license_utils.get_install_uuid(),
         "verified_by": verified_by,
     }
 
