@@ -17,13 +17,14 @@ from app.models.asset import AssetType
 from app.models.runbook import RunbookDefinition, RunbookStep
 from app.models.script_module import ScriptModule
 from app.utils.auth import require_admin_key
+from app.utils.rbac import require_role
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin",
     tags=["admin-runbooks"],
-    dependencies=[Depends(require_admin_key)],
+    dependencies=[Depends(require_admin_key), require_role("admin")],
 )
 
 

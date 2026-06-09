@@ -1,14 +1,54 @@
+{% set warnings = summary.warnings or [] %}
+{% if warnings %}
+{# Capacity-pressure band — only renders when at least one pool is ≥80% full.
+   Auto-refreshed alongside the rest of the summary every 30 s via HTMX. #}
+{% set crit_count = warnings | selectattr('severity', 'equalto', 'critical') | list | length %}
+{% set warn_count = warnings | length - crit_count %}
+<div class="mb-4 rounded-lg border {% if crit_count %}border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10{% else %}border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10{% endif %} px-4 py-3">
+  <div class="flex items-start gap-3">
+    <svg class="shrink-0 w-5 h-5 mt-0.5 {% if crit_count %}text-red-600{% else %}text-amber-600{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.74-3l-6.93-12a2 2 0 00-3.48 0L3.34 16a2 2 0 001.73 3z"/>
+    </svg>
+    <div class="flex-1 min-w-0">
+      <p class="text-sm font-semibold {% if crit_count %}text-red-900 dark:text-red-200{% else %}text-amber-900 dark:text-amber-200{% endif %}">
+        {% if crit_count and warn_count %}
+          {{ crit_count }} pool{{ 's' if crit_count != 1 else '' }} at critical capacity, {{ warn_count }} approaching
+        {% elif crit_count %}
+          {{ crit_count }} pool{{ 's' if crit_count != 1 else '' }} at critical capacity
+        {% else %}
+          {{ warn_count }} pool{{ 's' if warn_count != 1 else '' }} approaching capacity
+        {% endif %}
+      </p>
+      <ul class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs">
+        {% for w in warnings %}
+        {% set pct_class = 'text-red-700 dark:text-red-300 font-semibold' if w.severity == 'critical' else 'text-amber-800 dark:text-amber-300' %}
+        <li class="flex items-center gap-2">
+          <span class="inline-block w-1.5 h-1.5 rounded-full {% if w.severity == 'critical' %}bg-red-500{% else %}bg-amber-500{% endif %}"></span>
+          <a href="{% if w.kind == 'pooled' %}/ui/asset-types/{{ w.asset_type_id }}/edit{% else %}/ui/asset-pool?asset_type_id={{ w.asset_type_id }}{% endif %}"
+             class="text-body hover:underline truncate">{{ w.asset_type_name }}</a>
+          <span class="text-muted/60">·</span>
+          <span class="{{ pct_class }} tabular-nums">{{ w.fill_pct }}%</span>
+          <span class="text-muted/60 tabular-nums">({{ w.used }}/{{ w.total }})</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% set cards = [
-  ("Free",        summary.free,        "bg-green-50",  "text-green-700",  "border-green-200", "free"),
-  ("In use",      summary.busy,        "bg-blue-50",   "text-blue-700",   "border-blue-200",  "busy"),
-  ("Reclaiming",  summary.reclaiming,  "bg-orange-50", "text-orange-700", "border-orange-200","reclaiming"),
-  ("Maintenance", summary.maintenance, "bg-gray-50",   "text-gray-700",   "border-gray-200",  "maintenance"),
-  ("Total",       summary.total,       "bg-white",     "text-gray-900",   "border-gray-300",  ""),
+  ("Free",        summary.free,        "bg-green-50 dark:bg-green-500/10",   "text-green-700 dark:text-green-300",   "border-green-200 dark:border-green-500/30", "Free"),
+  ("In use",      summary.busy,        "bg-blue-50 dark:bg-blue-500/10",     "text-blue-700 dark:text-blue-300",     "border-blue-200 dark:border-blue-500/30",  "busy"),
+  ("Failed",      summary.failed,      "bg-red-50 dark:bg-red-500/10",       "text-red-700 dark:text-red-300",       "border-red-200 dark:border-red-500/30",    "Failed"),
+  ("Reinstall",   summary.reinstall,   "bg-purple-50 dark:bg-purple-500/10", "text-purple-700 dark:text-purple-300", "border-purple-200 dark:border-purple-500/30","Reinstall"),
+  ("Maintenance", summary.maintenance, "bg-surface-raised",                  "text-body",                            "border-token-border",                       "maintenance"),
+  ("Total",       summary.total,       "bg-surface",                         "text-heading",                          "border-token-border",                       ""),
 ] %}
-<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
   {% for label, count, bg, fg, border, slug in cards %}
-  <div class="rounded-lg border {{ border }} {{ bg }} px-5 py-4">
-    <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">{{ label }}</p>
+  <div class="rounded-xl border {{ border }} {{ bg }} px-5 py-4 shadow-sm shadow-slate-900/5 dark:shadow-black/20 hover:shadow-md transition-shadow">
+    <p class="text-xs font-medium text-muted uppercase tracking-wide">{{ label }}</p>
     {% if slug %}
     <a href="/ui/asset-pool?status={{ slug }}"
        class="mt-1 block text-3xl font-bold {{ fg }} hover:underline">{{ count }}</a>

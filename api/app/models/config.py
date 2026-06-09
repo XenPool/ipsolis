@@ -7,7 +7,7 @@ from app.database import Base
 
 
 class AppConfig(Base):
-    """Central variable management – Ivanti equivalent.
+    """Central variable management
 
     Configuration values that can be changed at runtime,
     ohne den Container neu zu starten.

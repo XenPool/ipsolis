@@ -3,11 +3,34 @@
 {% block title %}Request New Access – {{ app_title }}{% endblock %}
 
 {% block content %}
+<style>
+  /* Tailwind via CDN ships without the typography plugin, so we hand-tune the
+     few elements admin-supplied markdown can produce. Scoped to .help-md so it
+     doesn't leak into the rest of the page. */
+  .help-md p { margin: 0.25rem 0; }
+  .help-md p + p { margin-top: 0.5rem; }
+  .help-md h1, .help-md h2, .help-md h3, .help-md h4 { font-weight: 600; color: var(--token-heading, inherit); margin: 0.6rem 0 0.25rem; }
+  .help-md h1 { font-size: 1.05rem; }
+  .help-md h2 { font-size: 1rem; }
+  .help-md h3, .help-md h4 { font-size: 0.95rem; }
+  .help-md ul, .help-md ol { margin: 0.4rem 0 0.4rem 1.25rem; }
+  .help-md ul { list-style: disc; }
+  .help-md ol { list-style: decimal; }
+  .help-md li { margin: 0.1rem 0; }
+  .help-md a { color: rgb(37 99 235); text-decoration: underline; }
+  .help-md a:hover { color: rgb(29 78 216); }
+  .help-md code { background: rgba(0,0,0,0.06); padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.85em; }
+  .help-md pre { background: rgba(0,0,0,0.06); padding: 0.5rem 0.75rem; border-radius: 4px; overflow-x: auto; margin: 0.5rem 0; }
+  .help-md pre code { background: transparent; padding: 0; }
+  .help-md blockquote { border-left: 3px solid rgba(0,0,0,0.15); padding-left: 0.75rem; color: var(--token-muted, #666); margin: 0.5rem 0; }
+  .help-md hr { border: 0; border-top: 1px solid rgba(0,0,0,0.1); margin: 0.75rem 0; }
+</style>
+
 <div class="mb-6">
-  <a href="/portal/" class="text-sm text-gray-500 hover:text-gray-800">← Orders</a>
+  <a href="/portal/" class="text-sm text-muted hover:text-heading" data-i18n="portal.common.back_to_orders">← Orders</a>
 </div>
 
-<h1 class="text-lg font-semibold text-gray-900 mb-6">Request New Access</h1>
+<h1 class="text-lg font-semibold text-heading mb-6" data-i18n="portal.order_new.page_title">Request New Access</h1>
 
 {% if error %}
 <div class="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
@@ -18,49 +41,106 @@
 <form method="post" action="/portal/orders/new" class="space-y-6">
 
   <!-- Asset-Typ -->
-  <div class="bg-white rounded-lg border border-gray-200 p-5">
-    <h2 class="text-sm font-semibold text-gray-700 mb-4">Asset Type</h2>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+  <div class="bg-surface rounded-lg border border-token-border p-5">
+    <h2 class="text-sm font-semibold text-body mb-4" data-i18n="portal.order_new.section_asset_type">Asset Definition</h2>
+
+    {# Search + category filter — pure client-side, hidden when there are
+       only a handful of definitions because it just clutters the page. #}
+    {% if asset_types | length > 6 %}
+    <div class="mb-4 flex flex-col sm:flex-row gap-2">
+      <div class="relative flex-1">
+        <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted/60 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/>
+        </svg>
+        <input type="text" id="catalog-search" autocomplete="off"
+               placeholder="Search definitions…"
+               data-i18n-attr-placeholder="portal.order_new.catalog_search_placeholder"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm pl-9 pr-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+      </div>
+      <select id="catalog-filter-category"
+              class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <option value="" data-i18n="portal.order_new.catalog_filter_all">All categories</option>
+        <option value="platform_access" data-i18n="portal.order_new.catalog_filter_platform">VDI / Server / Cloud</option>
+        <option value="application_access" data-i18n="portal.order_new.catalog_filter_application">Business &amp; SaaS Apps</option>
+        <option value="data_access" data-i18n="portal.order_new.catalog_filter_data">Data &amp; Collaboration</option>
+        <option value="device_access" data-i18n="portal.order_new.catalog_filter_device">Clients / MDM / WLAN</option>
+        <option value="infrastructure_access" data-i18n="portal.order_new.catalog_filter_infrastructure">Network / Firewall / Admin</option>
+      </select>
+      <button type="button" id="catalog-clear-filters"
+              class="hidden text-xs text-muted hover:text-body underline px-2 self-center"
+              data-i18n="portal.order_new.catalog_clear_filters">Clear</button>
+    </div>
+    {% endif %}
+
+    <div id="catalog-no-match" class="hidden text-center text-sm text-muted/70 py-6"
+         data-i18n="portal.order_new.catalog_no_match">No definitions match your search.</div>
+
+    <div id="catalog-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       {% for t in asset_types %}
       {% set sold_out = t.id in unavailable_ids %}
-      <label class="relative flex rounded-lg border p-4
-        {% if sold_out %}border-gray-200 bg-gray-50 cursor-not-allowed opacity-60
-        {% else %}cursor-pointer border-gray-200 hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50{% endif %}">
+      <label class="catalog-card relative flex rounded-lg border p-4
+        {% if sold_out %}border-token-border bg-surface-raised cursor-not-allowed opacity-60
+        {% else %}cursor-pointer border-token-border hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50 dark:has-[:checked]:bg-blue-500/20 has-[:checked]:[&_p]:text-blue-900 dark:has-[:checked]:[&_p]:text-blue-200{% endif %}"
+        data-category="{{ t.category.value if t.category else '' }}"
+        data-search="{{ (t.name ~ ' ' ~ (t.description or '') ~ ' ' ~ (t.help_text or '')) | lower }}">
         <input type="radio" name="asset_type_id" value="{{ t.id }}"
                {% if sold_out %}disabled{% endif %}
                {% if not sold_out and form and form.asset_type_id == t.id %}checked{% endif %}
                class="sr-only">
-        <div class="w-full">
+        <div class="flex items-center gap-3 w-full">
+          {% if t.logo %}
+          <img src="/portal/asset-type-logo/{{ t.id }}" alt="" class="shrink-0" style="max-height: 32px; max-width: 48px;">
+          {% endif %}
+          <div class="flex-1 min-w-0">
           <div class="flex items-center justify-between gap-2">
-            <p class="text-sm font-medium {% if sold_out %}text-gray-400{% else %}text-gray-900{% endif %}">{{ t.name }}</p>
+            <p class="text-sm font-medium {% if sold_out %}text-muted/70{% else %}text-heading{% endif %}">{{ t.name }}</p>
             {% if sold_out %}
             <span class="shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-200 px-2 py-0.5 text-[11px] font-medium text-amber-700">
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3a9 9 0 100 18 9 9 0 000-18z"/></svg>
-              Unavailable
+              <span data-i18n="portal.order_new.unavailable_badge">Unavailable</span>
             </span>
             {% endif %}
           </div>
           {% if t.description %}
-          <p class="text-xs {% if sold_out %}text-gray-400{% else %}text-gray-500{% endif %} mt-0.5">{{ t.description }}</p>
+          <p class="text-xs {% if sold_out %}text-muted/70{% else %}text-muted{% endif %} mt-0.5">{{ t.description }}</p>
           {% endif %}
           {% if sold_out %}
-          <p class="text-xs text-amber-600 mt-1">Currently no free assets available. Please try again later.</p>
+          <p class="text-xs text-amber-600 mt-1" data-i18n="portal.order_new.unavailable_hint">Currently no free assets available. Please try again later.</p>
           {% elif t.config and t.config | length > 0 %}
-          <p class="text-xs text-gray-400 mt-1">
+          <p class="text-xs text-muted/70 mt-1">
             {% for attr in t.config %}
               <span class="font-medium">{{ attr.label }}:</span> {{ attr.options | join(' / ') }}{% if not loop.last %} &middot; {% endif %}
             {% endfor %}
           </p>
           {% endif %}
+          </div>
         </div>
       </label>
       {% endfor %}
     </div>
   </div>
 
+  <!-- Help text (dynamic, based on selected type — only types with help_text get a panel) -->
+  <div id="help-section-wrapper" class="hidden">
+    {% for t in asset_types %}
+    {% if t.help_text %}
+    <div id="help-section-{{ t.id }}" class="help-section help-md hidden rounded-lg border border-blue-100 dark:border-blue-500/30 bg-blue-50/40 dark:bg-blue-500/10 px-5 py-4">
+      <div class="flex items-start gap-3">
+        <svg class="shrink-0 w-4 h-4 mt-0.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 21a9 9 0 110-18 9 9 0 010 18z"/>
+        </svg>
+        <div class="text-sm text-body min-w-0 flex-1">
+          {{ t.help_text | markdown | safe }}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+
   <!-- Attributes (dynamic, based on selected type) -->
-  <div id="attr-section-wrapper" class="hidden bg-white rounded-lg border border-gray-200 p-5">
-    <h2 class="text-sm font-semibold text-gray-700 mb-4">Options</h2>
+  <div id="attr-section-wrapper" class="hidden bg-surface rounded-lg border border-token-border p-5">
+    <h2 class="text-sm font-semibold text-body mb-4" data-i18n="portal.order_new.section_options">Options</h2>
     {% for t in asset_types %}
     {% if t.config and t.config | length > 0 %}
     <div id="attr-section-{{ t.id }}" class="attr-section hidden space-y-4">
@@ -71,22 +151,44 @@
            data-visible-when-field="{{ attr.visible_when.field }}"
            data-visible-when-value="{{ attr.visible_when.value }}"
            {% endif %}>
-        <label class="block text-xs font-medium text-gray-600 mb-1">
+        <label class="block text-xs font-medium text-muted mb-1">
           {{ attr.label }}{% if attr.required %} <span class="text-red-500">*</span>{% endif %}
+          {% if attr.classification == 'pii' %}
+          <span class="ml-1 inline-flex items-center gap-1 align-middle px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
+                title="Personal data — handled with extra care; surfaces in audit log for compliance retention.">
+            <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M10 1l-7 3v6c0 4 3 7.4 7 9 4-1.6 7-5 7-9V4l-7-3z" clip-rule="evenodd"/></svg>
+            PII
+          </span>
+          {% elif attr.classification == 'phi' %}
+          <span class="ml-1 inline-flex items-center gap-1 align-middle px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300"
+                title="Protected health information — strict handling and retention requirements apply.">
+            <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M9 2h2v6h6v2h-6v6H9v-6H3V8h6V2z"/></svg>
+            PHI
+          </span>
+          {% elif attr.classification == 'pci' %}
+          <span class="ml-1 inline-flex items-center gap-1 align-middle px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300"
+                title="Cardholder data — PCI-DSS handling requirements apply.">
+            <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm14 2H4v8h12V7z" clip-rule="evenodd"/></svg>
+            PCI
+          </span>
+          {% elif attr.classification == 'internal' %}
+          <span class="ml-1 inline-flex items-center align-middle px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-surface-raised text-muted"
+                title="Internal use only.">internal</span>
+          {% endif %}
         </label>
         {% if attr_type == 'BOOL' %}
-        <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-          <input type="checkbox" name="attr_{{ attr.key }}" value="true" class="rounded border-gray-300">
-          Yes
+        <label class="flex items-center gap-2 text-sm text-body cursor-pointer">
+          <input type="checkbox" name="attr_{{ attr.key }}" value="true" class="rounded border-token-border">
+          <span data-i18n="portal.common.yes">Yes</span>
         </label>
         {% elif attr_type == 'INT' %}
         <input type="number" name="attr_{{ attr.key }}"
                value="{{ attr.default_value or '' }}"
-               class="w-32 rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+               class="w-32 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
         {% elif attr_type == 'ENUM' %}
         <select name="attr_{{ attr.key }}"
-                class="rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
-          {% if not attr.required %}<option value="">– please select –</option>{% endif %}
+                class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          {% if not attr.required %}<option value="" data-i18n="portal.order_new.select_default">– please select –</option>{% endif %}
           {% for opt in (attr.options or []) %}
           <option value="{{ opt }}" {% if opt == (attr.default_value or '') %}selected{% endif %}>{{ opt }}</option>
           {% endfor %}
@@ -94,8 +196,8 @@
         {% elif attr_type == 'MULTI_ENUM' %}
         <div class="flex flex-wrap gap-3">
           {% for opt in (attr.options or []) %}
-          <label class="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
-            <input type="checkbox" name="attr_{{ attr.key }}" value="{{ opt }}" class="rounded border-gray-300">
+          <label class="flex items-center gap-1.5 text-sm text-body cursor-pointer">
+            <input type="checkbox" name="attr_{{ attr.key }}" value="{{ opt }}" class="rounded border-token-border">
             {{ opt }}
           </label>
           {% endfor %}
@@ -103,7 +205,7 @@
         {% else %}
         <input type="text" name="attr_{{ attr.key }}"
                value="{{ attr.default_value or '' }}"
-               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
         {% endif %}
       </div>
       {% endfor %}
@@ -113,27 +215,27 @@
   </div>
 
   <!-- Requester (pre-filled from login, read-only) -->
-  <div class="bg-white rounded-lg border border-gray-200 p-5">
-    <h2 class="text-sm font-semibold text-gray-700 mb-4">Requester</h2>
-    <div class="flex items-center justify-between rounded bg-gray-50 border border-gray-100 px-4 py-3">
+  <div class="bg-surface rounded-lg border border-token-border p-5">
+    <h2 class="text-sm font-semibold text-body mb-4" data-i18n="portal.order_new.section_requester">Requester</h2>
+    <div class="flex items-center justify-between rounded bg-surface-raised border border-token-border px-4 py-3">
       <div>
-        <p class="text-sm font-medium text-gray-900">{{ user.name }}</p>
-        <p class="text-xs text-gray-500">{{ user.email }}</p>
+        <p class="text-sm font-medium text-heading">{{ user.name }}</p>
+        <p class="text-xs text-muted">{{ user.email }}</p>
       </div>
-      <span class="text-xs text-gray-400 italic">You</span>
+      <span class="text-xs text-muted/70 italic" data-i18n="portal.order_new.you_label">You</span>
     </div>
     <input type="hidden" name="user_name" value="{{ user.name }}">
     <input type="hidden" name="user_email" value="{{ user.email }}">
 
-    <!-- Deputy (optional, must be a valid AD user) -->
+    <!-- Owner (optional, must be a valid AD user) -->
     <details class="mt-4" {% if form and form.owner_email %}open{% endif %}>
-      <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-700 select-none">
-        + Specify deputy (optional)
+      <summary class="text-xs text-muted cursor-pointer hover:text-body select-none" data-i18n="portal.order_new.deputy_toggle">
+        + Specify owner (optional)
       </summary>
       <div class="mt-3">
-        <label class="block text-xs font-medium text-gray-600 mb-1">
-          Deputy
-          <span class="text-gray-400 font-normal ml-1">sAMAccountName or email · must be a valid domain user</span>
+        <label class="block text-xs font-medium text-muted mb-1">
+          <span data-i18n="portal.order_new.deputy_label">Owner</span>
+          <span class="text-muted/70 font-normal ml-1" data-i18n="portal.order_new.deputy_hint">sAMAccountName or email · must be a valid domain user</span>
         </label>
 
         <div id="deputy-chip" class="mb-2 {% if not (form and form.owner_email) %}hidden{% endif %}">
@@ -149,17 +251,19 @@
           <div class="flex-1">
             <input type="text" id="deputy-input" name="q"
                    placeholder="j.doe or j.doe@company.com"
+                   data-i18n-attr-placeholder="portal.order_new.user_placeholder"
                    autocomplete="off"
                    hx-get="/portal/_validate-user"
                    hx-trigger="blur changed delay:400ms"
                    hx-target="#deputy-validate-result"
                    hx-include="this"
-                   class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                   class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
                    onkeydown="if(event.key==='Enter'){event.preventDefault();addDeputy()}">
             <div id="deputy-validate-result" class="mt-1 min-h-[1.25rem]"></div>
           </div>
           <button type="button" onclick="addDeputy()"
-                  class="px-3 py-2 bg-gray-100 text-gray-700 text-sm rounded border border-gray-300 hover:bg-gray-200 whitespace-nowrap">
+                  class="px-3 py-2 bg-surface-raised text-body text-sm rounded border border-token-border hover:bg-surface-raised whitespace-nowrap"
+                  data-i18n="portal.common.add">
             + Add
           </button>
         </div>
@@ -172,31 +276,31 @@
   </div>
 
   <!-- Duration -->
-  <div class="bg-white rounded-lg border border-gray-200 p-5">
-    <h2 class="text-sm font-semibold text-gray-700 mb-4">Duration</h2>
+  <div class="bg-surface rounded-lg border border-token-border p-5">
+    <h2 class="text-sm font-semibold text-body mb-4" data-i18n="portal.order_new.section_duration">Duration</h2>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
-        <label class="block text-xs font-medium text-gray-600 mb-1">From <span class="text-red-500">*</span></label>
+        <label class="block text-xs font-medium text-muted mb-1"><span data-i18n="portal.order_new.from_label">From</span> <span class="text-red-500">*</span></label>
         <input type="date" name="requested_from" id="requested-from" required
                value="{{ form.requested_from if form else today }}"
                min="{{ today }}"
                {% if max_advance_days and max_advance_days > 0 %}max="{{ max_from_date }}"{% endif %}
-               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
         {% if max_advance_days and max_advance_days > 0 %}
-        <p class="text-xs text-gray-400 mt-1">Up to {{ max_advance_days }} days in advance</p>
+        <p class="text-xs text-muted/70 mt-1"><span data-i18n="portal.order_new.advance_hint_prefix">Up to</span> {{ max_advance_days }} <span data-i18n="portal.order_new.advance_hint_suffix">days in advance</span></p>
         {% endif %}
       </div>
       <div>
-        <label class="block text-xs font-medium text-gray-600 mb-1">Until <span class="text-red-500">*</span></label>
+        <label class="block text-xs font-medium text-muted mb-1"><span data-i18n="portal.order_new.until_label">Until</span> <span class="text-red-500">*</span></label>
         <input type="date" name="requested_until" required
                value="{{ form.requested_until if form else '' }}"
                min="{{ today }}"
-               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
       </div>
     </div>
     <div id="schedule-hint" class="hidden mt-3 rounded bg-blue-50 border border-blue-200 px-3 py-2">
       <p class="text-xs text-blue-700">
-        <strong>Scheduled order:</strong> Your order will be reserved now and automatically executed on the selected start date.
+        <strong data-i18n="portal.order_new.schedule_hint_title">Scheduled order:</strong> <span data-i18n="portal.order_new.schedule_hint_body">Your order will be reserved now and automatically executed on the selected start date.</span>
       </p>
     </div>
   </div>
@@ -204,9 +308,9 @@
   <!-- RDP-User (nur wenn allow_rdp_users) -->
   <div id="rdp-section" class="hidden space-y-4">
 
-  <div class="bg-white rounded-lg border border-gray-200 p-5">
-    <h2 class="text-sm font-semibold text-gray-700 mb-1">RDP-User</h2>
-    <p class="text-xs text-gray-500 mb-4">Users with Remote Desktop access (sAMAccountName or email)</p>
+  <div class="bg-surface rounded-lg border border-token-border p-5">
+    <h2 class="text-sm font-semibold text-body mb-1" data-i18n="portal.order_new.section_rdp">RDP-User</h2>
+    <p class="text-xs text-muted mb-4" data-i18n="portal.order_new.rdp_hint">Users with Remote Desktop access (sAMAccountName or email)</p>
 
     <div id="rdp-list" class="flex flex-wrap gap-2 mb-3">
       {% if form and form.rdp_users %}
@@ -223,17 +327,19 @@
     <div class="flex gap-2 items-start">
       <div class="flex-1">
         <input type="text" id="rdp-input" name="q" placeholder="j.doe or j.doe@company.com"
+               data-i18n-attr-placeholder="portal.order_new.user_placeholder"
                hx-get="/portal/_validate-user"
                hx-trigger="blur changed delay:400ms"
                hx-target="#rdp-validate-result"
                hx-include="this"
-               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
                onkeydown="if(event.key==='Enter'){event.preventDefault();addUser('rdp')}"
                autocomplete="off">
         <div id="rdp-validate-result" class="mt-1 h-4"></div>
       </div>
       <button type="button" onclick="addUser('rdp')"
-              class="px-3 py-2 bg-gray-100 text-gray-700 text-sm rounded border border-gray-300 hover:bg-gray-200 whitespace-nowrap">
+              class="px-3 py-2 bg-surface-raised text-body text-sm rounded border border-token-border hover:bg-surface-raised whitespace-nowrap"
+              data-i18n="portal.common.add">
         + Add
       </button>
     </div>
@@ -243,9 +349,9 @@
 
   <!-- Admin-User (nur wenn allow_admin_users) -->
   <div id="admin-section" class="hidden space-y-4">
-  <div class="bg-white rounded-lg border border-gray-200 p-5">
-    <h2 class="text-sm font-semibold text-gray-700 mb-1">Admin-User</h2>
-    <p class="text-xs text-gray-500 mb-4">Users with local administrator access on the VM</p>
+  <div class="bg-surface rounded-lg border border-token-border p-5">
+    <h2 class="text-sm font-semibold text-body mb-1" data-i18n="portal.order_new.section_admin">Admin-User</h2>
+    <p class="text-xs text-muted mb-4" data-i18n="portal.order_new.admin_hint">Users with local administrator access on the VM</p>
 
     <div id="admin-list" class="flex flex-wrap gap-2 mb-3">
       {% if form and form.admin_users %}
@@ -262,17 +368,19 @@
     <div class="flex gap-2 items-start">
       <div class="flex-1">
         <input type="text" id="admin-input" name="q" placeholder="j.doe or j.doe@company.com"
+               data-i18n-attr-placeholder="portal.order_new.user_placeholder"
                hx-get="/portal/_validate-user"
                hx-trigger="blur changed delay:400ms"
                hx-target="#admin-validate-result"
                hx-include="this"
-               class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
                onkeydown="if(event.key==='Enter'){event.preventDefault();addUser('admin')}"
                autocomplete="off">
         <div id="admin-validate-result" class="mt-1 h-4"></div>
       </div>
       <button type="button" onclick="addUser('admin')"
-              class="px-3 py-2 bg-gray-100 text-gray-700 text-sm rounded border border-gray-300 hover:bg-gray-200 whitespace-nowrap">
+              class="px-3 py-2 bg-surface-raised text-body text-sm rounded border border-token-border hover:bg-surface-raised whitespace-nowrap"
+              data-i18n="portal.common.add">
         + Add
       </button>
     </div>
@@ -281,9 +389,10 @@
 
   <!-- Submit -->
   <div class="flex items-center justify-between">
-    <a href="/portal/" class="text-sm text-gray-500 hover:text-gray-800">Cancel</a>
+    <a href="/portal/" class="text-sm text-muted hover:text-heading" data-i18n="portal.common.cancel">Cancel</a>
     <button type="submit"
-            class="px-6 py-2.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 focus:outline-none">
+            class="px-6 py-2.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 focus:outline-none"
+            data-i18n="portal.order_new.submit_button">
       Submit Order →
     </button>
   </div>
@@ -425,6 +534,29 @@ function updateAttrSection() {
   }
 }
 
+function updateHelpSection() {
+  var checked = document.querySelector('[name="asset_type_id"]:checked');
+  var typeId = checked ? checked.value : null;
+  var wrapper = document.getElementById('help-section-wrapper');
+
+  document.querySelectorAll('.help-section').forEach(function(sec) {
+    sec.classList.add('hidden');
+  });
+
+  if (!typeId) {
+    if (wrapper) wrapper.classList.add('hidden');
+    return;
+  }
+  var target = document.getElementById('help-section-' + typeId);
+  if (target) {
+    target.classList.remove('hidden');
+    if (wrapper) wrapper.classList.remove('hidden');
+  } else {
+    // Selected type has no help text — hide the wrapper.
+    if (wrapper) wrapper.classList.add('hidden');
+  }
+}
+
 var _unavailableIds = new Set([{% for tid in unavailable_ids %}{{ tid }}{% if not loop.last %}, {% endif %}{% endfor %}]);
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -438,6 +570,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('[name="asset_type_id"]').forEach(function(r) {
     r.addEventListener('change', updateAttrSection);
     r.addEventListener('change', updateUserListsSection);
+    r.addEventListener('change', updateHelpSection);
   });
 
   // visibleWhen: observe fields within each section
@@ -460,11 +593,11 @@ document.addEventListener('DOMContentLoaded', function() {
         alert('Please first confirm ' + pending.join(' and ') + ' with "+ Add" (or clear the field).');
         return;
       }
-      // Block if deputy input has text but was not confirmed with "+ Add"
+      // Block if owner input has text but was not confirmed with "+ Add"
       var deputyInput = document.getElementById('deputy-input');
       if (deputyInput && deputyInput.value.trim()) {
         e.preventDefault();
-        alert('Please confirm the deputy with "+ Add" or clear the field.');
+        alert('Please confirm the owner with "+ Add" or clear the field.');
         deputyInput.focus();
         return;
       }
@@ -489,9 +622,53 @@ document.addEventListener('DOMContentLoaded', function() {
   if (fromInput) fromInput.addEventListener('change', updateScheduleHint);
   updateScheduleHint();
 
+  // Catalog search + category filter (only present when many definitions exist)
+  var searchInput = document.getElementById('catalog-search');
+  var categorySelect = document.getElementById('catalog-filter-category');
+  var clearBtn = document.getElementById('catalog-clear-filters');
+  var noMatch = document.getElementById('catalog-no-match');
+  var grid = document.getElementById('catalog-grid');
+
+  function applyCatalogFilter() {
+    if (!grid) return;
+    var q = (searchInput && searchInput.value || '').trim().toLowerCase();
+    var cat = (categorySelect && categorySelect.value) || '';
+    var visibleCount = 0;
+    grid.querySelectorAll('.catalog-card').forEach(function(card) {
+      var matchesText = !q || (card.dataset.search || '').indexOf(q) !== -1;
+      var matchesCat = !cat || card.dataset.category === cat;
+      var visible = matchesText && matchesCat;
+      card.classList.toggle('hidden', !visible);
+      if (visible) visibleCount++;
+    });
+    if (noMatch) noMatch.classList.toggle('hidden', visibleCount > 0);
+    if (clearBtn) clearBtn.classList.toggle('hidden', !q && !cat);
+
+    // If the previously checked card is now hidden, clear the selection
+    // and reset the dependent panels so a stale type isn't submitted.
+    var checked = document.querySelector('[name="asset_type_id"]:checked');
+    if (checked && checked.closest('.catalog-card.hidden')) {
+      checked.checked = false;
+      updateAttrSection();
+      updateUserListsSection();
+      updateHelpSection();
+    }
+  }
+
+  if (searchInput) searchInput.addEventListener('input', applyCatalogFilter);
+  if (categorySelect) categorySelect.addEventListener('change', applyCatalogFilter);
+  if (clearBtn) clearBtn.addEventListener('click', function() {
+    if (searchInput) searchInput.value = '';
+    if (categorySelect) categorySelect.value = '';
+    applyCatalogFilter();
+    if (searchInput) searchInput.focus();
+  });
+
   // Set initial state
   updateAttrSection();
   updateUserListsSection();
+  updateHelpSection();
+  applyCatalogFilter();
 });
 </script>
 {% endblock %}

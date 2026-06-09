@@ -1,0 +1,23 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Questions & Help (GitHub Discussions)
+    url: https://github.com/XenPool/ipsolis-community/discussions/categories/q-a
+    about: >-
+      Have a "how do I…?" question, a configuration problem, or want to share
+      how you run ip·Solis? Ask in Discussions — issues are reserved for
+      confirmed bugs and concrete feature requests.
+  - name: 💡 Ideas & Feedback (GitHub Discussions)
+    url: https://github.com/XenPool/ipsolis-community/discussions/categories/ideas
+    about: >-
+      Early-stage ideas and feedback that aren't yet a concrete, actionable
+      feature request belong in the Ideas category.
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/XenPool/ipsolis-community/security/advisories/new
+    about: >-
+      NEVER open a public issue for a security problem. Use GitHub private
+      vulnerability reporting, or email security@xenpool.de. See SECURITY.md.
+  - name: 🏢 Commercial / Pro support & licensing
+    url: mailto:sales@xenpool.de
+    about: >-
+      Pro Edition, SLA-backed support, on-prem/air-gapped deployment, or
+      commercial licensing questions — contact XenPool GmbH directly.

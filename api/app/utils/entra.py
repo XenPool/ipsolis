@@ -48,7 +48,10 @@ def get_msal_app(cfg: dict):
 
     tenant_id = cfg.get("entra.tenant_id", "").strip()
     client_id = cfg.get("entra.client_id", "").strip()
-    client_secret = cfg.get("entra.client_secret", "").strip()
+    # External-secret resolution: client_secret may be a vault://… or
+    # ccp://… reference; plain strings pass through unchanged.
+    from app.utils.secrets import resolve_secret_value_sync
+    client_secret = resolve_secret_value_sync(cfg.get("entra.client_secret", "").strip())
 
     if not (tenant_id and client_id and client_secret):
         logger.warning(

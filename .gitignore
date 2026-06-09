@@ -12,6 +12,14 @@ certs/
 *.secret
 
 # ─────────────────────────────────────────
+# License files (signed .lic files and private keys — never commit)
+# ─────────────────────────────────────────
+licenses/*.lic
+tools/license/private_key.pem
+tools/license/*.pem
+tools/license/*.json
+
+# ─────────────────────────────────────────
 # Python
 # ─────────────────────────────────────────
 __pycache__/

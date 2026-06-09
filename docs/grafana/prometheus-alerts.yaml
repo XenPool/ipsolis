@@ -1,0 +1,116 @@
+# Prometheus alert rules for ipSolis.
+#
+# Drop into your Prometheus rule_files config, e.g.:
+#
+#   rule_files:
+#     - /etc/prometheus/rules/ipsolis-alerts.yaml
+#
+# Tune the thresholds + `for` durations to your environment — the values
+# below are sane defaults for a small deployment (a few hundred orders/day).
+
+groups:
+  - name: ipsolis_http
+    interval: 30s
+    rules:
+      - alert: IpsolisHighErrorRate
+        expr: |
+          sum(rate(ipsolis_http_requests_total{status_class="5xx"}[5m]))
+            /
+          sum(rate(ipsolis_http_requests_total[5m]))
+            > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: ipsolis-api
+        annotations:
+          summary: "ipSolis API 5xx rate above 5%"
+          description: |
+            5xx error rate has been above 5% for 5 minutes.
+            Check the api logs for tracebacks; recent deploys are the most
+            common cause.
+
+      - alert: IpsolisLatencyP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(ipsolis_http_request_duration_seconds_bucket[5m]))
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+          service: ipsolis-api
+        annotations:
+          summary: "ipSolis p95 latency > 2s"
+          description: |
+            95th-percentile request latency has been above 2 seconds for
+            10 minutes. Likely culprits: AD lookup latency (msldap),
+            slow PowerShell runbooks blocking the worker, Postgres locks.
+
+  - name: ipsolis_business
+    interval: 60s
+    rules:
+      - alert: IpsolisApprovalsBacklog
+        expr: ipsolis_approvals_pending > 25
+        for: 30m
+        labels:
+          severity: info
+          service: ipsolis-api
+        annotations:
+          summary: "{{ $value }} approvals pending for >30 min"
+          description: |
+            More than 25 approvals are stuck in `pending` state for over 30
+            minutes. Typical causes: an approver is OOO without a delegation
+            configured, or the SMTP queue is jammed.
+
+      - alert: IpsolisCeleryQueueBacklog
+        expr: ipsolis_celery_queue_depth > 50
+        for: 5m
+        labels:
+          severity: warning
+          service: ipsolis-worker
+        annotations:
+          summary: "Celery queue {{ $labels.queue }} backed up ({{ $value }} pending)"
+          description: |
+            Queue {{ $labels.queue }} has more than 50 pending tasks for 5
+            minutes. Check `docker compose logs worker` and
+            `docker compose ps worker`. A stuck PowerShell runbook step or
+            a dead worker process are the usual suspects.
+
+      - alert: IpsolisCeleryQueueCritical
+        expr: ipsolis_celery_queue_depth > 200
+        for: 2m
+        labels:
+          severity: critical
+          service: ipsolis-worker
+        annotations:
+          summary: "Celery queue {{ $labels.queue }} critically backed up"
+          description: |
+            More than 200 tasks pending on queue {{ $labels.queue }} for
+            2 minutes. The worker is either down, deadlocked, or processing
+            a runaway task. Page on-call.
+
+  - name: ipsolis_pool_capacity
+    interval: 60s
+    rules:
+      - alert: IpsolisPoolNearCapacity
+        # Per-asset-type fill ratio: (total - free) / total >= 0.95
+        # The ipsolis_pool_assets gauge labels by (asset_type, status).
+        expr: |
+          (
+            sum by (asset_type) (ipsolis_pool_assets)
+            -
+            sum by (asset_type) (ipsolis_pool_assets{status="Free"})
+          )
+            /
+          sum by (asset_type) (ipsolis_pool_assets)
+            > 0.95
+        for: 10m
+        labels:
+          severity: warning
+          service: ipsolis-api
+        annotations:
+          summary: "Asset pool {{ $labels.asset_type }} above 95% utilisation"
+          description: |
+            Pool for {{ $labels.asset_type }} is above 95% full for 10
+            minutes. Add capacity (more pool entries / higher pool_capacity)
+            or expect 409 Conflict on new orders.

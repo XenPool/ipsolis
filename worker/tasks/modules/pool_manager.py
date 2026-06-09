@@ -1,6 +1,5 @@
-"""Module: Pool Manager – select VM from pool and return it.
+"""Module: Pool Manager – select asset from pool and return it.
 
-Entspricht dem Ivanti-Modul 'Pool Management'.
 """
 
 import json
@@ -47,7 +46,7 @@ def reserve_asset(
     row = db.execute(
         sql_text("""
             SELECT id, name, metadata FROM asset_pool
-            WHERE asset_type_id = :at AND status = 'free'
+            WHERE asset_type_id = :at AND status = 'Free'
             LIMIT 1
             FOR UPDATE SKIP LOCKED
         """),
@@ -94,7 +93,7 @@ def release_asset(db: Session, asset_id: int) -> dict:
     result = db.execute(
         sql_text("""
             UPDATE asset_pool
-            SET status = 'free',
+            SET status = 'Free',
                 current_order_id = NULL,
                 expires_at = NULL,
                 last_reclaim_at = :now
@@ -107,6 +106,26 @@ def release_asset(db: Session, asset_id: int) -> dict:
     db.commit()
 
     logger.info("Asset released: asset_id=%s", asset_id)
+    return {"success": True, "asset_id": asset_id}
+
+
+def mark_reinstall(db: Session, asset_id: int) -> dict:
+    """Flag a pool asset for reinstall. Assumes current_order_id is already cleared
+    by a prior release_asset() call. A separate reinstall runbook is expected to
+    pick the asset up and flip it back to FREE when done.
+    """
+    result = db.execute(
+        sql_text("""
+            UPDATE asset_pool
+            SET status = 'Reinstall'
+            WHERE id = :id
+        """),
+        {"id": asset_id},
+    )
+    if result.rowcount == 0:
+        return {"success": False, "error": f"Asset {asset_id} not found"}
+    db.commit()
+    logger.info("Asset marked reinstall: asset_id=%s", asset_id)
     return {"success": True, "asset_id": asset_id}
 
 

@@ -1,0 +1,144 @@
+{# PRO-tier feature teasers — shown in Community edition to signal upgrade paths.
+
+Usage:
+  {% from "_partials/enterprise_teaser.html" import nav_locked, tab_locked, teaser_pane, card_teaser, ent_badge %}
+
+  {{ nav_locked("Certifications") }}
+  {{ nav_locked("ServiceNow", href="/ui/certifications") }}
+  {{ tab_locked("SIEM", "siem") }}
+  {{ teaser_pane("SIEM Integration", "Stream every audit log entry to Splunk, Sentinel, or any webhook.") }}
+  {{ card_teaser("SIEM Streaming", "Forward audit events in real-time to your SIEM.") }}
+
+The `tier` parameter is accepted for backward compatibility but ignored — all
+gated features are uniformly shown as "PRO".
+#}
+
+
+{# Grayed-out sidebar item with lock icon + PRO badge.
+   With ``href``: renders as a clickable <a> (gated page shows its own teaser_pane).
+   Without ``href``: non-clickable <div> with cursor-not-allowed. #}
+{% macro nav_locked(label, href='', icon_svg='', tier='pro') -%}
+{% if href %}
+<a href="{{ href }}"
+   class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-muted/60 hover:text-muted hover:bg-surface-raised/40 transition-colors"
+   title="{{ label }} – preview this PRO feature">
+  {% if icon_svg %}
+    {{ icon_svg|safe }}
+  {% else %}
+    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+    </svg>
+  {% endif %}
+  <span class="flex-1">{{ label }}</span>
+  <span class="text-[9px] tracking-widest uppercase bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 px-1.5 py-0.5 rounded font-semibold">PRO</span>
+</a>
+{% else %}
+<div class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-muted/60 cursor-not-allowed select-none"
+     title="{{ label }} – requires ip·Solis PRO license">
+  {% if icon_svg %}
+    {{ icon_svg|safe }}
+  {% else %}
+    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+    </svg>
+  {% endif %}
+  <span class="flex-1">{{ label }}</span>
+  <span class="text-[9px] tracking-widest uppercase bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 px-1.5 py-0.5 rounded font-semibold">PRO</span>
+</div>
+{% endif %}
+{%- endmacro %}
+
+
+{# Tab button shown muted with a PRO badge — the tab content should render
+   a teaser_pane when clicked. #}
+{% macro tab_locked(label, tab_id, tier='pro') -%}
+<button onclick="showTab('{{ tab_id }}')" id="tab-btn-{{ tab_id }}"
+        class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted/60 hover:text-body"
+        title="{{ label }} – requires ip·Solis PRO license">
+  {{ label }}
+  <span class="ml-1.5 text-[9px] tracking-widest uppercase bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 px-1.5 py-0.5 rounded font-semibold align-middle">PRO</span>
+</button>
+{%- endmacro %}
+
+
+{# Centered full-page upgrade prompt — use inside a tab pane or as the sole
+   content block of a gated page. #}
+{% macro teaser_pane(feature, description, learn_more_url='https://ipsolis.com', tier='pro') -%}
+<div class="flex items-center justify-center py-12 px-4">
+  <div class="max-w-lg w-full text-center bg-surface rounded-xl border border-token-border p-10 shadow-sm shadow-slate-900/5 dark:shadow-black/20">
+    <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-violet-100 dark:bg-violet-500/20 mb-4">
+      <svg class="w-6 h-6 text-violet-600 dark:text-violet-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+      </svg>
+    </div>
+    <div class="text-[10px] tracking-widest uppercase text-violet-700 dark:text-violet-300 font-semibold mb-1">ip·Solis PRO</div>
+    <h3 class="text-base font-semibold text-heading mb-2">{{ feature }}</h3>
+    <p class="text-sm text-muted mb-6 leading-relaxed">{{ description }}</p>
+    <a class="ipsolis-shop-link inline-block px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded hover:bg-violet-700 transition-colors"
+       href="https://ipsolis.com/en/shop" target="_blank" rel="noopener">
+      Get ip·Solis PRO &rarr;
+    </a>
+    <div class="mt-5 p-4 rounded-lg bg-surface-raised border border-token-border text-left text-xs text-muted space-y-2">
+      <p class="font-semibold text-body text-sm">How to order:</p>
+      <ol class="list-decimal list-inside space-y-1.5 leading-relaxed">
+        <li>Go to <a href="/ui/maintenance#license" class="text-violet-600 dark:text-violet-400 hover:underline font-medium">Admin → License</a> and copy your <strong class="text-body">Install ID</strong></li>
+        <li>Open the shop and paste the Install ID during checkout</li>
+        <li>Download the <code class="font-mono bg-surface px-1 rounded">.lic</code> file and upload it at <a href="/ui/maintenance#license" class="text-violet-600 dark:text-violet-400 hover:underline">Admin → License</a></li>
+      </ol>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  var l=(navigator.language||'en').split('-')[0].toLowerCase();
+  var supported=['de','en','es','fr','it'];
+  if(supported.indexOf(l)===-1)l='en';
+  document.querySelectorAll('.ipsolis-shop-link').forEach(function(a){a.href='https://ipsolis.com/'+l+'/shop';});
+}());
+</script>
+{%- endmacro %}
+
+
+{# Tiny inline PRO badge. #}
+{% macro ent_badge(tier='pro') -%}
+<span class="text-[9px] tracking-widest uppercase bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 px-1.5 py-0.5 rounded font-semibold align-middle"
+      title="Requires ip·Solis PRO license">PRO</span>
+{%- endmacro %}
+
+
+{# Compact in-page teaser card — replaces a hidden gated section or card. #}
+{% macro card_teaser(feature, description, learn_more_url='https://ipsolis.com', tier='pro') -%}
+<div class="bg-surface rounded-xl border border-dashed border-token-border p-5 max-w-2xl mb-4 relative overflow-hidden">
+  <div class="absolute top-3 right-3 text-[9px] tracking-widest uppercase bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 px-1.5 py-0.5 rounded font-semibold">PRO</div>
+  <div class="flex items-start gap-3">
+    <div class="flex-shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full bg-violet-100 dark:bg-violet-500/20">
+      <svg class="w-4 h-4 text-violet-600 dark:text-violet-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+      </svg>
+    </div>
+    <div class="flex-1 min-w-0 pr-8">
+      <div class="text-sm font-semibold text-body">{{ feature }}</div>
+      <p class="text-xs text-muted mt-1 leading-relaxed">{{ description }}</p>
+      <a class="ipsolis-shop-link inline-block mt-3 text-xs text-violet-600 dark:text-violet-400 hover:underline font-medium"
+         href="https://ipsolis.com/en/shop" target="_blank" rel="noopener">
+        Get ip·Solis PRO &rarr;
+      </a>
+      <p class="mt-1.5 text-xs text-muted/70">
+        Copy your <a href="/ui/maintenance#license" class="text-violet-600 dark:text-violet-400 hover:underline">Install ID</a> from Admin → License and paste it during checkout.
+      </p>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  var l=(navigator.language||'en').split('-')[0].toLowerCase();
+  var supported=['de','en','es','fr','it'];
+  if(supported.indexOf(l)===-1)l='en';
+  document.querySelectorAll('.ipsolis-shop-link').forEach(function(a){a.href='https://ipsolis.com/'+l+'/shop';});
+}());
+</script>
+{%- endmacro %}

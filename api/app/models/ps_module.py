@@ -16,6 +16,9 @@ class PsModule(Base):
     installed_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     error_log: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_type: Mapped[str] = mapped_column(String(20), nullable=False, default="gallery")
+    # PSGallery PSEdition tag derivation: 'core' / 'desktop_only' / 'unknown'.
+    # Set on create from search-result tags, refreshed by the install task.
+    compatibility: Mapped[str] = mapped_column(String(20), nullable=False, default="unknown")
     upload_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now(), onupdate=func.now())

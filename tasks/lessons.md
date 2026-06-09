@@ -1,4 +1,4 @@
-# Lessons Learned – XenPool IT Selfservice
+# Lessons Learned – ip·Solis
 
 Dieses File wird nach Korrekturen durch den User aktualisiert.
 Ziel: Gleiche Fehler nicht wiederholen.
@@ -20,9 +20,8 @@ Neue `.py`-Dateien sind erst nach Rebuild im Container.
 ## PowerShell Scripts – Zwei Kategorien
 
 **Klarstellung durch User:**
-- `scripts/ivanti/` = originale Ivanti-Scripts → **nicht verändern**, nur als Referenz/Vorlage
 - Neue Scripts für vSphere, Active Roles etc. → selbst neu erstellen in `scripts/vsphere/`, `scripts/active_roles/`
-- Die Ivanti-Scripts zeigen WIE Aufgaben per PowerShell gelöst wurden — daraus eigene Implementierungen ableiten
+
 
 ---
 

@@ -4,20 +4,20 @@
 
 {% block content %}
 <div class="mb-5">
-  <a href="/portal/my-it" class="text-sm text-gray-500 hover:text-gray-800">← My IT</a>
+  <a href="/portal/my-it" class="text-sm text-muted hover:text-heading" data-i18n="portal.common.back_to_my_it">← My IT</a>
 </div>
 
 <!-- Header -->
 <div class="flex items-start justify-between mb-6">
   <div>
-    <h1 class="text-xl font-semibold text-gray-900">{{ asset_type_name or "Asset" }}</h1>
-    <p class="text-sm text-gray-500 mt-0.5">
+    <h1 class="text-xl font-semibold text-heading">{{ asset_type_name or "Asset" }}</h1>
+    <p class="text-sm text-muted mt-0.5">
       {% if asset_name %}<span class="font-mono">{{ asset_name }}</span> · {% endif %}
-      Order #{{ order.id }} · Valid until {{ order.requested_until.strftime("%d.%m.%Y") }}
+      <span data-i18n="portal.my_it_detail.order_prefix">Order</span> #{{ order.id }} · <span data-i18n="portal.my_it_detail.valid_until_prefix">Valid until</span> {{ order.requested_until.strftime("%d.%m.%Y") }}
     </p>
   </div>
-  <span class="inline-block px-3 py-1 rounded-full text-sm font-semibold {{ status_colors.get(order.status.value, 'bg-gray-100 text-gray-700') }}">
-    {{ order.status.value }}
+  <span class="inline-block px-3 py-1 rounded-full text-sm font-semibold {{ status_colors.get(order.status.value, 'bg-surface-raised text-body') }}">
+    {{ order.status.value | replace('_', ' ') | title }}
   </span>
 </div>
 
@@ -27,21 +27,24 @@
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
   </svg>
   <p class="text-sm text-indigo-800">
-    This order is <strong>scheduled</strong> and will be automatically executed on
+    <span data-i18n="portal.order_detail.scheduled_prefix">This order is</span>
+    <strong data-i18n="portal.order_detail.scheduled_status">scheduled</strong>
+    <span data-i18n="portal.order_detail.scheduled_middle">and will be automatically executed on</span>
     <strong>{{ order.requested_from.strftime("%d.%m.%Y") }}</strong>.
   </p>
 </div>
 
 <div class="max-w-md">
-  <div class="bg-white rounded-lg border border-gray-200 p-5">
-    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Cancel Scheduled Order</h2>
-    <p class="text-xs text-gray-500 mb-4">
+  <div class="bg-surface rounded-lg border border-token-border p-5">
+    <h2 class="text-xs font-semibold text-muted uppercase tracking-wide mb-4" data-i18n="portal.my_it_detail.cancel_scheduled_heading">Cancel Scheduled Order</h2>
+    <p class="text-xs text-muted mb-4" data-i18n="portal.my_it_detail.cancel_scheduled_hint">
       Cancels the scheduled order. No resources have been provisioned yet.
     </p>
     <form method="post" action="/portal/orders/{{ order.id }}/cancel"
           onsubmit="return confirm('Cancel this scheduled order?')">
       <button type="submit"
-              class="px-4 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700 focus:outline-none">
+              class="px-4 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700 focus:outline-none"
+              data-i18n="portal.my_it_detail.cancel_order_button">
         Cancel order
       </button>
     </form>
@@ -51,78 +54,113 @@
 {% else %}
 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-  <!-- Extend / Modify -->
-  <div class="bg-white rounded-lg border border-gray-200 p-5">
-    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Extend / Modify</h2>
+  <!-- Modify -->
+  <div class="bg-surface rounded-lg border border-token-border p-5">
+    <h2 class="text-xs font-semibold text-muted uppercase tracking-wide mb-4" data-i18n="portal.my_it_detail.modify_heading">Modify</h2>
     <form method="post" action="/portal/orders/{{ order.id }}/change" class="space-y-4">
 
       <div>
-        <label class="block text-xs font-medium text-gray-600 mb-1">Valid Until</label>
+        <label class="block text-xs font-medium text-muted mb-1" data-i18n="portal.my_it_detail.valid_until_field">Valid Until</label>
         <input type="date" name="new_until"
                value="{{ order.requested_until.strftime('%Y-%m-%d') if order.requested_until else '' }}"
                min="{{ today }}"
-               class="rounded border border-gray-300 text-sm px-3 py-1.5 w-full focus:outline-none focus:ring-1 focus:ring-blue-400">
+               class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 w-full focus:outline-none focus:ring-1 focus:ring-blue-500">
       </div>
 
       {% if asset_type and asset_type.allow_rdp_users %}
       <div>
-        <label class="block text-xs font-medium text-gray-600 mb-1">
-          RDP Users
-          <span class="text-gray-400 font-normal ml-1">Current members · add or remove, then click Update</span>
+        <label class="block text-xs font-medium text-muted mb-1">
+          <span data-i18n="portal.my_it_detail.rdp_field_label">RDP Users</span>
+          <span class="text-muted/70 font-normal ml-1" data-i18n="portal.my_it_detail.members_hint">Current members · add or remove, then click Update</span>
         </label>
-        <div class="tag-editor rounded border border-gray-300 bg-white px-2 py-1.5 flex flex-wrap gap-1 min-h-[2.5rem] focus-within:ring-1 focus-within:ring-blue-400 cursor-text"
-             data-field="rdp_users" data-validate-result="rdp-validate-msg">
-          {% for u in effective_rdp_users %}
-          <span class="tag inline-flex items-center gap-1 bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded">
-            {{ u }}
-            <button type="button" class="tag-remove text-blue-500 hover:text-blue-800 leading-none">&times;</button>
-            <input type="hidden" name="rdp_users" value="{{ u }}">
-          </span>
-          {% endfor %}
-          <input type="text" class="tag-input text-sm outline-none flex-1 min-w-[8rem] bg-transparent" placeholder="user@domain.com" autocomplete="off">
+        <div class="flex gap-2 items-start">
+          <div class="tag-editor flex-1 rounded border border-token-border bg-surface px-2 py-1.5 flex flex-wrap gap-1 min-h-[2.5rem] focus-within:ring-1 focus-within:ring-blue-400 cursor-text"
+               data-field="rdp_users" data-validate-result="rdp-validate-msg">
+            {% for u in effective_rdp_users %}
+            <span class="tag inline-flex items-center gap-1 bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300 text-xs px-2 py-0.5 rounded">
+              {{ u }}
+              <button type="button" class="tag-remove text-blue-500 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-100 leading-none">&times;</button>
+              <input type="hidden" name="rdp_users" value="{{ u }}">
+            </span>
+            {% endfor %}
+            <input type="text" class="tag-input text-sm outline-none flex-1 min-w-[8rem] bg-transparent" placeholder="user@domain.com" autocomplete="off">
+          </div>
+          <button type="button" class="add-tag-btn px-3 py-1.5 text-xs font-medium rounded border border-token-border text-muted hover:bg-surface-raised whitespace-nowrap">+ Add</button>
         </div>
         <div id="rdp-validate-msg" class="min-h-[1.25rem] mt-1"></div>
       </div>
       {% endif %}
       {% if asset_type and asset_type.allow_admin_users %}
       <div>
-        <label class="block text-xs font-medium text-gray-600 mb-1">
-          Admin Users
-          <span class="text-gray-400 font-normal ml-1">Current members · add or remove, then click Update</span>
+        <label class="block text-xs font-medium text-muted mb-1">
+          <span data-i18n="portal.my_it_detail.admin_field_label">Admin Users</span>
+          <span class="text-muted/70 font-normal ml-1" data-i18n="portal.my_it_detail.members_hint">Current members · add or remove, then click Update</span>
         </label>
-        <div class="tag-editor rounded border border-gray-300 bg-white px-2 py-1.5 flex flex-wrap gap-1 min-h-[2.5rem] focus-within:ring-1 focus-within:ring-blue-400 cursor-text"
-             data-field="admin_users" data-validate-result="adm-validate-msg">
-          {% for u in effective_admin_users %}
-          <span class="tag inline-flex items-center gap-1 bg-purple-100 text-purple-800 text-xs px-2 py-0.5 rounded">
-            {{ u }}
-            <button type="button" class="tag-remove text-purple-500 hover:text-purple-800 leading-none">&times;</button>
-            <input type="hidden" name="admin_users" value="{{ u }}">
-          </span>
-          {% endfor %}
-          <input type="text" class="tag-input text-sm outline-none flex-1 min-w-[8rem] bg-transparent" placeholder="user@domain.com" autocomplete="off">
+        <div class="flex gap-2 items-start">
+          <div class="tag-editor flex-1 rounded border border-token-border bg-surface px-2 py-1.5 flex flex-wrap gap-1 min-h-[2.5rem] focus-within:ring-1 focus-within:ring-blue-400 cursor-text"
+               data-field="admin_users" data-validate-result="adm-validate-msg">
+            {% for u in effective_admin_users %}
+            <span class="tag inline-flex items-center gap-1 bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-300 text-xs px-2 py-0.5 rounded">
+              {{ u }}
+              <button type="button" class="tag-remove text-purple-500 hover:text-purple-800 dark:text-purple-300 dark:hover:text-purple-100 leading-none">&times;</button>
+              <input type="hidden" name="admin_users" value="{{ u }}">
+            </span>
+            {% endfor %}
+            <input type="text" class="tag-input text-sm outline-none flex-1 min-w-[8rem] bg-transparent" placeholder="user@domain.com" autocomplete="off">
+          </div>
+          <button type="button" class="add-tag-btn px-3 py-1.5 text-xs font-medium rounded border border-token-border text-muted hover:bg-surface-raised whitespace-nowrap">+ Add</button>
         </div>
         <div id="adm-validate-msg" class="min-h-[1.25rem] mt-1"></div>
       </div>
       {% endif %}
 
-      <button type="submit"
-              class="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 focus:outline-none">
+      {% if is_requester %}
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1" data-i18n="portal.my_it_detail.owner_field_label">Owner</label>
+        <div class="flex gap-2 items-start">
+          <div class="flex-1">
+            <input type="text" id="deputy-input"
+                   placeholder="user@domain.com or sAMAccountName"
+                   value="{{ effective_owner_email or '' }}"
+                   autocomplete="off"
+                   class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 w-full focus:outline-none focus:ring-1 focus:ring-blue-500">
+            <div id="deputy-validate-msg" class="min-h-[1.25rem] mt-1 text-xs"></div>
+          </div>
+          <button type="button" id="deputy-add-btn"
+                  class="px-3 py-1.5 text-xs font-medium rounded border border-token-border text-muted hover:bg-surface-raised whitespace-nowrap">+ Add</button>
+          <button type="button" id="deputy-clear-btn"
+                  class="text-xs px-2 py-1.5 rounded border border-token-border text-muted hover:bg-surface-raised whitespace-nowrap mt-0"
+                  title="Remove owner">✕</button>
+        </div>
+        <input type="hidden" name="new_owner_email" id="deputy-email-hidden" value="{{ effective_owner_email or '' }}">
+        <input type="hidden" name="new_owner_name" id="deputy-name-hidden" value="{{ effective_owner_name or '' }}">
+        <p class="text-xs text-muted/70 mt-1">
+          {% if effective_owner_email %}Currently: <span class="font-medium">{{ effective_owner_name or effective_owner_email }}</span>{% else %}No owner set.{% endif %}
+          Leave blank to keep current or clear to remove.
+        </p>
+      </div>
+      {% endif %}
+
+      <button type="submit" id="modify-submit-btn"
+              class="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 focus:outline-none"
+              data-i18n="portal.common.update">
         Update
       </button>
     </form>
   </div>
 
-  <!-- Cancel Access -->
-  <div class="bg-white rounded-lg border border-gray-200 p-5">
-    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Cancel Access</h2>
-    <p class="text-xs text-gray-500 mb-4">
+  <!-- Deprovision -->
+  <div class="bg-surface rounded-lg border border-token-border p-5">
+    <h2 class="text-xs font-semibold text-muted uppercase tracking-wide mb-4" data-i18n="portal.my_it_detail.deprovision_heading">Deprovision</h2>
+    <p class="text-xs text-muted mb-4" data-i18n="portal.my_it_detail.deprovision_hint">
       Ends access and returns the asset to the pool. This action cannot be undone.
     </p>
     <form method="post" action="/portal/orders/{{ order.id }}/cancel"
-          onsubmit="return confirm('Really cancel access? This action cannot be undone.')">
+          onsubmit="return confirm('Really deprovision this asset? This action cannot be undone.')">
       <button type="submit"
-              class="px-4 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700 focus:outline-none">
-        Cancel now
+              class="px-4 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700 focus:outline-none"
+              data-i18n="portal.my_it_detail.deprovision_button">
+        Deprovision now
       </button>
     </form>
   </div>
@@ -138,11 +176,11 @@
     var field = editor.dataset.field;
     var msgDivId = editor.dataset.validateResult;
     var tagColor = field === 'rdp_users'
-      ? 'bg-blue-100 text-blue-800'
-      : 'bg-purple-100 text-purple-800';
+      ? 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300'
+      : 'bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-300';
     var removeColor = field === 'rdp_users'
-      ? 'text-blue-500 hover:text-blue-800'
-      : 'text-purple-500 hover:text-purple-800';
+      ? 'text-blue-500 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-100'
+      : 'text-purple-500 hover:text-purple-800 dark:text-purple-300 dark:hover:text-purple-100';
 
     var input = editor.querySelector('.tag-input');
     editors.push({ input: input });
@@ -168,7 +206,7 @@
       var value = rawValue.trim();
       if (!value) return;
       var msgEl = msgDivId ? document.getElementById(msgDivId) : null;
-      if (msgEl) msgEl.innerHTML = '<span class="text-xs text-gray-400">Validating…</span>';
+      if (msgEl) msgEl.innerHTML = '<span class="text-xs text-muted/70">Validating…</span>';
       try {
         var r = await fetch('/portal/_validate-user?q=' + encodeURIComponent(value));
         var html = await r.text();
@@ -202,6 +240,14 @@
     editor.querySelectorAll('.tag-remove').forEach(function(btn) {
       btn.addEventListener('click', function() { btn.closest('.tag').remove(); });
     });
+
+    var addBtn = editor.parentElement.querySelector('.add-tag-btn');
+    if (addBtn) {
+      addBtn.addEventListener('click', function() {
+        addTagValidated(input.value);
+        input.focus();
+      });
+    }
   });
 
   // Block submit if any input still has unconfirmed text
@@ -213,9 +259,88 @@
         e.preventDefault();
         alert('Please confirm all user inputs with Enter before saving, or clear them.');
         pending[0].input.focus();
+        return;
+      }
+      // Block submit if deputy field has unconfirmed text
+      var deputyInput = document.getElementById('deputy-input');
+      var deputyHidden = document.getElementById('deputy-email-hidden');
+      if (deputyInput && deputyHidden && deputyInput.value.trim() !== deputyHidden.value) {
+        e.preventDefault();
+        alert('Please validate the owner email with the + Add button before saving.');
+        deputyInput.focus();
       }
     });
   }
+
+  // Deputy field logic
+  (function() {
+    var deputyInput = document.getElementById('deputy-input');
+    if (!deputyInput) return;
+    var deputyEmailHidden = document.getElementById('deputy-email-hidden');
+    var deputyNameHidden = document.getElementById('deputy-name-hidden');
+    var deputyMsg = document.getElementById('deputy-validate-msg');
+    var clearBtn = document.getElementById('deputy-clear-btn');
+    var _debounce = null;
+
+    function setDeputy(email, name) {
+      deputyEmailHidden.value = email;
+      deputyNameHidden.value = name;
+    }
+
+    async function validateDeputy(value) {
+      value = value.trim();
+      if (!value) { setDeputy('', ''); deputyMsg.innerHTML = ''; return; }
+      deputyMsg.innerHTML = '<span class="text-muted/70">Validating…</span>';
+      try {
+        var r = await fetch('/portal/_validate-user?q=' + encodeURIComponent(value));
+        var html = await r.text();
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var badge = doc.querySelector('span[data-valid]');
+        if (!badge || badge.dataset.valid !== 'true') {
+          setDeputy('', '');
+          deputyMsg.innerHTML = '<span class="text-red-600">Not found in directory</span>';
+          return;
+        }
+        var resolvedEmail = badge.dataset.email || value;
+        var resolvedName = badge.dataset.name || badge.textContent.trim() || resolvedEmail;
+        deputyInput.value = resolvedEmail;
+        setDeputy(resolvedEmail, resolvedName);
+        deputyMsg.innerHTML = '<span class="text-green-600">✓ ' + resolvedName + '</span>';
+      } catch(e) {
+        setDeputy('', '');
+        deputyMsg.innerHTML = '<span class="text-red-600">Validation error</span>';
+      }
+    }
+
+    deputyInput.addEventListener('input', function() {
+      clearTimeout(_debounce);
+      var v = deputyInput.value.trim();
+      if (!v) { setDeputy('', ''); deputyMsg.innerHTML = ''; return; }
+      // Clear hidden until validated
+      setDeputy('', '');
+      deputyMsg.innerHTML = '';
+      _debounce = setTimeout(function() { validateDeputy(v); }, 500);
+    });
+
+    deputyInput.addEventListener('blur', function() {
+      clearTimeout(_debounce);
+      validateDeputy(deputyInput.value);
+    });
+
+    clearBtn.addEventListener('click', function() {
+      deputyInput.value = '';
+      setDeputy('', '');
+      deputyMsg.innerHTML = '<span class="text-muted/70">Owner cleared — save to apply.</span>';
+    });
+
+    var deputyAddBtn = document.getElementById('deputy-add-btn');
+    if (deputyAddBtn) {
+      deputyAddBtn.addEventListener('click', function() {
+        clearTimeout(_debounce);
+        validateDeputy(deputyInput.value);
+      });
+    }
+  }());
 }());
 </script>
 {% endblock %}

@@ -1,0 +1,28 @@
+name: Trigger ipsolis-web docs rebuild
+
+on:
+  push:
+    branches: [prelive]
+    paths:
+      - 'docs/web/**'
+      - 'CHANGELOG.md'
+
+# No GITHUB_TOKEN permissions needed — dispatch uses a PAT secret.
+# Required secret: IPSOLIS_WEB_DISPATCH_PAT
+#   Fine-grained PAT: repository XenPool/ipsolis-web, permission Contents: write
+#   Classic PAT: scope repo
+permissions: {}
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.IPSOLIS_WEB_DISPATCH_PAT }}
+          script: |
+            await github.rest.repos.createDispatchEvent({
+              owner: 'XenPool',
+              repo: 'ipsolis-web',
+              event_type: 'docs-updated',
+            })

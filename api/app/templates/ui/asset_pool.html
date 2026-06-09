@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}Asset Pool – {{ app_title }}{% endblock %}
+{% block title %}Personal Assets – {{ app_title }}{% endblock %}
 
 {% block content %}
 <div class="mb-4 flex items-center justify-between">
-  <h1 class="text-lg font-semibold text-gray-900">Asset Pool</h1>
+  <h1 class="text-lg font-semibold text-heading">Personal Assets</h1>
   <div class="flex gap-2">
     <button onclick="togglePanel('add')"
             class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
@@ -22,33 +22,28 @@
 </div>
 
 <!-- Single Add Form -->
-<div id="panel-add" class="hidden mb-4 bg-white rounded-lg border border-blue-200 p-4">
-  <h2 class="text-sm font-semibold text-gray-700 mb-3">New Host</h2>
+<div id="panel-add" class="hidden mb-4 bg-surface rounded-lg border border-blue-200 dark:border-blue-500/30 p-4">
+  <h2 class="text-sm font-semibold text-body mb-3">New Host</h2>
   <div class="grid grid-cols-12 gap-3 items-end">
     <div class="col-span-3">
-      <label class="block text-xs font-medium text-gray-600 mb-1">Hostname <span class="text-red-500">*</span></label>
+      <label class="block text-xs font-medium text-muted mb-1">Hostname <span class="text-red-500">*</span></label>
       <input type="text" id="add-name" placeholder="e.g. VDI-PC01"
-             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+             class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
     </div>
     <div class="col-span-3">
-      <label class="block text-xs font-medium text-gray-600 mb-1">Asset Type <span class="text-red-500">*</span></label>
+      <label class="block text-xs font-medium text-muted mb-1">Asset Definition <span class="text-red-500">*</span></label>
       <select id="add-type"
-              class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+              class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
         <option value="">– Select type –</option>
         {% for t in asset_types %}
         <option value="{{ t.id }}" {% if selected_type_id == t.id %}selected{% endif %}>{{ t.name }}</option>
         {% endfor %}
       </select>
     </div>
-    <div class="col-span-2">
-      <label class="block text-xs font-medium text-gray-600 mb-1">IP Address</label>
-      <input type="text" id="add-ip" placeholder="10.0.1.1"
-             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
-    </div>
-    <div class="col-span-3">
-      <label class="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+    <div class="col-span-5">
+      <label class="block text-xs font-medium text-muted mb-1">Notes</label>
       <input type="text" id="add-notes" placeholder="Optional notes"
-             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400">
+             class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
     </div>
     <div class="col-span-1">
       <button onclick="addAsset()"
@@ -61,33 +56,33 @@
 </div>
 
 <!-- Bulk Create Form -->
-<div id="panel-bulk" class="hidden mb-4 bg-white rounded-lg border border-indigo-200 p-4">
-  <h2 class="text-sm font-semibold text-gray-700 mb-3">Bulk Create – Pattern + Number Range</h2>
+<div id="panel-bulk" class="hidden mb-4 bg-surface rounded-lg border border-indigo-200 dark:border-indigo-500/30 p-4">
+  <h2 class="text-sm font-semibold text-body mb-3">Bulk Create – Pattern + Number Range</h2>
   <div class="grid grid-cols-12 gap-3 items-end">
     <div class="col-span-3">
-      <label class="block text-xs font-medium text-gray-600 mb-1">Prefix <span class="text-red-500">*</span></label>
+      <label class="block text-xs font-medium text-muted mb-1">Prefix <span class="text-red-500">*</span></label>
       <input type="text" id="bulk-prefix" placeholder="e.g. VDI-PC" oninput="bulkPreview()"
-             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+             class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500">
     </div>
     <div class="col-span-1">
-      <label class="block text-xs font-medium text-gray-600 mb-1">Start #</label>
+      <label class="block text-xs font-medium text-muted mb-1">Start #</label>
       <input type="number" id="bulk-start" value="1" min="0" oninput="bulkPreview()"
-             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+             class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500">
     </div>
     <div class="col-span-1">
-      <label class="block text-xs font-medium text-gray-600 mb-1">Count</label>
+      <label class="block text-xs font-medium text-muted mb-1">Count</label>
       <input type="number" id="bulk-count" value="10" min="1" max="200" oninput="bulkPreview()"
-             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+             class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500">
     </div>
     <div class="col-span-1">
-      <label class="block text-xs font-medium text-gray-600 mb-1">Pad digits</label>
+      <label class="block text-xs font-medium text-muted mb-1">Pad digits</label>
       <input type="number" id="bulk-pad" value="2" min="1" max="5" oninput="bulkPreview()"
-             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+             class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500">
     </div>
     <div class="col-span-3">
-      <label class="block text-xs font-medium text-gray-600 mb-1">Asset Type <span class="text-red-500">*</span></label>
+      <label class="block text-xs font-medium text-muted mb-1">Asset Definition <span class="text-red-500">*</span></label>
       <select id="bulk-type"
-              class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+              class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500">
         <option value="">– Select type –</option>
         {% for t in asset_types %}
         <option value="{{ t.id }}">{{ t.name }}</option>
@@ -95,9 +90,9 @@
       </select>
     </div>
     <div class="col-span-2">
-      <label class="block text-xs font-medium text-gray-600 mb-1">Notes (all)</label>
+      <label class="block text-xs font-medium text-muted mb-1">Notes (all)</label>
       <input type="text" id="bulk-notes" placeholder="Optional"
-             class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+             class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500">
     </div>
     <div class="col-span-1">
       <button id="bulk-submit-btn" onclick="bulkCreate()"
@@ -106,43 +101,43 @@
       </button>
     </div>
   </div>
-  <div id="bulk-preview" class="mt-3 text-xs text-gray-500"></div>
+  <div id="bulk-preview" class="mt-3 text-xs text-muted"></div>
   <div id="bulk-error" class="hidden mt-2 text-xs text-red-600"></div>
   <div id="bulk-result" class="hidden mt-2 text-xs"></div>
 </div>
 
 <!-- Import from File Form -->
-<div id="panel-import" class="hidden mb-4 bg-white rounded-lg border border-teal-200 p-4">
+<div id="panel-import" class="hidden mb-4 bg-surface rounded-lg border border-teal-200 dark:border-teal-500/30 p-4">
   <div class="flex items-start justify-between mb-3">
-    <h2 class="text-sm font-semibold text-gray-700">Import from File</h2>
+    <h2 class="text-sm font-semibold text-body">Import from File</h2>
     <button onclick="downloadExample()"
             class="text-xs text-teal-600 hover:text-teal-800 underline">
       Download example .csv
     </button>
   </div>
-  <p class="text-xs text-gray-500 mb-3">
-    Columns: <code class="bg-gray-100 px-1 rounded">hostname, asset_type, ip_address, notes</code>
+  <p class="text-xs text-muted mb-3">
+    Columns: <code class="bg-surface-raised px-1 rounded">hostname, asset_type, notes</code>
     — comma or tab separated. First line may be a header (auto-detected).
     <code>asset_type</code> must match a type name exactly, or leave blank and use the override below.
   </p>
   <div class="grid grid-cols-12 gap-3 items-start">
     <div class="col-span-8">
       <div class="flex gap-2 items-center mb-1">
-        <label class="text-xs font-medium text-gray-600">Paste content or choose file</label>
+        <label class="text-xs font-medium text-muted">Paste content or choose file</label>
         <input type="file" id="import-file" accept=".csv,.txt,.tsv"
                onchange="importFileSelected()"
-               class="text-xs text-gray-600">
+               class="text-xs text-muted">
       </div>
-      <textarea id="import-text" rows="6" placeholder="hostname,asset_type,ip_address,notes&#10;VDI-PC01,Developer VDI,10.0.1.1,Floor 2&#10;VDI-PC02,Developer VDI,10.0.1.2,"
+      <textarea id="import-text" rows="6" placeholder="hostname,asset_type,notes&#10;VDI-PC01,Developer VDI,Floor 2&#10;VDI-PC02,Developer VDI,"
                 oninput="importPreview()"
-                class="w-full rounded border border-gray-300 text-xs px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-teal-400 resize-y"></textarea>
+                class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-xs px-3 py-2 font-mono focus:outline-none focus:ring-1 focus:ring-teal-500 resize-y"></textarea>
     </div>
     <div class="col-span-4 flex flex-col gap-3">
       <div>
-        <label class="block text-xs font-medium text-gray-600 mb-1">Asset Type override</label>
+        <label class="block text-xs font-medium text-muted mb-1">Asset Definition override</label>
         <select id="import-type-override"
                 onchange="importPreview()"
-                class="w-full rounded border border-gray-300 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal-400">
+                class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal-500">
           <option value="">— use from file —</option>
           {% for t in asset_types %}
           <option value="{{ t.id }}">{{ t.name }}</option>
@@ -160,19 +155,18 @@
   </div>
   <!-- Preview table -->
   <div id="import-preview-wrap" class="hidden mt-3">
-    <div class="text-xs font-medium text-gray-600 mb-1">Preview (<span id="import-preview-count">0</span> rows)</div>
-    <div class="overflow-x-auto max-h-48 overflow-y-auto rounded border border-gray-200">
-      <table class="min-w-full text-xs divide-y divide-gray-100">
-        <thead class="bg-gray-50 sticky top-0">
+    <div class="text-xs font-medium text-muted mb-1">Preview (<span id="import-preview-count">0</span> rows)</div>
+    <div class="overflow-x-auto max-h-48 overflow-y-auto rounded border border-token-border">
+      <table class="min-w-full text-xs divide-y divide-token-border">
+        <thead class="bg-surface-raised sticky top-0">
           <tr>
-            <th class="px-3 py-2 text-left text-gray-500 font-medium">Hostname</th>
-            <th class="px-3 py-2 text-left text-gray-500 font-medium">Asset Type</th>
-            <th class="px-3 py-2 text-left text-gray-500 font-medium">IP Address</th>
-            <th class="px-3 py-2 text-left text-gray-500 font-medium">Notes</th>
-            <th class="px-3 py-2 text-left text-gray-500 font-medium">Status</th>
+            <th class="px-3 py-2 text-left text-muted font-medium">Hostname</th>
+            <th class="px-3 py-2 text-left text-muted font-medium">Asset Definition</th>
+            <th class="px-3 py-2 text-left text-muted font-medium">Notes</th>
+            <th class="px-3 py-2 text-left text-muted font-medium">Status</th>
           </tr>
         </thead>
-        <tbody id="import-preview-tbody" class="divide-y divide-gray-50"></tbody>
+        <tbody id="import-preview-tbody" class="divide-y divide-token-border"></tbody>
       </table>
     </div>
   </div>
@@ -181,43 +175,45 @@
 <!-- Filter bar -->
 <div class="mb-3 flex items-center gap-3">
   <select id="filter-type" onchange="applyFilters()"
-          class="rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
-    <option value="">All Asset Types</option>
+          class="rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500">
+    <option value="">All Asset Definitions</option>
     {% for t in asset_types %}
     <option value="{{ t.id }}" {% if selected_type_id == t.id %}selected{% endif %}>{{ t.name }}</option>
     {% endfor %}
   </select>
   <select id="filter-status" onchange="applyFilters()"
-          class="rounded border border-gray-300 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400">
+          class="rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500">
     <option value="">All Statuses</option>
-    <option value="free">Free</option>
+    <option value="Free">Free</option>
     <option value="reserved">Reserved</option>
     <option value="busy">Assigned</option>
     <option value="maintenance">Maintenance</option>
-    <option value="reclaiming">Releasing...</option>
+    <option value="Reinstall">Reinstall</option>
+    <option value="Reinstalling">Reinstalling</option>
+    <option value="Failed">Failed</option>
   </select>
-  <span id="count-label" class="text-xs text-gray-400"></span>
+  <span id="count-label" class="text-xs text-muted/70"></span>
 </div>
 
 <!-- Table -->
-<div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
-  <table class="min-w-full divide-y divide-gray-200 text-sm" id="pool-table">
-    <thead class="bg-gray-50">
+<div class="bg-surface rounded-lg border border-token-border overflow-hidden">
+  <table class="min-w-full divide-y divide-token-border text-sm" id="pool-table">
+    <thead class="bg-surface-raised">
       <tr>
-        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Hostname</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Asset Type</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Assigned To</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Order</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Expires</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">IP Address</th>
-        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Notes</th>
-        <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide text-right">Actions</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Hostname</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Asset Definition</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Status</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Assigned To</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Order</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Expires</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">MAC Address</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Notes</th>
+        <th class="px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide text-right">Actions</th>
       </tr>
     </thead>
-    <tbody id="pool-tbody" class="divide-y divide-gray-100">
+    <tbody id="pool-tbody" class="divide-y divide-token-border">
       <tr id="loading-row">
-        <td colspan="9" class="px-4 py-10 text-center text-gray-400 text-sm">Loading assets…</td>
+        <td colspan="9" class="px-4 py-10 text-center text-muted/70 text-sm">Loading assets…</td>
       </tr>
     </tbody>
   </table>
@@ -225,21 +221,21 @@
 
 <!-- ── Force-Delete Modal ───────────────────────────────────────────────────── -->
 <div id="force-delete-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-  <div class="bg-white rounded-lg border border-gray-200 shadow-xl w-full max-w-md mx-4 p-6">
-    <h2 class="text-sm font-semibold text-gray-900 mb-1">Force Delete Asset</h2>
-    <p class="text-xs text-gray-500 mb-4">
+  <div class="bg-surface rounded-lg border border-token-border shadow-xl w-full max-w-md mx-4 p-6">
+    <h2 class="text-sm font-semibold text-heading mb-1">Force Delete Asset</h2>
+    <p class="text-xs text-muted mb-4">
       This asset will be permanently removed regardless of its current status.
       Any active order will be cancelled.
     </p>
 
     <!-- Asset info -->
-    <div class="mb-4 rounded bg-gray-50 border border-gray-200 px-4 py-3 text-sm">
+    <div class="mb-4 rounded bg-surface-raised border border-token-border px-4 py-3 text-sm">
       <div class="flex items-center justify-between">
-        <span class="font-mono font-medium text-gray-900" id="fdm-name"></span>
+        <span class="font-mono font-medium text-heading" id="fdm-name"></span>
         <span id="fdm-badge"></span>
       </div>
-      <div id="fdm-user-row" class="hidden mt-1 text-xs text-gray-500">
-        Currently assigned to <span id="fdm-user" class="font-medium text-gray-700"></span>
+      <div id="fdm-user-row" class="hidden mt-1 text-xs text-muted">
+        Currently assigned to <span id="fdm-user" class="font-medium text-body"></span>
       </div>
     </div>
 
@@ -247,22 +243,22 @@
     <div id="fdm-revoke-row" class="hidden mb-5">
       <label class="flex items-start gap-3 cursor-pointer select-none">
         <input type="checkbox" id="fdm-revoke" checked
-               class="mt-0.5 rounded border-gray-300 text-red-600 focus:ring-red-400 cursor-pointer">
-        <span class="text-sm text-gray-700">
+               class="mt-0.5 rounded border-token-border text-red-600 focus:ring-red-400 cursor-pointer">
+        <span class="text-sm text-body">
           Revoke permissions
-          <span class="block text-xs text-gray-400 mt-0.5">
-            Remove the user's group memberships for this asset type.
+          <span class="block text-xs text-muted/70 mt-0.5">
+            Remove the user's group memberships for this asset definition.
           </span>
         </span>
       </label>
     </div>
 
     <!-- Error banner -->
-    <div id="fdm-error" class="hidden mb-4 px-3 py-2 rounded bg-red-50 border border-red-200 text-xs text-red-700"></div>
+    <div id="fdm-error" class="hidden mb-4 px-3 py-2 rounded bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-xs text-red-700 dark:text-red-300"></div>
 
     <div class="flex gap-2 justify-end">
       <button onclick="closeForceDeleteModal()"
-              class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50">
+              class="px-4 py-2 text-sm font-medium text-body border border-token-border rounded hover:bg-surface-raised">
         Cancel
       </button>
       <button onclick="confirmForceDelete()"
@@ -276,21 +272,21 @@
 
 <!-- ── Revoke Modal ─────────────────────────────────────────────────────────── -->
 <div id="revoke-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-  <div class="bg-white rounded-lg border border-gray-200 shadow-xl w-full max-w-md mx-4 p-6">
-    <h2 class="text-sm font-semibold text-gray-900 mb-1">Revoke &amp; Release Asset</h2>
-    <p class="text-xs text-gray-500 mb-4">
+  <div class="bg-surface rounded-lg border border-token-border shadow-xl w-full max-w-md mx-4 p-6">
+    <h2 class="text-sm font-semibold text-heading mb-1">Revoke &amp; Release Asset</h2>
+    <p class="text-xs text-muted mb-4">
       The asset will be returned to the free pool. The active order will be cancelled.
       The asset itself is <strong>not</strong> deleted.
     </p>
 
     <!-- Asset info -->
-    <div class="mb-4 rounded bg-gray-50 border border-gray-200 px-4 py-3 text-sm">
+    <div class="mb-4 rounded bg-surface-raised border border-token-border px-4 py-3 text-sm">
       <div class="flex items-center justify-between">
-        <span class="font-mono font-medium text-gray-900" id="rvm-name"></span>
+        <span class="font-mono font-medium text-heading" id="rvm-name"></span>
         <span id="rvm-badge"></span>
       </div>
-      <div class="mt-1 text-xs text-gray-500">
-        Currently assigned to <span id="rvm-user" class="font-medium text-gray-700"></span>
+      <div class="mt-1 text-xs text-muted">
+        Currently assigned to <span id="rvm-user" class="font-medium text-body"></span>
       </div>
     </div>
 
@@ -298,20 +294,20 @@
     <div class="mb-5">
       <label class="flex items-start gap-3 cursor-pointer select-none">
         <input type="checkbox" id="rvm-revoke" checked
-               class="mt-0.5 rounded border-gray-300 text-orange-600 focus:ring-orange-400 cursor-pointer">
-        <span class="text-sm text-gray-700">
+               class="mt-0.5 rounded border-token-border text-orange-600 focus:ring-orange-400 cursor-pointer">
+        <span class="text-sm text-body">
           Revoke AD group permissions
-          <span class="block text-xs text-gray-400 mt-0.5">Removes the user from all AD groups that were granted for this asset.</span>
+          <span class="block text-xs text-muted/70 mt-0.5">Removes the user from all AD groups that were granted for this asset.</span>
         </span>
       </label>
     </div>
 
     <!-- Error banner -->
-    <div id="rvm-error" class="hidden mb-4 px-3 py-2 rounded bg-red-50 border border-red-200 text-xs text-red-700"></div>
+    <div id="rvm-error" class="hidden mb-4 px-3 py-2 rounded bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-xs text-red-700 dark:text-red-300"></div>
 
     <div class="flex gap-2 justify-end">
       <button onclick="closeRevokeModal()"
-              class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50">
+              class="px-4 py-2 text-sm font-medium text-body border border-token-border rounded hover:bg-surface-raised">
         Cancel
       </button>
       <button onclick="confirmRevoke()"
@@ -348,14 +344,12 @@ var _STATUS_LABELS = {
   reserved:    'Reserved',
   busy:        'Assigned',
   maintenance: 'Maintenance',
-  reclaiming:  'Releasing\u2026',
 };
 var _STATUS_CLASSES = {
-  free:        'bg-green-100 text-green-700',
-  reserved:    'bg-yellow-100 text-yellow-700',
-  busy:        'bg-blue-100 text-blue-700',
-  maintenance: 'bg-gray-100 text-gray-600',
-  reclaiming:  'bg-orange-100 text-orange-700',
+  free:        'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300',
+  reserved:    'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300',
+  busy:        'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+  maintenance: 'bg-surface-raised text-muted',
 };
 
 // ── Panel toggle ──────────────────────────────────────────────────
@@ -386,7 +380,7 @@ async function loadAssets() {
     renderTable();
   } catch(e) {
     document.getElementById('pool-tbody').innerHTML =
-      '<tr><td colspan="9" class="px-4 py-10 text-center text-red-400 text-sm">Error loading: ' + e.message + '</td></tr>';
+      '<tr><td colspan="10" class="px-4 py-10 text-center text-red-400 text-sm">Error loading: ' + e.message + '</td></tr>';
   }
 }
 
@@ -401,7 +395,7 @@ function renderTable() {
   document.getElementById('count-label').textContent = filtered.length + ' entries';
   var tbody = document.getElementById('pool-tbody');
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="px-4 py-10 text-center text-gray-400 text-sm">No assets found.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-10 text-center text-muted/70 text-sm">No assets found.</td></tr>';
     return;
   }
   tbody.innerHTML = '';
@@ -409,7 +403,7 @@ function renderTable() {
 }
 
 function _statusBadge(status) {
-  var cls = _STATUS_CLASSES[status] || 'bg-gray-100 text-gray-500';
+  var cls = _STATUS_CLASSES[status] || 'bg-surface-raised text-muted';
   var lbl = _STATUS_LABELS[status] || status;
   return '<span class="inline-block px-2 py-0.5 rounded text-xs font-medium ' + cls + '">' + lbl + '</span>';
 }
@@ -419,42 +413,129 @@ function _esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// Which current statuses allow inline editing in the asset pool admin view.
+var EDITABLE_STATUSES = ['Free', 'maintenance', 'Failed', 'Reinstall', 'Reinstalling'];
+// Options the edit <select> offers for each current status. Order = display order.
+// 'Reinstall' target is only offered from Failed/Free/Reinstall/Reinstalling (per spec).
+var EDIT_STATUS_OPTIONS = {
+  'Free':         ['Free', 'maintenance', 'Reinstall'],
+  'maintenance':  ['Free', 'maintenance'],
+  'Failed':       ['Failed', 'Free', 'Reinstall'],
+  'Reinstall':    ['Reinstall', 'Free'],
+  'Reinstalling': ['Reinstalling', 'Reinstall'],
+};
+var STATUS_LABELS = {
+  'Free': 'Free', 'maintenance': 'Maintenance',
+  'Failed': 'Failed', 'Reinstalling': 'Reinstalling', 'Reinstall': 'Reinstall',
+};
+
 function buildRow(a) {
-  var canEdit = (a.status === 'free' || a.status === 'maintenance');
-  var ip = (a.asset_metadata && a.asset_metadata.ip_address) ? a.asset_metadata.ip_address : '';
+  var canEdit = EDITABLE_STATUSES.indexOf(a.status) !== -1;
+  var mac = (a.asset_metadata && a.asset_metadata.mac_address) ? a.asset_metadata.mac_address : '';
   var notes = (a.asset_metadata && a.asset_metadata.notes) ? a.asset_metadata.notes : '';
   var expiresStr = a.expires_at ? new Date(a.expires_at).toLocaleDateString('en-GB') : '–';
   var orderCell = a.current_order_id
     ? '<a href="/ui/orders/' + a.current_order_id + '" class="text-blue-600 hover:underline">#' + a.current_order_id + '</a>'
-    : '<span class="text-gray-400">–</span>';
-  var inUse = (a.status === 'reserved' || a.status === 'busy' || a.status === 'reclaiming');
-  var forceBtn = '<button onclick="openForceDeleteModal(' + a.id + ')" title="Force Delete"'
-    + ' class="text-gray-300 hover:text-red-500 ml-1" style="font-size:15px;line-height:1">⊗</button>';
-  var revokeBtn = '<button onclick="openRevokeModal(' + a.id + ')" title="Revoke &amp; Release"'
-    + ' class="text-gray-300 hover:text-orange-500 ml-1" style="font-size:15px;line-height:1">↩</button>';
+    : '<span class="text-muted/70">–</span>';
+  var inUse = (a.status === 'reserved' || a.status === 'busy');
+  var forceBtn = '<button onclick="openForceDeleteModal(' + a.id + ')" title="Force Delete" aria-label="Force delete asset"'
+    + ' class="text-muted/50 hover:text-red-500 ml-1" style="font-size:15px;line-height:1"><span aria-hidden="true">⊗</span></button>';
+  var revokeBtn = '<button onclick="openRevokeModal(' + a.id + ')" title="Revoke &amp; Release" aria-label="Revoke and release asset"'
+    + ' class="text-muted/50 hover:text-orange-500 ml-1" style="font-size:15px;line-height:1"><span aria-hidden="true">↩</span></button>';
   var actionsHtml = canEdit
-    ? '<button onclick="startEdit(' + a.id + ')" title="Edit" class="text-gray-400 hover:text-blue-600 mr-2">✏</button>'
-      + '<button onclick="deleteAsset(' + a.id + ', \'' + _esc(a.name) + '\')" title="Delete" class="text-gray-400 hover:text-red-600">×</button>'
+    ? '<button onclick="startEdit(' + a.id + ')" title="Edit" aria-label="Edit asset" class="text-muted/70 hover:text-blue-600 mr-2"><span aria-hidden="true">✏</span></button>'
+      + '<button onclick="deleteAsset(' + a.id + ', \'' + _esc(a.name) + '\')" title="Delete" aria-label="Delete asset" class="text-muted/70 hover:text-red-600"><span aria-hidden="true">×</span></button>'
       + forceBtn
     : (inUse ? revokeBtn : '') + forceBtn;
   var tr = document.createElement('tr');
   tr.id = 'row-' + a.id;
-  tr.className = 'hover:bg-gray-50';
+  tr.className = 'hover:bg-surface-raised';
   var assignedCell = a.user_name
-    ? '<span class="text-gray-900">' + _esc(a.user_name) + '</span>'
-      + (a.user_email ? '<br><span class="text-gray-400">' + _esc(a.user_email) + '</span>' : '')
-    : '<span class="text-gray-400">–</span>';
+    ? '<span class="text-heading">' + _esc(a.user_name) + '</span>'
+      + (a.user_email ? '<br><span class="text-muted/70">' + _esc(a.user_email) + '</span>' : '')
+    : '<span class="text-muted/70">–</span>';
   tr.innerHTML =
-    '<td class="px-4 py-3 font-mono text-sm font-medium text-gray-900">' + _esc(a.name) + '</td>'
-    + '<td class="px-4 py-3 text-xs text-gray-600">' + _esc(a.type_name) + '</td>'
+    '<td class="px-4 py-3 font-mono text-sm font-medium text-heading">' + _esc(a.name) + '</td>'
+    + '<td class="px-4 py-3 text-xs text-muted">' + _esc(a.type_name) + '</td>'
     + '<td class="px-4 py-3">' + _statusBadge(a.status) + '</td>'
     + '<td class="px-4 py-3 text-xs">' + assignedCell + '</td>'
     + '<td class="px-4 py-3 text-xs">' + orderCell + '</td>'
-    + '<td class="px-4 py-3 text-xs text-gray-500">' + _esc(expiresStr) + '</td>'
-    + '<td class="px-4 py-3 text-xs text-gray-500 font-mono">' + _esc(ip) + '</td>'
-    + '<td class="px-4 py-3 text-xs text-gray-500 max-w-xs truncate" title="' + _esc(notes) + '">' + _esc(notes) + '</td>'
+    + '<td class="px-4 py-3 text-xs text-muted">' + _esc(expiresStr) + '</td>'
+    + '<td class="px-4 py-3 text-xs text-muted font-mono">' + _esc(mac) + '</td>'
+    + '<td class="px-4 py-3 text-xs text-muted max-w-xs">'
+    +   '<span id="notes-cell-' + a.id + '" class="block truncate cursor-text hover:text-body"'
+    +   ' title="Click to edit notes" onclick="editNotesInline(' + a.id + ')">'
+    +   (notes ? _esc(notes) : '<span class="text-muted/40">–</span>')
+    +   '</span>'
+    + '</td>'
     + '<td class="px-4 py-3 text-right text-sm">' + actionsHtml + '</td>';
   return tr;
+}
+
+// Inline Notes editor — always available, regardless of asset status.
+function editNotesInline(id) {
+  var cell = document.getElementById('notes-cell-' + id);
+  if (!cell || cell.dataset.editing === '1') return;
+  var a = _allAssets.find(function(x) { return x.id === id; });
+  if (!a) return;
+  var current = (a.asset_metadata && a.asset_metadata.notes) || '';
+  cell.dataset.editing = '1';
+  cell.innerHTML =
+    '<input type="text" id="notes-input-' + id + '" value="' + _esc(current) + '" '
+    + 'placeholder="Notes" maxlength="500" '
+    + 'class="w-full rounded border border-token-border bg-surface text-body text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500">';
+  var input = document.getElementById('notes-input-' + id);
+  input.focus();
+  input.select();
+  var cancelled = false;
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    else if (e.key === 'Escape') { cancelled = true; input.blur(); }
+  });
+  input.addEventListener('blur', function() {
+    if (cancelled) { _renderNotesCell(id, current); cell.dataset.editing = '0'; return; }
+    _saveNotesInline(id, input.value.trim(), current);
+  });
+}
+
+async function _saveNotesInline(id, newNotes, originalNotes) {
+  var a = _allAssets.find(function(x) { return x.id === id; });
+  if (!a) return;
+  // No change → just re-render without a round trip.
+  if (newNotes === originalNotes) { _renderNotesCell(id, newNotes); _markNotCell(id, false); return; }
+  var meta = Object.assign({}, a.asset_metadata || {});
+  if (newNotes) meta.notes = newNotes; else delete meta.notes;
+  try {
+    var resp = await fetch('/admin/assets/' + id, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ asset_metadata: Object.keys(meta).length ? meta : null }),
+    });
+    if (!resp.ok) {
+      var err = {}; try { err = await resp.json(); } catch(e) {}
+      alert('Saving notes failed: ' + (err.detail || resp.status));
+      _renderNotesCell(id, originalNotes);
+    } else {
+      a.asset_metadata = meta;
+      _renderNotesCell(id, newNotes);
+    }
+  } catch(e) {
+    alert('Network error while saving notes: ' + e.message);
+    _renderNotesCell(id, originalNotes);
+  }
+  _markNotCell(id, false);
+}
+
+function _renderNotesCell(id, notes) {
+  var cell = document.getElementById('notes-cell-' + id);
+  if (!cell) return;
+  cell.innerHTML = notes ? _esc(notes) : '<span class="text-muted/40">–</span>';
+  cell.title = notes ? 'Click to edit notes — ' + notes : 'Click to edit notes';
+}
+
+function _markNotCell(id, on) {
+  var cell = document.getElementById('notes-cell-' + id);
+  if (cell) cell.dataset.editing = on ? '1' : '0';
 }
 
 // ── Edit inline ───────────────────────────────────────────────────
@@ -463,28 +544,29 @@ function startEdit(id) {
   _editingId = id;
   var a = _allAssets.find(function(x) { return x.id === id; });
   if (!a) return;
-  var ip = (a.asset_metadata && a.asset_metadata.ip_address) ? a.asset_metadata.ip_address : '';
+  var mac = (a.asset_metadata && a.asset_metadata.mac_address) ? a.asset_metadata.mac_address : '';
   var notes = (a.asset_metadata && a.asset_metadata.notes) ? a.asset_metadata.notes : '';
   var tr = document.getElementById('row-' + id);
   tr.innerHTML =
     '<td class="px-4 py-2"><input id="edit-name-' + id + '" value="' + _esc(a.name) + '"'
-    + ' class="w-full rounded border border-gray-300 text-xs px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"></td>'
-    + '<td class="px-4 py-2 text-xs text-gray-500">' + _esc(a.type_name) + '</td>'
+    + ' class="w-full rounded border border-token-border bg-surface text-body text-xs px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"></td>'
+    + '<td class="px-4 py-2 text-xs text-muted">' + _esc(a.type_name) + '</td>'
     + '<td class="px-4 py-2">'
-    + '<select id="edit-status-' + id + '" class="rounded border border-gray-300 text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400">'
-    + '<option value="free"' + (a.status === 'free' ? ' selected' : '') + '>Free</option>'
-    + '<option value="maintenance"' + (a.status === 'maintenance' ? ' selected' : '') + '>Maintenance</option>'
+    + '<select id="edit-status-' + id + '" class="rounded border border-token-border bg-surface text-body text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500">'
+    + (EDIT_STATUS_OPTIONS[a.status] || [a.status]).map(function(v) {
+        return '<option value="' + v + '"' + (a.status === v ? ' selected' : '') + '>' + (STATUS_LABELS[v] || v) + '</option>';
+      }).join('')
     + '</select></td>'
-    + '<td class="px-4 py-2 text-xs text-gray-400">–</td>'
-    + '<td class="px-4 py-2 text-xs text-gray-400">–</td>'
-    + '<td class="px-4 py-2 text-xs text-gray-400">–</td>'
-    + '<td class="px-4 py-2"><input id="edit-ip-' + id + '" value="' + _esc(ip) + '" placeholder="10.0.1.x"'
-    + ' class="w-full rounded border border-gray-300 text-xs px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"></td>'
+    + '<td class="px-4 py-2 text-xs text-muted/70">–</td>'
+    + '<td class="px-4 py-2 text-xs text-muted/70">–</td>'
+    + '<td class="px-4 py-2 text-xs text-muted/70">–</td>'
+    + '<td class="px-4 py-2"><input id="edit-mac-' + id + '" value="' + _esc(mac) + '" placeholder="aa:bb:cc:dd:ee:ff"'
+    + ' class="w-full rounded border border-token-border bg-surface text-body text-xs px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"></td>'
     + '<td class="px-4 py-2"><input id="edit-notes-' + id + '" value="' + _esc(notes) + '" placeholder="Notes"'
-    + ' class="w-full rounded border border-gray-300 text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"></td>'
+    + ' class="w-full rounded border border-token-border bg-surface text-body text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"></td>'
     + '<td class="px-4 py-2 text-right">'
     + '<button onclick="saveEdit(' + id + ')" class="text-xs text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded mr-1">Save</button>'
-    + '<button onclick="cancelEdit()" class="text-xs text-gray-600 hover:text-gray-800 px-2 py-1 rounded border border-gray-300">Cancel</button>'
+    + '<button onclick="cancelEdit()" class="text-xs text-muted hover:text-heading px-2 py-1 rounded border border-token-border">Cancel</button>'
     + '</td>';
 }
 
@@ -493,23 +575,24 @@ function cancelEdit() { _editingId = null; renderTable(); }
 async function saveEdit(id) {
   var newName   = document.getElementById('edit-name-' + id).value.trim();
   var newStatus = document.getElementById('edit-status-' + id).value;
-  var newIp     = document.getElementById('edit-ip-' + id).value.trim();
+  var newMac    = document.getElementById('edit-mac-' + id).value.trim();
   var newNotes  = document.getElementById('edit-notes-' + id).value.trim();
   if (!newName) { alert('Hostname must not be empty.'); return; }
   var a = _allAssets.find(function(x) { return x.id === id; });
   var meta = Object.assign({}, a.asset_metadata || {});
-  meta.ip_address = newIp || undefined;
+  delete meta.ip_address; // dropped from the schema
+  meta.mac_address = newMac ? newMac.toLowerCase() : undefined;
   meta.notes = newNotes || undefined;
   try {
     var resp = await fetch('/admin/assets/' + id, {
       method: 'PUT',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ status: newStatus, asset_metadata: meta }),
+      body: JSON.stringify({ name: newName, status: newStatus, asset_metadata: meta }),
     });
     if (!resp.ok) { var err = {}; try { err = await resp.json(); } catch(e) {} alert('Error: ' + (err.detail || resp.status)); return; }
     var updated = await resp.json();
     var idx = _allAssets.findIndex(function(x) { return x.id === id; });
-    if (idx >= 0) { _allAssets[idx].status = updated.status; _allAssets[idx].asset_metadata = meta; }
+    if (idx >= 0) { _allAssets[idx].name = updated.name; _allAssets[idx].status = updated.status; _allAssets[idx].asset_metadata = meta; }
     _editingId = null;
     renderTable();
   } catch(e) { alert('Network error: ' + e.message); }
@@ -543,7 +626,7 @@ function openForceDeleteModal(id) {
   document.getElementById('fdm-confirm-btn').textContent = 'Delete';
 
   // Show user info + revoke checkbox only when asset is in active use
-  var inUse = (a.status === 'reserved' || a.status === 'busy' || a.status === 'reclaiming');
+  var inUse = (a.status === 'reserved' || a.status === 'busy');
   var userRow = document.getElementById('fdm-user-row');
   var revokeRow = document.getElementById('fdm-revoke-row');
   if (inUse && a.current_order_id) {
@@ -638,7 +721,7 @@ async function confirmRevoke() {
     if (resp.status === 204) {
       var idx = _allAssets.findIndex(function(a) { return a.id === _revokeId; });
       if (idx >= 0) {
-        _allAssets[idx].status = 'free';
+        _allAssets[idx].status = 'Free';
         _allAssets[idx].current_order_id = null;
         _allAssets[idx].user_email = null;
         _allAssets[idx].expires_at = null;
@@ -668,15 +751,13 @@ document.getElementById('revoke-modal').addEventListener('click', function(e) {
 async function addAsset() {
   var name   = document.getElementById('add-name').value.trim();
   var typeId = document.getElementById('add-type').value;
-  var ip     = document.getElementById('add-ip').value.trim();
   var notes  = document.getElementById('add-notes').value.trim();
   var errEl  = document.getElementById('add-error');
   if (!name)   { errEl.textContent = 'Hostname is required.';         errEl.classList.remove('hidden'); return; }
-  if (!typeId) { errEl.textContent = 'Please select an asset type.';  errEl.classList.remove('hidden'); return; }
+  if (!typeId) { errEl.textContent = 'Please select an asset definition.';  errEl.classList.remove('hidden'); return; }
   errEl.classList.add('hidden');
   var meta = {};
-  if (ip)    meta.ip_address = ip;
-  if (notes) meta.notes      = notes;
+  if (notes) meta.notes = notes;
   try {
     var resp = await fetch('/admin/assets', {
       method: 'POST',
@@ -685,7 +766,6 @@ async function addAsset() {
     });
     if (!resp.ok) { var err = {}; try { err = await resp.json(); } catch(e) {} errEl.textContent = 'Error: ' + (err.detail || resp.status); errEl.classList.remove('hidden'); return; }
     document.getElementById('add-name').value  = '';
-    document.getElementById('add-ip').value    = '';
     document.getElementById('add-notes').value = '';
     await loadAssets();
     document.getElementById('panel-add').classList.add('hidden');
@@ -724,9 +804,9 @@ function bulkPreview() {
   }
   var first = names[0], last = names[names.length - 1];
   previewEl.innerHTML =
-    'Preview: <span class="font-mono text-gray-800">' + _esc(first) + '</span>'
-    + (count > 1 ? ' … <span class="font-mono text-gray-800">' + _esc(last) + '</span>' : '')
-    + ' <span class="text-gray-400">(' + count + ' hosts)</span>';
+    'Preview: <span class="font-mono text-heading">' + _esc(first) + '</span>'
+    + (count > 1 ? ' … <span class="font-mono text-heading">' + _esc(last) + '</span>' : '')
+    + ' <span class="text-muted/70">(' + count + ' hosts)</span>';
   document.getElementById('bulk-submit-btn').textContent = 'Create ' + count;
 }
 
@@ -741,7 +821,7 @@ async function bulkCreate() {
   if (!names.length || !document.getElementById('bulk-prefix').value.trim()) {
     errEl.textContent = 'Prefix is required.'; errEl.classList.remove('hidden'); return;
   }
-  if (!typeId) { errEl.textContent = 'Please select an asset type.'; errEl.classList.remove('hidden'); return; }
+  if (!typeId) { errEl.textContent = 'Please select an asset definition.'; errEl.classList.remove('hidden'); return; }
   var items = names.map(function(n) {
     var item = { name: n, asset_type_id: parseInt(typeId) };
     if (notes) item.notes = notes;
@@ -806,24 +886,22 @@ function importPreview() {
     var cols = _parseCsvLine(lines[i]);
     var hostname = cols[0] || '';
     var typeName = cols[1] || '';
-    var ip       = cols[2] || '';
-    var rowNotes = cols[3] || '';
+    var rowNotes = cols[2] || '';
     if (!hostname) continue;
     // Resolve type
     var typeId = overrideTypeId ? parseInt(overrideTypeId) : (_typeByName[typeName.toLowerCase()] || null);
     var typeLabelResolved = typeId ? (_typeNameById[typeId] || typeName) : typeName;
     var valid = hostname && typeId;
-    _importRows.push({ name: hostname, asset_type_id: typeId, ip_address: ip || null, notes: rowNotes || null, _valid: valid });
+    _importRows.push({ name: hostname, asset_type_id: typeId, notes: rowNotes || null, _valid: valid });
     var statusHtml = valid
       ? '<span class="text-green-600">OK</span>'
       : '<span class="text-red-500">' + (!hostname ? 'missing hostname' : 'unknown type') + '</span>';
     var tr = document.createElement('tr');
-    tr.className = valid ? '' : 'bg-red-50';
+    tr.className = valid ? '' : 'bg-red-50 dark:bg-red-500/10';
     tr.innerHTML =
       '<td class="px-3 py-1 font-mono">' + _esc(hostname) + '</td>'
       + '<td class="px-3 py-1">' + _esc(typeLabelResolved) + '</td>'
-      + '<td class="px-3 py-1 font-mono text-gray-500">' + _esc(ip) + '</td>'
-      + '<td class="px-3 py-1 text-gray-500">' + _esc(rowNotes) + '</td>'
+      + '<td class="px-3 py-1 text-muted">' + _esc(rowNotes) + '</td>'
       + '<td class="px-3 py-1">' + statusHtml + '</td>';
     tbody.appendChild(tr);
   }
@@ -837,9 +915,9 @@ async function importAssets() {
   errEl.classList.add('hidden');
   resEl.classList.add('hidden');
   var validRows = _importRows.filter(function(r) { return r._valid; });
-  if (!validRows.length) { errEl.textContent = 'No valid rows to import. Check asset type names.'; errEl.classList.remove('hidden'); return; }
+  if (!validRows.length) { errEl.textContent = 'No valid rows to import. Check asset definition names.'; errEl.classList.remove('hidden'); return; }
   var items = validRows.map(function(r) {
-    return { name: r.name, asset_type_id: r.asset_type_id, ip_address: r.ip_address || undefined, notes: r.notes || undefined };
+    return { name: r.name, asset_type_id: r.asset_type_id, notes: r.notes || undefined };
   });
   try {
     var resp = await fetch('/admin/assets/bulk', {
@@ -861,11 +939,11 @@ async function importAssets() {
 
 function downloadExample() {
   var lines = [
-    'hostname,asset_type,ip_address,notes',
-    'VDI-PC01,Developer VDI,10.0.1.1,Floor 2',
-    'VDI-PC02,Developer VDI,10.0.1.2,Floor 2',
-    'SRV-APP01,App Server,10.0.2.1,',
-    'SRV-APP02,App Server,10.0.2.2,Rack B',
+    'hostname,asset_type,notes',
+    'VDI-PC01,Developer VDI,Floor 2',
+    'VDI-PC02,Developer VDI,Floor 2',
+    'SRV-APP01,App Server,',
+    'SRV-APP02,App Server,Rack B',
   ];
   var blob = new Blob([lines.join('\n')], {type: 'text/csv'});
   var url = URL.createObjectURL(blob);

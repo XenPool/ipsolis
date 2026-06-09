@@ -20,7 +20,6 @@ from app.database import Base
 class OrderAction(str, enum.Enum):
     PROVISION = "provision"
     MODIFY = "modify"
-    EXTEND = "extend"
     DELETE = "delete"
 
 
@@ -63,6 +62,17 @@ class Order(Base):
     # Benutzerinformationen – Besteller (Requestor)
     user_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     user_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # AD-derived requester attributes captured at order-creation time. Used by
+    # the cost report so finance can slice spend by consuming team/cost-center
+    # without re-querying AD per report build. Attribute names are configurable
+    # via app_config (`ad.attribute.*` keys).
+    requester_sam_account: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    requester_department: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    requester_cost_center: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    requester_company: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    requester_employee_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    requester_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Benutzerinformationen – Nutzer (Owner, kann vom Besteller abweichen)
     owner_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -119,6 +129,11 @@ class Order(Base):
 
     # Fehlermeldung bei Status FAILED
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Timestamp when the expiry reminder was sent (idempotency flag)
+    expiry_reminder_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

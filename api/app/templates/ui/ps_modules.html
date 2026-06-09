@@ -1,25 +1,44 @@
 {% extends "base.html" %}
-
 {% block title %}PS Modules – {{ app_title }}{% endblock %}
 
-{% macro status_class(s) %}{% if s == 'installed' %}bg-green-100 text-green-700{% elif s == 'installing' %}bg-blue-100 text-blue-700{% elif s == 'failed' %}bg-red-100 text-red-600{% elif s == 'awaiting_upload' %}bg-yellow-50 text-yellow-700{% else %}bg-gray-100 text-gray-600{% endif %}{% endmacro %}
+{% macro status_class(s) %}{% if s == 'installed' %}bg-green-100 text-green-700{% elif s == 'installing' %}bg-blue-100 text-blue-700{% elif s == 'failed' %}bg-red-100 text-red-600{% elif s == 'awaiting_upload' %}bg-yellow-50 text-yellow-700{% else %}bg-surface-raised text-muted{% endif %}{% endmacro %}
+
+{# Compatibility badge for the modules-table column. The JS twin
+   `_compatBadgeHtml` below rebuilds the same markup for new rows. #}
+{% macro compat_badge(c) %}
+  {% if c == 'core' %}
+    <span class="bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-300 text-[11px] font-medium px-2 py-0.5 rounded-full" title="Operator-marked Linux-compatible (PowerShell 7 / Core)">Linux ✓</span>
+  {% elif c == 'desktop_only' %}
+    <span class="bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300 text-[11px] font-medium px-2 py-0.5 rounded-full" title="Operator-marked Windows-only (PowerShell 5.1) — will not load on the Linux worker">Windows only ✕</span>
+  {% else %}
+    <span class="bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300 text-[11px] font-medium px-2 py-0.5 rounded-full" title="Compatibility unverified — operator has not declared whether this module runs on the Linux worker">Unverified ?</span>
+  {% endif %}
+{% endmacro %}
 
 {% block content %}
 <div class="flex items-center justify-between mb-4">
-  <h1 class="text-lg font-semibold text-gray-900">PowerShell Modules</h1>
+  <h1 class="text-lg font-semibold text-heading">PowerShell Modules</h1>
+</div>
+
+<!-- Linux compat note -->
+<div class="mb-4 px-3 py-2 rounded bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-xs text-amber-800 dark:text-amber-200">
+  <strong>Heads-up:</strong> the worker runs PowerShell 7 on Linux. Modules tagged
+  <code class="font-mono">PSEdition_Desktop</code> only (Windows PowerShell 5.1) won't load.
+  When adding a module, declare its compatibility — you can change it later
+  by clicking the badge in the table.
 </div>
 
 <!-- Add module form -->
-<div class="bg-white rounded-lg border border-gray-200 p-4 mb-6">
-  <h2 class="text-sm font-semibold text-gray-700 mb-3">Add module</h2>
+<div class="bg-surface rounded-lg border border-token-border p-4 mb-6">
+  <h2 class="text-sm font-semibold text-body mb-3">Add module</h2>
 
   <!-- Source selector -->
   <div class="flex gap-4 mb-3">
-    <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700">
+    <label class="flex items-center gap-1.5 cursor-pointer text-sm text-body">
       <input type="radio" name="add-source-type" value="gallery" checked onchange="onSourceTypeChange()" class="accent-blue-600">
       PSGallery
     </label>
-    <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700">
+    <label class="flex items-center gap-1.5 cursor-pointer text-sm text-body">
       <input type="radio" name="add-source-type" value="upload" onchange="onSourceTypeChange()" class="accent-blue-600">
       Manual Upload (SDK / non-Gallery)
     </label>
@@ -27,28 +46,33 @@
 
   <!-- Gallery fields -->
   <div id="form-gallery-fields">
-    <p class="text-xs text-gray-500 mb-3">
-      The <strong>exact module name</strong> from the
+    <p class="text-xs text-muted mb-3">
+      Enter the <strong>exact module name</strong> from
       <a href="https://www.powershellgallery.com" target="_blank" rel="noopener"
-         class="text-blue-600 hover:underline">PowerShell Gallery</a>
-      must be provided (case-sensitive, e.g.&nbsp;<code class="font-mono bg-gray-100 px-1 rounded">VMware.PowerCLI</code>).
+         class="text-blue-600 hover:underline">powershellgallery.com</a>
+      (case-sensitive, e.g.&nbsp;<code class="font-mono bg-surface-raised px-1 rounded">VMware.PowerCLI</code>).
+      The worker downloads it from PSGallery on install — requires outbound internet from the worker container.
     </p>
-    <div class="flex gap-3 items-end">
-      <div class="relative">
-        <label class="block text-xs font-medium text-gray-600 mb-1">Name <span class="text-red-500">*</span></label>
+    <div class="flex flex-wrap gap-3 items-end">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Name <span class="text-red-500">*</span></label>
         <input type="text" id="add-name-gallery" autocomplete="off"
-               placeholder="Search module or enter name…"
-               oninput="onSearchInput()"
-               onkeydown="if(event.key==='Escape') document.getElementById('search-dropdown').classList.add('hidden')"
-               class="rounded border border-gray-300 text-sm px-3 py-2 w-96 focus:outline-none focus:ring-1 focus:ring-blue-400">
-        <div id="search-dropdown"
-             class="hidden absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded shadow-lg max-h-64 overflow-y-auto text-sm">
-        </div>
+               placeholder="e.g. VMware.PowerCLI"
+               class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 w-72 focus:outline-none focus:ring-1 focus:ring-blue-500">
       </div>
       <div>
-        <label class="block text-xs font-medium text-gray-600 mb-1">Version (optional)</label>
+        <label class="block text-xs font-medium text-muted mb-1">Version (optional)</label>
         <input type="text" id="add-version" placeholder="e.g. 13.2.1"
-               class="rounded border border-gray-300 text-sm px-3 py-2 w-36 focus:outline-none focus:ring-1 focus:ring-blue-400">
+               class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 w-36 focus:outline-none focus:ring-1 focus:ring-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Linux compatibility</label>
+        <select id="add-compat-gallery"
+                class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <option value="unknown">Unverified</option>
+          <option value="core">Linux ✓ (PSEdition_Core)</option>
+          <option value="desktop_only">Windows only ✕ (PSEdition_Desktop)</option>
+        </select>
       </div>
       <button onclick="addModule()"
               class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
@@ -60,18 +84,27 @@
 
   <!-- Upload fields -->
   <div id="form-upload-fields" class="hidden">
-    <p class="text-xs text-gray-500 mb-3">
+    <p class="text-xs text-muted mb-3">
       Enter the <strong>exact module name</strong> (used as the folder name inside
-      <code class="font-mono bg-gray-100 px-1 rounded">~/.local/share/powershell/Modules/</code>).
+      <code class="font-mono bg-surface-raised px-1 rounded">~/.local/share/powershell/Modules/</code>).
       After saving, an <strong>Upload</strong> button will appear in the table row so you can
       upload the module zip.
     </p>
-    <div class="flex gap-3 items-end">
+    <div class="flex flex-wrap gap-3 items-end">
       <div>
-        <label class="block text-xs font-medium text-gray-600 mb-1">Module name <span class="text-red-500">*</span></label>
+        <label class="block text-xs font-medium text-muted mb-1">Module name <span class="text-red-500">*</span></label>
         <input type="text" id="add-name-upload" autocomplete="off"
                placeholder="e.g. XenServerPSModule"
-               class="rounded border border-gray-300 text-sm px-3 py-2 w-72 focus:outline-none focus:ring-1 focus:ring-blue-400">
+               class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 w-72 focus:outline-none focus:ring-1 focus:ring-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Linux compatibility</label>
+        <select id="add-compat-upload"
+                class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <option value="unknown">Unverified</option>
+          <option value="core">Linux ✓ (PSEdition_Core)</option>
+          <option value="desktop_only">Windows only ✕ (PSEdition_Desktop)</option>
+        </select>
       </div>
       <button onclick="addModule()"
               class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
@@ -83,23 +116,24 @@
 </div>
 
 <!-- Module table -->
-<div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+<div class="bg-surface rounded-lg border border-token-border overflow-hidden">
   <table class="w-full text-sm">
-    <thead class="bg-gray-50 border-b border-gray-200">
+    <thead class="bg-surface-raised border-b border-token-border">
       <tr>
-        <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-600">Name</th>
-        <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-600">Source</th>
-        <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-600">Desired version</th>
-        <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-600">Status</th>
-        <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-600">Installed version</th>
-        <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-600">Actions</th>
+        <th class="text-left px-4 py-2.5 text-xs font-semibold text-muted">Name</th>
+        <th class="text-left px-4 py-2.5 text-xs font-semibold text-muted">Source</th>
+        <th class="text-left px-4 py-2.5 text-xs font-semibold text-muted" title="Click any badge to change. Reflects what the operator declared, not a runtime check.">Linux compat.</th>
+        <th class="text-left px-4 py-2.5 text-xs font-semibold text-muted">Desired version</th>
+        <th class="text-left px-4 py-2.5 text-xs font-semibold text-muted">Status</th>
+        <th class="text-left px-4 py-2.5 text-xs font-semibold text-muted">Installed version</th>
+        <th class="text-left px-4 py-2.5 text-xs font-semibold text-muted">Actions</th>
       </tr>
     </thead>
-    <tbody id="module-table-body" class="divide-y divide-gray-100">
+    <tbody id="module-table-body" class="divide-y divide-token-border">
       {% if ps_modules %}
         {% for m in ps_modules %}
         <tr data-module-id="{{ m.id }}" data-status="{{ m.status }}" data-source="{{ m.source_type }}">
-          <td class="px-4 py-3 font-mono text-xs text-gray-900">{{ m.name }}</td>
+          <td class="px-4 py-3 font-mono text-xs text-heading">{{ m.name }}</td>
           <td class="px-4 py-3 text-xs">
             {% if m.source_type == 'upload' %}
               <span class="bg-purple-50 text-purple-700 text-xs font-medium px-2 py-0.5 rounded-full">Upload</span>
@@ -107,13 +141,19 @@
               <span class="bg-blue-50 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-full">Gallery</span>
             {% endif %}
           </td>
-          <td class="px-4 py-3 text-xs text-gray-600">{{ m.required_version or '–' }}</td>
+          <td class="px-4 py-3">
+            <button class="compat-cell cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+                    data-compatibility="{{ m.compatibility }}"
+                    onclick="cycleCompatibility({{ m.id }}, this)"
+                    title="Click to change">{{ compat_badge(m.compatibility) }}</button>
+          </td>
+          <td class="px-4 py-3 text-xs text-muted">{{ m.required_version or '–' }}</td>
           <td class="px-4 py-3">
             <span class="status-badge {{ status_class(m.status) }} text-xs font-medium px-2 py-0.5 rounded-full">
               {{ m.status | replace('_', ' ') }}{% if m.status == 'installing' %} <span class="animate-pulse">…</span>{% endif %}
             </span>
           </td>
-          <td class="px-4 py-3 text-xs text-gray-600 font-mono">{{ m.installed_version or '–' }}</td>
+          <td class="px-4 py-3 text-xs text-muted font-mono">{{ m.installed_version or '–' }}</td>
           <td class="px-4 py-3 flex gap-3 items-center">
             {% if m.source_type == 'upload' %}
             <button onclick="triggerUpload({{ m.id }})"
@@ -127,7 +167,7 @@
         </tr>
         {% if m.error_log %}
         <tr data-error-for="{{ m.id }}">
-          <td colspan="6" class="px-4 pb-3">
+          <td colspan="7" class="px-4 pb-3">
             <pre class="text-xs text-red-600 bg-red-50 rounded p-2 overflow-auto max-h-24">{{ m.error_log }}</pre>
           </td>
         </tr>
@@ -135,7 +175,7 @@
         {% endfor %}
       {% else %}
         <tr id="empty-row">
-          <td colspan="6" class="px-4 py-6 text-center text-sm text-gray-400">
+          <td colspan="7" class="px-4 py-6 text-center text-sm text-muted/70">
             No PS modules configured yet.
           </td>
         </tr>
@@ -148,6 +188,38 @@
 <input type="file" id="zip-file-input" accept=".zip,.psm1,.psd1" class="hidden" onchange="onZipSelected(event)">
 
 <script>
+// ── Compatibility helpers (mirror of the Jinja `compat_badge` macro) ─────────
+var _COMPAT_LABEL = {
+  core:         'Linux ✓',
+  desktop_only: 'Windows only ✕',
+  unknown:      'Unverified ?',
+};
+var _COMPAT_TITLE = {
+  core:         'Operator-marked Linux-compatible (PowerShell 7 / Core)',
+  desktop_only: 'Operator-marked Windows-only (PowerShell 5.1) — will not load on the Linux worker',
+  unknown:      'Compatibility unverified — operator has not declared whether this module runs on the Linux worker',
+};
+var _COMPAT_CLASSES = {
+  core:         'bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-300',
+  desktop_only: 'bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300',
+  unknown:      'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+};
+// Cycle order for the inline-click toggle: unknown → core → desktop_only → unknown.
+var _COMPAT_NEXT = { unknown: 'core', core: 'desktop_only', desktop_only: 'unknown' };
+
+function _compatBadgeHtml(c) {
+  var key = (c && _COMPAT_LABEL[c]) ? c : 'unknown';
+  return '<span class="' + _COMPAT_CLASSES[key]
+    + ' text-[11px] font-medium px-2 py-0.5 rounded-full" title="' + _COMPAT_TITLE[key] + '">'
+    + _COMPAT_LABEL[key] + '</span>';
+}
+
+function _esc(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
 // ── Source type toggle ─────────────────────────────────────────────────────────
 function onSourceTypeChange() {
   var val = document.querySelector('input[name="add-source-type"]:checked').value;
@@ -160,63 +232,44 @@ function _getSourceType() {
   return el ? el.value : 'gallery';
 }
 
-// ── PSGallery search autocomplete ─────────────────────────────────────────────
-var _searchTimer = null;
-
-function onSearchInput() {
-  var q = document.getElementById('add-name-gallery').value.trim();
-  var dd = document.getElementById('search-dropdown');
-  clearTimeout(_searchTimer);
-  if (q.length < 2) { dd.classList.add('hidden'); return; }
-  _searchTimer = setTimeout(async function() {
-    try {
-      var resp = await fetch('/admin/ps-modules/search?q=' + encodeURIComponent(q));
-      if (!resp.ok) return;
-      var results = await resp.json();
-      if (!results.length) { dd.classList.add('hidden'); return; }
-      dd.innerHTML = results.map(function(r) {
-        var safeName = r.name.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
-        var safeVer  = (r.version || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
-        var safeDesc = (r.description || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-        return '<div class="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-0"'
-          + ' data-name="' + safeName + '" data-version="' + safeVer + '">'
-          + '<span class="font-mono font-medium text-gray-900">' + safeName + '</span>'
-          + '<span class="ml-2 text-xs text-gray-400">' + safeVer + '</span>'
-          + (safeDesc ? '<div class="text-xs text-gray-500 mt-0.5">' + safeDesc + '</div>' : '')
-          + '</div>';
-      }).join('');
-      dd.classList.remove('hidden');
-    } catch(e) {}
-  }, 350);
-}
-
-document.getElementById('search-dropdown').addEventListener('click', function(e) {
-  var item = e.target.closest('[data-name]');
-  if (!item) return;
-  document.getElementById('add-name-gallery').value = item.dataset.name;
-  document.getElementById('add-version').value = item.dataset.version;
-  this.classList.add('hidden');
-});
-
-document.addEventListener('click', function(e) {
-  if (!e.target.closest('#add-name-gallery') && !e.target.closest('#search-dropdown')) {
-    var dd = document.getElementById('search-dropdown');
-    if (dd) dd.classList.add('hidden');
+// ── Inline compatibility cycle ───────────────────────────────────────────────
+async function cycleCompatibility(id, btn) {
+  var current = btn.getAttribute('data-compatibility') || 'unknown';
+  var next = _COMPAT_NEXT[current] || 'unknown';
+  // Optimistic UI: paint the next state, roll back on failure.
+  btn.setAttribute('data-compatibility', next);
+  btn.innerHTML = _compatBadgeHtml(next);
+  try {
+    var resp = await fetch('/admin/ps-modules/' + id + '/compatibility', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({compatibility: next}),
+    });
+    if (!resp.ok) {
+      var err = {}; try { err = await resp.json(); } catch (e) {}
+      alert('Failed to update compatibility: ' + (err.detail || ('HTTP ' + resp.status)));
+      btn.setAttribute('data-compatibility', current);
+      btn.innerHTML = _compatBadgeHtml(current);
+    }
+  } catch (e) {
+    alert('Network error: ' + e.message);
+    btn.setAttribute('data-compatibility', current);
+    btn.innerHTML = _compatBadgeHtml(current);
   }
-});
+}
 
 // ── Module status polling ──────────────────────────────────────────────────────
 var _pollingInterval = null;
 
 function _statusClass(s) {
   var map = {
-    pending:         'bg-gray-100 text-gray-600',
+    pending:         'bg-surface-raised text-muted',
     installing:      'bg-blue-100 text-blue-700',
     installed:       'bg-green-100 text-green-700',
     failed:          'bg-red-100 text-red-600',
     awaiting_upload: 'bg-yellow-50 text-yellow-700',
   };
-  return map[s] || 'bg-gray-100 text-gray-600';
+  return map[s] || 'bg-surface-raised text-muted';
 }
 
 function _statusLabel(s) {
@@ -232,8 +285,15 @@ function _updateRowStatus(id, data) {
     badge.className = 'status-badge ' + _statusClass(data.status) + ' text-xs font-medium px-2 py-0.5 rounded-full';
     badge.textContent = _statusLabel(data.status) + (data.status === 'installing' ? ' …' : '');
   }
+  var compatBtn = row.querySelector('.compat-cell');
+  if (compatBtn && data.compatibility) {
+    compatBtn.setAttribute('data-compatibility', data.compatibility);
+    compatBtn.innerHTML = _compatBadgeHtml(data.compatibility);
+  }
   var cells = row.querySelectorAll('td');
-  if (cells[4]) cells[4].textContent = data.installed_version || '–';
+  // Installed-version is the column right after Status (index 5 with the
+  // compat column inserted at index 2).
+  if (cells[5]) cells[5].textContent = data.installed_version || '–';
 
   // Update error row
   var errRow = document.querySelector('[data-error-for="' + id + '"]');
@@ -241,7 +301,7 @@ function _updateRowStatus(id, data) {
     if (!errRow) {
       errRow = document.createElement('tr');
       errRow.setAttribute('data-error-for', id);
-      errRow.innerHTML = '<td colspan="6" class="px-4 pb-3"><pre class="text-xs text-red-600 bg-red-50 rounded p-2 overflow-auto max-h-24"></pre></td>';
+      errRow.innerHTML = '<td colspan="7" class="px-4 pb-3"><pre class="text-xs text-red-600 bg-red-50 rounded p-2 overflow-auto max-h-24"></pre></td>';
       row.insertAdjacentElement('afterend', errRow);
     }
     errRow.querySelector('pre').textContent = data.error_log;
@@ -271,26 +331,33 @@ function _startPolling() {
 // ── Add module ─────────────────────────────────────────────────────────────────
 async function addModule() {
   var sourceType = _getSourceType();
-  var name, resultEl;
+  var name, resultEl, compatibility;
 
   if (sourceType === 'upload') {
     name = document.getElementById('add-name-upload').value.trim();
     resultEl = document.getElementById('add-result-upload');
+    compatibility = document.getElementById('add-compat-upload').value;
   } else {
     name = document.getElementById('add-name-gallery').value.trim();
     resultEl = document.getElementById('add-result');
+    compatibility = document.getElementById('add-compat-gallery').value;
   }
 
   if (!name) { alert('Name is required'); return; }
   var version = sourceType === 'gallery' ? (document.getElementById('add-version').value.trim() || null) : null;
 
   resultEl.textContent = 'Adding…';
-  resultEl.className = 'text-sm text-gray-500';
+  resultEl.className = 'text-sm text-muted';
   try {
     var resp = await fetch('/admin/ps-modules', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({name: name, required_version: version, source_type: sourceType}),
+      body: JSON.stringify({
+        name: name,
+        required_version: version,
+        source_type: sourceType,
+        compatibility: compatibility,
+      }),
     });
     if (resp.status === 409) {
       resultEl.textContent = 'Module already exists.';
@@ -305,7 +372,6 @@ async function addModule() {
     }
     var data = await resp.json();
 
-    // Remove empty-row placeholder
     var emptyRow = document.getElementById('empty-row');
     if (emptyRow) emptyRow.remove();
 
@@ -324,27 +390,35 @@ async function addModule() {
       : '';
 
     tr.innerHTML =
-      '<td class="px-4 py-3 font-mono text-xs text-gray-900">' + data.name + '</td>'
+      '<td class="px-4 py-3 font-mono text-xs text-heading">' + _esc(data.name) + '</td>'
       + '<td class="px-4 py-3 text-xs">' + sourceBadge + '</td>'
-      + '<td class="px-4 py-3 text-xs text-gray-600">' + (data.required_version || '–') + '</td>'
+      + '<td class="px-4 py-3">'
+      + '  <button class="compat-cell cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"'
+      + '          data-compatibility="' + _esc(data.compatibility || 'unknown') + '"'
+      + '          onclick="cycleCompatibility(' + data.id + ', this)" title="Click to change">'
+      + _compatBadgeHtml(data.compatibility || 'unknown')
+      + '  </button>'
+      + '</td>'
+      + '<td class="px-4 py-3 text-xs text-muted">' + (data.required_version || '–') + '</td>'
       + '<td class="px-4 py-3"><span class="status-badge ' + _statusClass(data.status) + ' text-xs font-medium px-2 py-0.5 rounded-full">' + _statusLabel(data.status) + '</span></td>'
-      + '<td class="px-4 py-3 text-xs text-gray-600 font-mono">–</td>'
+      + '<td class="px-4 py-3 text-xs text-muted font-mono">–</td>'
       + '<td class="px-4 py-3 flex gap-3 items-center">'
       + uploadBtn
       + '<button onclick="reinstall(' + data.id + ')" class="text-xs text-blue-600 hover:underline">Reinstall</button>'
-      + '<button onclick="deleteModule(' + data.id + ', \'' + data.name + '\')" class="text-xs text-red-400 hover:text-red-600">Delete</button>'
+      + '<button onclick="deleteModule(' + data.id + ', \'' + _esc(data.name) + '\')" class="text-xs text-red-400 hover:text-red-600">Delete</button>'
       + '</td>';
     tbody.appendChild(tr);
 
-    // Reset form
     if (sourceType === 'upload') {
       document.getElementById('add-name-upload').value = '';
-      resultEl.textContent = 'Added – click Upload zip to provide the module.';
+      document.getElementById('add-compat-upload').value = 'unknown';
+      resultEl.textContent = 'Added — click Upload zip to provide the module.';
       resultEl.className = 'text-sm text-purple-600';
     } else {
       document.getElementById('add-name-gallery').value = '';
       document.getElementById('add-version').value = '';
-      resultEl.textContent = 'Added – installation running…';
+      document.getElementById('add-compat-gallery').value = 'unknown';
+      resultEl.textContent = 'Added — installation running…';
       resultEl.className = 'text-sm text-blue-600';
       _startPolling();
     }

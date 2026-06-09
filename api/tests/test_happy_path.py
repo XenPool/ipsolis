@@ -96,9 +96,6 @@ class TestFinalStatus:
     def test_modify_returns_delivered(self):
         assert _final_status("modify") == "delivered"
 
-    def test_extend_returns_delivered(self):
-        assert _final_status("extend") == "delivered"
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 2. _render_params
@@ -200,7 +197,7 @@ class TestRunbookLookup:
 
     @patch(f"{_DR}.update_order_status")
     def test_modify_without_runbook_is_noop(self, mock_status):
-        """modify / extend with no runbook → treated as success (no-op)."""
+        """modify with no runbook → treated as success (no-op)."""
         db = _mock_db(runbook_row=None)
 
         result = _run_runbook_path(

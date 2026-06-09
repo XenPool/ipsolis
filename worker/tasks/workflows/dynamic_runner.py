@@ -24,19 +24,20 @@ from sqlalchemy.orm import Session  # noqa: F401 – used by _run_step_inline/_r
 from tasks import app
 from tasks.modules import audit_helper
 from tasks.modules.config_reader import get_config
+from tasks.modules.secrets import get_secret_config as _get_secret_config
 from tasks.modules.step_helper import make_log_json, update_order_step, update_order_status
 
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+psycopg2://xpuser:changeme@localhost:5432/itselfservice",
+    "postgresql+psycopg2://xpuser:changeme@localhost:5432/ipsolis",
 ).replace("postgresql+asyncpg://", "postgresql+psycopg2://")
 
 
 def _get_db_session() -> Session:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-    return Session(engine)
+    from tasks.modules.db import get_worker_session
+    return get_worker_session()
 
 
 def _run_step_inline(
@@ -129,12 +130,6 @@ def _write_provisioned_state(
     logger.info("[dynamic_runner] provisioned_state written for order_id=%s", order_id)
 
 
-def _skip_instance_action(order_id: int, action: str) -> dict:
-    """Log that an instance-level action is deferred to a separate runbook."""
-    logger.info("Instance action '%s' for order_id=%s must be handled via a configured runbook", action, order_id)
-    return {"success": True, "skipped": True, "message": f"Instance {action} must be configured via a runbook"}
-
-
 def _lookup_asset_name(db: Session, order: dict) -> str | None:
     """Returns the asset name for an order.
 
@@ -192,7 +187,7 @@ def _run_targets_mode(
     if isinstance(requested_from, str):
         requested_from = datetime.fromisoformat(requested_from)
 
-    needs_asset = assignment_model in ("assigned_personal", "dedicated_shared")
+    needs_asset = assignment_model == "assigned_personal"
 
     if action == "provision":
         # Detect if this was a scheduled (future-dated) order
@@ -264,6 +259,9 @@ def _run_targets_mode(
                 return {"success": False, "order_id": order_id, "failed_step": "Reserve asset"}
             reserved_asset_id = result.get("asset_id")
             reserved_asset_name = result.get("asset_name")
+            # Propagate to the shared order dict so composite mode's subsequent
+            # _run_runbook_path sees the reservation and does not double-reserve.
+            order["assigned_asset_id"] = reserved_asset_id
 
         # Step 3: Grant access (critical)
         _grant_asset_name = reserved_asset_name or ""
@@ -359,6 +357,8 @@ def _run_targets_mode(
                 user_name=order.get("user_name") or "",
                 asset_name=_revoke_display,
                 asset_type_name=asset_type_name,
+                owner_email=order.get("owner_email") or None,
+                owner_name=order.get("owner_name") or None,
             ),
             critical=False,
         )
@@ -379,33 +379,21 @@ def _run_targets_mode(
                     critical=False,
                 )
 
-        elif deprovision_policy == "deallocate_instance":
-            # Revoke targets (above) + release pool + halt VM
+        elif deprovision_policy == "return_to_pool_reinstall":
+            # Release pool reservation, then flag the host for reinstall so it
+            # is not re-assigned until a separate reinstall runbook flips it
+            # back to FREE.
             if needs_asset and asset_id:
                 _run_step_inline(
                     db, order_id, "Release assignment",
                     lambda: pool_manager.release_asset(db=db, asset_id=asset_id),
                     critical=False,
                 )
-            _run_step_inline(
-                db, order_id, "Pause instance",
-                lambda: _skip_instance_action(order_id, "deallocate"),
-                critical=False,
-            )
-
-        elif deprovision_policy == "delete_instance":
-            # Revoke targets (above) + release pool + delete VM
-            if needs_asset and asset_id:
                 _run_step_inline(
-                    db, order_id, "Release assignment",
-                    lambda: pool_manager.release_asset(db=db, asset_id=asset_id),
+                    db, order_id, "Mark asset reinstall",
+                    lambda: pool_manager.mark_reinstall(db=db, asset_id=asset_id),
                     critical=False,
                 )
-            _run_step_inline(
-                db, order_id, "Delete instance",
-                lambda: _skip_instance_action(order_id, "delete"),
-                critical=False,
-            )
 
         elif deprovision_policy == "custom_runbook":
             # Targets revoked; VM cleanup via separate runbook
@@ -476,10 +464,6 @@ def _run_targets_mode(
                 critical=False,
             )
 
-    elif action == "extend":
-        # TTL update only – no group change required
-        logger.info("[targets_only] extend order_id=%s – no group changes needed", order_id)
-
     # Set final status (optional – in composite mode _run_composite_mode handles this)
     if _set_delivered:
         final = _final_status(action)
@@ -497,33 +481,144 @@ def _run_targets_mode(
 
 
 def _load_global_vars(db: Session) -> dict:
-    """Loads all active global_vars from DB as key→value dict."""
+    """Loads global_vars + hosting config from app_config into a single dict.
+
+    Scripts access these via $VARS.'key' (PowerShell) or VARS['key'] (Python/Bash).
+    """
+    gv = {}
     rows = db.execute(text("SELECT key, value FROM global_vars ORDER BY key")).fetchall()
-    return {row[0]: (row[1] or "") for row in rows}
+    for row in rows:
+        gv[row[0]] = row[1] or ""
+
+    # External-secret resolution: ``*.password`` keys may be ``vault://``
+    # or ``ccp://`` references and need dereferencing before they hit
+    # the runbook script's environment. Plain values pass through.
+    from tasks.modules.secrets import resolve_secret_value
+    hosting_keys = [
+        "xenserver.host", "xenserver.username", "xenserver.password",
+        "vsphere.host", "vsphere.username", "vsphere.password",
+    ]
+    for k in hosting_keys:
+        val = get_config(db, k, "")
+        if val:
+            gv[k] = resolve_secret_value(db, val) if k.endswith(".password") else val
+    return gv
+
+
+_SSL_BYPASS = (
+    "[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }\n"
+    "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12\n"
+)
+
+
+def _ps_escape(v) -> str:
+    if v is None:
+        return "$null"
+    s = str(v).replace("'", "''")
+    return f"'{s}'"
+
+
+def _ps_quote_key(k: str) -> str:
+    """Quote a hashtable key if it contains special characters."""
+    if "." in k or " " in k or "-" in k:
+        return f"'{k}'"
+    return k
 
 
 def _build_ps_preamble(global_vars: dict, params: dict) -> str:
-    """Builds PowerShell variable injection header.
+    """Builds PowerShell variable injection header for legacy scripts (no param() block).
 
-    $VARS = @{ key = 'value'; ... }
+    $VARS = @{ 'key' = 'value'; ... }
     $PARAMS = @{ name = 'value'; ... }
     """
-    def _ps_escape(v) -> str:
-        if v is None:
-            return "$null"
-        s = str(v).replace("'", "''")
-        return f"'{s}'"
-
-    vars_pairs = "; ".join(f"{k} = {_ps_escape(v)}" for k, v in global_vars.items())
+    vars_pairs = "; ".join(f"{_ps_quote_key(k)} = {_ps_escape(v)}" for k, v in global_vars.items())
     params_pairs = "; ".join(f"{k} = {_ps_escape(v)}" for k, v in params.items())
-    # Bypass SSL cert validation globally — required for XCP-ng / XenServer and vSphere
-    # hosts that use self-signed certs. Without this, Connect-XenServer / Connect-VIServer
-    # trigger an interactive PromptForChoice which fails in headless/NonInteractive mode.
-    ssl_bypass = (
-        "[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }\n"
-        "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12\n"
-    )
-    return f"{ssl_bypass}$VARS = @{{ {vars_pairs} }}\n$PARAMS = @{{ {params_pairs} }}\n"
+    return f"{_SSL_BYPASS}$VARS = @{{ {vars_pairs} }}\n$PARAMS = @{{ {params_pairs} }}\n"
+
+
+def _build_ps_preamble_for_param_script(global_vars: dict, rendered_params: dict) -> str:
+    """Builds a preamble for scripts that use a param() block.
+
+    Injects $VARS (global config) and $PARAMS (remaining context vars like
+    asset_name, order_id, etc.).  The param() variables themselves are passed
+    as CLI arguments, but $PARAMS stays available for context variables.
+    Inserted AFTER the param() block in the combined script.
+    """
+    vars_pairs = "; ".join(f"{_ps_quote_key(k)} = {_ps_escape(v)}" for k, v in global_vars.items())
+    params_pairs = "; ".join(f"{k} = {_ps_escape(v)}" for k, v in rendered_params.items())
+    return f"{_SSL_BYPASS}$VARS = @{{ {vars_pairs} }}\n$PARAMS = @{{ {params_pairs} }}\n"
+
+
+def _has_param_block(script: str) -> bool:
+    """Detect whether a PowerShell script starts with a param() block."""
+    stripped = script.lstrip()
+    for line in stripped.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        return line.lower().startswith("param")
+    return False
+
+
+def _split_param_block(script: str) -> tuple[str, str]:
+    """Split script into (param_block_text, rest_of_script).
+
+    The param block runs from the top-level 'param(' keyword through the
+    matching ')'.  Comment lines and blank lines before it are kept as a
+    prefix so they stay at the top of the combined file.
+    """
+    # Find the position of the top-level param( — skip comment/blank lines
+    param_line_start = None
+    for i, line in enumerate(script.splitlines(keepends=True)):
+        stripped_line = line.strip()
+        if not stripped_line or stripped_line.startswith("#"):
+            continue
+        if stripped_line.lower().startswith("param"):
+            # Found it — calculate byte offset
+            param_line_start = sum(len(l) for l in script.splitlines(keepends=True)[:i])
+            break
+        else:
+            # First non-comment line is not param — no param block
+            return "", script
+
+    if param_line_start is None:
+        return "", script
+
+    # Find '(' after 'param'
+    j = param_line_start + 5  # skip 'param'
+    while j < len(script) and script[j] in " \t\r\n":
+        j += 1
+    if j >= len(script) or script[j] != "(":
+        return "", script
+
+    # Match parentheses (respecting strings)
+    depth = 1
+    k = j + 1
+    in_str: str | None = None
+    while k < len(script) and depth > 0:
+        ch = script[k]
+        if in_str:
+            if ch == in_str:
+                in_str = None
+        elif ch in ('"', "'"):
+            in_str = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        k += 1
+    # Everything up to and including the closing ')' is the param block
+    # (including leading comments, which are valid before param in PS)
+    return script[:k], script[k:]
+
+
+def _build_ps_cli_args(params: dict) -> list[str]:
+    """Build command-line arguments for a param()-style PS script."""
+    args: list[str] = []
+    for k, v in params.items():
+        args.append(f"-{k}")
+        args.append(str(v) if v is not None else "")
+    return args
 
 
 def _run_db_script(
@@ -547,8 +642,21 @@ def _run_db_script(
     script_name, script_content, script_type = row[0], row[1], row[2]
 
     global_vars = _load_global_vars(db)
-    preamble = _build_ps_preamble(global_vars, rendered_params)
-    full_script = preamble + "\n" + script_content
+
+    # Scripts with a param() block: keep param() first, inject $VARS after it,
+    # pass rendered_params as CLI arguments.
+    # Legacy scripts (no param block): prepend $PARAMS + $VARS preamble.
+    uses_param_block = script_type == "powershell" and _has_param_block(script_content)
+    cli_args: list[str] = []
+
+    if uses_param_block:
+        param_block, rest = _split_param_block(script_content)
+        preamble = _build_ps_preamble_for_param_script(global_vars, rendered_params)
+        full_script = param_block + "\n" + preamble + "\n" + rest
+        cli_args = _build_ps_cli_args(rendered_params)
+    else:
+        preamble = _build_ps_preamble(global_vars, rendered_params)
+        full_script = preamble + "\n" + script_content
 
     suffix = ".ps1" if script_type == "powershell" else (".py" if script_type == "python" else ".sh")
     with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False, encoding="utf-8") as tmp:
@@ -560,7 +668,7 @@ def _run_db_script(
             # -InputFormat None: don't read from stdin (prevents hangs on prompts)
             # No -NonInteractive: allows SDK cert-trust prompts to auto-accept when
             # stdin is DEVNULL (XenServer / vSphere SDKs use PromptForChoice for certs)
-            cmd = ["pwsh", "-NoProfile", "-InputFormat", "None", "-File", tmp_path]
+            cmd = ["pwsh", "-NoProfile", "-InputFormat", "None", "-File", tmp_path] + cli_args
         elif script_type == "python":
             cmd = ["python", tmp_path]
         else:
@@ -643,6 +751,10 @@ def _run_runbook_path(
     Called directly by run() and by _run_composite_mode().
     _set_delivered=False: DELIVERED status is not set (composite mode).
     """
+    # Legacy 'extend' rows are dispatched against the 'modify' runbook.
+    if action == "extend":
+        action = "modify"
+
     # 1. Load runbook
     runbook_row = db.execute(
         text("""
@@ -655,7 +767,7 @@ def _run_runbook_path(
     ).fetchone()
 
     if not runbook_row:
-        if action in ("modify", "extend"):
+        if action == "modify":
             logger.info(
                 "[runbook] No runbook defined for action=%s asset_type_id=%s — treating as success (no-op)",
                 action, order["asset_type_id"],
@@ -715,7 +827,7 @@ def _run_runbook_path(
     # Auto-reserve from pool for provision + pool-based asset types
     if (
         action == "provision"
-        and assignment_model in ("assigned_personal", "dedicated_shared")
+        and assignment_model == "assigned_personal"
         and not pre_asset_id
     ):
         from tasks.modules.pool_manager import reserve_asset as _reserve_asset
@@ -730,6 +842,7 @@ def _run_runbook_path(
         if res.get("success"):
             pre_asset_id = res["asset_id"]
             pre_asset_name = res["asset_name"]
+            order["assigned_asset_id"] = pre_asset_id
             logger.info(
                 "[runbook_path] Auto-reserved asset: id=%s name=%s",
                 pre_asset_id, pre_asset_name,
@@ -758,13 +871,16 @@ def _run_runbook_path(
         "asset_name": pre_asset_name,
         "snow_req": order.get("snow_req"),
         "snow_ritm": order.get("servicenow_ref"),
-        # Hosting infrastructure — available as {{config.vsphere.host}} etc. in params templates
+        # Hosting infrastructure — available as {{config.vsphere.host}} etc. in params templates.
+        # ``.password`` reads go through the secret resolver so vault://
+        # and ccp:// references get dereferenced before landing in the
+        # runbook script's environment.
         "config.vsphere.host":       get_config(db, "vsphere.host", ""),
         "config.vsphere.username":   get_config(db, "vsphere.username", ""),
-        "config.vsphere.password":   get_config(db, "vsphere.password", ""),
+        "config.vsphere.password":   _get_secret_config(db, "vsphere.password", ""),
         "config.xenserver.host":     get_config(db, "xenserver.host", ""),
         "config.xenserver.username": get_config(db, "xenserver.username", ""),
-        "config.xenserver.password": get_config(db, "xenserver.password", ""),
+        "config.xenserver.password": _get_secret_config(db, "xenserver.password", ""),
     }
 
     # 4. Execute steps
@@ -813,7 +929,15 @@ def _run_runbook_path(
                 log_json = make_log_json(module_key, rendered, result, duration_ms)
 
             if not result.get("success", True):
-                raise RuntimeError(result.get("error", f"Module {step_ref} returned success=False"))
+                err = result.get("error", f"Module {step_ref} returned success=False")
+                stderr_tail = (result.get("stderr") or "").strip()
+                stdout_tail = (result.get("stdout") or "").strip()
+                detail_parts = [err]
+                if stderr_tail:
+                    detail_parts.append(f"stderr: {stderr_tail[-800:]}")
+                if stdout_tail:
+                    detail_parts.append(f"stdout: {stdout_tail[-800:]}")
+                raise RuntimeError(" | ".join(detail_parts))
 
             update_order_step(
                 db, order_id, step_name, "success",
@@ -823,8 +947,9 @@ def _run_runbook_path(
 
         except Exception as e:
             duration_ms = (time.monotonic() - t_start) * 1000
+            log_input = rendered if 'rendered' in locals() else params_template
             log_json = make_log_json(
-                step_ref, params_template, {"error": str(e)}, duration_ms
+                step_ref, log_input, {"error": str(e)}, duration_ms
             )
             update_order_step(
                 db, order_id, step_name, "failed",
@@ -855,8 +980,22 @@ def _run_runbook_path(
                     step_name, e,
                 )
 
-    # provisioned_state nach erfolgreicher Provision schreiben
+    # Guard against leaver race: if action was "provision" when we started but
+    # has since been changed to "delete" (leaver fired mid-run), do not stamp
+    # the order as "provisioned" — let the leaver's deprovision task finalize it.
     if action == "provision":
+        live_action = db.execute(
+            text("SELECT action FROM orders WHERE id = :id"), {"id": order_id}
+        ).scalar()
+        if str(live_action).lower() == "delete":
+            logger.warning(
+                "[runbook_path] order_id=%s: action changed to 'delete' during provision run "
+                "(leaver fired mid-flight) — skipping 'provisioned' stamp",
+                order_id,
+            )
+            db.close()
+            return {"success": True, "order_id": order_id, "aborted": "leaver_preempted"}
+
         _write_provisioned_state(
             db, order_id,
             assignment_model=assignment_model,
@@ -954,6 +1093,19 @@ def _run_composite_mode(
             logger.warning("[composite] Unknown step_type=%r – skipped", step_type)
 
     # Alle Schritte erfolgreich – Status setzen
+    # Guard: if action was "provision" but changed to "delete" mid-run (leaver race), don't overwrite
+    if action == "provision":
+        live_action = db.execute(
+            text("SELECT action FROM orders WHERE id = :id"), {"id": order_id}
+        ).scalar()
+        if str(live_action).lower() == "delete":
+            logger.warning(
+                "[composite] order_id=%s: action changed to 'delete' mid-run — skipping 'provisioned' stamp",
+                order_id,
+            )
+            db.close()
+            return {"success": True, "order_id": order_id, "aborted": "leaver_preempted", "composite": True}
+
     final = _final_status(action)
     update_order_status(db, order_id, final)
     audit_helper.waudit(
@@ -1055,6 +1207,7 @@ def run(self: Task, order_id: int) -> dict:
                 )
                 automation_strategy = snap_strategy
 
+
         logger.info(
             "[dynamic_runner] automation_strategy=%s assignment_model=%s deprovision_policy=%s",
             automation_strategy, assignment_model, deprovision_policy,
@@ -1094,13 +1247,16 @@ def run(self: Task, order_id: int) -> dict:
         if action == "delete" and result.get("success"):
             asset_id = order.get("assigned_asset_id")
             if asset_id:
-                # Release asset (idempotent – _run_targets_mode may have already done it)
-                try:
-                    from tasks.modules.pool_manager import release_asset as _release_asset
-                    _release_asset(db, asset_id)
-                    logger.info("[dynamic_runner] Asset %s released after DELETE", asset_id)
-                except Exception as _e:
-                    logger.warning("[dynamic_runner] release_asset failed (non-critical): %s", _e)
+                # Release asset (idempotent – _run_targets_mode may have already done it).
+                # Skip for return_to_pool_reinstall: the policy branch already set the
+                # asset to 'reinstall'; a blind release would flip it back to 'free'.
+                if deprovision_policy != "return_to_pool_reinstall":
+                    try:
+                        from tasks.modules.pool_manager import release_asset as _release_asset
+                        _release_asset(db, asset_id)
+                        logger.info("[dynamic_runner] Asset %s released after DELETE", asset_id)
+                    except Exception as _e:
+                        logger.warning("[dynamic_runner] release_asset failed (non-critical): %s", _e)
 
                 # Set original PROVISION order(s) to revoked
                 try:
@@ -1109,14 +1265,13 @@ def run(self: Task, order_id: int) -> dict:
                             UPDATE orders
                             SET status = 'revoked'
                             WHERE assigned_asset_id = :aid
-                              AND action = 'provision'
                               AND status IN ('delivered', 'provisioned')
                         """),
                         {"aid": asset_id},
                     )
                     db.commit()
                     logger.info(
-                        "[dynamic_runner] PROVISION orders for asset %s set to revoked", asset_id
+                        "[dynamic_runner] Active orders for asset %s set to revoked", asset_id
                     )
                 except Exception as _e:
                     logger.warning(
@@ -1167,16 +1322,9 @@ def test_script_module(self: Task, script_module_id: int, params: dict) -> dict:
                 if p.get("name") and p.get("default") not in (None, ""):
                     schema_defaults[p["name"]] = p["default"]
 
-        # Priority: schema defaults < hosting config < user-supplied params
-        hosting_defaults = {
-            "vSphereServerHost":      get_config(db, "vsphere.host", ""),
-            "vSphereServerAdminUser": get_config(db, "vsphere.username", ""),
-            "vSphereServerAdminPW":   get_config(db, "vsphere.password", ""),
-            "XenServerHost":          get_config(db, "xenserver.host", ""),
-            "XenServerAdminUser":     get_config(db, "xenserver.username", ""),
-            "XenServerAdminPW":       get_config(db, "xenserver.password", ""),
-        }
-        merged_params = {**schema_defaults, **hosting_defaults, **params}
+        # Priority: schema defaults < user-supplied params
+        # (Hosting config is now injected into $VARS automatically by _load_global_vars)
+        merged_params = {**schema_defaults, **params}
         result = _run_db_script(db, script_module_id, merged_params)
         duration_ms = (time.monotonic() - t_start) * 1000
         return {
@@ -1253,10 +1401,92 @@ def send_scheduled_confirmation(order_id: int) -> dict:
         db.close()
 
 
+def deliver_approval_notification(
+    db,
+    *,
+    approval_id: int,
+    approver_email: str,
+    approver_name: str,
+    requester_name: str,
+    requester_email: str,
+    asset_type_name: str,
+    from_date: str,
+    until_date: str,
+    portal_base: str,
+    teams_mode: str,
+    teams_webhook: str,
+    app_title: str,
+    is_reminder: bool = False,
+    reminder_count: int = 0,
+) -> tuple[bool, bool]:
+    """Send a single approval notification (email + Teams card if enabled).
+
+    Returns ``(email_sent, teams_sent)``. Reused by both the initial
+    dispatch and the reminder Beat task. ``approver_email`` is forwarded
+    to the Teams card builder so the rendered card can include an
+    ``@mention`` of the approver — required for Teams to surface a real
+    banner / push notification when the post is authored "by the user via
+    Workflows" (Teams suppresses self-authored channel-post notifications).
+    ``is_reminder`` bumps the card headline to "Reminder (n): …" so the
+    recipient can tell it's a nudge.
+    """
+    from tasks.modules import notifications as notif
+
+    approval_url = f"{portal_base.rstrip('/')}/portal/approvals"
+    notif.send_approval_request(
+        db=db,
+        approver_email=approver_email,
+        approver_name=approver_name,
+        requester_name=requester_name,
+        requester_email=requester_email,
+        asset_type_name=asset_type_name,
+        from_date=from_date,
+        until_date=until_date,
+        approval_url=approval_url,
+    )
+    email_sent = True
+    teams_sent = False
+
+    if teams_mode == "enabled" and teams_webhook:
+        try:
+            from tasks.modules.teams_notify import (
+                build_approval_card,
+                make_approval_token,
+                post_adaptive_card,
+            )
+            token = make_approval_token(approval_id)
+            review_url = f"{portal_base.rstrip('/')}/approve/{token}"
+            card = build_approval_card(
+                asset_type_name=asset_type_name,
+                requester_name=requester_name,
+                requester_email=requester_email,
+                approver_name=approver_name,
+                approver_email=approver_email,
+                review_url=review_url,
+                from_date=from_date,
+                until_date=until_date,
+                app_title=app_title,
+            )
+            if is_reminder and reminder_count > 0:
+                # Bump the headline so the recipient sees this is a nudge,
+                # not a duplicate of the original card.
+                card["body"][0]["text"] = (
+                    f"{app_title} — Reminder ({reminder_count}): access request awaiting approval"
+                )
+            ok, msg = post_adaptive_card(teams_webhook, card)
+            if ok:
+                teams_sent = True
+            else:
+                logger.warning("Teams card delivery failed for approval %s: %s", approval_id, msg)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Teams card error for approval %s: %s", approval_id, exc)
+
+    return email_sent, teams_sent
+
+
 @app.task(name="tasks.workflows.dynamic_runner.send_approval_requests")
 def send_approval_requests(order_id: int) -> dict:
     """Sends approval request emails to all pending approvers for an order."""
-    from tasks.modules import notifications as notif
     from tasks.modules.config_reader import get_config
 
     db = _get_db_session()
@@ -1292,14 +1522,22 @@ def send_approval_requests(order_id: int) -> dict:
             until_date = ru.strftime("%d.%m.%Y")
 
         approvals = db.execute(
-            text("SELECT approver_email, approver_name FROM order_approvals WHERE order_id = :oid AND status = 'pending'"),
+            text("SELECT id, approver_email, approver_name FROM order_approvals WHERE order_id = :oid AND status = 'pending'"),
             {"oid": order_id},
         ).fetchall()
 
+        # Teams notifications are best-effort — read config once, skip silently
+        # when not enabled. Failure to deliver to Teams must not abort the order.
+        teams_mode = (get_config(db, "teams.mode", "disabled") or "disabled").strip()
+        teams_webhook = _get_secret_config(db, "teams.webhook_url").strip()
+        app_title = get_config(db, "app.title", "ip·Solis") or "ip·Solis"
+
         sent = 0
+        teams_sent = 0
         for a in approvals:
-            notif.send_approval_request(
-                db=db,
+            email_ok, teams_ok = deliver_approval_notification(
+                db,
+                approval_id=a.id,
                 approver_email=a.approver_email,
                 approver_name=a.approver_name,
                 requester_name=row.user_name or "",
@@ -1307,12 +1545,22 @@ def send_approval_requests(order_id: int) -> dict:
                 asset_type_name=row.asset_type_name or "",
                 from_date=from_date,
                 until_date=until_date,
-                approval_url=approval_url,
+                portal_base=portal_base,
+                teams_mode=teams_mode,
+                teams_webhook=teams_webhook,
+                app_title=app_title,
+                is_reminder=False,
             )
-            sent += 1
+            if email_ok:
+                sent += 1
+            if teams_ok:
+                teams_sent += 1
 
-        logger.info("Sent %d approval request emails for order_id=%s", sent, order_id)
-        return {"success": True, "sent": sent}
+        logger.info(
+            "Approval notifications for order %s — emails=%d teams=%d (mode=%s)",
+            order_id, sent, teams_sent, teams_mode,
+        )
+        return {"success": True, "sent": sent, "teams_sent": teams_sent}
     finally:
         db.close()
 
@@ -1365,7 +1613,6 @@ def check_expiring_assets() -> dict:
     """
     from tasks.modules.notifications import send_expiry_reminder
 
-    reminder_hours = int(os.getenv("REMINDER_HOURS_BEFORE_EXPIRY", "24"))
     logger.info("=== check_expiring_assets: Checking for expired/expiring assets ===")
 
     db = _get_db_session()
@@ -1439,39 +1686,60 @@ def check_expiring_assets() -> dict:
             )
             reclaim_count += 1
 
-        # ── Assets expiring soon: reminder email ──
-        reminder_time = datetime.now(timezone.utc) + timedelta(hours=reminder_hours)
+        # ── Orders expiring soon: per-type lifecycle_reminder_days ──
+        # Scans active orders whose requested_until falls within the per-type
+        # reminder window. Hostname is used as asset_name when a pool asset is
+        # assigned (personal hosts); otherwise we fall back to the asset type's
+        # display name. orders.expiry_reminder_sent_at is stamped after send to
+        # ensure a single reminder regardless of scan cadence.
         expiring_soon = db.execute(
             text("""
-                SELECT a.name as asset_name, o.user_email, o.user_name, a.expires_at
-                FROM asset_pool a
-                JOIN orders o ON o.id = a.current_order_id
-                WHERE a.status = 'busy'
-                  AND a.expires_at > NOW()
-                  AND a.expires_at <= :reminder_time
+                SELECT o.id            AS order_id,
+                       o.user_email,
+                       o.user_name,
+                       o.owner_email,
+                       o.owner_name,
+                       o.requested_until,
+                       at.name          AS type_name,
+                       ap.name          AS host_name
+                FROM orders o
+                JOIN asset_types at ON at.id = o.asset_type_id
+                LEFT JOIN asset_pool ap ON ap.id = o.assigned_asset_id
+                WHERE at.lifecycle_reminder_days IS NOT NULL
+                  AND o.expiry_reminder_sent_at IS NULL
                   AND o.status IN ('delivered', 'provisioned')
+                  AND o.requested_until > NOW()
+                  AND o.requested_until <= NOW() + make_interval(days => at.lifecycle_reminder_days)
             """),
-            {"reminder_time": reminder_time},
         ).fetchall()
 
         reminder_count = 0
         for row in expiring_soon:
+            asset_name = row.host_name or row.type_name
             hours_remaining = (
-                row.expires_at.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)
+                row.requested_until.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)
             ).total_seconds() / 3600
             logger.info(
-                "Asset expiring soon: %s (user=%s, in %.1fh) – sending reminder",
-                row.asset_name, row.user_email, hours_remaining,
+                "Order %s expiring soon: %s (user=%s, in %.1fh) – sending reminder",
+                row.order_id, asset_name, row.user_email, hours_remaining,
             )
-            send_expiry_reminder(
+            result = send_expiry_reminder(
                 db=db,
                 user_email=row.user_email,
                 user_name=row.user_name,
-                asset_name=row.asset_name,
-                expires_at=row.expires_at,
+                asset_name=asset_name,
+                expires_at=row.requested_until,
                 hours_remaining=hours_remaining,
+                owner_email=row.owner_email or None,
+                owner_name=row.owner_name or None,
             )
-            reminder_count += 1
+            if result.get("success"):
+                db.execute(
+                    text("UPDATE orders SET expiry_reminder_sent_at = NOW() WHERE id = :id"),
+                    {"id": row.order_id},
+                )
+                db.commit()
+                reminder_count += 1
 
         logger.info(
             "=== check_expiring_assets DONE: %s reclaimed, %s reminders sent ===",
@@ -1520,6 +1788,56 @@ def check_scheduled_orders() -> dict:
 
         logger.info("=== check_scheduled_orders DONE: %s orders dispatched ===", dispatched)
         return {"dispatched": dispatched}
+
+    finally:
+        db.close()
+
+
+@app.task(
+    name="tasks.workflows.dynamic_runner.recover_stuck_revoking",
+    bind=True,
+    max_retries=0,
+    queue="reclaim",
+)
+def recover_stuck_revoking(self: Task) -> dict:
+    """Re-dispatch deprovision tasks for orders stuck in 'revoking' state.
+
+    An order is considered stuck when it has been in 'revoking' status with
+    action='delete' but has no currently-running order step. This catches the
+    case where the deprovision Celery task failed silently (e.g. DB connection
+    exhaustion) and was not retried.
+    """
+    db = _get_db_session()
+    try:
+        stuck_rows = db.execute(
+            text("""
+                SELECT o.id
+                FROM orders o
+                WHERE o.status = 'revoking'
+                  AND o.action = 'delete'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM order_steps s
+                      WHERE s.order_id = o.id
+                        AND s.status = 'running'
+                  )
+            """)
+        ).fetchall()
+
+        if not stuck_rows:
+            return {"recovered": 0}
+
+        recovered = 0
+        for row in stuck_rows:
+            order_id = row[0]
+            logger.warning(
+                "[recover_stuck_revoking] Order %s is stuck in 'revoking' — re-dispatching deprovision",
+                order_id,
+            )
+            run.apply_async(args=[order_id], queue="reclaim")
+            recovered += 1
+
+        logger.info("[recover_stuck_revoking] Re-dispatched %s stuck order(s)", recovered)
+        return {"recovered": recovered}
 
     finally:
         db.close()

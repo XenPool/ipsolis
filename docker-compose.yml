@@ -5,10 +5,10 @@ services:
   # ─────────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
-    container_name: xp_postgres
+    container_name: ipsolis-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-itselfservice}
+      POSTGRES_DB: ${POSTGRES_DB:-ipsolis}
       POSTGRES_USER: ${POSTGRES_USER:-xpuser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
@@ -16,7 +16,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-xpuser} -d ${POSTGRES_DB:-itselfservice}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-xpuser} -d ${POSTGRES_DB:-ipsolis}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -27,7 +27,7 @@ services:
   # ─────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: xp_redis
+    container_name: ipsolis-redis
     restart: unless-stopped
     command: redis-server --appendonly yes
     volumes:
@@ -49,18 +49,26 @@ services:
       context: ./api
       dockerfile: Dockerfile
       args:
-        APP_VERSION: ${APP_VERSION:-1.0.0}
-    container_name: xp_api
+        # Bake APP_VERSION into the image as a fallback. Runtime prefers
+        # /app/VERSION (bind-mounted below) so the canonical VERSION
+        # file is the single source of truth — bump it once and every
+        # restart picks up the new number without a rebuild.
+        APP_VERSION: ${APP_VERSION:-unknown-build}
+    container_name: ipsolis-api
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-xpuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-itselfservice}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-xpuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ipsolis}
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
     ports:
       - "8000:8000"
     volumes:
       - ./scripts:/app/scripts      # PowerShell scripts (read/write for script editor)
+      - ./backups:/app/backups      # Local DB backups (shared with worker)
+      - ./licenses:/app/license     # Signed .lic file (read-write: api handles uploads)
+      - ./locales:/app/locales:ro   # Portal i18n JSON (served via /locales/*.json)
+      - ./VERSION:/app/VERSION:ro   # Single source of truth for the running version
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,16 +88,18 @@ services:
     build:
       context: ./worker
       dockerfile: Dockerfile
-    container_name: xp_worker
+    container_name: ipsolis-worker
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-xpuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-itselfservice}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-xpuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ipsolis}
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       PYTHONUNBUFFERED: "1"
     volumes:
       - ./scripts:/app/scripts:ro          # PowerShell scripts (read-only)
+      - ./backups:/app/backups             # Local DB backups (shared with api)
+      - ./licenses:/app/license:ro         # Signed .lic file (read-only)
       - ps_user_modules:/root/.local/share/powershell/Modules
     depends_on:
       postgres:
@@ -99,7 +109,8 @@ services:
     command: >
       celery -A tasks worker
       --loglevel=info
-      --pool=solo
+      --pool=prefork
+      --concurrency=4
       --queues=default,provision,reclaim,notifications
     healthcheck:
       test: ["CMD", "celery", "-A", "tasks", "inspect", "ping"]
@@ -115,26 +126,29 @@ services:
     build:
       context: ./worker
       dockerfile: Dockerfile
-    container_name: xp_beat
+    # No ``container_name`` so this service can be scaled to N replicas
+    # (``docker compose up -d --scale beat=2``). RedBeat's distributed
+    # lock keeps the dispatch single-leader regardless of replica count.
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-xpuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-itselfservice}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-xpuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ipsolis}
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
     volumes:
-      - beat_schedule:/app/beat_schedule
+      - ./licenses:/app/license:ro         # Signed .lic file (read-only)
       - ps_user_modules:/root/.local/share/powershell/Modules
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # RedBeatScheduler stores the schedule in Redis (no file volume needed)
+    # and serialises ticks across replicas via a Lua-script distributed lock.
     command: >
       celery -A tasks beat
       --loglevel=info
-      --scheduler celery.beat.PersistentScheduler
-      --schedule /app/beat_schedule/celerybeat-schedule
+      --scheduler redbeat.RedBeatScheduler
 
   # ─────────────────────────────────────────────────────────────────
   # Flower – Celery Monitoring UI
@@ -143,10 +157,11 @@ services:
     build:
       context: ./worker
       dockerfile: Dockerfile
-    container_name: xp_flower
+    container_name: ipsolis-flower
     restart: unless-stopped
     env_file: .env
     environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-xpuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ipsolis}
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       FLOWER_BASIC_AUTH: ${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
@@ -162,5 +177,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  beat_schedule:
+  # ``beat_schedule`` (file-based PersistentScheduler shadow) was retired
+  # when Beat moved to RedBeat — schedule lives in Redis now.
   ps_user_modules:

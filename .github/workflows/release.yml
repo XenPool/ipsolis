@@ -1,0 +1,105 @@
+name: Build & push release images
+
+# Triggered by pushing a semver tag, e.g.:
+#   git tag v0.5.2 && git push origin v0.5.2
+#
+# Produces two public GHCR images per release:
+#   ghcr.io/xenpool/ipsolis-api:<version>   (also tagged :latest)
+#   ghcr.io/xenpool/ipsolis-worker:<version> (also tagged :latest)
+#
+# Images are PUBLIC — no registry token required for customers.
+# Commercial use requires a license (see LICENSE).
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+  packages: write   # needed to push to ghcr.io/xenpool/*
+
+jobs:
+  # ── Sanity check ─────────────────────────────────────────────────────────────
+  validate-version:
+    name: Validate tag matches VERSION file
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare tag to VERSION
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          FILE_VER="$(tr -d '[:space:]' < VERSION)"
+          echo "Tag   : $TAG"
+          echo "File  : $FILE_VER"
+          if [ "$TAG" != "$FILE_VER" ]; then
+            echo "::error::Git tag ($TAG) does not match VERSION file ($FILE_VER). Bump VERSION before tagging."
+            exit 1
+          fi
+
+  # ── Images ───────────────────────────────────────────────────────────────────
+  images:
+    name: Build & push images
+    needs: validate-version
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          file: ./api/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/xenpool/ipsolis-api:${{ steps.ver.outputs.version }}
+            ghcr.io/xenpool/ipsolis-api:latest
+          build-args: APP_VERSION=${{ steps.ver.outputs.version }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: Build & push Worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./worker
+          file: ./worker/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/xenpool/ipsolis-worker:${{ steps.ver.outputs.version }}
+            ghcr.io/xenpool/ipsolis-worker:latest
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,scope=worker,mode=max
+
+  # ── Release summary ───────────────────────────────────────────────────────────
+  summary:
+    name: Print image tags
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          echo "### Release $GITHUB_REF_NAME" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "ghcr.io/xenpool/ipsolis-api:${VER}" >> "$GITHUB_STEP_SUMMARY"
+          echo "ghcr.io/xenpool/ipsolis-worker:${VER}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

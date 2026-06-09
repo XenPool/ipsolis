@@ -127,12 +127,79 @@ def _write_change_log(
 
 # ── Handler-Funktionen ─────────────────────────────────────────────────────────
 
-def _grant_ad_group(identifier: str, principal: str, db: Session) -> dict:
-    """Adds principal to the AD group identified by its DN."""
+_GROUP_NOT_FOUND_MARKERS = (
+    "no such object",      # generic LDAP "0x20" descriptor variants
+    "nosuchobject",        # CamelCase variant emitted by some libs
+    "0x208a",              # AD: ERROR_DS_OBJ_NOT_FOUND in hex
+    "no_object",           # msldap shorthand
+    "object does not",     # paraphrased forms
+)
+
+
+def _parse_group_cn(dn: str) -> str:
+    """Pull the leftmost ``CN=...`` value from a group DN.
+
+    ``CN=My App Users,OU=Provisioned,OU=Groups,DC=example,DC=com`` → ``My App Users``.
+
+    Raises ``ValueError`` for DNs that don't start with ``CN=``, since the
+    create path needs a sensible ``sAMAccountName`` (=CN by convention) and
+    a non-CN-prefixed DN means the operator typed the wrong thing.
+    """
+    head = dn.split(",", 1)[0].strip()
+    if "=" not in head:
+        raise ValueError(f"Invalid DN: {dn!r}")
+    attr, _, val = head.partition("=")
+    if attr.strip().lower() != "cn":
+        raise ValueError(f"Group DN must start with 'CN=', got {head!r}")
+    return val.strip()
+
+
+async def _create_ad_group_async(client, group_dn: str) -> None:
+    """Create a Security Global AD group at ``group_dn`` via msldap.
+
+    Defaults: Security + Global scope (``groupType = -2147483646``). The
+    bind account needs ``Create child`` permission on the parent OU; if
+    not, the call surfaces the AD/LDAP error verbatim so the operator
+    can fix the ACL or the OU path. ``sAMAccountName`` is taken from
+    the leftmost ``CN`` value — AD enforces uniqueness at the domain
+    level, so don't reuse an existing CN under a different OU.
+    """
+    cn = _parse_group_cn(group_dn)
+    attrs = {
+        "objectClass": ["top", "group"],
+        "sAMAccountName": cn,
+        # -2147483646 = 0x80000002 = ADS_GROUP_TYPE_SECURITY_ENABLED |
+        # ADS_GROUP_TYPE_GLOBAL_GROUP. The most conservative default
+        # for an ipSolis-managed access group; tenants that need
+        # Universal / DomainLocal can pre-create the group themselves.
+        "groupType": "-2147483646",
+    }
+    # msldap exposes a generic ``add`` that takes (dn, attrs); some
+    # builds use ``add_obj``. Try the canonical name first.
+    add_fn = getattr(client, "add", None) or getattr(client, "add_obj", None)
+    if add_fn is None:
+        raise RuntimeError(
+            "Installed msldap has neither client.add() nor client.add_obj(); "
+            "cannot create AD group programmatically."
+        )
+    _, err = await add_fn(group_dn, attrs)
+    if err is not None:
+        raise RuntimeError(f"LDAP add (group create) failed: {err}")
+
+
+def _grant_ad_group(identifier: str, principal: str, db: Session, *, target: dict | None = None) -> dict:
+    """Adds principal to the AD group identified by its DN.
+
+    When ``target['create_if_missing']`` is true and the membership add
+    fails because the group does not exist, the worker tries to create
+    the group (Security Global, in the OU implied by the DN) before
+    retrying. Any other error is raised verbatim.
+    """
     import asyncio
     from msldap.commons.factory import LDAPConnectionFactory
 
     url, base_dn = _build_msldap_url(db)
+    create_if_missing = bool((target or {}).get("create_if_missing", False))
 
     async def _do():
         factory = LDAPConnectionFactory.from_url(url)
@@ -141,9 +208,24 @@ def _grant_ad_group(identifier: str, principal: str, db: Session) -> dict:
         try:
             user_dn = await _resolve_dn_async(principal, client, base_dn)
             _, err = await client.add_user_to_group(user_dn, identifier)
-            if err and "already" not in str(err).lower() and "exists" not in str(err).lower():
-                raise RuntimeError(f"LDAP add_user_to_group failed: {err}")
-            return user_dn
+            if err is None:
+                return user_dn
+            err_s = str(err).lower()
+            # Idempotent success — the user is already a member.
+            if "already" in err_s or "exists" in err_s:
+                return user_dn
+            # Group doesn't exist + the operator opted into auto-create.
+            if create_if_missing and any(m in err_s for m in _GROUP_NOT_FOUND_MARKERS):
+                logger.info(
+                    "AD group %s missing; attempting create (create_if_missing=true)",
+                    identifier,
+                )
+                await _create_ad_group_async(client, identifier)
+                _, err2 = await client.add_user_to_group(user_dn, identifier)
+                if err2 is not None and "already" not in str(err2).lower():
+                    raise RuntimeError(f"LDAP add_user_to_group after create failed: {err2}")
+                return user_dn
+            raise RuntimeError(f"LDAP add_user_to_group failed: {err}")
         finally:
             await client.disconnect()
 
@@ -152,7 +234,7 @@ def _grant_ad_group(identifier: str, principal: str, db: Session) -> dict:
     return {"success": True, "user_dn": user_dn}
 
 
-def _grant_entra_group(identifier: str, principal: str, db: Session) -> dict:
+def _grant_entra_group(identifier: str, principal: str, db: Session, *, target: dict | None = None) -> dict:
     """Adds principal to the Entra group identified by identifier (MS Graph)."""
     raise NotImplementedError("Entra group grant not yet implemented")
 
@@ -276,7 +358,10 @@ def grant(
                 continue
 
             try:
-                result = handler(identifier, principal, db)
+                # Pass the full target dict so handlers can read per-target
+                # flags like ``create_if_missing`` without needing a new
+                # dispatch table entry per option.
+                result = handler(identifier, principal, db, target=target)
                 state = "success" if result.get("success") else "failed"
                 _write_change_log(
                     db, order_id, target_type, identifier, "grant",

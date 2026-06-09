@@ -1,74 +1,306 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-gray-50">
+<html lang="en" class="h-full">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}{{ app_title }}{% endblock %}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  {% include "_partials/theme_head.html" %}
   <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous"></script>
 </head>
-<body class="h-full">
+<body class="h-full flex bg-surface-raised font-sans text-body">
 
-  <!-- Navigation -->
-  <nav class="bg-white border-b border-gray-200 shadow-sm">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex items-center justify-between h-14">
-        <div class="flex items-center gap-6">
-          <span class="font-semibold text-gray-900 text-sm tracking-wide">{{ app_title }}</span>
-          <div class="flex gap-1">
-            <a href="/ui/"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'dashboard' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Dashboard
-            </a>
-            <a href="/ui/orders"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'orders' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Orders
-            </a>
-            <a href="/ui/asset-types"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'asset-types' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Asset Types
-            </a>
-            <a href="/ui/asset-pool"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'asset-pool' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Asset Pool
-            </a>
-            <a href="/ui/runbooks"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'runbooks' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Runbooks
-            </a>
-            <a href="/ui/modules"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'modules' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Modules
-            </a>
-            <a href="/ui/settings"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'settings' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              Settings
-            </a>
-            <a href="/ui/ps-modules"
-               class="px-3 py-1.5 rounded text-sm font-medium {% if active_page == 'ps-modules' %}bg-blue-50 text-blue-700{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
-              PS Modules
-            </a>
-          </div>
-        </div>
-        <div class="flex items-center gap-3 text-xs text-gray-400">
-          <span class="text-gray-300">v{{ app_version }}</span>
-          <span>·</span>
-          <a href="/docs" target="_blank" class="hover:text-gray-700">Swagger UI</a>
-          <span>·</span>
-          <a href="http://localhost:5555" target="_blank" class="hover:text-gray-700">Flower</a>
-          <span>·</span>
-          <form method="post" action="/ui/logout" class="inline">
-            <button type="submit" class="hover:text-gray-700 cursor-pointer">Sign out</button>
-          </form>
-        </div>
-      </div>
+  <!-- ── Left Sidebar ──────────────────────────────────────────────────────── -->
+  {# h-screen (not min-h-screen) caps the sidebar at viewport height so the
+     nav can scroll internally instead of pushing the footer below the fold
+     on small monitors / when the nav grows past ~14 entries. #}
+  <aside class="w-56 bg-surface border-r border-token-border flex flex-col flex-shrink-0 h-screen sticky top-0">
+
+    <!-- Brand -->
+    <div class="px-4 py-3 border-b border-token-border">
+      <a href="/ui/" class="flex flex-col items-start gap-3">
+        {% if app_logo %}
+          <img src="/portal/logo" alt="{{ app_title }}"
+               class="max-w-full h-auto object-contain">
+        {% else %}
+          <img src="/static/logos/sunset_light.svg" alt="{{ app_title }}"
+               class="block dark:hidden w-full h-auto object-contain">
+          <img src="/static/logos/sunset_dark.svg" alt="{{ app_title }}"
+               class="hidden dark:block w-full h-auto object-contain">
+        {% endif %}
+        <span class="text-sm font-semibold text-muted leading-snug">{{ app_title }}</span>
+        <span class="text-[10px] tracking-[0.18em] uppercase text-muted mt-1">Admin</span>
+      </a>
     </div>
-  </nav>
 
-  <!-- Page Content -->
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    {% block content %}{% endblock %}
-  </main>
+    <!-- Navigation -->
+    {# RBAC nav gating: every link below is wrapped in admin_role_at_least()
+       so each role only sees what it can actually reach (or read). The list
+       is ordered so each section moves up the privilege ladder:
+         everyone (helpdesk+) → admin+ → auditor+ → superadmin → personal.
+       Mismatch with the API gate would mean a user sees a link they 403 on,
+       so when changing role mins here, mirror the change on the API route. #}
+    {% set _admin_role = current_admin_role(request) %}
+    {# min-h-0 + overflow-y-auto is the flexbox idiom for "shrink past
+       content height and scroll instead". Without min-h-0 the flex child
+       refuses to shrink below its intrinsic content height. #}
+    {% from "_partials/enterprise_teaser.html" import nav_locked %}
+    <nav class="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-0.5">
+      {# ── Operational visibility — visible to every signed-in admin ──── #}
+      <a href="/ui/"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'dashboard' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+        </svg>
+        Dashboard
+      </a>
+      <a href="/ui/orders"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'orders' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+        </svg>
+        Orders
+      </a>
+      <a href="/ui/asset-types"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'asset-types' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+        </svg>
+        Asset Definitions
+      </a>
+      <a href="/ui/asset-pool"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'asset-pool' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
+        </svg>
+        Personal Assets
+      </a>
+
+      {# ── Configuration — admin+ ──────────────────────────────────────── #}
+      {% if admin_role_at_least(request, 'admin') %}
+      <a href="/ui/modules"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'modules' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+        </svg>
+        Modules
+      </a>
+      <a href="/ui/ps-modules"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'ps-modules' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+        </svg>
+        PS Modules
+      </a>
+      {% if edition == 'pro' %}
+      <a href="/ui/standalone-runbooks"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'standalone-runbooks' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        Runbooks
+      </a>
+      {% else %}
+      {{ nav_locked("Runbooks", "/ui/standalone-runbooks", icon_svg='<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>') }}
+      {% endif %}
+      <a href="/ui/settings"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'settings' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        Settings
+      </a>
+      <a href="/ui/maintenance"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'maintenance' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+        </svg>
+        Maintenance
+      </a>
+      {% endif %}
+
+      {# ── Oversight (read-only) — auditor+ ────────────────────────────── #}
+      {% if admin_role_at_least(request, 'auditor') %}
+      <a href="/ui/cost-report"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'cost-report' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        Cost Report
+      </a>
+      <a href="/ui/audit-log"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'audit-log' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        Audit Log
+      </a>
+      {% endif %}
+
+      {# ── Authority-level — superadmin only ───────────────────────────── #}
+      {% if admin_role_at_least(request, 'superadmin') %}
+      <a href="/ui/api-tokens"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'api-tokens' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+        </svg>
+        API Tokens
+      </a>
+      <a href="/ui/admin-users"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'admin-users' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+        </svg>
+        Admin Users
+      </a>
+      {% endif %}
+
+      {# Approval Delegations — admin+ since the API endpoint is the
+         "admin manages delegations on behalf of users" flow, not
+         self-service. Mirrors the gate in admin_approval_delegations.py. #}
+      {% if admin_role_at_least(request, 'admin') %}
+      <a href="/ui/approval-delegations"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'approval-delegations' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+        </svg>
+        Approval Delegations
+      </a>
+      {% endif %}
+
+      {% if admin_role_at_least(request, 'auditor') %}
+        {% if edition == 'pro' and has_certifications %}
+      <a href="/ui/certifications"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'certifications' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+        </svg>
+        Certifications
+      </a>
+        {% else %}
+      {{ nav_locked("Certifications", href="/ui/certifications", icon_svg='<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>') }}
+        {% endif %}
+        {% if edition == 'pro' and has_leaver_events %}
+      <a href="/ui/leaver-events"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'leaver-events' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M13 7H7v6h6V7z M9 1v6m6-6v6M1 9h6m6-6v6M9 13v8m6-8v8m-6-4h6m-6 4h6M1 17h6"/>
+        </svg>
+        Leaver Events
+      </a>
+        {% else %}
+      {{ nav_locked("Leaver Events", href="/ui/leaver-events", icon_svg='<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7H7v6h6V7z M9 1v6m6-6v6M1 9h6m6-6v6M9 13v8m6-8v8m-6-4h6m-6 4h6M1 17h6"/></svg>') }}
+        {% endif %}
+      {% endif %}
+
+
+      {# ── User portal — opens in a new tab so the admin session stays put ── #}
+      <a href="/portal/" target="_blank" rel="noopener"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:bg-surface-raised hover:text-body transition-colors">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+        </svg>
+        <span class="flex-1">User Portal</span>
+        <svg class="w-3 h-3 flex-shrink-0 text-muted/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+        </svg>
+      </a>
+
+      {# ── Personal — visible to everyone ──────────────────────────────── #}
+      <a href="/ui/my-account"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'my-account' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M19.07 4.93A10 10 0 014.93 19.07"/>
+        </svg>
+        My Account
+      </a>
+    </nav>
+
+    <!-- Footer links + sign out -->
+    <div class="px-4 py-3 border-t border-token-border space-y-1 flex-shrink-0">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-[10px] uppercase tracking-[0.15em] text-muted">Theme</span>
+        {% include "_partials/theme_toggle.html" %}
+      </div>
+      <a href="/docs" target="_blank"
+         class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
+        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+        </svg>
+        Swagger UI
+      </a>
+      <a href="http://localhost:5555" target="_blank"
+         class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
+        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+        </svg>
+        Flower
+      </a>
+      <form method="post" action="/ui/logout" class="mt-2">
+        <button type="submit"
+                class="flex items-center gap-2.5 text-xs text-muted hover:text-body cursor-pointer">
+          <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          Sign out
+        </button>
+      </form>
+      {% if request and request.session.get('admin_user') %}
+      <div class="mt-2 text-[10px] text-muted/70">
+        Signed in as <span class="font-medium text-body">{{ request.session.get('admin_user') }}</span>
+        <span class="ml-1 px-1.5 py-0.5 rounded bg-surface-raised text-muted">{{ _admin_role }}</span>
+      </div>
+      {% endif %}
+      <div class="mt-2 text-[10px] text-muted/70">v{{ app_version }}</div>
+    </div>
+
+  </aside>
+
+  <!-- ── Main content ───────────────────────────────────────────────────────── -->
+  <div class="flex-1 overflow-auto">
+    {% include "_partials/update_banner.html" %}
+    <main class="max-w-7xl mx-auto px-6 sm:px-8 py-8">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 
 </body>
 </html>

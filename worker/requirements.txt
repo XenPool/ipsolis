@@ -1,6 +1,10 @@
 # Task Queue
 celery==5.4.0
 redis==5.2.1
+# HA Beat scheduler — Redis-backed schedule store + distributed lock
+# so multiple Beat replicas can run side-by-side and only one dispatches
+# at a time. Drop-in replacement for the file-based PersistentScheduler.
+celery-redbeat==2.3.2
 
 # Database (sync driver for Celery tasks)
 sqlalchemy==2.0.36
@@ -16,6 +20,12 @@ msldap
 # HTTP
 httpx==0.28.1
 
+# Cron expression parsing (standalone runbook scheduling)
+croniter==3.0.3
+
+# License (Ed25519 signature verification)
+cryptography>=43.0.0
+
 # Utilities
 python-dotenv==1.0.1
 
@@ -24,3 +34,11 @@ structlog==24.4.0
 
 # Flower (Monitoring UI – included in worker image)
 flower==2.0.1
+
+# OpenTelemetry tracing — match api versions exactly so propagated context
+# parses identically on both sides of the Celery boundary.
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-exporter-otlp-proto-http==1.29.0
+opentelemetry-instrumentation-celery==0.50b0
+opentelemetry-instrumentation-sqlalchemy==0.50b0

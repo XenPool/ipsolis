@@ -9,7 +9,7 @@ Jedes Modul hat:
 - group:       grouping for admin UI dropdowns
 """
 
-from tasks.modules import notifications, pool_manager, sccm, target_executor, vsphere
+from tasks.modules import notifications, pool_manager, target_executor
 
 
 # ── Notification adapter functions ───────────────────────────────────────────
@@ -126,34 +126,6 @@ MODULE_REGISTRY: dict[str, dict] = {
         "params": ["asset_id"],
         "output_keys": [],
         "group": "pool",
-    },
-
-    # ── vSphere ───────────────────────────────────────────────────────────────
-    "vsphere.update_vmware_tools": {
-        "fn": vsphere.update_vmware_tools,
-        "needs_db": False,
-        "description": "Aktualisiert VMware Tools auf der VM via PowerCLI",
-        "params": ["asset_name"],
-        "output_keys": [],
-        "group": "vsphere",
-    },
-    "vsphere.restart_vm": {
-        "fn": vsphere.restart_vm,
-        "needs_db": False,
-        "description": "Startet die VM neu via vSphere",
-        "params": ["asset_name"],
-        "output_keys": [],
-        "group": "vsphere",
-    },
-
-    # ── SCCM ──────────────────────────────────────────────────────────────────
-    "sccm.trigger_reinstall": {
-        "fn": sccm.trigger_reinstall,
-        "needs_db": False,
-        "description": "Triggers SCCM task sequence for unattended VM reinstallation",
-        "params": ["asset_name"],
-        "output_keys": [],
-        "group": "sccm",
     },
 
     # ── Notifications ─────────────────────────────────────────────────────────

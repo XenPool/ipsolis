@@ -2,11 +2,7 @@
 
 import logging
 import os
-import xml.etree.ElementTree as ET
-from datetime import datetime
 from typing import Any, Literal
-
-import httpx
 
 from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -20,13 +16,14 @@ from app.models.ps_module import PsModule
 from app.models.runbook import RunbookStep
 from app.models.script_module import ScriptModule
 from app.utils.auth import require_admin_key
+from app.utils.rbac import require_role
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/admin",
     tags=["admin-modules"],
-    dependencies=[Depends(require_admin_key)],
+    dependencies=[Depends(require_admin_key), require_role("admin")],
 )
 
 _SECRET_MASK = "***"
@@ -154,6 +151,18 @@ async def update_script_module(
     await db.commit()
     logger.info("admin: updated script_module id=%s", module_id)
     return {"id": module_id, "updated": True}
+
+
+class ParseParamsPayload(BaseModel):
+    script_content: str
+
+
+@router.post("/script-modules/parse-params")
+async def parse_script_params(payload: ParseParamsPayload) -> dict:
+    """Parse a PowerShell `param()` block into a param_schema list."""
+    from app.utils.ps_param_parser import parse_powershell_params
+    schema = parse_powershell_params(payload.script_content)
+    return {"param_schema": schema}
 
 
 class ScriptModuleTestPayload(BaseModel):
@@ -296,10 +305,18 @@ class PsModuleCreate(BaseModel):
     name: str
     required_version: str | None = None
     source_type: Literal["gallery", "upload"] = "gallery"
+    # Operator-declared Linux compatibility flag — see the column in
+    # ps_modules.html for the legend. Defaults to 'unknown' so a
+    # missing field doesn't lock the operator out of unmarked modules.
+    compatibility: Literal["core", "desktop_only", "unknown"] = "unknown"
 
 
 class PsModuleUpdate(BaseModel):
     required_version: str | None = None
+
+
+class PsModuleCompatibilityUpdate(BaseModel):
+    compatibility: Literal["core", "desktop_only", "unknown"]
 
 
 def _ps_module_dict(m: PsModule) -> dict:
@@ -311,8 +328,17 @@ def _ps_module_dict(m: PsModule) -> dict:
         "installed_version": m.installed_version,
         "error_log": m.error_log,
         "source_type": m.source_type,
+        "compatibility": m.compatibility,
         "updated_at": m.updated_at.isoformat() if m.updated_at else None,
     }
+
+
+# PS module compatibility flag — ip·Solis runs PowerShell 7 on Linux in
+# the worker container, but many PSGallery modules ship with PSEdition_Desktop
+# (Windows 5.1) only. The operator declares the value when adding the
+# module; we don't probe PSGallery (most ip·Solis installs are air-gapped,
+# and the search/probe endpoints are unreliable from cloud PSGallery).
+_VALID_COMPATIBILITY = ("core", "desktop_only", "unknown")
 
 
 def _enqueue_install(ps_module_id: int) -> str:
@@ -328,66 +354,6 @@ def _enqueue_install(ps_module_id: int) -> str:
         queue="provision",
     )
     return task.id
-
-
-@router.get("/ps-modules/search")
-async def search_psgallery(q: str = "") -> list[dict]:
-    """Search PSGallery for modules matching q (min 2 chars)."""
-    if len(q) < 2:
-        return []
-    # PSGallery OData v2: $filter=IsLatestVersion no longer works.
-    # Use %27-quoted searchTerm + semVerLevel=2.0.0 + PS User-Agent instead.
-    # Fetch extra entries and deduplicate by name server-side.
-    from urllib.parse import quote as _quote
-    url = (
-        "https://www.powershellgallery.com/api/v2/Search()"
-        f"?searchTerm=%27{_quote(q)}%27"
-        "&$orderby=DownloadCount+desc&$top=40"
-        "&includePrerelease=false&semVerLevel=2.0.0"
-    )
-    try:
-        async with httpx.AsyncClient(timeout=8) as client:
-            resp = await client.get(
-                url,
-                headers={
-                    "Accept": "application/atom+xml",
-                    "User-Agent": "WindowsPowerShell/5.1",
-                },
-            )
-            resp.raise_for_status()
-    except Exception as exc:
-        logger.warning("psgallery search failed for q=%r: %s", q, exc)
-        return []
-
-    ns = {
-        "a": "http://www.w3.org/2005/Atom",
-        "d": "http://schemas.microsoft.com/ado/2007/08/dataservices",
-        "m": "http://schemas.microsoft.com/ado/2007/08/dataservices/metadata",
-    }
-    try:
-        root = ET.fromstring(resp.text)
-    except ET.ParseError:
-        return []
-
-    seen: set[str] = set()
-    results = []
-    for entry in root.findall("a:entry", ns):
-        props = entry.find("m:properties", ns)
-        if props is None:
-            continue
-        name = (props.findtext("d:Id", "", ns) or "").strip()
-        version = (props.findtext("d:Version", "", ns) or "").strip()
-        summary = (
-            props.findtext("d:Summary", "", ns)
-            or props.findtext("d:Description", "", ns)
-            or ""
-        ).strip()[:120]
-        if name and name not in seen:
-            seen.add(name)
-            results.append({"name": name, "version": version, "description": summary})
-        if len(results) >= 15:
-            break
-    return results
 
 
 @router.get("/ps-modules")
@@ -412,18 +378,28 @@ async def create_ps_module(
             required_version=None,
             status="awaiting_upload",
             source_type="upload",
+            compatibility=payload.compatibility,
         )
         db.add(m)
         await db.commit()
         await db.refresh(m)
         logger.info("admin: created ps_module id=%s name=%s source=upload (awaiting zip)", m.id, m.name)
         return _ps_module_dict(m)
-    m = PsModule(name=payload.name, required_version=payload.required_version, status="pending", source_type="gallery")
+    m = PsModule(
+        name=payload.name,
+        required_version=payload.required_version,
+        status="pending",
+        source_type="gallery",
+        compatibility=payload.compatibility,
+    )
     db.add(m)
     await db.commit()
     await db.refresh(m)
     task_id = _enqueue_install(m.id)
-    logger.info("admin: created ps_module id=%s name=%s task=%s", m.id, m.name, task_id)
+    logger.info(
+        "admin: created ps_module id=%s name=%s compatibility=%s task=%s",
+        m.id, m.name, payload.compatibility, task_id,
+    )
     return {**_ps_module_dict(m), "task_id": task_id}
 
 
@@ -440,6 +416,28 @@ async def update_ps_module(
     task_id = _enqueue_install(ps_module_id)
     logger.info("admin: updated ps_module id=%s task=%s", ps_module_id, task_id)
     return {**_ps_module_dict(m), "task_id": task_id}
+
+
+@router.put("/ps-modules/{ps_module_id}/compatibility")
+async def set_ps_module_compatibility(
+    ps_module_id: int,
+    payload: PsModuleCompatibilityUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Operator marks a module as Linux-compatible / Windows-only / Unverified."""
+    m = await db.get(PsModule, ps_module_id)
+    if not m:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"PS module {ps_module_id} not found")
+    await db.execute(
+        text("UPDATE ps_modules SET compatibility = :c, updated_at = NOW() WHERE id = :id"),
+        {"c": payload.compatibility, "id": ps_module_id},
+    )
+    await db.commit()
+    # Re-load the row — commit expires all attributes on `m` and the
+    # async session can't lazy-load them inside a non-greenlet context.
+    await db.refresh(m)
+    logger.info("admin: ps_module id=%s compatibility=%s", ps_module_id, payload.compatibility)
+    return _ps_module_dict(m)
 
 
 @router.post("/ps-modules/{ps_module_id}/install")

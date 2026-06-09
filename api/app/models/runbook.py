@@ -32,7 +32,7 @@ class RunbookDefinition(Base):
     )
     action: Mapped[str] = mapped_column(
         Enum(
-            "provision", "modify", "extend", "delete",
+            "provision", "modify", "delete",
             name="order_action",
             create_type=False,
         ),

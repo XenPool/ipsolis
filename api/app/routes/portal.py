@@ -9,19 +9,22 @@ import base64
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import or_, select, text as sql_text
+from sqlalchemy import exists, or_, select, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from sqlalchemy import func as sa_func
 
 from app.config import settings
 from app.database import get_db
 from app.templates_instance import templates, get_app_logo
-from app.models.asset import AssetPool, AssetStatus, AssetType
+from app.models.asset import AssetPool, AssetStatus, AssetType, AssignmentModel
 from app.models.config import AppConfig
 from app.models.order import Order, OrderAction, OrderStatus
-from app.utils.ad_lookup import lookup_user
+from app.utils.ad_lookup import lookup_user, snapshot_requester_attrs
+from app.utils.audit import (
+    _order_snap, aaudit, classify_for_asset_type_id, portal_actor_by,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -42,7 +45,23 @@ async def portal_logo() -> Response:
         raw = base64.b64decode(b64_data)
     except Exception:
         raise HTTPException(status_code=422, detail="Invalid logo data")
-    return Response(content=raw, media_type=mime, headers={"Cache-Control": "max-age=3600"})
+    return Response(content=raw, media_type=mime, headers={"Cache-Control": "no-cache"})
+
+
+@router.get("/asset-type-logo/{type_id}", include_in_schema=False)
+async def asset_type_logo(type_id: int, db: AsyncSession = Depends(get_db)) -> Response:
+    """Serves an asset type logo image from the DB. Returns 404 when none is set."""
+    result = await db.execute(select(AssetType.logo).where(AssetType.id == type_id))
+    data_url = result.scalar_one_or_none()
+    if not data_url:
+        raise HTTPException(status_code=404, detail="No logo configured")
+    try:
+        header, b64_data = data_url.split(",", 1)
+        mime = header.split(":")[1].split(";")[0]
+        raw = base64.b64decode(b64_data)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid logo data")
+    return Response(content=raw, media_type=mime, headers={"Cache-Control": "no-cache"})
 
 
 def _user_order_filter(email: str):
@@ -52,9 +71,35 @@ def _user_order_filter(email: str):
 
 
 def _assert_owns_order(order: Order, email: str) -> None:
-    """Raises HTTP 403 if the current user is not the requester or owner of the order."""
+    """Raises HTTP 403 if the current user is not the requester or original owner of the order."""
     if order.user_email != email and order.owner_email != email:
         raise HTTPException(status_code=403, detail="Access denied")
+
+
+async def _assert_owns_order_async(order: Order, email: str, db: AsyncSession) -> None:
+    """Like _assert_owns_order but also accepts ownership established via a MODIFY order."""
+    if order.user_email == email or order.owner_email == email:
+        return
+    if order.assigned_asset_id:
+        row = await db.execute(
+            select(Order.id).where(
+                Order.assigned_asset_id == order.assigned_asset_id,
+                Order.action == OrderAction.MODIFY,
+                Order.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED]),
+                Order.owner_email == email,
+            ).limit(1)
+        )
+        if row.scalar_one_or_none() is not None:
+            return
+    raise HTTPException(status_code=403, detail="Access denied")
+
+
+ANONYMOUS_PORTAL_USER = {
+    "email": "portal@local",
+    "name": "Portal User",
+    "oid": "anonymous",
+    "upn": "portal@local",
+}
 
 
 async def require_portal_auth(
@@ -63,10 +108,11 @@ async def require_portal_auth(
 ) -> dict:
     """FastAPI dependency: returns the authenticated portal user dict.
 
-    Requires Entra ID SSO to be configured (entra.mode = 'enabled').
-    If not configured, redirects to a setup hint page.
+    Behavior by entra.mode:
+    - 'disabled'          → portal open, anonymous shared identity (no login)
+    - 'entra_only'        → Entra ID login required
+    - 'entra_with_onprem' → Entra ID login + on-prem LDAP check
     """
-    # Read entra.mode from DB
     mode_row = await db.execute(
         select(AppConfig).where(AppConfig.key == "entra.mode")
     )
@@ -74,10 +120,7 @@ async def require_portal_auth(
     mode = (mode_cfg.value or "disabled") if mode_cfg else "disabled"
 
     if mode == "disabled":
-        raise HTTPException(
-            status_code=503,
-            detail="Portal authentication is not configured. An administrator must enable Entra ID SSO in Admin > Settings.",
-        )
+        return ANONYMOUS_PORTAL_USER
 
     user = request.session.get("portal_user")
     if user:
@@ -91,27 +134,27 @@ async def require_portal_auth(
     )
 
 _STATUS_COLORS = {
-    "pending":      "bg-gray-100 text-gray-700",
-    "scheduled":    "bg-indigo-100 text-indigo-700",
-    "processing":   "bg-blue-100 text-blue-700",
-    "provisioning": "bg-blue-100 text-blue-700",
-    "delivered":    "bg-green-100 text-green-700",
-    "provisioned":  "bg-green-100 text-green-700",
-    "revoking":     "bg-orange-100 text-orange-700",
-    "revoked":      "bg-gray-100 text-gray-500",
-    "failed":       "bg-red-100 text-red-700",
-    "expired":      "bg-orange-100 text-orange-700",
-    "cancelled":        "bg-gray-100 text-gray-500",
-    "pending_approval": "bg-amber-100 text-amber-700",
-    "rejected":         "bg-red-100 text-red-700",
+    "pending":      "bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-200",
+    "scheduled":    "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300",
+    "processing":   "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+    "provisioning": "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+    "delivered":    "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+    "provisioned":  "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+    "revoking":     "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
+    "revoked":      "bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400",
+    "failed":       "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+    "expired":      "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
+    "cancelled":        "bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400",
+    "pending_approval": "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+    "rejected":         "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
 }
 
 _STEP_COLORS = {
-    "pending": "bg-gray-100 text-gray-600",
-    "running": "bg-blue-100 text-blue-700",
-    "success": "bg-green-100 text-green-700",
-    "failed":  "bg-red-100 text-red-700",
-    "skipped": "bg-gray-100 text-gray-400",
+    "pending": "bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300",
+    "running": "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+    "success": "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+    "failed":  "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+    "skipped": "bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-500",
 }
 
 
@@ -123,10 +166,26 @@ async def portal_index(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_portal_auth),
 ):
+    _email = current_user["email"]
+    _m = aliased(Order)
+    _owner_via_modify = (
+        select(_m.id).where(
+            _m.action == OrderAction.MODIFY,
+            _m.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED]),
+            _m.owner_email == _email,
+            _m.assigned_asset_id == Order.assigned_asset_id,
+        ).exists()
+    )
     result = await db.execute(
         select(Order)
         .options(selectinload(Order.steps))
-        .where(_user_order_filter(current_user["email"]))
+        .where(
+            or_(
+                Order.user_email == _email,
+                Order.owner_email == _email,
+                _owner_via_modify,
+            )
+        )
         .order_by(Order.created_at.desc())
         .limit(100)
     )
@@ -179,9 +238,13 @@ _ACTIVE_ORDER_STATUSES = (
 async def _get_unavailable_type_ids(db: AsyncSession, asset_types: list) -> set[int]:
     """Return set of asset_type IDs that have no free assets available.
 
-    Checks two things:
-    - capacity_pooled types: active orders >= pool_capacity
-    - All types with pool assets: 0 free assets in asset_pool
+    A type is considered out of stock when:
+    - it has pool assets but 0 in ``Free`` status, OR
+    - it has 0 pool assets AND its model requires picking an existing one
+      (``assigned_personal`` with strategy ``assign_existing_free``). Types
+      whose strategy provisions on demand
+      (``create_new``) are NOT marked unavailable on an empty pool.
+    - capacity_pooled with ``pool_capacity`` set: active orders >= capacity.
     """
     unavailable: set[int] = set()
     type_ids = [t.id for t in asset_types]
@@ -212,6 +275,16 @@ async def _get_unavailable_type_ids(db: AsyncSession, asset_types: list) -> set[
         free = free_counts.get(t.id, 0)
         if has_pool and free == 0:
             unavailable.add(t.id)
+            continue
+        if not has_pool:
+            # Empty pool: only a problem when the type can't conjure new assets.
+            needs_existing = (
+                t.assignment_model == "assigned_personal"
+                and (t.personal_provisioning_strategy or "assign_existing_free")
+                == "assign_existing_free"
+            )
+            if needs_existing:
+                unavailable.add(t.id)
 
     # 2) Additional check for capacity_pooled: active orders >= pool_capacity
     pooled = [t for t in asset_types if t.assignment_model == "capacity_pooled" and t.pool_capacity]
@@ -267,7 +340,11 @@ async def portal_new_order_form(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_portal_auth),
 ):
-    types_result = await db.execute(select(AssetType).order_by(AssetType.name))
+    # Inactive (deprecated) types stay in the DB for historical orders but
+    # don't appear in the catalog.
+    types_result = await db.execute(
+        select(AssetType).where(AssetType.is_active.is_(True)).order_by(AssetType.name)
+    )
     all_types = list(types_result.scalars().all())
     asset_types = _filter_eligible_asset_types(all_types, current_user["email"])
     unavailable_ids = await _get_unavailable_type_ids(db, asset_types)
@@ -384,7 +461,9 @@ async def portal_create_order(
     form_data = await request.form()
 
     async def _render_error(msg: str):
-        types_result = await db.execute(select(AssetType).order_by(AssetType.name))
+        types_result = await db.execute(
+            select(AssetType).where(AssetType.is_active.is_(True)).order_by(AssetType.name)
+        )
         all_types_raw = list(types_result.scalars().all())
         all_types = _filter_eligible_asset_types(all_types_raw, current_user["email"])
         max_adv_row = await db.execute(
@@ -454,6 +533,15 @@ async def portal_create_order(
             f"No free assets available for \"{asset_type.name}\". Please try again later."
         )
 
+    # Per-user quota check
+    from app.utils.capacity import enforce_max_per_user
+    try:
+        await enforce_max_per_user(
+            db, asset_type.id, user_email, asset_type.max_per_user
+        )
+    except HTTPException as exc:
+        return await _render_error(exc.detail)
+
     order_config, attr_error = _validate_order_attrs(form_data, asset_type.config or [])
     if attr_error:
         return await _render_error(attr_error)
@@ -463,6 +551,8 @@ async def portal_create_order(
 
     # Determine if this is a future-dated order
     is_future = from_dt.date() > date.today()
+
+    is_deputy = bool(owner_email.strip() and owner_email.strip().lower() != user_email.strip().lower())
 
     # ── Approval gate ────────────────────────────────────────────────────────
     needs_manager_approval = asset_type.requires_manager_approval
@@ -493,6 +583,11 @@ async def portal_create_order(
     else:
         initial_status = OrderStatus.PENDING
 
+    # Chargeback snapshot — same helper used by the /orders API and the
+    # ServiceNow webhook so all three creation paths produce the same
+    # requester_* columns.
+    requester_attrs = snapshot_requester_attrs(user_email)
+
     order = Order(
         user_email=user_email,
         user_name=user_name,
@@ -506,32 +601,149 @@ async def portal_create_order(
         action=OrderAction.PROVISION,
         status=initial_status,
         config=order_config,
+        **requester_attrs,
     )
     db.add(order)
     await db.flush()
 
-    if needs_any_approval:
-        # Create approval records
+    # Capture id/action before any commit — ORM objects are expired after commit.
+    # Used later to dispatch after the transaction is committed.
+    _new_order_id = order.id
+    _new_order_action = order.action
+
+    # Conditional approval rules — may add approvers regardless of the
+    # static manager / owner toggles. We evaluate after the order row
+    # exists so dates and requester attrs are available in the context.
+    from app.utils.approval_rules import build_context, evaluate_rules
+    rule_approvers = evaluate_rules(
+        asset_type.approval_rules,
+        build_context(order, asset_type),
+    )
+
+    # Per-classification approval routing — defaults-driven path that
+    # injects an extra approval step when the asset type's attribute
+    # classification (PII / PHI / PCI) matches a configured policy.
+    # Two policy modes per class:
+    #   - compliance_officer → one step at the global officer
+    #   - owner_of_record    → one step per asset_type.approval_owners
+    # Runs alongside the rules engine, de-duped against existing
+    # approvers (manager / app-owner / rule).
+    from app.utils.classification_routing import (
+        classification_approvers,
+        load_classification_policy,
+    )
+    classification_policy = await load_classification_policy(db)
+    classification_extra = classification_approvers(asset_type, classification_policy)
+
+    _immediate_dispatch = False
+    if needs_any_approval or rule_approvers or classification_extra:
+        # Create approval records, applying delegation re-routing if active
         from app.models.approval import OrderApproval
+        from app.utils.approval_delegation import resolve_active_delegate
+
+        async def _make_approval(
+            approver_type: str,
+            email: str,
+            name: str,
+            *,
+            rule_name: str | None = None,
+            rule_threshold: int | None = None,
+            sod_exempt: bool = False,
+        ) -> OrderApproval:
+            d = await resolve_active_delegate(db, email)
+            if d is None:
+                return OrderApproval(
+                    order_id=order.id, approver_type=approver_type,
+                    approver_email=email, approver_name=name,
+                    rule_name=rule_name, rule_threshold=rule_threshold,
+                    sod_exempt=sod_exempt,
+                )
+            # Active delegation — route to the deputy. The original
+            # assignee is captured in the audit trail via the
+            # delegation row itself; the approval comment is left
+            # blank so the deputy's decision text isn't overwritten.
+            logger.info(
+                "Portal: order %s approval re-routed: %s → %s (delegation %s, until %s)",
+                order.id, email, d.delegate_email, d.id, d.until_at.isoformat(),
+            )
+            return OrderApproval(
+                order_id=order.id, approver_type=approver_type,
+                approver_email=d.delegate_email,
+                approver_name=d.delegate_name or d.delegate_email,
+                rule_name=rule_name, rule_threshold=rule_threshold,
+                sod_exempt=sod_exempt,
+            )
+
+        # Track which emails are already covered so the rule loop
+        # below doesn't add duplicates of manager / owner approvers.
+        seen_emails: set[str] = set()
 
         if needs_manager_approval and manager_info:
-            db.add(OrderApproval(
-                order_id=order.id,
-                approver_type="manager",
-                approver_email=manager_info["email"],
-                approver_name=manager_info["display_name"],
+            db.add(await _make_approval(
+                "manager",
+                manager_info["email"],
+                manager_info["display_name"],
             ))
+            seen_emails.add(manager_info["email"].lower())
 
         if needs_owner_approval and asset_type.approval_owners:
             for owner in asset_type.approval_owners:
-                db.add(OrderApproval(
-                    order_id=order.id,
-                    approver_type="application_owner",
-                    approver_email=owner["email"],
-                    approver_name=owner.get("name", owner["email"]),
+                db.add(await _make_approval(
+                    "application_owner",
+                    owner["email"],
+                    owner.get("name", owner["email"]),
                 ))
+                seen_emails.add(owner["email"].lower())
+
+        for ra in rule_approvers:
+            if ra["email"].lower() in seen_emails:
+                continue  # already covered by manager / owner — don't double-charge
+            db.add(await _make_approval(
+                "rule:" + ra["rule_name"][:24],  # approver_type column is String(30)
+                ra["email"],
+                ra["name"],
+                rule_name=ra["rule_name"],          # full, untruncated for grouping
+                rule_threshold=ra.get("rule_threshold"),
+                sod_exempt=ra.get("sod_exempt", False),
+            ))
+            seen_emails.add(ra["email"].lower())
+
+        # Per-classification step(s). Skips entries already covered by
+        # manager / owner / rule approvers — common case is "the
+        # manager and the compliance officer are the same person on a
+        # small team" or "the owner-of-record was already added via
+        # the static requires_owner_approval flag". We don't want to
+        # double-charge any of those people.
+        # ``approver_type`` is "compliance_officer" or "owner_of_record"
+        # so the audit log distinguishes classification-policy-driven
+        # rows from the static manager / application_owner rows.
+        for ca in classification_extra:
+            if ca["email"].lower() in seen_emails:
+                logger.info(
+                    "Portal: order %s skips classification %s step for %s "
+                    "(already an approver via manager/owner/rule)",
+                    order.id, ca["policy"], ca["email"],
+                )
+                continue
+            approver_type = ca["policy"]  # 'compliance_officer' or 'owner_of_record'
+            db.add(await _make_approval(
+                approver_type,
+                ca["email"],
+                ca["name"],
+            ))
+            seen_emails.add(ca["email"].lower())
+            logger.info(
+                "Portal: order %s adds %s step (trigger=%s, recipient=%s)",
+                order.id, ca["policy"], ca["trigger_class"], ca["email"],
+            )
 
         await db.flush()
+
+        # Make sure the order ends up in pending_approval if rules or
+        # the classification-routing path added approvers even though
+        # the static toggles were off.
+        if not needs_any_approval and (rule_approvers or classification_extra):
+            order.status = OrderStatus.PENDING_APPROVAL
 
         # Send approval request emails via Celery
         from celery import Celery
@@ -545,12 +757,12 @@ async def portal_create_order(
 
     elif is_future:
         # Future-dated: reserve asset now, dispatch runbook later on start date
-        needs_asset = asset_type.assignment_model in ("assigned_personal", "dedicated_shared")
+        needs_asset = asset_type.assignment_model == "assigned_personal"
         if needs_asset:
             # Reserve a free asset immediately so it's guaranteed on start day
             reserve_row = await db.execute(sql_text("""
                 SELECT id, name FROM asset_pool
-                WHERE asset_type_id = :at AND status = 'free'
+                WHERE asset_type_id = :at AND status = 'Free'
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             """), {"at": asset_type_id})
@@ -583,15 +795,36 @@ async def portal_create_order(
             order.id, order.user_email, from_dt.date().isoformat(),
         )
     else:
-        # Immediate: dispatch runbook now
-        from app.routes.webhook import _dispatch_runbook
-        task_id = _dispatch_runbook(order)
-        order.celery_task_id = task_id
+        # Immediate: dispatch runbook now, but only AFTER commit below
         order.status = OrderStatus.PROCESSING
+        _immediate_dispatch = True
         logger.info("Portal: Order created id=%s user=%s", order.id, order.user_email)
 
+    # Audit row written after the routing branch so the snapshot captures
+    # the final status (PENDING_APPROVAL / SCHEDULED / PROCESSING) and the
+    # asset reservation when applicable. Classification is inherited from
+    # the asset type so PII-bearing orders fall under the matching
+    # retention window.
+    await aaudit(
+        db, "order", order.id, "created",
+        new=_order_snap(order),
+        by=portal_actor_by(current_user, "portal_create_order"),
+        classification=await classify_for_asset_type_id(db, order.asset_type_id),
+    )
+
+    # Commit FIRST so the row is visible to the worker before dispatch
     await db.commit()
-    return RedirectResponse(url=f"/portal/orders/{order.id}", status_code=303)
+
+    if _immediate_dispatch:
+        from app.routes.webhook import _dispatch_runbook
+        task_id = _dispatch_runbook(_new_order_id, _new_order_action)
+        await db.execute(
+            sql_text("UPDATE orders SET celery_task_id = :t WHERE id = :id"),
+            {"t": task_id, "id": _new_order_id},
+        )
+        await db.commit()
+
+    return RedirectResponse(url=f"/portal/orders/{_new_order_id}", status_code=303)
 
 
 # ── Order Detail ───────────────────────────────────────────────────────────────
@@ -609,7 +842,7 @@ async def portal_order_detail(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    _assert_owns_order(order, current_user["email"])
+    await _assert_owns_order_async(order, current_user["email"], db)
 
     asset_type_name = None
     asset_type = None
@@ -628,8 +861,12 @@ async def portal_order_detail(
     for step in sorted(order.steps, key=lambda s: s.id):
         duration = None
         if step.started_at and step.finished_at:
-            secs = (step.finished_at - step.started_at).total_seconds()
-            duration = f"{secs:.1f}s"
+            start = step.started_at
+            if step.finished_at.tzinfo and not start.tzinfo:
+                start = start.replace(tzinfo=step.finished_at.tzinfo)
+            # Clamp clock-skew negatives so we don't render "-0.0s".
+            secs = max(0.0, (step.finished_at - start).total_seconds())
+            duration = "< 1s" if secs < 0.05 else f"{secs:.1f}s"
         steps_with_duration.append({"step": step, "duration": duration})
 
     # Load approval records (if any)
@@ -641,6 +878,8 @@ async def portal_order_detail(
         )
         approvals = list(appr_result.scalars().all())
 
+    cost_projection = _compute_cost_projection(order, asset_type)
+
     return templates.TemplateResponse("portal/order_detail.html", {
         "request": request,
         "active_page": "overview",
@@ -651,101 +890,44 @@ async def portal_order_detail(
         "asset_name": asset_name,
         "steps_with_duration": steps_with_duration,
         "approvals": approvals,
+        "cost_projection": cost_projection,
         "status_colors": _STATUS_COLORS,
         "step_colors": _STEP_COLORS,
         "today": date.today().isoformat(),
     })
 
 
-# ── Extend ─────────────────────────────────────────────────────────────────────
-
-@router.post("/orders/{order_id}/extend")
-async def portal_extend_order(
-    order_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_portal_auth),
-    new_until: str = Form(...),
-):
-    result = await db.execute(select(Order).where(Order.id == order_id))
-    original = result.scalar_one_or_none()
-    if not original:
-        raise HTTPException(status_code=404, detail="Order not found")
-    _assert_owns_order(original, current_user["email"])
-
-    try:
-        until_dt = datetime.fromisoformat(new_until).replace(tzinfo=timezone.utc)
-    except ValueError:
-        raise HTTPException(status_code=422, detail="Invalid date format")
-
-    new_order = Order(
-        user_email=original.user_email,
-        user_name=original.user_name,
-        owner_email=original.owner_email,
-        owner_name=original.owner_name,
-        asset_type_id=original.asset_type_id,
-        assigned_asset_id=original.assigned_asset_id,
-        rdp_users=original.rdp_users,
-        admin_users=original.admin_users,
-        requested_from=original.requested_from,
-        requested_until=until_dt,
-        action=OrderAction.EXTEND,
-        status=OrderStatus.PENDING,
-    )
-    db.add(new_order)
-    await db.flush()
-
-    from app.routes.webhook import _dispatch_runbook
-    new_order.celery_task_id = _dispatch_runbook(new_order)
-    new_order.status = OrderStatus.PROCESSING
-    await db.commit()
-
-    logger.info("Portal: Extend order id=%s from order=%s", new_order.id, order_id)
-    return RedirectResponse(url=f"/portal/orders/{new_order.id}", status_code=303)
+# Average month length used to convert a request window in days to a
+# fractional cost over its monthly_cost. 30.4375 = 365.25 / 12 — close
+# enough for chargeback projections; the cost report's CSV uses the same
+# unit when finance pivots the per-order data.
+_AVG_DAYS_PER_MONTH = 30.4375
 
 
-# ── Modify Access ──────────────────────────────────────────────────────────────
+def _compute_cost_projection(order: Order, asset_type: AssetType | None) -> dict | None:
+    """Estimate ``monthly_cost × months_requested`` for the order detail card.
 
-@router.post("/orders/{order_id}/modify")
-async def portal_modify_order(
-    order_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_portal_auth),
-    rdp_users: list[str] = Form(default=[]),
-    admin_users: list[str] = Form(default=[]),
-):
-    result = await db.execute(select(Order).where(Order.id == order_id))
-    original = result.scalar_one_or_none()
-    if not original:
-        raise HTTPException(status_code=404, detail="Order not found")
-    _assert_owns_order(original, current_user["email"])
-
-    rdp_clean = [u.strip() for u in rdp_users if u.strip()]
-    admin_clean = [u.strip() for u in admin_users if u.strip()]
-
-    new_order = Order(
-        user_email=original.user_email,
-        user_name=original.user_name,
-        owner_email=original.owner_email,
-        owner_name=original.owner_name,
-        asset_type_id=original.asset_type_id,
-        assigned_asset_id=original.assigned_asset_id,
-        rdp_users=rdp_clean,
-        admin_users=admin_clean,
-        requested_from=original.requested_from,
-        requested_until=original.requested_until,
-        action=OrderAction.MODIFY,
-        status=OrderStatus.PENDING,
-    )
-    db.add(new_order)
-    await db.flush()
-
-    from app.routes.webhook import _dispatch_runbook
-    new_order.celery_task_id = _dispatch_runbook(new_order)
-    new_order.status = OrderStatus.PROCESSING
-    await db.commit()
-
-    logger.info("Portal: Modify order id=%s from order=%s", new_order.id, order_id)
-    return RedirectResponse(url=f"/portal/orders/{new_order.id}", status_code=303)
+    Returns ``None`` when projection is meaningless — no priced asset
+    type, no requested-from/until window, or zero-day window. Operators
+    set ``monthly_cost`` (+ optional ``currency``) on the asset type;
+    untracked types render no cost block on the portal.
+    """
+    if asset_type is None or asset_type.monthly_cost is None:
+        return None
+    if not order.requested_from or not order.requested_until:
+        return None
+    span_days = max(0, (order.requested_until.date() - order.requested_from.date()).days)
+    if span_days == 0:
+        return None
+    unit = float(asset_type.monthly_cost)
+    months = span_days / _AVG_DAYS_PER_MONTH
+    return {
+        "unit_monthly_cost": round(unit, 2),
+        "currency": asset_type.currency or "EUR",
+        "span_days": span_days,
+        "months_estimate": round(months, 2),
+        "projected_total": round(unit * months, 2),
+    }
 
 
 # ── Modify Asset (combined: duration + user lists) ─────────────────────────────
@@ -758,17 +940,19 @@ async def portal_change_order(
     new_until: str | None = Form(default=None),
     rdp_users: list[str] = Form(default=[]),
     admin_users: list[str] = Form(default=[]),
+    new_owner_email: str = Form(default=""),
+    new_owner_name: str = Form(default=""),
 ):
     result = await db.execute(select(Order).where(Order.id == order_id))
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Order not found")
-    _assert_owns_order(original, current_user["email"])
+    await _assert_owns_order_async(original, current_user["email"], db)
 
     is_active = original.status in (OrderStatus.DELIVERED, OrderStatus.PROVISIONED)
     is_failed_change = (
         original.status == OrderStatus.FAILED
-        and original.action in (OrderAction.MODIFY, OrderAction.EXTEND)
+        and original.action == OrderAction.MODIFY
     )
     if not (is_active or is_failed_change):
         raise HTTPException(
@@ -788,6 +972,15 @@ async def portal_change_order(
     rdp_clean = [u.strip() for u in rdp_users if u.strip()]
     admin_clean = [u.strip() for u in admin_users if u.strip()]
 
+    # Deputy change is only allowed for the original requester, not the deputy themselves
+    is_requester = current_user["email"].lower() == (original.user_email or "").lower()
+    new_owner_email_clean = new_owner_email.strip() or None
+    new_owner_name_clean = new_owner_name.strip() or None
+    if new_owner_email_clean and not is_requester:
+        raise HTTPException(status_code=403, detail="Only the original requester can change the deputy.")
+    resolved_owner_email = new_owner_email_clean if is_requester and new_owner_email_clean is not None else original.owner_email
+    resolved_owner_name = new_owner_name_clean if is_requester and new_owner_email_clean is not None else original.owner_name
+
     # Sync asset expires_at when the date changed
     if original.assigned_asset_id and requested_until != original.requested_until:
         from app.models.asset import AssetPool
@@ -797,14 +990,38 @@ async def portal_change_order(
 
     # ── Check if re-approval is needed on user-list changes ────────────────────
     asset_type = await db.get(AssetType, original.asset_type_id)
-    users_changed = (
-        sorted(rdp_clean) != sorted(original.rdp_users or [])
-        or sorted(admin_clean) != sorted(original.admin_users or [])
-    )
+
+    # Baseline: use the latest completed MODIFY for this asset, falling back to
+    # the provision order. Comparing against the provision order is wrong because
+    # any change introduced by a MODIFY would be invisible to the comparison.
+    _effective_rdp: set[str] = set(original.rdp_users or [])
+    _effective_admin: set[str] = set(original.admin_users or [])
+    if original.assigned_asset_id:
+        _latest = await db.execute(
+            select(Order)
+            .where(
+                Order.assigned_asset_id == original.assigned_asset_id,
+                Order.action == OrderAction.MODIFY,
+                Order.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED]),
+            )
+            .order_by(Order.id.desc())
+            .limit(1)
+        )
+        _latest_mod = _latest.scalar_one_or_none()
+        if _latest_mod:
+            _effective_rdp = set(_latest_mod.rdp_users or [])
+            _effective_admin = set(_latest_mod.admin_users or [])
+
+    # Approval is only required when users are *added* — removing access is safe
+    # and should not be gated behind an approval workflow.
+    _rdp_added = set(rdp_clean) - _effective_rdp
+    _admin_added = set(admin_clean) - _effective_admin
+    users_added = bool(_rdp_added or _admin_added)
+
     needs_reapproval = (
         asset_type
         and asset_type.requires_approval_on_modify
-        and users_changed
+        and users_added
         and (asset_type.requires_manager_approval or asset_type.requires_owner_approval)
     )
 
@@ -813,8 +1030,8 @@ async def portal_change_order(
     new_order = Order(
         user_email=original.user_email,
         user_name=original.user_name,
-        owner_email=original.owner_email,
-        owner_name=original.owner_name,
+        owner_email=resolved_owner_email,
+        owner_name=resolved_owner_name,
         asset_type_id=original.asset_type_id,
         assigned_asset_id=original.assigned_asset_id,
         rdp_users=rdp_clean,
@@ -823,33 +1040,71 @@ async def portal_change_order(
         requested_until=requested_until,
         action=OrderAction.MODIFY,
         status=initial_status,
+        # Inherit the AD snapshot — modifying an order shouldn't refetch
+        # AD; the requester's department at order time is the chargeback
+        # truth even if they've moved teams since.
+        requester_sam_account=original.requester_sam_account,
+        requester_department=original.requester_department,
+        requester_cost_center=original.requester_cost_center,
+        requester_company=original.requester_company,
+        requester_employee_id=original.requester_employee_id,
+        requester_title=original.requester_title,
     )
     db.add(new_order)
     await db.flush()
 
+    # Capture id/action before commit — ORM objects are expired after commit
+    _modify_order_id = new_order.id
+    _modify_order_action = new_order.action
+    _modify_dispatch = False
+
     if needs_reapproval:
-        # Create approval records (same logic as new-order approval gate)
+        # Create approval records (same logic as new-order approval gate),
+        # applying delegation re-routing where applicable.
         from app.models.approval import OrderApproval
+        from app.utils.approval_delegation import resolve_active_delegate
+
+        _submitter_email = current_user["email"].strip().lower()
+
+        async def _make_reapproval(approver_type: str, email: str, name: str) -> OrderApproval:
+            d = await resolve_active_delegate(db, email)
+            if d is not None and d.delegate_email.strip().lower() == _submitter_email:
+                # Skip delegation: the delegate is the person who submitted this
+                # change — routing to them would create a self-approval loop.
+                logger.info(
+                    "Portal: re-approval for order %s delegation skipped (%s → %s): "
+                    "delegate is the submitter",
+                    new_order.id, email, d.delegate_email,
+                )
+                d = None
+            if d is None:
+                return OrderApproval(
+                    order_id=new_order.id, approver_type=approver_type,
+                    approver_email=email, approver_name=name,
+                )
+            logger.info(
+                "Portal: re-approval for order %s re-routed: %s → %s (delegation %s)",
+                new_order.id, email, d.delegate_email, d.id,
+            )
+            return OrderApproval(
+                order_id=new_order.id, approver_type=approver_type,
+                approver_email=d.delegate_email,
+                approver_name=d.delegate_name or d.delegate_email,
+            )
 
         if asset_type.requires_manager_approval:
             from app.utils.ad_lookup import lookup_manager
             mgr_result = lookup_manager(original.user_email)
             manager_info = mgr_result.get("manager") if mgr_result.get("success") else None
             if manager_info:
-                db.add(OrderApproval(
-                    order_id=new_order.id,
-                    approver_type="manager",
-                    approver_email=manager_info["email"],
-                    approver_name=manager_info["display_name"],
+                db.add(await _make_reapproval(
+                    "manager", manager_info["email"], manager_info["display_name"],
                 ))
 
         if asset_type.requires_owner_approval and asset_type.approval_owners:
             for owner in asset_type.approval_owners:
-                db.add(OrderApproval(
-                    order_id=new_order.id,
-                    approver_type="application_owner",
-                    approver_email=owner["email"],
-                    approver_name=owner.get("name", owner["email"]),
+                db.add(await _make_reapproval(
+                    "application_owner", owner["email"], owner.get("name", owner["email"]),
                 ))
 
         await db.flush()
@@ -864,14 +1119,31 @@ async def portal_change_order(
         )
         logger.info("Portal: Modify order %s requires re-approval, user=%s", new_order.id, original.user_email)
     else:
-        from app.routes.webhook import _dispatch_runbook
-        new_order.celery_task_id = _dispatch_runbook(new_order)
         new_order.status = OrderStatus.PROCESSING
+        _modify_dispatch = True
 
+    await aaudit(
+        db, "order", new_order.id, "created",
+        new=_order_snap(new_order),
+        by=portal_actor_by(current_user, "portal_change_order"),
+        ctx=f"modify_of:{order_id}",
+        classification=await classify_for_asset_type_id(db, new_order.asset_type_id),
+    )
+
+    # Commit FIRST so the row is visible to the worker before dispatch
     await db.commit()
 
-    logger.info("Portal: Change order id=%s from order=%s", new_order.id, order_id)
-    return RedirectResponse(url=f"/portal/orders/{new_order.id}", status_code=303)
+    if _modify_dispatch:
+        from app.routes.webhook import _dispatch_runbook
+        task_id = _dispatch_runbook(_modify_order_id, _modify_order_action)
+        await db.execute(
+            sql_text("UPDATE orders SET celery_task_id = :t WHERE id = :id"),
+            {"t": task_id, "id": _modify_order_id},
+        )
+        await db.commit()
+
+    logger.info("Portal: Change order id=%s from order=%s", _modify_order_id, order_id)
+    return RedirectResponse(url=f"/portal/orders/{_modify_order_id}", status_code=303)
 
 
 # ── Cancel ─────────────────────────────────────────────────────────────────────
@@ -886,7 +1158,7 @@ async def portal_cancel_order(
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="Order not found")
-    _assert_owns_order(original, current_user["email"])
+    await _assert_owns_order_async(original, current_user["email"], db)
 
     if original.status not in (OrderStatus.DELIVERED, OrderStatus.PROVISIONED, OrderStatus.SCHEDULED):
         raise HTTPException(
@@ -899,12 +1171,19 @@ async def portal_cancel_order(
         if original.assigned_asset_id:
             await db.execute(sql_text("""
                 UPDATE asset_pool
-                SET status = 'free', current_order_id = NULL, expires_at = NULL
+                SET status = 'Free', current_order_id = NULL, expires_at = NULL
                 WHERE id = :aid AND status = 'reserved'
             """), {"aid": original.assigned_asset_id})
             logger.info("Portal: Released reserved asset %s for cancelled order %s",
                         original.assigned_asset_id, order_id)
         original.status = OrderStatus.CANCELLED
+        await aaudit(
+            db, "order", original.id, "status_changed",
+            old={"status": OrderStatus.SCHEDULED.value},
+            new={"status": OrderStatus.CANCELLED.value},
+            by=portal_actor_by(current_user, "portal_cancel_order"),
+            classification=await classify_for_asset_type_id(db, original.asset_type_id),
+        )
         await db.commit()
         logger.info("Portal: Scheduled order cancelled id=%s", order_id)
         return RedirectResponse(url=f"/portal/orders/{order_id}", status_code=303)
@@ -924,20 +1203,58 @@ async def portal_cancel_order(
         status=OrderStatus.PENDING,
         # Copy snapshot from provision order → deterministic revoke
         provisioned_state=original.provisioned_state,
+        # Inherit the requester AD snapshot for consistent chargeback
+        requester_sam_account=original.requester_sam_account,
+        requester_department=original.requester_department,
+        requester_cost_center=original.requester_cost_center,
+        requester_company=original.requester_company,
+        requester_employee_id=original.requester_employee_id,
+        requester_title=original.requester_title,
     )
     db.add(cancel_order)
     await db.flush()
 
-    from app.routes.webhook import _dispatch_runbook
-    cancel_order.celery_task_id = _dispatch_runbook(cancel_order)
+    # Capture id/action before commit — ORM objects are expired after commit
+    _cancel_order_id = cancel_order.id
+    _cancel_order_action = cancel_order.action
     cancel_order.status = OrderStatus.PROCESSING
 
     # Mark original provision order as cancelled so it disappears from My IT
+    original_old_status = original.status.value
     original.status = OrderStatus.CANCELLED
+
+    # Two audit rows: the new DELETE order being created, and the
+    # original provision order transitioning to CANCELLED. Same actor on
+    # both, classification inherits from the asset type.
+    cls = await classify_for_asset_type_id(db, original.asset_type_id)
+    actor = portal_actor_by(current_user, "portal_cancel_order")
+    await aaudit(
+        db, "order", cancel_order.id, "created",
+        new=_order_snap(cancel_order),
+        by=actor, ctx=f"cancel_of:{order_id}",
+        classification=cls,
+    )
+    await aaudit(
+        db, "order", original.id, "status_changed",
+        old={"status": original_old_status},
+        new={"status": OrderStatus.CANCELLED.value},
+        by=actor,
+        classification=cls,
+    )
+
+    # Commit FIRST so the row is visible to the worker before dispatch
     await db.commit()
 
-    logger.info("Portal: Cancel order id=%s from order=%s", cancel_order.id, order_id)
-    return RedirectResponse(url=f"/portal/orders/{cancel_order.id}", status_code=303)
+    from app.routes.webhook import _dispatch_runbook
+    task_id = _dispatch_runbook(_cancel_order_id, _cancel_order_action)
+    await db.execute(
+        sql_text("UPDATE orders SET celery_task_id = :t WHERE id = :id"),
+        {"t": task_id, "id": _cancel_order_id},
+    )
+    await db.commit()
+
+    logger.info("Portal: Cancel order id=%s from order=%s", _cancel_order_id, order_id)
+    return RedirectResponse(url=f"/portal/orders/{_cancel_order_id}", status_code=303)
 
 
 # ── My IT – Active Assets Overview ────────────────────────────────────────────
@@ -950,10 +1267,26 @@ async def portal_my_it(
 ):
 
 
+    _email = current_user["email"]
+    _modify = aliased(Order)
+    _owner_via_modify = (
+        select(_modify.id).where(
+            _modify.action == OrderAction.MODIFY,
+            _modify.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED]),
+            _modify.owner_email == _email,
+            _modify.assigned_asset_id == Order.assigned_asset_id,
+        ).exists()
+    )
     result = await db.execute(
         select(Order)
         .options(selectinload(Order.steps))
-        .where(_user_order_filter(current_user["email"]))
+        .where(
+            or_(
+                Order.user_email == _email,
+                Order.owner_email == _email,
+                _owner_via_modify,
+            )
+        )
         .where(Order.action == OrderAction.PROVISION)
         .where(Order.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED, OrderStatus.SCHEDULED]))
         .order_by(Order.created_at.desc())
@@ -1014,7 +1347,7 @@ async def portal_my_it_detail(
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    _assert_owns_order(order, current_user["email"])
+    await _assert_owns_order_async(order, current_user["email"], db)
 
     if order.status not in (OrderStatus.DELIVERED, OrderStatus.PROVISIONED, OrderStatus.SCHEDULED):
         raise HTTPException(status_code=422, detail="Only active or scheduled assets can be managed here")
@@ -1036,6 +1369,8 @@ async def portal_my_it_detail(
     # order (if any), otherwise fall back to the provision order's lists.
     effective_rdp_users = list(order.rdp_users or [])
     effective_admin_users = list(order.admin_users or [])
+    effective_owner_email = order.owner_email
+    effective_owner_name = order.owner_name
     if order.asset_type_id and order.assigned_asset_id:
         latest_modify_result = await db.execute(
             select(Order)
@@ -1051,7 +1386,10 @@ async def portal_my_it_detail(
         if latest_modify:
             effective_rdp_users = list(latest_modify.rdp_users or [])
             effective_admin_users = list(latest_modify.admin_users or [])
+            effective_owner_email = latest_modify.owner_email
+            effective_owner_name = latest_modify.owner_name
 
+    _is_requester = current_user["email"].lower() == (order.user_email or "").lower()
     return templates.TemplateResponse("portal/my_it_detail.html", {
         "request": request,
         "active_page": "my-it",
@@ -1064,6 +1402,9 @@ async def portal_my_it_detail(
         "status_colors": _STATUS_COLORS,
         "effective_rdp_users": effective_rdp_users,
         "effective_admin_users": effective_admin_users,
+        "effective_owner_email": effective_owner_email,
+        "effective_owner_name": effective_owner_name,
+        "is_requester": _is_requester,
     })
 
 
@@ -1075,6 +1416,8 @@ async def portal_approvals(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_portal_auth),
     show_recent: bool = False,
+    error: str | None = None,
+    type: str | None = None,
 ):
     from app.models.approval import OrderApproval
 
@@ -1121,6 +1464,9 @@ async def portal_approvals(
                 "asset_type_name": at.name if at else f"Type {order.asset_type_id}",
             })
 
+    error_kind = error if error in ("sod", "forbidden", "notfound") else None
+    error_type_name = (type or "").strip()[:200] if error_kind == "sod" else ""
+
     return templates.TemplateResponse("portal/approvals.html", {
         "request": request,
         "active_page": "approvals",
@@ -1129,6 +1475,8 @@ async def portal_approvals(
         "pending_count": len(pending_approvals),
         "recent_approvals": recent_approvals,
         "show_recent": show_recent,
+        "error_kind": error_kind,
+        "error_type_name": error_type_name,
     })
 
 
@@ -1142,77 +1490,70 @@ async def portal_decide_approval(
     comment: str = Form(default=""),
 ):
     from app.models.approval import OrderApproval
+    from urllib.parse import urlencode
 
     result = await db.execute(select(OrderApproval).where(OrderApproval.id == approval_id))
     approval = result.scalar_one_or_none()
     if not approval:
-        raise HTTPException(status_code=404, detail="Approval not found")
+        return RedirectResponse(
+            url="/portal/approvals?" + urlencode({"error": "notfound"}),
+            status_code=303,
+        )
 
     if approval.approver_email != current_user["email"]:
-        raise HTTPException(status_code=403, detail="You are not the designated approver")
-
-    if approval.status != "pending":
-        return RedirectResponse(url="/portal/approvals", status_code=303)
-
-    # Record decision
-    approval.status = "approved" if decision == "approve" else "declined"
-    approval.decided_at = datetime.now(timezone.utc)
-    approval.comment = comment.strip() or None
-
-    order = await db.get(Order, approval.order_id)
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-
-    from celery import Celery
-    celery_app = Celery(broker=settings.CELERY_BROKER_URL)
-
-    if decision != "approve":
-        # Decline: reject the order immediately
-        order.status = OrderStatus.REJECTED
-        order.error_message = f"Declined by {approval.approver_name}: {comment.strip() or 'no reason given'}"
-        celery_app.send_task(
-            "tasks.workflows.dynamic_runner.send_approval_result_email",
-            args=[order.id, False, approval.approver_name, comment.strip() or None],
-            queue="provision",
+        return RedirectResponse(
+            url="/portal/approvals?" + urlencode({"error": "forbidden"}),
+            status_code=303,
         )
-        logger.info("Approval %s declined by %s for order %s", approval_id, current_user["email"], order.id)
-    else:
-        # Approve: check if all approvals are now granted
-        all_result = await db.execute(
-            select(OrderApproval).where(OrderApproval.order_id == order.id)
+
+    from app.utils.approval_decision import SoDViolation, apply_approval_decision
+    try:
+        await apply_approval_decision(
+            db, approval, decision, comment,
+            actor=portal_actor_by(current_user, "decide_approval"),
         )
-        all_approvals = list(all_result.scalars().all())
-        all_approved = all(a.status == "approved" for a in all_approvals)
-
-        if all_approved:
-            # All approved — proceed with order
-            await _post_approval_dispatch(order, db, celery_app)
-            celery_app.send_task(
-                "tasks.workflows.dynamic_runner.send_approval_result_email",
-                args=[order.id, True],
-                queue="provision",
-            )
-            logger.info("All approvals granted for order %s — dispatching", order.id)
-        else:
-            logger.info("Approval %s approved by %s for order %s (still pending others)",
-                        approval_id, current_user["email"], order.id)
-
-    await db.commit()
+    except SoDViolation as exc:
+        # SoD is per-asset-type; the approval row stays ``pending`` so
+        # another approver can decide. Redirect back to the approvals
+        # page with an error flag so the portal can render a friendly
+        # banner instead of leaking raw JSON to the user.
+        type_name = ""
+        at = await db.get(AssetType, exc.asset_type_id)
+        if at:
+            type_name = at.name
+        return RedirectResponse(
+            url="/portal/approvals?" + urlencode({
+                "error": "sod",
+                "type": type_name,
+            }),
+            status_code=303,
+        )
     return RedirectResponse(url="/portal/approvals", status_code=303)
 
 
 async def _post_approval_dispatch(order: Order, db: AsyncSession, celery_app) -> None:
-    """After all approvals granted, transition order to normal flow."""
+    """After all approvals granted, transition order to normal flow.
+
+    This function mutates ``order`` status fields and may flush asset
+    reservations, but does NOT commit. The caller (approval_decision.py)
+    owns the final commit, which happens AFTER this function returns.
+    For the immediate-dispatch path the runbook is sent AFTER the caller
+    commits so the order row is visible to the worker.
+    """
     asset_type = await db.get(AssetType, order.asset_type_id)
     is_future = order.requested_from and order.requested_from.date() > date.today()
+
+    # Capture before commit — ORM objects are expired after commit
+    _order_id = order.id
+    _order_action = order.action
 
     if is_future:
         order.status = OrderStatus.SCHEDULED
         # Reserve asset for future-dated orders
-        if asset_type and asset_type.assignment_model in ("assigned_personal", "dedicated_shared"):
+        if asset_type and asset_type.assignment_model == "assigned_personal":
             reserve_row = await db.execute(sql_text("""
                 SELECT id, name FROM asset_pool
-                WHERE asset_type_id = :at AND status = 'free'
+                WHERE asset_type_id = :at AND status = 'Free'
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             """), {"at": order.asset_type_id})
@@ -1231,11 +1572,13 @@ async def _post_approval_dispatch(order: Order, db: AsyncSession, celery_app) ->
             queue="provision",
         )
     else:
-        order.status = OrderStatus.PENDING
-        from app.routes.webhook import _dispatch_runbook
-        task_id = _dispatch_runbook(order)
-        order.celery_task_id = task_id
         order.status = OrderStatus.PROCESSING
+        # Store the ids for post-commit dispatch on the object so the
+        # caller (approval_decision.py) can dispatch after committing.
+        # We use a private attribute to pass them through without the
+        # ORM expiry problem.
+        order._pending_dispatch_id = _order_id
+        order._pending_dispatch_action = _order_action
 
 
 # ── HTMX: User Validation ──────────────────────────────────────────────────────

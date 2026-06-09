@@ -18,10 +18,10 @@ logger = logging.getLogger(__name__)
 
 # Env-var fallbacks (used if app_config has no value)
 MAIL_FROM = os.getenv("MAIL_FROM", "noreply@example.com")
-MAIL_FROM_NAME = os.getenv("MAIL_FROM_NAME", "XenPool IT Selfservice")
+MAIL_FROM_NAME = os.getenv("MAIL_FROM_NAME", "ip·Solis")
 REMINDER_HOURS = int(os.getenv("REMINDER_HOURS_BEFORE_EXPIRY", "24"))
 
-BRAND_COLOR = "#BB0A30"
+BRAND_COLOR = "#1e3a8a"
 
 
 # ── Template rendering ─────────────────────────────────────────────────────────
@@ -63,8 +63,8 @@ def _render_template(
     return subject, body
 
 
-def _build_branded_html(body_content: str, company_name: str, subject_line: str) -> str:
-    """Wraps admin-provided body HTML in the XenPool branded email wrapper."""
+def _build_branded_html(body_content: str, app_title: str, subject_line: str) -> str:
+    """Wraps admin-provided body HTML in the branded email wrapper."""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -74,7 +74,7 @@ def _build_branded_html(body_content: str, company_name: str, subject_line: str)
     <table width="620" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:4px;overflow:hidden;">
       <tr>
         <td style="background:{BRAND_COLOR};padding:24px 32px;">
-          <div style="color:#ffffff;font-size:22px;font-weight:bold;">{company_name} IT Self-Service</div>
+          <div style="color:#ffffff;font-size:22px;font-weight:bold;">{app_title}</div>
           <div style="color:#ffffff;font-size:14px;margin-top:4px;opacity:0.9;">{subject_line}</div>
         </td>
       </tr>
@@ -86,7 +86,7 @@ def _build_branded_html(body_content: str, company_name: str, subject_line: str)
       <tr>
         <td style="background:#f8f8f8;padding:16px 32px;border-top:1px solid #eeeeee;">
           <p style="margin:0;font-size:11px;color:#aaa;text-align:center;">
-            {company_name} IT Self-Service &nbsp;|&nbsp; This email was generated automatically.
+            {app_title} &nbsp;|&nbsp; This email was generated automatically.
           </p>
         </td>
       </tr>
@@ -121,6 +121,7 @@ def send_order_confirmation(
     from tasks.modules.config_reader import get_config
 
     company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
     mail_from = get_config(db, "email.from", MAIL_FROM)
     bcc = get_config(db, "email.bcc")
 
@@ -138,6 +139,7 @@ def send_order_confirmation(
 
     variables = {
         "company_name": company_name,
+        "app_title": app_title,
         "requester_name": user_name,
         "requester_email": user_email,
         "owner_name": effective_owner_name,
@@ -156,7 +158,7 @@ def send_order_confirmation(
     if subject is None:
         return {"success": True, "skipped": True, "reason": "template inactive"}
 
-    html = _build_branded_html(body, company_name, subject)
+    html = _build_branded_html(body, app_title, subject)
     return _send_html_email_multi(db, recipients, bcc, mail_from, subject, html)
 
 
@@ -181,6 +183,7 @@ def send_provision_confirmation(
     from tasks.modules.config_reader import get_config
 
     company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
     mail_from = get_config(db, "email.from", MAIL_FROM)
     bcc = get_config(db, "email.bcc")
 
@@ -189,11 +192,12 @@ def send_provision_confirmation(
     if rds_gateway_url:
         rds_gateway_info = (
             f'<p>Connect via the RDS Gateway: '
-            f'<a href="{rds_gateway_url}" style="color:#BB0A30;font-weight:bold;">{rds_gateway_url}</a></p>'
+            f'<a href="{rds_gateway_url}" style="color:#1e3a8a;font-weight:bold;">{rds_gateway_url}</a></p>'
         )
 
     variables = {
         "company_name": company_name,
+        "app_title": app_title,
         "requester_name": user_name,
         "requester_email": user_email,
         "asset_name": asset_name or "",
@@ -208,7 +212,7 @@ def send_provision_confirmation(
     if subject is None:
         return {"success": True, "skipped": True, "reason": "template inactive"}
 
-    html = _build_branded_html(body, company_name, subject)
+    html = _build_branded_html(body, app_title, subject)
     return _send_html_email_multi(
         db, [user_email], bcc, mail_from, subject, html,
         rdp_hostname=rdp_hostname,
@@ -232,11 +236,13 @@ def send_modify_confirmation(
     from tasks.modules.config_reader import get_config
 
     company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
     mail_from = get_config(db, "email.from", MAIL_FROM)
     bcc = get_config(db, "email.bcc")
 
     variables = {
         "company_name": company_name,
+        "app_title": app_title,
         "requester_name": user_name,
         "requester_email": user_email,
         "asset_name": asset_name,
@@ -248,7 +254,7 @@ def send_modify_confirmation(
     if subject is None:
         return {"success": True, "skipped": True, "reason": "template inactive"}
 
-    html = _build_branded_html(body, company_name, subject)
+    html = _build_branded_html(body, app_title, subject)
     return _send_html_email_multi(
         db, [user_email], bcc, mail_from, subject, html,
         rdp_hostname=rdp_hostname,
@@ -262,18 +268,24 @@ def send_expiry_reminder(
     asset_name: str,
     expires_at: datetime,
     hours_remaining: float,
+    owner_email: str | None = None,
+    owner_name: str | None = None,
 ) -> dict:
-    """Sends expiry reminder email."""
+    """Sends expiry reminder email to the requester and deputy (if set)."""
     from tasks.modules.config_reader import get_config
 
     company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
     mail_from = get_config(db, "email.from", MAIL_FROM)
     bcc = get_config(db, "email.bcc")
 
     variables = {
         "company_name": company_name,
+        "app_title": app_title,
         "requester_name": user_name,
         "requester_email": user_email,
+        "owner_name": owner_name or "",
+        "owner_email": owner_email or "",
         "asset_name": asset_name,
         "expires_at": expires_at.strftime("%d.%m.%Y %H:%M"),
         "hours_remaining": str(int(hours_remaining)),
@@ -283,8 +295,12 @@ def send_expiry_reminder(
     if subject is None:
         return {"success": True, "skipped": True, "reason": "template inactive"}
 
-    html = _build_branded_html(body, company_name, subject)
-    return _send_html_email_multi(db, [user_email], bcc, mail_from, subject, html)
+    recipients = [user_email]
+    if owner_email and owner_email.lower() != user_email.lower():
+        recipients.append(owner_email)
+
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, recipients, bcc, mail_from, subject, html)
 
 
 def send_reclaim_notification(
@@ -293,18 +309,24 @@ def send_reclaim_notification(
     user_name: str,
     asset_name: str,
     asset_type_name: str | None = None,
+    owner_email: str | None = None,
+    owner_name: str | None = None,
 ) -> dict:
-    """Notifies user about resource being revoked / returned to the pool."""
+    """Notifies requester and deputy (if set) about resource being revoked / returned to the pool."""
     from tasks.modules.config_reader import get_config
 
     company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
     mail_from = get_config(db, "email.from", MAIL_FROM)
     bcc = get_config(db, "email.bcc")
 
     variables = {
         "company_name": company_name,
+        "app_title": app_title,
         "requester_name": user_name,
         "requester_email": user_email,
+        "owner_name": owner_name or "",
+        "owner_email": owner_email or "",
         "asset_name": asset_name or "",
         "asset_type_name": asset_type_name or "",
     }
@@ -313,8 +335,12 @@ def send_reclaim_notification(
     if subject is None:
         return {"success": True, "skipped": True, "reason": "template inactive"}
 
-    html = _build_branded_html(body, company_name, subject)
-    return _send_html_email_multi(db, [user_email], bcc, mail_from, subject, html)
+    recipients = [user_email]
+    if owner_email and owner_email.lower() != user_email.lower():
+        recipients.append(owner_email)
+
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, recipients, bcc, mail_from, subject, html)
 
 
 def send_approval_request(
@@ -332,11 +358,13 @@ def send_approval_request(
     from tasks.modules.config_reader import get_config
 
     company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
     mail_from = get_config(db, "email.from", MAIL_FROM)
     bcc = get_config(db, "email.bcc")
 
     variables = {
         "company_name": company_name,
+        "app_title": app_title,
         "approver_name": approver_name,
         "requester_name": requester_name,
         "requester_email": requester_email,
@@ -350,8 +378,355 @@ def send_approval_request(
     if subject is None:
         return {"success": True, "skipped": True, "reason": "template inactive"}
 
-    html = _build_branded_html(body, company_name, subject)
+    html = _build_branded_html(body, app_title, subject)
     return _send_html_email_multi(db, [approver_email], bcc, mail_from, subject, html)
+
+
+def send_approval_escalated(
+    db: "Session",
+    *,
+    escalation_emails: list[str],
+    approver_email: str,
+    approver_name: str,
+    requester_name: str,
+    requester_email: str,
+    asset_type_name: str,
+    reminder_count: int,
+    from_date: str = "",
+    until_date: str = "",
+    approval_url: str = "",
+) -> dict:
+    """Notify the configured escalation contact(s) that an approval has burned
+    through all its reminders without a decision.
+
+    The escalation email is informational — it doesn't carry a signed
+    approve/decline link. Recipients chase the original approver,
+    reassign the request, or cancel via the admin UI.
+    """
+    from tasks.modules.config_reader import get_config
+
+    addrs = [a.strip() for a in (escalation_emails or []) if a and a.strip()]
+    if not addrs:
+        return {"success": True, "skipped": True, "reason": "no escalation_email configured"}
+
+    company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    variables = {
+        "company_name": company_name,
+        "app_title": app_title,
+        "approver_name": approver_name,
+        "approver_email": approver_email,
+        "requester_name": requester_name,
+        "requester_email": requester_email,
+        "asset_type_name": asset_type_name,
+        "from_date": from_date,
+        "until_date": until_date,
+        "approval_url": approval_url or "",
+        "reminder_count": reminder_count,
+    }
+
+    subject, body = _render_template(db, "approval_escalated", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, addrs, bcc, mail_from, subject, html)
+
+
+def send_approval_escalation_assigned(
+    db: "Session",
+    *,
+    recipient_email: str,
+    recipient_name: str,
+    approver_email: str,
+    approver_name: str,
+    requester_name: str,
+    requester_email: str,
+    asset_type_name: str,
+    from_date: str,
+    until_date: str,
+    approval_url: str,
+) -> dict:
+    """Notify a single escalation contact that an approval has been
+    reassigned to them.
+
+    Unlike ``send_approval_escalated`` (notify-only, points at the
+    admin UI), this email carries a tokenized one-click decide link
+    bound to the contact's *new* OrderApproval row — created upstream
+    in the escalation flow when ``approval.escalation_assign=true``.
+    The recipient can approve / reject directly from the email.
+
+    One row per recipient (caller iterates over the configured
+    ``approval.escalation_email`` list); the escalation tokens are
+    independent so the recipients can each respond on their own.
+    """
+    from tasks.modules.config_reader import get_config
+
+    if not recipient_email or not recipient_email.strip():
+        return {"success": True, "skipped": True, "reason": "empty recipient"}
+
+    company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    variables = {
+        "company_name": company_name,
+        "app_title": app_title,
+        # ``approver_*`` here means the *original* approver who let the
+        # request lapse — same naming as the notify-only template so
+        # admins can reuse copy with `s/approval_escalated/approval_escalation_assigned/`.
+        "approver_name": approver_name,
+        "approver_email": approver_email,
+        "requester_name": requester_name,
+        "requester_email": requester_email,
+        "asset_type_name": asset_type_name,
+        "from_date": from_date,
+        "until_date": until_date,
+        "approval_url": approval_url,
+    }
+
+    subject, body = _render_template(db, "approval_escalation_assigned", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, [recipient_email.strip()], bcc, mail_from, subject, html)
+
+
+def send_cost_threshold_breach(
+    db: "Session",
+    *,
+    recipients: list[str],
+    cost_center: str,
+    currency: str,
+    monthly_limit: float,
+    projected_total: float,
+    active_orders: int,
+    asset_types: int,
+    quiet_hours: int,
+    cost_report_url: str = "",
+) -> dict:
+    """Notify recipients that projected monthly spend on a (cost_center,
+    currency) crossed the configured limit. Best-effort and additive — the
+    Beat task records ``last_alerted_at`` regardless of email outcome so a
+    flaky SMTP relay doesn't lock the alert into a re-fire loop.
+    """
+    from tasks.modules.config_reader import get_config
+
+    addrs = [a.strip() for a in (recipients or []) if a and a.strip()]
+    if not addrs:
+        return {"success": True, "skipped": True, "reason": "no recipients"}
+
+    company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    variables = {
+        "company_name": company_name,
+        "app_title": app_title,
+        "cost_center": cost_center,
+        "currency": currency,
+        "monthly_limit": f"{monthly_limit:.2f}",
+        "projected_total": f"{projected_total:.2f}",
+        "active_orders": active_orders,
+        "asset_types": asset_types,
+        "cost_report_url": cost_report_url or "",
+        "quiet_hours": quiet_hours,
+    }
+
+    subject, body = _render_template(db, "cost_threshold_breach", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, addrs, bcc, mail_from, subject, html)
+
+
+def send_certification_kickoff(
+    db: "Session",
+    *,
+    reviewer_email: str,
+    reviewer_name: str | None,
+    campaign_name: str,
+    campaign_id: int,
+    review_count: int,
+    due_date: str,
+    review_url: str,
+) -> dict:
+    """Email the reviewer at campaign kickoff with a link to their queue."""
+    from tasks.modules.config_reader import get_config
+
+    if not reviewer_email or not reviewer_email.strip():
+        return {"success": True, "skipped": True, "reason": "no reviewer_email"}
+
+    company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    variables = {
+        "company_name": company_name,
+        "app_title": app_title,
+        "reviewer_name": reviewer_name or reviewer_email,
+        "reviewer_email": reviewer_email,
+        "campaign_name": campaign_name,
+        "campaign_id": campaign_id,
+        "review_count": review_count,
+        "due_date": due_date,
+        "review_url": review_url,
+    }
+    subject, body = _render_template(db, "certification_kickoff", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, [reviewer_email], bcc, mail_from, subject, html)
+
+
+def send_certification_reminder(
+    db: "Session",
+    *,
+    reviewer_email: str,
+    reviewer_name: str | None,
+    campaign_name: str,
+    campaign_id: int,
+    pending_count: int,
+    days_left: int,
+    due_date: str,
+    review_url: str,
+) -> dict:
+    """Day-N-before-due reminder to a reviewer with pending decisions."""
+    from tasks.modules.config_reader import get_config
+
+    if not reviewer_email or not reviewer_email.strip():
+        return {"success": True, "skipped": True, "reason": "no reviewer_email"}
+
+    company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    variables = {
+        "company_name": company_name,
+        "app_title": app_title,
+        "reviewer_name": reviewer_name or reviewer_email,
+        "reviewer_email": reviewer_email,
+        "campaign_name": campaign_name,
+        "campaign_id": campaign_id,
+        "pending_count": pending_count,
+        "days_left": days_left,
+        "due_date": due_date,
+        "review_url": review_url,
+    }
+    subject, body = _render_template(db, "certification_reminder", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, [reviewer_email], bcc, mail_from, subject, html)
+
+
+def send_certification_overdue(
+    db: "Session",
+    *,
+    reviewer_email: str,
+    reviewer_name: str | None,
+    campaign_name: str,
+    campaign_id: int,
+    pending_count: int,
+    due_date: str,
+    review_url: str,
+    auto_revoke_enabled: bool,
+) -> dict:
+    """Past-due nag email to a reviewer with pending decisions."""
+    from tasks.modules.config_reader import get_config
+
+    if not reviewer_email or not reviewer_email.strip():
+        return {"success": True, "skipped": True, "reason": "no reviewer_email"}
+
+    company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    if auto_revoke_enabled:
+        warn = (
+            '<p style="color:#BB0A30;"><strong>Heads up:</strong> auto-revoke is '
+            'enabled for this tenant — pending reviews will be revoked '
+            'automatically by the daily Beat task. Decide now to keep the '
+            'access; otherwise it will be pulled.</p>'
+        )
+    else:
+        warn = (
+            '<p>Auto-revoke is not enabled for this tenant. Pending reviews '
+            'will not be acted on automatically — please decide soon to '
+            'satisfy the audit cycle.</p>'
+        )
+
+    variables = {
+        "company_name": company_name,
+        "app_title": app_title,
+        "reviewer_name": reviewer_name or reviewer_email,
+        "reviewer_email": reviewer_email,
+        "campaign_name": campaign_name,
+        "campaign_id": campaign_id,
+        "pending_count": pending_count,
+        "due_date": due_date,
+        "review_url": review_url,
+        "auto_revoke_warning": warn,
+    }
+    subject, body = _render_template(db, "certification_overdue", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, [reviewer_email], bcc, mail_from, subject, html)
+
+
+def send_certification_escalation(
+    db: "Session",
+    *,
+    escalation_emails: list[str],
+    campaign_name: str,
+    campaign_id: int,
+    due_date: str,
+    pending_count: int,
+    reviewer_count: int,
+    reviewer_summary: str,
+    campaign_url: str,
+    auto_revoke_status: str,
+) -> dict:
+    """One-shot escalation to the configured contact list when a campaign goes overdue."""
+    from tasks.modules.config_reader import get_config
+
+    addrs = [a.strip() for a in (escalation_emails or []) if a and a.strip()]
+    if not addrs:
+        return {"success": True, "skipped": True, "reason": "no escalation_email configured"}
+
+    company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
+    mail_from = get_config(db, "email.from", MAIL_FROM)
+    bcc = get_config(db, "email.bcc")
+
+    variables = {
+        "company_name": company_name,
+        "app_title": app_title,
+        "campaign_name": campaign_name,
+        "campaign_id": campaign_id,
+        "due_date": due_date,
+        "pending_count": pending_count,
+        "reviewer_count": reviewer_count,
+        "reviewer_summary": reviewer_summary,
+        "campaign_url": campaign_url,
+        "auto_revoke_status": auto_revoke_status,
+    }
+    subject, body = _render_template(db, "certification_escalation", variables)
+    if subject is None:
+        return {"success": True, "skipped": True, "reason": "template inactive"}
+    html = _build_branded_html(body, app_title, subject)
+    return _send_html_email_multi(db, addrs, bcc, mail_from, subject, html)
 
 
 def send_approval_result(
@@ -367,6 +742,7 @@ def send_approval_result(
     from tasks.modules.config_reader import get_config
 
     company_name = get_config(db, "company.name", "XenPool")
+    app_title = get_config(db, "app.title", "ip·Solis")
     mail_from = get_config(db, "email.from", MAIL_FROM)
     bcc = get_config(db, "email.bcc")
 
@@ -376,6 +752,7 @@ def send_approval_result(
 
     variables = {
         "company_name": company_name,
+        "app_title": app_title,
         "requester_name": user_name,
         "requester_email": user_email,
         "asset_type_name": asset_type_name,
@@ -388,15 +765,8 @@ def send_approval_result(
     if subject is None:
         return {"success": True, "skipped": True, "reason": "template inactive"}
 
-    html = _build_branded_html(body, company_name, subject)
+    html = _build_branded_html(body, app_title, subject)
     return _send_html_email_multi(db, [user_email], bcc, mail_from, subject, html)
-
-
-def send_expiry_reminders() -> dict:
-    """Celery Beat task: sends reminder emails for expiring assets.
-    Production DB query and dispatch to be implemented in a future sprint.
-    """
-    return {"sent": 0}
 
 
 # ── RDP attachment helper ──────────────────────────────────────────────────────

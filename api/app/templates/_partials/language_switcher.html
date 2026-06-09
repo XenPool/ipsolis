@@ -1,0 +1,141 @@
+{#
+  Portal language switcher.
+
+  - Relies on window.i18n (defined in /static/js/i18n.js)
+  - Lists all SUPPORTED languages with a simple gradient-band flag icon
+  - Persists choice via localStorage (handled by setLanguage)
+  - Zero page reload — i18n.apply() rewrites text on the fly
+#}
+<div class="relative" data-lang-switcher>
+
+  <button type="button"
+          data-lang-trigger
+          class="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium
+                 text-muted hover:text-body hover:bg-surface-raised transition-colors"
+          data-i18n-attr-aria-label="portal.language.aria_open"
+          aria-haspopup="menu"
+          onclick="const m=this.nextElementSibling; m.classList.toggle('hidden');">
+    <span data-lang-flag class="inline-block w-4 h-3 rounded-sm overflow-hidden shadow-sm ring-1 ring-black/5"></span>
+    <span data-lang-code class="uppercase tracking-wider">en</span>
+    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+    </svg>
+  </button>
+
+  <div data-lang-menu
+       class="hidden absolute right-0 bottom-full mb-1 w-40 rounded-md
+              bg-surface border border-token-border shadow-lg z-50 py-1"
+       role="menu">
+
+    <button type="button" data-lang="en"
+            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-body
+                   hover:bg-surface-raised transition-colors">
+      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none">
+        <rect width="60" height="36" fill="#012169"/>
+        <path d="M0 0 L60 36 M60 0 L0 36" stroke="#fff" stroke-width="7"/>
+        <path d="M0 0 L60 36 M60 0 L0 36" stroke="#C8102E" stroke-width="3"/>
+        <path d="M30 0 V36 M0 18 H60" stroke="#fff" stroke-width="10"/>
+        <path d="M30 0 V36 M0 18 H60" stroke="#C8102E" stroke-width="6"/>
+      </svg>
+      <span data-i18n="portal.language.names.en">English</span>
+    </button>
+
+    <button type="button" data-lang="de"
+            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-body
+                   hover:bg-surface-raised transition-colors">
+      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none">
+        <rect width="60" height="12" y="0"  fill="#000"/>
+        <rect width="60" height="12" y="12" fill="#DD0000"/>
+        <rect width="60" height="12" y="24" fill="#FFCE00"/>
+      </svg>
+      <span data-i18n="portal.language.names.de">Deutsch</span>
+    </button>
+
+    <button type="button" data-lang="fr"
+            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-body
+                   hover:bg-surface-raised transition-colors">
+      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none">
+        <rect width="20" height="36" x="0"  fill="#002654"/>
+        <rect width="20" height="36" x="20" fill="#FFFFFF"/>
+        <rect width="20" height="36" x="40" fill="#CE1126"/>
+      </svg>
+      <span data-i18n="portal.language.names.fr">Français</span>
+    </button>
+
+    <button type="button" data-lang="es"
+            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-body
+                   hover:bg-surface-raised transition-colors">
+      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none">
+        <rect width="60" height="9"  y="0"  fill="#AA151B"/>
+        <rect width="60" height="18" y="9"  fill="#F1BF00"/>
+        <rect width="60" height="9"  y="27" fill="#AA151B"/>
+      </svg>
+      <span data-i18n="portal.language.names.es">Español</span>
+    </button>
+
+    <button type="button" data-lang="it"
+            class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-body
+                   hover:bg-surface-raised transition-colors">
+      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none">
+        <rect width="20" height="36" x="0"  fill="#009246"/>
+        <rect width="20" height="36" x="20" fill="#FFFFFF"/>
+        <rect width="20" height="36" x="40" fill="#CE2B37"/>
+      </svg>
+      <span data-i18n="portal.language.names.it">Italiano</span>
+    </button>
+
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const FLAG_SVGS = {
+    en: '<svg viewBox="0 0 60 36" preserveAspectRatio="none" style="width:100%;height:100%;"><rect width="60" height="36" fill="#012169"/><path d="M0 0 L60 36 M60 0 L0 36" stroke="#fff" stroke-width="7"/><path d="M0 0 L60 36 M60 0 L0 36" stroke="#C8102E" stroke-width="3"/><path d="M30 0 V36 M0 18 H60" stroke="#fff" stroke-width="10"/><path d="M30 0 V36 M0 18 H60" stroke="#C8102E" stroke-width="6"/></svg>',
+    de: '<svg viewBox="0 0 60 36" preserveAspectRatio="none" style="width:100%;height:100%;"><rect width="60" height="12" y="0" fill="#000"/><rect width="60" height="12" y="12" fill="#DD0000"/><rect width="60" height="12" y="24" fill="#FFCE00"/></svg>',
+    fr: '<svg viewBox="0 0 60 36" preserveAspectRatio="none" style="width:100%;height:100%;"><rect width="20" height="36" x="0" fill="#002654"/><rect width="20" height="36" x="20" fill="#FFFFFF"/><rect width="20" height="36" x="40" fill="#CE1126"/></svg>',
+    es: '<svg viewBox="0 0 60 36" preserveAspectRatio="none" style="width:100%;height:100%;"><rect width="60" height="9" y="0" fill="#AA151B"/><rect width="60" height="18" y="9" fill="#F1BF00"/><rect width="60" height="9" y="27" fill="#AA151B"/></svg>',
+    it: '<svg viewBox="0 0 60 36" preserveAspectRatio="none" style="width:100%;height:100%;"><rect width="20" height="36" x="0" fill="#009246"/><rect width="20" height="36" x="20" fill="#FFFFFF"/><rect width="20" height="36" x="40" fill="#CE2B37"/></svg>'
+  };
+
+  function paintTrigger(lang) {
+    document.querySelectorAll("[data-lang-switcher]").forEach(function (sw) {
+      const flag = sw.querySelector("[data-lang-flag]");
+      const code = sw.querySelector("[data-lang-code]");
+      if (flag) flag.innerHTML = FLAG_SVGS[lang] || FLAG_SVGS.en;
+      if (code) code.textContent = lang;
+    });
+  }
+
+  function wire() {
+    if (!window.i18n) return;
+    paintTrigger(window.i18n.getLanguage());
+
+    document.querySelectorAll("[data-lang-switcher] [data-lang]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const lang = btn.getAttribute("data-lang");
+        window.i18n.setLanguage(lang);
+        const menu = btn.closest("[data-lang-menu]");
+        if (menu) menu.classList.add("hidden");
+      });
+    });
+
+    document.addEventListener("i18n:changed", function (e) {
+      paintTrigger(e.detail.lang);
+    });
+
+    document.addEventListener("click", function (e) {
+      document.querySelectorAll("[data-lang-switcher] [data-lang-menu]").forEach(function (menu) {
+        if (!menu.parentElement.contains(e.target)) menu.classList.add("hidden");
+      });
+    });
+  }
+
+  if (window.i18n) {
+    wire();
+  } else {
+    window.addEventListener("load", wire);
+  }
+})();
+</script>

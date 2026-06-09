@@ -1,0 +1,35 @@
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Before asking, please skim the [docs](https://ipsolis.com/docs) and
+        search existing discussions. **Never** paste secrets, license files, or
+        unredacted audit logs.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What are you trying to do, and what's blocking you?
+    validations:
+      required: true
+  - type: dropdown
+    id: edition
+    attributes:
+      label: Edition
+      options:
+        - Community
+        - Pro
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ip·Solis version
+      placeholder: "0.4.11"
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Deployment setup and relevant integrations (redact anything sensitive).

@@ -8,26 +8,85 @@ on:
 jobs:
   deploy:
     runs-on: self-hosted
+    environment: prelive   # requires manual approval for any run targeting self-hosted infra
     steps:
       - name: Pull latest code
+        # Treat the deploy directory as a deployment artifact (always exactly
+        # what's on origin/prelive) rather than a working clone — `git pull`
+        # refuses divergent history (e.g. after a force-push promoting dev →
+        # prelive) and 128's the action. fetch+reset is idempotent and
+        # force-push tolerant.
         run: |
           cd ${{ secrets.PRELIVE_PATH }}
-          git pull origin prelive
+          git fetch --prune origin
+          git reset --hard origin/prelive
+
+      - name: Bootstrap TLS certs if missing
+        # Idempotent: no-op when certs/ already exists. On a brand-new box
+        # (or after wiping certs/ as part of a clean reinstall) generates a
+        # 1-year self-signed cert with the right SubjectAltNames so nginx
+        # boots cleanly instead of crash-looping on the missing file.
+        # Operators replace certs/cert.pem + key.pem with a real CA cert
+        # post-install — same paths, same config.
+        #
+        # ``IPSOLIS_FQDN`` is read from a repo secret so the cert's CN
+        # matches the public DNS alias customers actually type, even when
+        # the box's own ``hostname -f`` is a different internal name
+        # (e.g. host=linapp01, alias=ipsolis.acme.com). When the secret
+        # isn't set, the script falls back to ``hostname -f``.
+        env:
+          IPSOLIS_FQDN: ${{ secrets.PRELIVE_FQDN }}
+        run: |
+          cd ${{ secrets.PRELIVE_PATH }}
+          bash tools/install/bootstrap-certs.sh
 
       - name: Rebuild and restart containers
         run: |
           cd ${{ secrets.PRELIVE_PATH }}
-          docker compose -f docker-compose.yml -f docker-compose.prelive.yml up --build -d
+          docker compose -f docker-compose.yml -f docker-compose.nginx.yml up --build -d
 
       - name: Run database migrations
+        # Wait for the api container's healthcheck before exec'ing — exec on
+        # a still-starting container can return 0 with empty output, which
+        # is exactly what masked the missing-migration silent failure on
+        # 2026-04-28 (DB stuck at 0044, prelive UI 500'd despite a green
+        # action). The drift check at the end fails the job if the
+        # in-DB head doesn't match the on-disk head, so future regressions
+        # of this kind block the deploy instead of going to production.
         run: |
           cd ${{ secrets.PRELIVE_PATH }}
+          echo "Waiting for API container health before running migrations..."
+          for i in $(seq 1 18); do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' ipsolis-api 2>/dev/null || echo "missing")
+            echo "  Attempt $i: container=$STATUS"
+            if [ "$STATUS" = "healthy" ]; then break; fi
+            sleep 5
+          done
           docker compose exec -T api alembic upgrade head
+          # Sanity: in-DB revision must match the current code's head.
+          DB_HEAD=$(docker compose exec -T api alembic current 2>/dev/null | grep -oE '^[0-9]{4}' | head -1)
+          FS_HEAD=$(docker compose exec -T api alembic heads  2>/dev/null | grep -oE '^[0-9]{4}' | head -1)
+          echo "DB head: ${DB_HEAD:-<unknown>}"
+          echo "FS head: ${FS_HEAD:-<unknown>}"
+          if [ -z "$DB_HEAD" ] || [ -z "$FS_HEAD" ] || [ "$DB_HEAD" != "$FS_HEAD" ]; then
+            echo "Migration drift detected — refusing to mark deploy successful."
+            docker compose logs api --tail=50
+            exit 1
+          fi
 
-      - name: Reload nginx (pick up new upstream IPs)
+      - name: Restart nginx (pick up new config + upstream IPs)
+        # ``nginx -s reload`` re-reads the file at the path nginx already
+        # has open, but Docker's file-level bind-mount pins the original
+        # inode — so when ``git reset --hard`` rewrites
+        # ``nginx/nginx.conf`` the container keeps serving the old file
+        # forever (silent until someone hits the changed directive, e.g.
+        # client_max_body_size on a backup upload). A container restart
+        # re-resolves the bind-mount to the current inode. ~10s downtime
+        # per deploy is acceptable for prelive; production can use a
+        # directory bind-mount instead if zero-downtime is required.
         run: |
           cd ${{ secrets.PRELIVE_PATH }}
-          docker compose exec -T nginx nginx -s reload
+          docker compose -f docker-compose.yml -f docker-compose.nginx.yml restart nginx
 
       - name: Health check
         run: |
@@ -35,7 +94,7 @@ jobs:
           # Wait for API container to become healthy (up to 90s)
           echo "Waiting for API container health..."
           for i in $(seq 1 18); do
-            STATUS=$(docker inspect --format='{{.State.Health.Status}}' xp_api 2>/dev/null || echo "missing")
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' ipsolis-api 2>/dev/null || echo "missing")
             echo "  Attempt $i: container=$STATUS"
             if [ "$STATUS" = "healthy" ]; then break; fi
             sleep 5
@@ -43,7 +102,7 @@ jobs:
           # Then verify through nginx
           echo "Checking HTTPS endpoint..."
           for i in $(seq 1 6); do
-            if curl -fsk https://it-selfservice-pre.xenpool.local/health; then
+            if curl -fsk https://ipsolis-pre.xenpool.local/health; then
               echo ""
               echo "Health check passed."
               exit 0

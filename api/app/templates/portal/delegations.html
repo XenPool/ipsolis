@@ -1,0 +1,233 @@
+{% extends "portal/base_portal.html" %}
+
+{% block title %}{{ _('My Delegations') if _ else 'My Delegations' }} – {{ app_title }}{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <a href="/portal/" class="text-sm text-muted hover:text-heading" data-i18n="portal.common.back_to_orders">← Orders</a>
+</div>
+
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-lg font-semibold text-heading" data-i18n="portal.delegations.page_title">My Approval Delegations</h1>
+    <p class="text-xs text-muted/70 mt-1 max-w-2xl" data-i18n="portal.delegations.intro">
+      When you're out, route the approvals you'd normally handle to a deputy.
+      Applies to new orders during the window — already-pending approvals stay where they are.
+    </p>
+  </div>
+  <button onclick="openCreateModal()"
+          class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700"
+          data-i18n="portal.delegations.create_button">
+    + New delegation
+  </button>
+</div>
+
+<div class="bg-surface rounded-lg border border-token-border overflow-hidden">
+  <table class="min-w-full divide-y divide-token-border text-sm">
+    <thead class="bg-surface-raised">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.delegations.col_delegate">Delegate</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.delegations.col_window">Window</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.delegations.col_reason">Reason</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide" data-i18n="portal.delegations.col_status">Status</th>
+        <th class="px-4 py-3"></th>
+      </tr>
+    </thead>
+    <tbody id="delegations-body" class="divide-y divide-token-border">
+      <tr><td colspan="5" class="px-4 py-8 text-center text-muted/70 text-sm" data-i18n="portal.common.loading">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Create modal -->
+<div id="create-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  <div class="bg-surface rounded-lg border border-token-border shadow-xl w-full max-w-md p-6">
+    <h2 class="text-base font-semibold text-heading mb-4" data-i18n="portal.delegations.modal_title">New delegation</h2>
+
+    <p class="text-xs text-muted mb-4" data-i18n="portal.delegations.modal_subtitle">
+      Approvals assigned to you during the window below will go to your delegate instead.
+    </p>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">
+          <span data-i18n="portal.delegations.delegate_email">Delegate email</span> <span class="text-red-500">*</span>
+        </label>
+        <input id="d-delegate-email" type="email" placeholder="colleague@xenpool.de"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1" data-i18n="portal.delegations.delegate_name">Delegate name</label>
+        <input id="d-delegate-name" type="text"
+               data-i18n-attr-placeholder="portal.delegations.delegate_name_placeholder"
+               placeholder="(optional)"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">
+            <span data-i18n="portal.delegations.from_label">From</span> <span class="text-red-500">*</span>
+          </label>
+          <input id="d-from" type="datetime-local"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">
+            <span data-i18n="portal.delegations.until_label">Until</span> <span class="text-red-500">*</span>
+          </label>
+          <input id="d-until" type="datetime-local"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1" data-i18n="portal.delegations.reason_label">Reason</label>
+        <input id="d-reason" type="text" maxlength="500"
+               data-i18n-attr-placeholder="portal.delegations.reason_placeholder"
+               placeholder="e.g. Vacation (optional)"
+               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+      </div>
+    </div>
+
+    <div id="create-error" class="hidden mt-3 text-xs text-red-600"></div>
+
+    <div class="flex justify-end gap-2 mt-6">
+      <button onclick="closeCreateModal()"
+              class="px-4 py-2 text-sm rounded border border-token-border text-body hover:bg-surface-raised"
+              data-i18n="portal.common.cancel">Cancel</button>
+      <button onclick="submitDelegation()"
+              class="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+              data-i18n="portal.common.create">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function fmtDate(s) {
+  if (!s) return '—';
+  try { return new Date(s).toLocaleString(); } catch (e) { return s; }
+}
+
+function escapeHtml(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+function statusBadge(s) {
+  var labels = {
+    active:    window.i18nGet ? window.i18nGet('portal.delegations.status_active', 'active')       : 'active',
+    scheduled: window.i18nGet ? window.i18nGet('portal.delegations.status_scheduled', 'scheduled') : 'scheduled',
+    expired:   window.i18nGet ? window.i18nGet('portal.delegations.status_expired', 'expired')     : 'expired',
+    revoked:   window.i18nGet ? window.i18nGet('portal.delegations.status_revoked', 'revoked')     : 'revoked',
+  };
+  var classes = {
+    active:    'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300',
+    scheduled: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+    expired:   'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
+    revoked:   'bg-surface-raised text-muted',
+  }[s] || 'bg-surface-raised text-muted';
+  return '<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ' + classes + '">' + (labels[s] || s) + '</span>';
+}
+
+async function loadList() {
+  var resp = await fetch('/portal/api/delegations');
+  var body = document.getElementById('delegations-body');
+  if (!resp.ok) {
+    var detail = await resp.json().catch(function() { return {}; });
+    body.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-red-600 text-sm">' + escapeHtml(detail.detail || ('HTTP ' + resp.status)) + '</td></tr>';
+    return;
+  }
+  var rows = await resp.json();
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="5" class="px-4 py-12 text-center text-muted/70 text-sm" data-i18n="portal.delegations.empty">'
+      + 'No delegations yet. <button onclick="openCreateModal()" class="text-blue-600 hover:underline ml-1">Create one →</button></td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(function(r) {
+    var revokeBtn = (r.status === 'revoked' || r.status === 'expired')
+      ? '<span class="text-muted/40 text-xs" aria-hidden="true">—</span>'
+      : '<button onclick="revokeDelegation(' + r.id + ')" class="text-red-500 hover:text-red-700 text-xs" data-i18n="portal.delegations.revoke_button">Revoke</button>';
+    return '<tr ' + ((r.status === 'revoked' || r.status === 'expired') ? 'class="opacity-60"' : '') + '>'
+      + '<td class="px-4 py-3"><div class="font-medium text-heading">' + escapeHtml(r.delegate_name || r.delegate_email) + '</div><div class="text-[11px] text-muted/60 font-mono">' + escapeHtml(r.delegate_email) + '</div></td>'
+      + '<td class="px-4 py-3 text-xs text-muted">' + escapeHtml(fmtDate(r.from_at)) + '<br>→ ' + escapeHtml(fmtDate(r.until_at)) + '</td>'
+      + '<td class="px-4 py-3 text-xs text-muted">' + escapeHtml(r.reason || '—') + '</td>'
+      + '<td class="px-4 py-3">' + statusBadge(r.status) + '</td>'
+      + '<td class="px-4 py-3 text-right">' + revokeBtn + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function openCreateModal() {
+  document.getElementById('d-delegate-email').value = '';
+  document.getElementById('d-delegate-name').value = '';
+  document.getElementById('d-reason').value = '';
+  var now = new Date();
+  var from = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 0);
+  var until = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 8, 17, 0);
+  document.getElementById('d-from').value = toLocalIso(from);
+  document.getElementById('d-until').value = toLocalIso(until);
+  document.getElementById('create-error').classList.add('hidden');
+  document.getElementById('create-modal').classList.remove('hidden');
+  setTimeout(function() { document.getElementById('d-delegate-email').focus(); }, 50);
+}
+
+function toLocalIso(d) {
+  function pad(n) { return n < 10 ? '0' + n : n; }
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+       + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+function closeCreateModal() {
+  document.getElementById('create-modal').classList.add('hidden');
+}
+
+async function submitDelegation() {
+  var err = document.getElementById('create-error');
+  err.classList.add('hidden');
+  var body = {
+    delegate_email: document.getElementById('d-delegate-email').value.trim(),
+    delegate_name:  document.getElementById('d-delegate-name').value.trim() || null,
+    from_at:        new Date(document.getElementById('d-from').value).toISOString(),
+    until_at:       new Date(document.getElementById('d-until').value).toISOString(),
+    reason:         document.getElementById('d-reason').value.trim() || null,
+  };
+  if (!body.delegate_email || !body.from_at || !body.until_at) {
+    err.textContent = 'Delegate email, from, and until are required.';
+    err.classList.remove('hidden');
+    return;
+  }
+  var resp = await fetch('/portal/api/delegations', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    var detail = await resp.json().catch(function() { return {}; });
+    err.textContent = detail.detail || ('HTTP ' + resp.status);
+    err.classList.remove('hidden');
+    return;
+  }
+  closeCreateModal();
+  loadList();
+}
+
+async function revokeDelegation(id) {
+  var msg = window.i18nGet
+    ? window.i18nGet('portal.delegations.revoke_confirm', 'Revoke this delegation now? Future approvals will go to you again.')
+    : 'Revoke this delegation now? Future approvals will go to you again.';
+  if (!confirm(msg)) return;
+  var resp = await fetch('/portal/api/delegations/' + id, {method: 'DELETE'});
+  if (resp.status === 204) {
+    loadList();
+  } else {
+    var detail = await resp.json().catch(function() { return {}; });
+    alert(detail.detail || ('Revoke failed (HTTP ' + resp.status + ')'));
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadList);
+</script>
+{% endblock %}
