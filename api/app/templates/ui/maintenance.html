@@ -184,6 +184,21 @@
     </ol>
   </section>
 
+  <!-- Software license text -->
+  <section class="bg-surface-raised rounded-lg border border-token-border overflow-hidden">
+    <button type="button" id="license-text-toggle"
+            onclick="toggleLicenseText()"
+            class="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-surface-raised/60">
+      <span class="text-xs font-semibold uppercase tracking-wider text-body">Software License Text</span>
+      <svg id="license-text-chevron" class="w-4 h-4 text-muted transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+      </svg>
+    </button>
+    <div id="license-text-body" class="hidden border-t border-token-border px-5 py-4">
+      <pre id="license-text-content" class="text-xs text-muted font-mono whitespace-pre-wrap leading-relaxed">Loading…</pre>
+    </div>
+  </section>
+
 </div>
 
 <!-- ── Tab: Health ──────────────────────────────────────────────────────── -->
@@ -1626,6 +1641,21 @@
       }
     });
   })();
+
+  var _licTextLoaded = false;
+  function toggleLicenseText() {
+    var body = document.getElementById('license-text-body');
+    var chevron = document.getElementById('license-text-chevron');
+    var hidden = body.classList.toggle('hidden');
+    chevron.style.transform = hidden ? '' : 'rotate(180deg)';
+    if (!hidden && !_licTextLoaded) {
+      _licTextLoaded = true;
+      fetch('/admin/license/text')
+        .then(function(r) { return r.json(); })
+        .then(function(d) { document.getElementById('license-text-content').textContent = d.text || 'Not available.'; })
+        .catch(function() { document.getElementById('license-text-content').textContent = 'Failed to load license text.'; });
+    }
+  }
 
   async function removeLicense() {
     if (!confirm('Remove the current license?')) return;

@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app/ ./app/
+COPY LICENSE ./LICENSE
 
 # Version (passed from docker-compose via build arg)
 ARG APP_VERSION=0.0.0
