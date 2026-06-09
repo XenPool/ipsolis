@@ -18,8 +18,8 @@ body:
     attributes:
       label: Edition
       options:
-        - Community
-        - Pro
+        - Non-commercial
+        - Commercial (licensed)
         - Not sure
     validations:
       required: true

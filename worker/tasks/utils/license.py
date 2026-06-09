@@ -4,20 +4,18 @@ Offline, trust-based license system:
 - Reads a signed JSON license file at ``/app/license/ipsolis.lic``
 - Verifies the signature against the multi-key trust list in ``tasks.license``
 - Checks expiry and enforces ``max_users`` / ``max_asset_types`` limits
-- Applies a 30-day grace period after expiry before falling back to Community
+- Applies a 30-day grace period after expiry before reverting to evaluation mode
 - Caches the result in a process-local variable
 
-Missing file or any validation failure silently falls back to Community edition.
+Missing file or any validation failure silently falls back to evaluation mode.
 No phone-home, no telemetry, no online checks.
-No runtime feature gating — feature availability is controlled by which code is
-present in the Docker image (Community vs. Pro), not by license key checks.
 
 Grace period
 ------------
-When a Pro license expires, the instance remains on Pro edition for
+When a license expires, the instance remains fully operational for
 ``GRACE_PERIOD_DAYS`` (30) additional days. This covers procurement delays
 and prevents operational outages from a missed renewal. After the grace
-period the instance falls back to Community edition automatically.
+period the instance reverts to evaluation mode automatically.
 The daily Beat task (``license_check``) sends warning emails throughout
 the grace period so operators have ample notice.
 
@@ -187,9 +185,9 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
     if expires_at:
         grace_deadline = expires_at + timedelta(days=GRACE_PERIOD_DAYS)
         if now > grace_deadline:
-            # Grace period exhausted — fall back to Community.
+            # Grace period exhausted — revert to evaluation mode.
             logger.warning(
-                "License expired %s, grace period ended %s — falling back to Community edition",
+                "License expired %s, grace period ended %s — reverting to evaluation mode",
                 expires_at.date().isoformat(), grace_deadline.date().isoformat(),
             )
             _CACHED_INFO = LicenseInfo(
@@ -214,7 +212,7 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
             in_grace_period = True
             days_left = (grace_deadline - now).days
             logger.warning(
-                "License expired %s — grace period active, %d day(s) until Community fallback",
+                "License expired %s — grace period active, %d day(s) until evaluation mode",
                 expires_at.date().isoformat(), days_left,
             )
 
@@ -233,8 +231,8 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
         days_left = (grace_deadline - now).days
         grace_msg = (
             f"License expired {expires_at.date().isoformat()}. "
-            f"Pro features active during 30-day grace period — "
-            f"{days_left} day(s) remaining. Renew to avoid fallback to Community edition."
+            f"All features active during 30-day grace period — "
+            f"{days_left} day(s) remaining. Renew to avoid reverting to evaluation mode."
         )
 
     info = LicenseInfo(
