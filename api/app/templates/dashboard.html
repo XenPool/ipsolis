@@ -44,6 +44,11 @@
     &middot; expires {{ license_info.expires_at.strftime("%Y-%m-%d") }}
   {% endif %}
 </div>
+{% else %}
+<div class="mb-6 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+  <strong>Unlicensed</strong> &middot; Free for Non-Commercial Use &middot;
+  <a href="https://ipsolis.com/en/shop" target="_blank" rel="noopener" class="underline">Purchase a license</a> for commercial use.
+</div>
 {% endif %}
 
 {# Superadmin-only: the underlying ``/admin/setup/state`` endpoint is gated
