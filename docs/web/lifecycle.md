@@ -135,9 +135,9 @@ Reviewers with Entra ID SSO can also access their review queue at `/portal/certi
 
 ---
 
-## HR Leaver Flow *(Pro Edition)*
+## HR Leaver Flow
 
-When a user leaves the organisation, ip·Solis automatically revokes all their active access. The leaver flow is triggered by one of two Pro-only entry points:
+When a user leaves the organisation, ip·Solis automatically revokes all their active access. The leaver flow is triggered by one of two entry points:
 
 - **HR webhook** at `POST /hr/leaver` — purpose-built for Workday, SAP SuccessFactors, Microsoft Graph, and custom HR systems
 - **SCIM 2.0** at `/scim/v2/*` — a leaver-focused subset of RFC 7644, compatible with Okta, SailPoint, and Ping deprovisioning connectors

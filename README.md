@@ -291,7 +291,6 @@ backups/            Persisted DB dumps (bind-mounted into api + worker)
 licenses/           Signed `.lic` license file (read-write)
 docs/
   DEPLOYMENT.md             Production deployment guide
-  PRO_FEATURES.md           Pro edition feature walkthroughs
   grafana/                  Ready-to-import dashboard + Prometheus alerts
   runbooks/                 Operational runbooks (e.g. compose project rename)
 ```

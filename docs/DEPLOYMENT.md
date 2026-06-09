@@ -58,7 +58,7 @@ The server needs outbound access to:
 |-------------|---------|
 | Your Active Directory / LDAP server (port 389 or 636) | User validation, manager lookup, group membership |
 | Your SMTP relay | Email notifications |
-| vSphere / XenServer (if applicable, Pro Edition) | VM lifecycle automation |
+| vSphere / XenServer (if applicable) | VM lifecycle automation |
 | SCCM server (if applicable) | Task sequence triggers |
 
 Inbound: ports **80** and **443** must be reachable from your users' browsers.

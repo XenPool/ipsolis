@@ -100,11 +100,11 @@ def check_license_expiry(self) -> dict:
     _maybe_send_alert(
         subject=f"[ip·Solis] License expires in {days_until_expiry} days",
         html_body=(
-            f"<p>The ip·Solis Pro license will expire in "
+            f"<p>The ip·Solis license will expire in "
             f"<strong>{days_until_expiry} day(s)</strong>.</p>"
             f"<p>Licensee: {info.licensee}<br>"
             f"Expires on: {info.expires_at.date().isoformat()}</p>"
-            f"<p>After expiry there is a 30-day grace period during which Pro features "
+            f"<p>After expiry there is a 30-day grace period during which all features "
             f"remain active. Renew before expiry to avoid any interruption.<br>"
             f"Contact <a href='mailto:sales@xenpool.de'>sales@xenpool.de</a> to renew.</p>"
         ),

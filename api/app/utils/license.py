@@ -44,7 +44,7 @@ LICENSE_PATH = Path(os.environ.get("IPSOLIS_LICENSE_PATH", "/app/license/ipsolis
 COMMUNITY_EDITION = "community"
 PRO_EDITION       = "pro"
 
-# Pro features remain active for this many days after expiry.
+# All features remain active for this many days after expiry.
 GRACE_PERIOD_DAYS = 30
 
 # Legacy aliases emitted by older signing tools — normalised to PRO_EDITION on load.
@@ -65,7 +65,7 @@ class LicenseInfo(BaseModel):
     expires_at: datetime | None = None
     features: list[str] = []
     # True when the license has expired but the 30-day grace period is still active.
-    # Pro features remain enabled; the UI shows a renewal warning.
+    # All features remain enabled; the UI shows a renewal warning.
     in_grace_period: bool = False
     valid: bool = True
     message: str = ""

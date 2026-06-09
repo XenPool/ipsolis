@@ -13,9 +13,9 @@ The payload must be a JSON object with at least the following fields:
     max_asset_types – 0 = unlimited
     issued_at       – ISO-8601 timestamp
     expires_at      – ISO-8601 timestamp
-    features        – list; use ["all"] for full Pro access
+    features        – list; use ["all"] for full access
 
-After expiry the runtime grants a 30-day grace period during which Pro features
+After expiry the runtime grants a 30-day grace period during which all features
 remain active. No install-binding is applied — licenses are portable across
 deployments and do not need to be reissued on reinstall.
 

@@ -1268,7 +1268,7 @@ def upgrade() -> None:
         VALUES (
             'install.uuid',
             gen_random_uuid()::text,
-            'Stable per-install identifier. Used by the license verifier to bind Pro licenses to a single deployment.',
+            'Stable per-install identifier used by the license system.',
             false, NOW(), NOW()
         )
         ON CONFLICT (key) DO NOTHING
