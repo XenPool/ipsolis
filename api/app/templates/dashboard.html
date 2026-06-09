@@ -32,12 +32,13 @@
 {% block content %}
 
 <!-- License banner -->
-{% if license_info and license_info.expires_at and not license_info.valid %}
+{% set has_real_license = license_info and license_info.license_id != 'community' %}
+{% if has_real_license and license_info.expires_at and not license_info.valid %}
 <div class="mb-6 rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
   <strong>License expired</strong> on {{ license_info.expires_at.strftime("%Y-%m-%d") }}.
   Contact <a href="mailto:sales@xenpool.de" class="underline">sales@xenpool.de</a> to renew.
 </div>
-{% elif license_info and license_info.valid %}
+{% elif has_real_license and license_info.valid %}
 <div class="mb-6 rounded-lg border border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 px-4 py-3 text-sm text-blue-700 dark:text-blue-300">
   <strong>Licensed</strong> &middot; {{ license_info.licensee }}
   {% if license_info.expires_at %}
