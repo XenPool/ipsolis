@@ -14,6 +14,14 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-06-09
+
+### Changed
+
+- **Edition collapse: Pro/Community split removed.** All features are now available in a single public image. Commercial use requires a license under the XenPool Commercial Source License; non-commercial and evaluation use is free. The `PRO_FEATURES.md` doc is removed; the `ipsolis-community` repository is retired.
+- **License UI: badge and copy updated.** Dashboard shows "Unlicensed · Free for Non-Commercial Use" when no license is installed. Maintenance → License tab shows "Licensed / Unlicensed / No License" badges instead of "Pro / Community". All "Community Edition" references removed from UI and code.
+- **Setup checklist: exclude migration placeholder values.** Fresh installs no longer show false green dots for SMTP (`localhost`), AD (`dc.example.com`), and branding (`Ipsolis`) — the migration seed defaults are now excluded from done-checks.
+
 ## [0.5.1] — 2026-06-09
 
 ### Changed
