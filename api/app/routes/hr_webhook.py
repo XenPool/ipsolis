@@ -244,9 +244,8 @@ async def hr_leaver(
 _admin_router = APIRouter(
     prefix="/hr/admin",
     tags=["hr-admin"],
-    # Pro Edition only: the leaver-events viewer is the read-side of
-    # the HR webhook + SCIM provisioning features (both Pro-only routes).
-    # On a community install these routes are absent from the image.
+    # The leaver-events viewer is the read-side of the HR webhook +
+    # SCIM provisioning routes.
     dependencies=[
         Depends(require_admin_key),
         require_scopes("audit:read"),
