@@ -27,16 +27,15 @@ Built for on-premises datacenters. Deployable in an afternoon.
 
 ---
 
-## Editions
+## Licensing
 
-ip·Solis ships in two editions. The split is built into the Docker image — the Community image simply omits the Pro-only files (absent endpoints return HTTP 404, not 403); there is no runtime feature-gating by license key.
+ip·Solis is source-available under the **XenPool Commercial Source License v1.0**.
 
-| Edition | Summary |
-|---|---|
-| **Community** | AGPL-3.0, free and fully functional for on-premises IT asset lifecycle management. Self-service portal, approval workflows, asset-type runbooks, PowerShell module store, cost reporting, audit log + viewer + retention, API tokens, RBAC, and Active Directory / Entra ID / SMTP / Teams / vSphere / XenServer integrations. |
-| **Pro** | Commercial license — adds the operational integrations stripped from the Community image: standalone (ad-hoc & cron) runbooks, access certification campaigns, SCIM 2.0, HR leaver webhook, ServiceNow inbound webhook, SCCM, and SIEM audit-log streaming. |
+- **Non-commercial use** (personal, educational, non-profit) — free, no license key required.
+- **Evaluation** — 30 days free in any environment.
+- **Commercial use** — requires a license from XenPool GmbH (`sales@xenpool.de`).
 
-Pro-only features are marked *(Pro)* throughout these docs.
+All features ship in a single image. Features that require additional infrastructure (SCCM, ServiceNow, SCIM, etc.) are noted throughout these docs.
 
 ---
 

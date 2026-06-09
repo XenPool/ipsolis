@@ -1985,7 +1985,7 @@ async function submitForm() {
 function toggleOwnerSection() {
   var cb = document.getElementById('requires-owner-approval-cb');
   var section = document.getElementById('owner-approval-section');
-  if (!cb || !section) return;  // Hidden under Community license
+  if (!cb || !section) return;
   section.classList.toggle('hidden', !cb.checked);
 }
 
