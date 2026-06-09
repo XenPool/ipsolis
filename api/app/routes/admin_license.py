@@ -247,7 +247,7 @@ async def license_download() -> FileResponse:
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 async def license_remove() -> Response:
-    """Remove the currently installed license. Falls back to Community edition."""
+    """Remove the currently installed license."""
     if license_utils.LICENSE_PATH.exists():
         try:
             license_utils.LICENSE_PATH.unlink()
@@ -256,9 +256,6 @@ async def license_remove() -> Response:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Could not remove license file: {exc}",
             )
-        # Reload the license cache AND push the now-Community edition into
-        # the Jinja2 globals — without this the Dashboard / nav locks stay
-        # showing Pro until the api restarts.
         set_license_globals(license_utils.load_license(force_reload=True))
-        logger.info("admin: license removed — instance is now Community edition")
+        logger.info("admin: license removed")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

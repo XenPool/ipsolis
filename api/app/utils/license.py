@@ -59,7 +59,7 @@ class LicenseInfo(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     license_id: str = "community"
-    licensee: str = "Community Edition"
+    licensee: str = "ip·Solis"
     edition: Literal["community", "pro"] = "community"
     max_users: int = 0
     max_asset_types: int = 0
@@ -194,7 +194,7 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
             )
             _CACHED_INFO = LicenseInfo(
                 license_id=str(data.get("license_id") or "community"),
-                licensee=str(data.get("licensee") or "Community Edition"),
+                licensee=str(data.get("licensee") or "ip·Solis"),
                 edition=COMMUNITY_EDITION,
                 max_users=int(data.get("max_users") or 0),
                 max_asset_types=int(data.get("max_asset_types") or 0),
@@ -239,7 +239,7 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
 
     info = LicenseInfo(
         license_id=str(data.get("license_id") or "community"),
-        licensee=str(data.get("licensee") or "Community Edition"),
+        licensee=str(data.get("licensee") or "ip·Solis"),
         edition=edition,  # type: ignore[arg-type]
         max_users=int(data.get("max_users") or 0),
         max_asset_types=int(data.get("max_asset_types") or 0),

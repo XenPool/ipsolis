@@ -1488,7 +1488,7 @@
       validity.classList.add('hidden');
     }
 
-    document.getElementById('licensee').textContent = info.licensee || '–';
+    document.getElementById('licensee').textContent = info.file_present ? (info.licensee || '–') : '';
     document.getElementById('license-id').textContent = info.license_id || '–';
     document.getElementById('issued-at').textContent = licFmtDate(info.issued_at) || '–';
 
@@ -1628,13 +1628,13 @@
   })();
 
   async function removeLicense() {
-    if (!confirm('Remove the current license and fall back to Community edition?')) return;
+    if (!confirm('Remove the current license?')) return;
     const res = await fetch('/admin/license', {
       method: 'DELETE',
       credentials: 'include',
     });
     if (res.status === 204) {
-      showBanner('License removed — now running Community edition.', 'success');
+      showBanner('License removed.', 'success');
       _licLoaded = false;
       await loadLicenseStatus();
     } else {
