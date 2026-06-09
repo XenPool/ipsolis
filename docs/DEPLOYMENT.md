@@ -71,7 +71,7 @@ Clone the repository and pull the images — no authentication required:
 
 ```bash
 cd /opt
-git clone https://github.com/XenPool/ipsolis-community.git ipsolis
+git clone https://github.com/XenPool/ipsolis.git ipsolis
 cd ipsolis
 ```
 

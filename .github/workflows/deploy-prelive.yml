@@ -8,6 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: self-hosted
+    environment: prelive   # requires manual approval for any run targeting self-hosted infra
     steps:
       - name: Pull latest code
         # Treat the deploy directory as a deployment artifact (always exactly
