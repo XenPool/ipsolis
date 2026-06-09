@@ -1,6 +1,5 @@
 """Celery App – entry point for worker, beat, and flower."""
 
-import importlib.util
 import os
 
 from celery import Celery
@@ -9,8 +8,7 @@ from celery.schedules import crontab
 BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
 
-# Community-edition workflows — always present in both Community and PRO images.
-_COMMUNITY_INCLUDE = [
+_include = [
     "tasks.workflows.dynamic_runner",
     "tasks.workflows.ps_module_installer",
     "tasks.workflows.license_check",
@@ -22,20 +20,11 @@ _COMMUNITY_INCLUDE = [
     "tasks.workflows.api_token_purge",
     "tasks.workflows.update_checker",
     "tasks.modules.maintenance",
-]
-
-# PRO-only workflows — absent in Community images. Celery only loads them when present.
-_PRO_INCLUDE = [
     "tasks.workflows.standalone_runner",
     "tasks.workflows.sccm_probe",
     "tasks.workflows.siem_streamer",
     "tasks.workflows.certification_notifications",
     "tasks.workflows.certification_reminders",
-]
-
-_include = _COMMUNITY_INCLUDE + [
-    m for m in _PRO_INCLUDE
-    if importlib.util.find_spec(m) is not None
 ]
 
 app = Celery(
@@ -123,14 +112,12 @@ app.conf.update(
             "schedule": crontab(minute="*/5"),  # Every 5 minutes
             "options": {"queue": "reclaim"},
         },
-        # Dispatch cron-scheduled standalone runbooks (PRO only)
-        **({
-            "dispatch-standalone-cron": {
-                "task": "tasks.workflows.standalone_runner.check_cron_schedules",
-                "schedule": crontab(minute="*"),  # Every minute
-                "options": {"queue": "provision"},
-            },
-        } if "tasks.workflows.standalone_runner" in _include else {}),
+        # Dispatch cron-scheduled standalone runbooks
+        "dispatch-standalone-cron": {
+            "task": "tasks.workflows.standalone_runner.check_cron_schedules",
+            "schedule": crontab(minute="*"),  # Every minute
+            "options": {"queue": "provision"},
+        },
         # Scheduled database backups (cron-expression driven)
         "maintenance-backup-scheduler": {
             "task": "tasks.modules.maintenance.check_backup_schedule",

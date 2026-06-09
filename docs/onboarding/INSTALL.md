@@ -1,4 +1,4 @@
-# ip·Solis Pro Edition — Installation Guide
+# ip·Solis — Installation Guide
 
 Deploy a production instance in under 30 minutes.  
 You do **not** need to clone the repository or install any build tools.
@@ -183,8 +183,8 @@ Log in with:
 2. Upload the `.lic` file you received from XenPool.
 3. The page shows the license tier, seat count, and expiry date once accepted.
 
-Without a valid license the platform runs in Community mode — Pro features
-(SCCM, ServiceNow webhook, SIEM export, certifications) are inactive.
+Without a valid license the platform runs in evaluation mode (30-day free trial).
+Commercial use requires a license — see `sales@xenpool.de`.
 
 ---
 

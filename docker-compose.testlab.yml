@@ -1,5 +1,5 @@
 # ipSolis testlab — lightweight stand-ins for SIEM / secrets / webhook
-# integrations so you can smoke-test Pro-edition features without paying
+# integrations so you can smoke-test these features without paying
 # the resource bill of full Splunk / Sentinel / CyberArk lab installs.
 #
 # Run independently of the main app stack:

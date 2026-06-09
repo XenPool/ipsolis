@@ -121,8 +121,8 @@ async def record_failed_login(
     """Increment the bad-password counter; lock when threshold is crossed.
 
     Returns True iff this attempt put the account into the locked state.
-    On community / unenforced policy this is a no-op (returns False) so
-    the helper is safe to call unconditionally from the login flow.
+    When the lockout threshold is 0 (disabled) this is a no-op (returns False)
+    so the helper is safe to call unconditionally from the login flow.
 
     If the existing ``locked_at`` is older than the auto-unlock window
     the counter is reset before the increment — this matches the

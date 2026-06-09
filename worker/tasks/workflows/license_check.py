@@ -5,7 +5,7 @@ Checks the license state and sends email alerts at key milestones:
 
   - 30 / 14 / 7 days before expiry   → warning email
   - Day 1 of grace period through day 30 → daily warning (grace period active)
-  - After grace period ends            → error email (running Community edition)
+  - After grace period ends            → error email (license expired, evaluation mode)
 """
 from __future__ import annotations
 
@@ -29,54 +29,54 @@ def check_license_expiry(self) -> dict:
     info = load_license(force_reload=True)
 
     if info.expires_at is None:
-        # Community install or perpetual license — nothing to do.
+        # Perpetual license or no expiry — nothing to do.
         return {"status": "skipped", "reason": "no-expiry"}
 
     now = datetime.now(timezone.utc)
     days_until_expiry = (info.expires_at - now).days
     grace_deadline = info.expires_at + timedelta(days=GRACE_PERIOD_DAYS)
 
-    # ── Case 1: Grace period exhausted — running Community edition ────────────
+    # ── Case 1: Grace period exhausted — running in evaluation mode ──────────
     if not info.valid:
         days_past_grace = (now - grace_deadline).days
         level_msg = (
             f"License expired {abs(days_until_expiry)} day(s) ago. "
             f"Grace period ended {grace_deadline.date().isoformat()} "
-            f"({days_past_grace} day(s) ago). Instance is now Community edition."
+            f"({days_past_grace} day(s) ago). Instance is now in evaluation mode."
         )
         logger.error(level_msg)
         _maybe_send_alert(
-            subject="[ip·Solis] License expired — now running Community edition",
+            subject="[ip·Solis] License expired — now running in evaluation mode",
             html_body=(
-                f"<p>The ip·Solis Pro license has <strong>expired</strong> and "
+                f"<p>The ip·Solis license has <strong>expired</strong> and "
                 f"the 30-day grace period has ended.</p>"
                 f"<p>Licensee: {info.licensee}<br>"
                 f"Expired on: {info.expires_at.date().isoformat()}<br>"
                 f"Grace period ended: {grace_deadline.date().isoformat()}</p>"
-                f"<p>The instance is now running <strong>Community edition</strong>. "
-                f"Pro features are disabled. Contact "
+                f"<p>The instance is now running in <strong>evaluation mode</strong>. "
+                f"A valid license is required for commercial use. Contact "
                 f"<a href='mailto:sales@xenpool.de'>sales@xenpool.de</a> to renew.</p>"
             ),
         )
-        return {"status": "expired_community", "days_since_expiry": abs(days_until_expiry)}
+        return {"status": "expired_evaluation", "days_since_expiry": abs(days_until_expiry)}
 
     # ── Case 2: In grace period ───────────────────────────────────────────────
     if info.in_grace_period:
         grace_days_left = (grace_deadline - now).days
         logger.warning(
-            "License expired %d day(s) ago — grace period active, %d day(s) until Community fallback (licensee: %s)",
+            "License expired %d day(s) ago — grace period active, %d day(s) until evaluation mode (licensee: %s)",
             abs(days_until_expiry), grace_days_left, info.licensee,
         )
         _maybe_send_alert(
             subject=f"[ip·Solis] License expired — {grace_days_left} day(s) of grace period remaining",
             html_body=(
-                f"<p>The ip·Solis Pro license has <strong>expired</strong>, but Pro features "
+                f"<p>The ip·Solis license has <strong>expired</strong>, but all features "
                 f"remain active during the 30-day grace period.</p>"
                 f"<p>Licensee: {info.licensee}<br>"
                 f"Expired on: {info.expires_at.date().isoformat()}<br>"
                 f"Grace period ends: {grace_deadline.date().isoformat()} "
                 f"({grace_days_left} day(s) remaining)</p>"
-                f"<p>After the grace period, the instance will fall back to Community edition. "
+                f"<p>After the grace period, the instance will revert to evaluation mode. "
                 f"Contact <a href='mailto:sales@xenpool.de'>sales@xenpool.de</a> to renew.</p>"
             ),
         )
@@ -100,11 +100,11 @@ def check_license_expiry(self) -> dict:
     _maybe_send_alert(
         subject=f"[ip·Solis] License expires in {days_until_expiry} days",
         html_body=(
-            f"<p>The ip·Solis Pro license will expire in "
+            f"<p>The ip·Solis license will expire in "
             f"<strong>{days_until_expiry} day(s)</strong>.</p>"
             f"<p>Licensee: {info.licensee}<br>"
             f"Expires on: {info.expires_at.date().isoformat()}</p>"
-            f"<p>After expiry there is a 30-day grace period during which Pro features "
+            f"<p>After expiry there is a 30-day grace period during which all features "
             f"remain active. Renew before expiry to avoid any interruption.<br>"
             f"Contact <a href='mailto:sales@xenpool.de'>sales@xenpool.de</a> to renew.</p>"
         ),

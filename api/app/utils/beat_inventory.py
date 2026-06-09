@@ -14,11 +14,6 @@ Each entry:
 * ``config_keys`` — list of ``app_config`` keys that influence this task
                     (or gate it off entirely). Empty list = no operator
                     knobs; the schedule is the only lever.
-* ``community``   — True when this task is meaningful on a community-tier
-                    install. Tasks that depend on Pro-only routes are
-                    flagged so the UI can render them as informational
-                    only.
-
 When you change the worker's ``beat_schedule`` dict, update this file too
 — the api will silently drift otherwise. CI doesn't catch the
 duplication; the value is documentation + UI surface, not enforcement.
@@ -35,7 +30,6 @@ class BeatEntry(TypedDict):
     queue: str
     description: str
     config_keys: list[str]
-    community: bool
 
 
 # Listed in the order operators most often want to find them — daily
@@ -54,7 +48,6 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "audit prune so the day's final state is captured."
         ),
         "config_keys": ["cost.snapshot_retention_days"],
-        "community": True,
     },
     {
         "name": "audit-retention-prune",
@@ -73,7 +66,6 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "retention.phi_days",
             "retention.pci_days",
         ],
-        "community": True,
     },
     {
         "name": "api-token-purge-daily",
@@ -87,7 +79,6 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "hard_deleted`` audit row capturing name + prefix + reason."
         ),
         "config_keys": ["api_tokens.purge_after_days"],
-        "community": False,
     },
     {
         "name": "approval-auto-decline-scan",
@@ -104,7 +95,6 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "approval.auto_decline_after_days",
             "approval.auto_decline_message",
         ],
-        "community": True,
     },
     {
         "name": "cost-threshold-alerter",
@@ -118,7 +108,6 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "suppresses repeats."
         ),
         "config_keys": ["cost.threshold_alert_quiet_hours"],
-        "community": True,
     },
     {
         "name": "certification-reminder-scan",
@@ -135,7 +124,6 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "certification.escalation_email",
             "certification.auto_revoke_on_overdue",
         ],
-        "community": False,
     },
     {
         "name": "update-notifier-daily",
@@ -148,7 +136,6 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "disabled — cheap on installs that don't use it."
         ),
         "config_keys": ["updates.check_enabled", "updates.github_token"],
-        "community": True,
     },
     {
         "name": "license-expiry-check",
@@ -160,7 +147,6 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "7 days before expiry, plus an error after expiry."
         ),
         "config_keys": ["license.warning_email"],
-        "community": True,
     },
 
     # ── Hourly ──────────────────────────────────────────────────────────
@@ -176,7 +162,6 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "``deprovision_policy``."
         ),
         "config_keys": [],
-        "community": True,
     },
     {
         "name": "check-scheduled-orders",
@@ -189,7 +174,6 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "provision runbook."
         ),
         "config_keys": [],
-        "community": True,
     },
     {
         "name": "approval-reminder-scan",
@@ -208,7 +192,6 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "approval.escalation_email",
             "approval.escalation_assign",
         ],
-        "community": True,
     },
 
     # ── Every 5 minutes ─────────────────────────────────────────────────
@@ -227,7 +210,6 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "maintenance.alert_email",
             "maintenance.alert_cooldown_minutes",
         ],
-        "community": True,
     },
 
     # ── Every minute ────────────────────────────────────────────────────
@@ -242,7 +224,6 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "gate skips disabled rows cheaply."
         ),
         "config_keys": [],
-        "community": False,
     },
     {
         "name": "maintenance-backup-scheduler",
@@ -259,7 +240,6 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "maintenance.schedule_cron",
             "maintenance.backup_retention_count",
         ],
-        "community": True,
     },
     {
         "name": "siem-stream-audit-log",
@@ -277,6 +257,5 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "siem.format",
             "siem.batch_size",
         ],
-        "community": False,
     },
 ]

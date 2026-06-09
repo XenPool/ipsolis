@@ -7,7 +7,7 @@ body:
     attributes:
       value: >-
         For early-stage or open-ended ideas, please start a thread in
-        [Discussions → Ideas](https://github.com/XenPool/ipsolis-community/discussions/categories/ideas)
+        [Discussions → Ideas](https://github.com/XenPool/ipsolis/discussions/categories/ideas)
         first. Use this template once the idea is concrete enough to act on.
   - type: textarea
     id: problem
@@ -34,9 +34,8 @@ body:
     attributes:
       label: Which edition is this for?
       options:
-        - Community
-        - Pro
-        - Either / not sure
+        - Any
+        - Not sure
     validations:
       required: true
   - type: checkboxes
