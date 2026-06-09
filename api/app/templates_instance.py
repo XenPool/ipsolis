@@ -91,10 +91,10 @@ templates.env.globals["app_logo_title_size"] = "12"
 templates.env.globals["edition"] = "community"
 templates.env.globals["license_info"] = None
 
-# Feature availability globals — overridden by main.py after try/except imports.
-# False means the Pro-only route file was not present in this image.
-templates.env.globals["has_certifications"] = False
-templates.env.globals["has_leaver_events"] = False
+# All features are always available — set to True so nav links render correctly
+# before main.py lifespan runs (e.g. on the login page).
+templates.env.globals["has_certifications"] = True
+templates.env.globals["has_leaver_events"] = True
 
 # Module-level cache so the /portal/logo endpoint can read the raw data URL
 # without hitting the DB on every request.

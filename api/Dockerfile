@@ -16,7 +16,7 @@ ENV OPENSSL_CONF=/etc/ssl/openssl_legacy.cnf
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code (all modules — Business edition)
+# Copy application code
 COPY app/ ./app/
 
 # Version (passed from docker-compose via build arg)

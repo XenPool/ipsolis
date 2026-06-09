@@ -41,7 +41,7 @@ ENV OPENSSL_CONF=/etc/ssl/openssl_legacy.cnf
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy worker code (all modules — Business edition)
+# Copy worker code
 COPY tasks/ ./tasks/
 
 EXPOSE 5555
