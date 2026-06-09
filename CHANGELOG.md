@@ -14,6 +14,25 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-06-09
+
+### Changed
+
+- **License: 30-day grace period after expiry.** Pro features remain active for
+  30 days after a license expires, covering procurement delays and preventing
+  operational outages from missed renewals. After the grace window the instance
+  falls back to Community edition automatically. The daily Beat task
+  (`license_check`) now fires a warning email each day during the grace period
+  and a distinct "now running Community" alert once the grace period ends.
+  Admin UI (License page) shows an amber warning banner throughout the window.
+- **License: install UUID binding removed.** Licenses are now portable across
+  deployments — no `install_uuid` field in the payload, no per-install binding
+  check, no reassignment limit. Eliminates the DB read on every Celery worker
+  fork (`_register_install_uuid` signal handler), the `set_install_uuid` API
+  startup call, and the "Install identity" card on the License admin page.
+  Existing signed licenses without `install_uuid` continue to work unchanged;
+  existing licenses that contained `install_uuid` are now accepted on any install.
+
 ## [0.5.0] — 2026-06-07
 
 ### Changed
