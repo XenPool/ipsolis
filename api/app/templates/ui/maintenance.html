@@ -109,30 +109,25 @@
     </div>
   </section>
 
-  <!-- Install identity card -->
-  <section class="bg-surface rounded-lg border border-token-border p-5 mb-6">
-    <h2 class="text-sm font-semibold text-heading mb-1">Install identity</h2>
-    <p class="text-xs text-muted mb-3">
-      Stable per-install UUID. Provide this value when requesting a new
-      Pro license — we'll bake it into the signed file so the
-      license only validates on this deployment and can't be re-used
-      elsewhere. The UUID was generated when the database was first
-      migrated and never changes for the life of this install.
-    </p>
-    <div class="flex items-center gap-2 max-w-2xl">
-      <input id="install-uuid" type="text" readonly value="loading…"
-             class="flex-1 font-mono text-xs px-3 py-2 rounded border border-token-border bg-surface-raised text-body select-all">
-      <button type="button" id="copy-install-uuid"
-              class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded border border-token-border text-body hover:bg-surface-raised whitespace-nowrap">
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-        </svg>
-        <span id="copy-install-uuid-label">Copy</span>
-      </button>
+  <!-- Grace period banner (shown only when license expired but within 30-day window) -->
+  <div id="grace-period-banner" class="hidden mb-6 rounded-lg border border-amber-300 dark:border-amber-500/40
+       bg-amber-50 dark:bg-amber-500/10 px-5 py-4">
+    <div class="flex items-start gap-3">
+      <svg class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+      </svg>
+      <div>
+        <p class="text-sm font-semibold text-amber-800 dark:text-amber-300">License expired — grace period active</p>
+        <p id="grace-period-detail" class="mt-1 text-xs text-amber-700 dark:text-amber-400"></p>
+        <p class="mt-1 text-xs text-amber-700 dark:text-amber-400">
+          Pro features remain enabled. Contact
+          <a href="mailto:sales@xenpool.de" class="underline">sales@xenpool.de</a>
+          to renew before the grace period ends.
+        </p>
+      </div>
     </div>
-    <p id="install-binding-status" class="hidden mt-3 text-xs"></p>
-  </section>
+  </div>
 
   <!-- Upload card -->
   <section class="bg-surface rounded-lg border border-token-border p-5 mb-6">
@@ -1527,47 +1522,18 @@
       msgEl.classList.add('hidden');
     }
 
-    document.getElementById('download-btn').classList.toggle('hidden', !filePresent);
-    document.getElementById('remove-btn').classList.toggle('hidden', !filePresent);
+    document.getElementById(‘download-btn’).classList.toggle(‘hidden’, !filePresent);
+    document.getElementById(‘remove-btn’).classList.toggle(‘hidden’, !filePresent);
 
-    var local = info.local_install_uuid || '';
-    var licenseUuid = info.install_uuid || '';
-    var input = document.getElementById('install-uuid');
-    input.value = local || '(not yet generated — apply migration 0094)';
-    var status = document.getElementById('install-binding-status');
-    if (filePresent && licenseUuid && local && licenseUuid !== local) {
-      status.textContent = 'License is bound to install ' + licenseUuid +
-        ' but this install is ' + local + '. Request a new license bound to this install’s UUID.';
-      status.className = 'mt-3 text-xs text-red-700 dark:text-red-300';
-      status.classList.remove('hidden');
-    } else if (filePresent && licenseUuid && licenseUuid === local) {
-      status.textContent = 'License is install-bound and matches this deployment.';
-      status.className = 'mt-3 text-xs text-emerald-700 dark:text-emerald-300';
-      status.classList.remove('hidden');
-    } else if (filePresent && !licenseUuid) {
-      status.textContent = 'Current license is portable (not install-bound).';
-      status.className = 'mt-3 text-xs text-muted/80';
-      status.classList.remove('hidden');
+    var banner = document.getElementById(‘grace-period-banner’);
+    var detail = document.getElementById(‘grace-period-detail’);
+    if (info.in_grace_period && info.message) {
+      detail.textContent = info.message;
+      banner.classList.remove(‘hidden’);
     } else {
-      status.classList.add('hidden');
+      banner.classList.add(‘hidden’);
     }
   }
-
-  document.getElementById('copy-install-uuid').addEventListener('click', async () => {
-    var input = document.getElementById('install-uuid');
-    var label = document.getElementById('copy-install-uuid-label');
-    if (!input.value || input.value.startsWith('(')) return;
-    try {
-      await navigator.clipboard.writeText(input.value);
-      label.textContent = 'Copied';
-      setTimeout(() => { label.textContent = 'Copy'; }, 1200);
-    } catch (e) {
-      input.select();
-      document.execCommand('copy');
-      label.textContent = 'Copied';
-      setTimeout(() => { label.textContent = 'Copy'; }, 1200);
-    }
-  });
 
   function licFmtDate(iso) {
     if (!iso) return '';

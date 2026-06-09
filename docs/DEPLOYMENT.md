@@ -393,9 +393,11 @@ after purchase. Install it through the Admin UI:
 3. The page reloads showing edition, licensee, and expiry. Gated
    features activate immediately — no restart required.
 
-**Install-bound licenses** (most production licenses) are tied to
-your instance's UUID. The License page shows the **Install UUID**
-to include in your license request if XenPool asks for it.
+**Grace period**: when a license expires, Pro features remain active
+for **30 days** to cover procurement delays. The admin UI shows an
+amber warning banner throughout this window and the daily health alert
+email fires each day. After 30 days the instance falls back to
+Community edition automatically.
 
 **Overwriting**: upload a new `.lic` at any time to renew or upgrade.
 The old file is replaced in-place; the license cache refreshes on

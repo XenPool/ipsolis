@@ -1,10 +1,10 @@
-"""Ipsolis license module — expiry, user limits, and install binding.
+"""Ipsolis license module — expiry, user limits, and grace period.
 
 Offline, trust-based license system:
 - Reads a signed JSON license file at ``/app/license/ipsolis.lic``
 - Verifies the signature against the multi-key trust list in ``app.license``
 - Checks expiry and enforces ``max_users`` / ``max_asset_types`` limits
-- Optionally enforces an install-bound ``install_uuid`` (see below)
+- Applies a 30-day grace period after expiry before falling back to Community
 - Caches the result in a process-local variable
 
 Missing file or any validation failure silently falls back to Community edition.
@@ -12,17 +12,18 @@ No phone-home, no telemetry, no online checks.
 No runtime feature gating — feature availability is controlled by which code is
 present in the Docker image (Community vs. Pro), not by license key checks.
 
-Install binding
----------------
-Licenses MAY include an ``install_uuid`` field. When present, the verifier
-compares it against the local install UUID (seeded by migration 0094 into
-``app_config['install.uuid']`` and registered with this module via
-``set_install_uuid()`` at application startup). Mismatches fall back to
-Community with an explanatory message. Licenses without ``install_uuid``
-remain valid — backwards-compat for legacy issuances.
+Grace period
+------------
+When a Pro license expires, the instance remains on Pro edition for
+``GRACE_PERIOD_DAYS`` (30) additional days. This covers procurement delays
+and prevents operational outages from a missed renewal. After the grace
+period the instance falls back to Community edition automatically.
+The daily Beat task (``license_check``) sends warning emails throughout
+the grace period so operators have ample notice.
 
 KEEP IN SYNC: api/app/utils/license.py <-> worker/tasks/utils/license.py
-(byte-identical copies — Docker build contexts are separate so we duplicate).
+(byte-identical copies except for the package prefix in trust-list imports —
+Docker build contexts are separate so we duplicate).
 """
 from __future__ import annotations
 
@@ -30,7 +31,7 @@ import base64
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -44,6 +45,9 @@ LICENSE_PATH = Path(os.environ.get("IPSOLIS_LICENSE_PATH", "/app/license/ipsolis
 # ── Edition constants ───────────────────────────────────────────────────────
 COMMUNITY_EDITION = "community"
 PRO_EDITION       = "pro"
+
+# Pro features remain active for this many days after expiry.
+GRACE_PERIOD_DAYS = 30
 
 # Legacy aliases emitted by older signing tools — normalised to PRO_EDITION on load.
 _LEGACY_PRO_ALIASES = {"business", "enterprise", "professional"}
@@ -62,7 +66,9 @@ class LicenseInfo(BaseModel):
     issued_at: datetime | None = None
     expires_at: datetime | None = None
     features: list[str] = []
-    install_uuid: str | None = None  # set when the license is install-bound
+    # True when the license has expired but the 30-day grace period is still active.
+    # Pro features remain enabled; the UI shows a renewal warning.
+    in_grace_period: bool = False
     valid: bool = True
     message: str = ""
     # Trust list entry that successfully verified the signature.
@@ -74,33 +80,6 @@ class LicenseInfo(BaseModel):
 _COMMUNITY_FALLBACK = LicenseInfo()
 _CACHED_INFO: LicenseInfo | None = None
 _CACHED_MTIME: float | None = None  # mtime of the license file at cache time (None = no file)
-
-# Per-install identifier registered by application bootstrap (api lifespan or
-# worker task init). When set, the verifier enforces install-bound licenses;
-# when None, install-bound licenses fail closed (treated as Community) so a
-# bootstrap-order race can't accidentally grant Pro without a binding
-# check.
-_INSTALL_UUID: str | None = None
-
-
-def set_install_uuid(value: str | None) -> None:
-    """Register the per-install UUID for license-binding verification.
-
-    Application bootstrap is responsible for reading ``install.uuid`` from
-    ``app_config`` and calling this once before any license check runs.
-    Calling it again invalidates the cache so the next ``load_license()``
-    call re-evaluates with the updated binding.
-    """
-    global _INSTALL_UUID, _CACHED_INFO, _CACHED_MTIME
-    _INSTALL_UUID = (value or None)
-    # Invalidate the license cache so the binding takes effect immediately.
-    _CACHED_INFO = None
-    _CACHED_MTIME = None
-
-
-def get_install_uuid() -> str | None:
-    """Return the locally-registered install UUID (None if not set yet)."""
-    return _INSTALL_UUID
 
 
 def _community(message: str = "") -> LicenseInfo:
@@ -204,70 +183,40 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
     expires_at = _parse_datetime(data.get("expires_at"))
     now = datetime.now(timezone.utc)
 
-    if expires_at and expires_at < now:
-        logger.warning(
-            "License expired on %s — falling back to Community edition",
-            expires_at.isoformat(),
-        )
-        # Preserve expires_at/licensee so the Beat task can still log details.
-        _CACHED_INFO = LicenseInfo(
-            license_id=str(data.get("license_id") or "community"),
-            licensee=str(data.get("licensee") or "Community Edition"),
-            edition=COMMUNITY_EDITION,
-            max_users=int(data.get("max_users") or 0),
-            max_asset_types=int(data.get("max_asset_types") or 0),
-            issued_at=issued_at,
-            expires_at=expires_at,
-            features=[],
-            valid=False,
-            message=f"License expired on {expires_at.date().isoformat()}",
-        )
-        _CACHED_MTIME = current_mtime
-        return _CACHED_INFO
-
-    # Install-bound licenses: ``install_uuid`` in the payload must match the
-    # locally-registered install UUID. Fail closed if the binding can't be
-    # checked (bootstrap hasn't registered it yet) — better to drop to
-    # Community than grant Pro to an install we can't verify.
-    license_install_uuid = data.get("install_uuid")
-    if license_install_uuid:
-        license_install_uuid = str(license_install_uuid).strip()
-        if not _INSTALL_UUID:
+    in_grace_period = False
+    if expires_at:
+        grace_deadline = expires_at + timedelta(days=GRACE_PERIOD_DAYS)
+        if now > grace_deadline:
+            # Grace period exhausted — fall back to Community.
             logger.warning(
-                "License is install-bound (install_uuid=%s) but the local "
-                "install UUID has not been registered yet — falling back "
-                "to Community.",
-                license_install_uuid,
+                "License expired %s, grace period ended %s — falling back to Community edition",
+                expires_at.date().isoformat(), grace_deadline.date().isoformat(),
             )
             _CACHED_INFO = LicenseInfo(
                 license_id=str(data.get("license_id") or "community"),
                 licensee=str(data.get("licensee") or "Community Edition"),
                 edition=COMMUNITY_EDITION,
-                install_uuid=license_install_uuid,
-                valid=False,
-                message="License install binding cannot be verified yet",
-            )
-            _CACHED_MTIME = current_mtime
-            return _CACHED_INFO
-        if license_install_uuid != _INSTALL_UUID:
-            logger.warning(
-                "License install_uuid mismatch — license=%s local=%s. "
-                "Falling back to Community.",
-                license_install_uuid, _INSTALL_UUID,
-            )
-            _CACHED_INFO = LicenseInfo(
-                license_id=str(data.get("license_id") or "community"),
-                licensee=str(data.get("licensee") or "Community Edition"),
-                edition=COMMUNITY_EDITION,
-                install_uuid=license_install_uuid,
+                max_users=int(data.get("max_users") or 0),
+                max_asset_types=int(data.get("max_asset_types") or 0),
+                issued_at=issued_at,
+                expires_at=expires_at,
+                features=[],
                 valid=False,
                 message=(
-                    "License is bound to a different install. "
-                    "Request a new license bound to this install's UUID."
+                    f"License expired {expires_at.date().isoformat()}. "
+                    f"30-day grace period ended {grace_deadline.date().isoformat()}."
                 ),
             )
             _CACHED_MTIME = current_mtime
             return _CACHED_INFO
+        elif now > expires_at:
+            # Expired but within the grace window — keep Pro, flag the state.
+            in_grace_period = True
+            days_left = (grace_deadline - now).days
+            logger.warning(
+                "License expired %s — grace period active, %d day(s) until Community fallback",
+                expires_at.date().isoformat(), days_left,
+            )
 
     edition = str(data.get("edition") or COMMUNITY_EDITION)
     if edition in _LEGACY_PRO_ALIASES:
@@ -278,6 +227,16 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
     features_raw = data.get("features") or []
     features = list(features_raw) if isinstance(features_raw, list) else []
 
+    grace_msg = ""
+    if in_grace_period and expires_at:
+        grace_deadline = expires_at + timedelta(days=GRACE_PERIOD_DAYS)
+        days_left = (grace_deadline - now).days
+        grace_msg = (
+            f"License expired {expires_at.date().isoformat()}. "
+            f"Pro features active during 30-day grace period — "
+            f"{days_left} day(s) remaining. Renew to avoid fallback to Community edition."
+        )
+
     info = LicenseInfo(
         license_id=str(data.get("license_id") or "community"),
         licensee=str(data.get("licensee") or "Community Edition"),
@@ -287,16 +246,17 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
         issued_at=issued_at,
         expires_at=expires_at,
         features=features,
-        install_uuid=license_install_uuid or None,
+        in_grace_period=in_grace_period,
         valid=True,
-        message="",
+        message=grace_msg,
         verified_by_key_id=verification.key.key_id if verification.key else None,
         verified_by_description=verification.key.description if verification.key else None,
     )
     logger.info(
-        "License loaded: edition=%s licensee=%s expires=%s",
+        "License loaded: edition=%s licensee=%s expires=%s grace=%s",
         info.edition, info.licensee,
         info.expires_at.isoformat() if info.expires_at else "never",
+        info.in_grace_period,
     )
     _CACHED_INFO = info
     _CACHED_MTIME = current_mtime
@@ -306,5 +266,3 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
 def get_license_info() -> LicenseInfo:
     """Return cached license info (loading on first access)."""
     return load_license()
-
-

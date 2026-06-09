@@ -119,12 +119,11 @@ def verify_license_payload(payload: dict, signature: bytes) -> VerificationResul
             )
 
         logger.info(
-            "license: verified — key_id=%s type=%s expires=%s licensee=%s install=%s",
+            "license: verified — key_id=%s type=%s expires=%s licensee=%s",
             key.key_id,
             license_type,
             payload.get("expires_at", "?"),
             payload.get("licensee", "?"),
-            str(payload.get("install_uuid", ""))[:8] or "—",
         )
         return VerificationResult(verified=True, key=key, reason="ok")
 
@@ -138,12 +137,11 @@ def verify_license_payload(payload: dict, signature: bytes) -> VerificationResul
                 # Shouldn't happen since we pre-filtered, but be defensive.
                 continue
             logger.info(
-                "license: verified (legacy) — key_id=%s type=%s expires=%s licensee=%s install=%s",
+                "license: verified (legacy) — key_id=%s type=%s expires=%s licensee=%s",
                 key.key_id,
                 license_type,
                 payload.get("expires_at", "?"),
                 payload.get("licensee", "?"),
-                str(payload.get("install_uuid", ""))[:8] or "—",
             )
             return VerificationResult(verified=True, key=key, reason="ok")
         tried.append(key.key_id)

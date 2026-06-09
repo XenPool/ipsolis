@@ -56,45 +56,6 @@ except Exception:
     logging.getLogger(__name__).exception("Worker tracing setup failed")
 
 
-# ── Per-fork install_uuid registration ───────────────────────────────────────
-# The license verifier enforces install-bound licenses by comparing the
-# license's ``install_uuid`` field against a process-local value. Each
-# pre-forked worker process needs its own register call (the cache lives
-# in module-level globals which don't survive fork as written values, only
-# as code). We hook ``worker_process_init`` so the register runs once per
-# fork before any task starts.
-from celery.signals import worker_process_init  # noqa: E402
-
-
-@worker_process_init.connect
-def _register_install_uuid(**_kwargs):
-    import logging
-    log = logging.getLogger(__name__)
-    try:
-        # Sync DB read — same engine pattern used in tasks.modules.maintenance.
-        from sqlalchemy import create_engine, text
-        url = os.getenv("DATABASE_URL", "").replace("postgresql+asyncpg://", "postgresql+psycopg2://")
-        if not url:
-            log.warning("DATABASE_URL not set; install_uuid will fall back to None")
-            from tasks.utils.license import set_install_uuid
-            set_install_uuid(None)
-            return
-        engine = create_engine(url, pool_pre_ping=True, pool_size=1, max_overflow=0)
-        with engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT value FROM app_config WHERE key = 'install.uuid'")
-            ).fetchone()
-        engine.dispose()
-        from tasks.utils.license import set_install_uuid
-        set_install_uuid(row[0] if row else None)
-    except Exception:
-        log.exception("install_uuid registration failed; install-bound licenses will fail closed")
-        try:
-            from tasks.utils.license import set_install_uuid
-            set_install_uuid(None)
-        except Exception:
-            pass
-
 app.conf.update(
     task_serializer="json",
     accept_content=["json"],
