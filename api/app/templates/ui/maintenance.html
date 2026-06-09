@@ -680,9 +680,6 @@
       reclaim:       'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
       'default':     'bg-surface-raised text-muted',
     }[r.queue] || 'bg-surface-raised text-muted';
-    var proBadge = !r.community
-      ? ' <span class="text-[9px] tracking-widest uppercase bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded font-semibold align-middle ml-1">PRO</span>'
-      : '';
     var rowClass = 'hover:bg-surface-raised/30';
     var configKnobs = (r.config_keys || []).length === 0
       ? '<span class="text-[11px] text-muted/50 italic">no operator knobs</span>'
@@ -692,7 +689,7 @@
     return ''
       + '<tr class="' + rowClass + '">'
       +   '<td class="px-4 py-3 align-top">'
-      +     '<div class="font-medium text-body text-sm">' + _escBeat(r.name) + proBadge + '</div>'
+      +     '<div class="font-medium text-body text-sm">' + _escBeat(r.name) + '</div>'
       +     '<div class="text-[10px] text-muted/60 font-mono mt-0.5 break-all">' + _escBeat(r.task) + '</div>'
       +   '</td>'
       +   '<td class="px-4 py-3 align-top whitespace-nowrap text-xs text-body">' + _escBeat(r.cadence) + '</td>'
