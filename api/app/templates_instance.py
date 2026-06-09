@@ -86,9 +86,10 @@ templates.env.globals["app_logo_size"] = "80"
 templates.env.globals["app_logo_show_title"] = "true"
 templates.env.globals["app_logo_title_size"] = "12"
 
-# License / edition globals — set at startup by main.py lifespan. Default to
-# Community so any early render before load_license() runs is safe.
-templates.env.globals["edition"] = "community"
+# All features are always available regardless of license status.
+# Edition is always "pro" so template gates remain open; license_info
+# carries the actual license details for the License tab display only.
+templates.env.globals["edition"] = "pro"
 templates.env.globals["license_info"] = None
 
 # All features are always available — set to True so nav links render correctly
@@ -237,13 +238,11 @@ def set_license_globals(info) -> None:
     """Publish license fields to the Jinja2 environment.
 
     ``info`` is an ``app.utils.license.LicenseInfo``; accepting duck-typed input
-    avoids a circular import at module load time.
+    avoids a circular import at module load time. Edition is always set to
+    "pro" so all template feature gates remain open — license_info carries
+    the real data for the License tab display only.
     """
-    if info is None:
-        templates.env.globals["edition"] = "community"
-        templates.env.globals["license_info"] = None
-        return
-    templates.env.globals["edition"] = info.edition
+    templates.env.globals["edition"] = "pro"
     templates.env.globals["license_info"] = info
 
 
