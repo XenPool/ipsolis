@@ -103,7 +103,7 @@ Users can request an extension from the **My IT** portal page if the asset type 
 
 ---
 
-## Access Certification Campaigns *(Pro)*
+## Access Certification Campaigns
 
 Certification campaigns let compliance teams periodically review which users have active access to specific asset types — a requirement for ISO 27001, SOX, and PCI audits.
 
