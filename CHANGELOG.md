@@ -14,6 +14,31 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-06-10
+
+### Added
+
+- **License tab: full license text.** Maintenance → License now displays the full
+  XenPool Commercial Source License in both English and German, replacing the
+  previous "about" link. No external request needed — text is embedded in the template.
+
+### Changed
+
+- **Edition cleanup: all remaining Pro / Community split artifacts removed.** The
+  `community` field is stripped from `BeatEntry` and Beat schedule entries; the PRO
+  badge on the Beat schedule page is removed. Stale Pro Edition and community-install
+  comments removed from `hr_webhook.py`. `enterprise_teaser` import and `nav_locked`
+  calls removed from `base.html`. All residual "Pro Edition" / "Community Edition"
+  copy removed from `.env.example`, testlab compose files, and docs.
+
+### Fixed
+
+- **Asset type form: section nav and copy.** Section navigation behavior corrected;
+  form copy improved for clarity.
+- **`base.html` template errors.** Orphaned `enterprise_teaser` import and stale
+  `nav_locked` calls removed, resolving template rendering errors on pages that use
+  the base layout.
+
 ## [0.5.2] — 2026-06-09
 
 ### Changed
