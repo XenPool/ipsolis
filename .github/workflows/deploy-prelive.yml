@@ -43,7 +43,7 @@ jobs:
       - name: Rebuild and restart containers
         run: |
           cd ${{ secrets.PRELIVE_PATH }}
-          docker compose -f docker-compose.yml -f docker-compose.nginx.yml up --build -d
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 
       - name: Run database migrations
         # Wait for the api container's healthcheck before exec'ing — exec on
@@ -86,7 +86,7 @@ jobs:
         # directory bind-mount instead if zero-downtime is required.
         run: |
           cd ${{ secrets.PRELIVE_PATH }}
-          docker compose -f docker-compose.yml -f docker-compose.nginx.yml restart nginx
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
 
       - name: Health check
         run: |

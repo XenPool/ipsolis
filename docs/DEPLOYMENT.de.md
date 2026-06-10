@@ -41,6 +41,14 @@ Vor der Installation folgendes einrichten:
 - **Docker Compose** >= 2.20 (im Docker Engine-Paket enthalten)
 - **Git** -- zum Klonen des Repositorys
 
+Nach der Docker-Installation den Deployment-User der `docker`-Gruppe hinzufügen,
+damit `docker compose`-Befehle ohne `sudo` ausgeführt werden können:
+
+```bash
+sudo usermod -aG docker $USER
+# Anschließend ab- und wieder anmelden (oder: newgrp docker)
+```
+
 Installation überprüfen:
 
 ```bash
@@ -70,7 +78,7 @@ Repository klonen und Images beziehen — keine Authentifizierung erforderlich:
 
 ```bash
 cd /opt
-git clone https://github.com/XenPool/ipsolis.git ipsolis
+sudo git clone https://github.com/XenPool/ipsolis.git ipsolis
 cd ipsolis
 ```
 
@@ -125,17 +133,17 @@ Wenn der Server nur im Unternehmensnetzwerk erreichbar ist, [mkcert](https://git
 ```bash
 # mkcert installieren (einmalig)
 # Ubuntu/Debian:
-apt install -y libnss3-tools
-curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
-chmod +x mkcert-v*-linux-amd64
-mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
+sudo apt install -y libnss3-tools
+sudo curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
+sudo chmod +x mkcert-v*-linux-amd64
+sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
 
 # Lokale CA in den System-Trust-Store installieren
-mkcert -install
+sudo mkcert -install
 
 # Zertifikat für den Hostnamen generieren
-mkdir -p certs
-mkcert -cert-file certs/cert.pem -key-file certs/key.pem selfservice.ihreunternehmen.de
+sudo mkdir -p certs
+sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem selfservice.ihreunternehmen.de
 ```
 
 > **Wichtig**: Damit Browser auf anderen Rechnern diesem Zertifikat vertrauen, muss die
@@ -148,8 +156,8 @@ Wenn die Organisation eine interne Zertifizierungsstelle betreibt (z. B. Active 
 
 1. CSR auf dem Server erzeugen:
    ```bash
-   mkdir -p certs
-   openssl req -new -newkey rsa:2048 -nodes \
+   sudo mkdir -p certs
+   sudo openssl req -new -newkey rsa:2048 -nodes \
      -keyout certs/key.pem \
      -out certs/server.csr \
      -subj "/CN=selfservice.ihreunternehmen.de"
@@ -158,7 +166,7 @@ Wenn die Organisation eine interne Zertifizierungsstelle betreibt (z. B. Active 
 3. Das signierte Zertifikat als `certs/cert.pem` speichern.
 4. Falls die CA ein Zwischen-/Kettenzertifikat liefert, an `cert.pem` anhängen:
    ```bash
-   cat signiertes-zertifikat.pem zwischen-ca.pem > certs/cert.pem
+   cat signiertes-zertifikat.pem zwischen-ca.pem | sudo tee certs/cert.pem > /dev/null
    ```
 
 ### Option C: Let's Encrypt (öffentlich erreichbare Server)
@@ -166,32 +174,36 @@ Wenn die Organisation eine interne Zertifizierungsstelle betreibt (z. B. Active 
 Wenn der Server öffentlich zugänglich ist, können kostenlose Zertifikate von Let's Encrypt genutzt werden:
 
 ```bash
-apt install -y certbot
-certbot certonly --standalone -d selfservice.ihreunternehmen.de
+sudo apt install -y certbot
+sudo certbot certonly --standalone -d selfservice.ihreunternehmen.de
 
 # Symlinks in das certs-Verzeichnis
-mkdir -p certs
-ln -sf /etc/letsencrypt/live/selfservice.ihreunternehmen.de/fullchain.pem certs/cert.pem
-ln -sf /etc/letsencrypt/live/selfservice.ihreunternehmen.de/privkey.pem certs/key.pem
+sudo mkdir -p certs
+sudo ln -sf /etc/letsencrypt/live/selfservice.ihreunternehmen.de/fullchain.pem certs/cert.pem
+sudo ln -sf /etc/letsencrypt/live/selfservice.ihreunternehmen.de/privkey.pem certs/key.pem
 ```
 
-Automatische Erneuerung einrichten:
+#### Automatische Erneuerung einrichten (nur Option C)
 
 ```bash
 # Erneuerung testen
-certbot renew --dry-run
+sudo certbot renew --dry-run
 
 # Cron-Job zum Neuladen von nginx nach der Erneuerung
-echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx nginx -s reload'" | crontab -
+echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx nginx -s reload'" | sudo crontab -
 ```
 
 ### nginx konfigurieren
 
-nginx-Konfiguration für den Hostnamen erstellen:
+Das Repository enthält bereits eine fertige `nginx/nginx.conf` mit dem Platzhalter `YOUR_HOSTNAME`. Die Platzhalter durch den tatsächlichen Hostnamen ersetzen (der Platzhalter kommt zweimal vor, `sed` ersetzt beide):
 
 ```bash
-mkdir -p nginx
-cat > nginx/nginx.conf << 'EOF'
+sudo sed -i 's/YOUR_HOSTNAME/selfservice.ihreunternehmen.de/g' nginx/nginx.conf
+```
+
+Die Datei sieht danach so aus (zur Kontrolle):
+
+```nginx
 server {
     listen 80;
     server_name selfservice.ihreunternehmen.de;
@@ -207,6 +219,8 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
 
+    client_max_body_size 2g;
+
     # WebSocket / HTMX-Unterstützung
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
@@ -220,57 +234,17 @@ server {
         proxy_set_header   X-Forwarded-Proto $scheme;
     }
 }
-EOF
 ```
 
-> `selfservice.ihreunternehmen.de` durch den tatsächlichen Hostnamen ersetzen —
-> sowohl in der nginx-Konfiguration als auch im Zertifikatsgenerierungsschritt.
+> Den tatsächlichen Hostnamen auch im Zertifikatsgenerierungsschritt (Option A/B/C) verwenden.
 
 ---
 
-## 5. Produktions-Compose-Overlay erstellen
+## 5. Produktions-Compose-Overlay
 
-Ein Produktions-Overlay erstellen, das den nginx-Dienst hinzufügt. Diese Datei erweitert die
-Basis-`docker-compose.yml`, ohne sie zu ändern:
-
-```bash
-cat > docker-compose.prod.yml << 'EOF'
-# Produktions-Overlay -- fügt nginx-Reverse-Proxy mit SSL hinzu.
-# Verwendung: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
-services:
-  api:
-    # Dev-Hot-Reload-Volumes entfernen, Code aus Docker-Image verwenden
-    volumes: []
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
-
-  worker:
-    # Dev-Hot-Reload-Volumes entfernen, persistente PowerShell-Module behalten
-    volumes:
-      - ps_user_modules:/root/.local/share/powershell/Modules
-      - ./scripts:/app/scripts:ro
-
-  # Beat-Schedule liegt in Redis (celery-redbeat); kein On-Disk-Schedule-Volume
-  # nötig. Skalieren mit: `docker compose up -d --scale beat=2`.
-
-  nginx:
-    image: nginx:alpine
-    container_name: ipsolis-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./certs:/etc/nginx/certs:ro
-    depends_on:
-      api:
-        condition: service_healthy
-EOF
-```
-
-> **Hinweis**: Das Produktions-Overlay fügt nginx für die SSL-Terminierung hinzu.
-> Der gesamte Anwendungscode ist zur Build-Zeit in die Docker-Images integriert.
+`docker-compose.prod.yml` liegt bereits im Repository und muss nicht angelegt werden.
+Das Overlay fügt nginx für die SSL-Terminierung hinzu und entfernt die Dev-Bind-Mounts
+aus `api` und `worker`. Kein weiterer Schritt nötig.
 
 ---
 
@@ -300,9 +274,6 @@ ipsolis-worker        Up (healthy)
 ipsolis-beat-1        Up
 ipsolis-nginx         Up
 ```
-
-Der Beat-Container hat keinen festen `container_name`, damit er für HA skaliert werden kann --
-`docker compose up -d --scale beat=N` fügt Replikas hinzu.
 
 Anwendung überprüfen:
 
@@ -393,24 +364,21 @@ Docker-Secrets oder ein Bind-Mount funktionieren beides.
 
 ### Konfigurationscheckliste
 
-Zu **Admin > Einstellungen** navigieren und Folgendes konfigurieren:
+Die In-App-Setup-Checkliste (Dashboard → **Setup checklist**) führt durch alle
+erforderlichen Schritte. Die Reihenfolge hier entspricht der Checkliste:
 
-#### Active Directory (Pflicht)
+#### 1. Anwendungstitel und Logo setzen *(Essential)*
 
-| Einstellung | Beschreibung | Beispiel |
-|---|---|---|
-| `ad.server` | AD-Domänencontroller-Hostname oder IP | `dc01.ihreunternehmen.de` |
-| `ad.port` | LDAP-Port | `389` (oder `636` für LDAPS) |
-| `ad.base_dn` | Such-Base-DN | `DC=ihreunternehmen,DC=de` |
-| `ad.domain` | NetBIOS-Domänenname | `IHREUNTERNEHMEN` |
-| `ad.username` | Dienstkonto (sAMAccountName) | `svc-selfservice` |
-| `ad.password` | Dienstkonto-Passwort | *(als Secret markiert)* |
-| `ad.use_ssl` | LDAPS verwenden | `true` oder `false` |
+Zu **Admin > Einstellungen → Allgemein** navigieren:
 
-> Das Dienstkonto benötigt **Nur-Lesen**-Zugriff auf Benutzerobjekte (Attribute:
-> `mail`, `displayName`, `sAMAccountName`, `userPrincipalName`, `manager`, `memberOf`).
+| Einstellung | Beschreibung |
+|---|---|
+| `app.title` | Anwendungsname im Portal und in E-Mails (Standard: `ip·Solis`) |
+| `app.logo` | Logo-Upload (PNG/SVG empfohlen) |
 
-#### SMTP (Pflicht für Benachrichtigungen)
+#### 2. SMTP konfigurieren *(Essential)*
+
+Zu **Admin > Einstellungen → E-Mail** navigieren:
 
 | Einstellung | Beschreibung | Beispiel |
 |---|---|---|
@@ -422,20 +390,37 @@ Zu **Admin > Einstellungen** navigieren und Folgendes konfigurieren:
 | `smtp.from` | Absender-E-Mail-Adresse | `noreply@ihreunternehmen.de` |
 | `smtp.from_name` | Absender-Anzeigename | `ip·Solis` |
 
-#### E-Mail-Vorlagen
+Zu **Admin > E-Mail-Vorlagen** navigieren, um Benachrichtigungstexte anzupassen.
 
-Zu **Admin > E-Mail-Vorlagen** navigieren, um Benachrichtigungs-E-Mails anzupassen.
-Standard-Vorlagen werden bei der Migration angelegt. Betreffzeile und Text können mit
-`{{variable}}`-Platzhaltern angepasst werden.
+#### 3. Active Directory verbinden *(Essential)*
 
-#### Portal-Einstellungen
+Zu **Admin > Einstellungen → Active Directory** navigieren:
 
-| Einstellung | Beschreibung | Standard |
+| Einstellung | Beschreibung | Beispiel |
 |---|---|---|
-| `portal.max_advance_days` | Wie weit im Voraus Benutzer Bestellungen planen können | `0` (unbegrenzt) |
-| `portal.app_title` | Anwendungstitel im Portal | `ip·Solis` |
+| `ad.server` | AD-Domänencontroller-Hostname oder IP | `dc01.ihreunternehmen.de` |
+| `ad.port` | LDAP-Port | `389` (oder `636` für LDAPS) |
+| `ad.base_dn` | Such-Base-DN | `DC=ihreunternehmen,DC=de` |
+| `ad.domain` | NetBIOS-Domänenname | `IHREUNTERNEHMEN` |
+| `ad.username` | Dienstkonto (sAMAccountName) | `svc-selfservice` |
+| `ad.password` | Dienstkonto-Passwort | *(als Secret markiert)* |
+| `ad.use_ssl` | LDAPS verwenden | `true` oder `false` |
 
-### Ersten Asset-Typ anlegen
+> Die erforderlichen AD-Berechtigungen hängen von den eingesetzten Modulen und
+> Runbook-Schritten ab. Als Ausgangspunkt werden benötigt:
+> - **Lesen** auf Benutzerobjekte (Attribute: `mail`, `displayName`, `sAMAccountName`,
+>   `userPrincipalName`, `manager`, `memberOf`, `distinguishedName`)
+> - **Schreiben auf `member`** an Gruppenobjekten — für AD-gruppenbasierte Zugriffszuweisung
+>
+> Weitergehende Berechtigungen (z. B. auf Computerobjekte, OUs oder andere Attribute)
+> sind je nach verwendeten Runbooks und Modulen zusätzlich erforderlich.
+
+#### 4. Portal-SSO via Entra ID aktivieren *(Essential)*
+
+Siehe [Sektion 8](#8-entra-id-sso-portal-authentifizierung) für die vollständige
+Entra-ID-Einrichtung.
+
+#### 5. Ersten Asset-Typ anlegen *(Essential)*
 
 1. Zu **Admin > Asset-Typen > Neu** navigieren
 2. Name, Beschreibung und Kategorie ausfüllen
@@ -444,13 +429,41 @@ Standard-Vorlagen werden bei der Migration angelegt. Betreffzeile und Text könn
 5. Optional Zugriff mit einer Gruppe für berechtigte Antragsteller einschränken
 6. Speichern
 
-### Runbooks anlegen (falls zutreffend)
+#### 6. Assets zum Pool hinzufügen *(Essential)*
 
-Wenn Asset-Typen Runbook-Automatisierung verwenden:
+Zu **Admin > Asset-Pool > Neu** navigieren und mindestens ein Asset anlegen.
+
+> Für reine `capacity_pooled`-Asset-Typen (Kontingent ohne dedizierte Instanz) kann
+> dieser Schritt übersprungen werden.
+
+#### Runbooks einrichten *(falls zutreffend)*
+
+ip·Solis wird mit einem vollständigen Beispiel-Runbook ausgeliefert:
+**„Virtual Machine Recycler"** — ein Standalone-Runbook, das alle erforderlichen
+Skript-Module (XenServer/XCP-ng, SCCM, Active Directory) bereits enthält und als
+Vorlage für eigene Automatisierungen genutzt werden kann.
+
+Das Runbook ist unter **Admin > Runbooks** zu finden und kann dort direkt
+inspiziert, kopiert oder angepasst werden.
+
+Eigene Runbooks für Asset-Typen anlegen:
 
 1. Zu **Admin > Runbooks > Neu** navigieren
 2. Schritte definieren (PowerShell-Module oder eingebaute Module)
 3. Das Runbook mit einem Asset-Typ verknüpfen
+
+Beliebig viele eigene Runbooks mit individuellen Schritt-Kombinationen sind möglich.
+
+#### Empfohlene weitere Schritte *(Recommended)*
+
+- **Microsoft Teams Genehmigungskarten**: Zu **Admin > Einstellungen → E-Mail** navigieren
+  und Teams-Webhook-URL hinterlegen — Genehmiger erhalten eine Adaptive Card mit
+  Ein-Klick-Freigabelink zusätzlich zur E-Mail.
+- **Audit-Log an SIEM streamen**: Unter **Admin > Einstellungen → Compliance** Splunk-HEC-
+  oder Webhook-Endpunkt konfigurieren.
+- **Per-Integration-API-Token ausstellen**: Unter **Admin > API-Tokens** benannte,
+  widerrufliche Bearer-Tokens für ServiceNow, Skripte oder Prometheus erstellen —
+  ersetzt den geteilten `X-Admin-Key`.
 
 ---
 
@@ -727,6 +740,17 @@ services:
     env_file: .env
 ```
 
+**Beat-Skalierung**: Der Beat-Container hat keinen festen `container_name`, damit er
+repliziert werden kann. Für HA-Setups mit mehreren Beat-Instanzen:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --scale beat=2
+```
+
+> **Hinweis**: Celery Beat ist ein Singleton-Scheduler. Mehrere Beat-Replikas sind nur
+> in Kombination mit `django-celery-beat` oder `celery-redbeat` (bereits konfiguriert)
+> sinnvoll — redbeat verhindert doppelte Task-Auslösung per Redis-Lock.
+
 **Liveness**: Jeder Worker registriert sich beim Start via Celery-Mingle; ein frischer
 Worker ist innerhalb weniger Sekunden für Beat / andere Worker sichtbar. Kein separater
 Health-Check nötig -- wenn der Worker-Container `Up` ist, konsumiert er.
@@ -971,6 +995,6 @@ with e.connect() as c: print(c.execute(text('SELECT 1')).scalar())
 ### Zugriff verweigert auf certs-Verzeichnis
 
 ```bash
-chmod 644 certs/cert.pem
-chmod 600 certs/key.pem
+sudo chmod 644 certs/cert.pem
+sudo chmod 600 certs/key.pem
 ```
