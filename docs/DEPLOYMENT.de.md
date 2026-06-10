@@ -428,7 +428,7 @@ ip·Solis wird mit einem vollständigen Beispiel-Runbook ausgeliefert:
 Skript-Module (XenServer/XCP-ng, SCCM, Active Directory) bereits enthält und als
 Vorlage für eigene Automatisierungen genutzt werden kann.
 
-Das Runbook ist unter **Admin > Standalone Runbooks** zu finden und kann dort direkt
+Das Runbook ist unter **Admin > Runbooks** zu finden und kann dort direkt
 inspiziert, kopiert oder angepasst werden.
 
 Eigene Runbooks für Asset-Typen anlegen:

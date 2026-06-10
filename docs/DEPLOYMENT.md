@@ -436,7 +436,7 @@ ip·Solis ships with a fully configured example runbook:
 script modules (XenServer/XCP-ng, SCCM, Active Directory) and can serve as a
 template for your own automation.
 
-Find it under **Admin > Standalone Runbooks** to inspect, copy, or adapt it.
+Find it under **Admin > Runbooks** to inspect, copy, or adapt it.
 
 To create asset-type runbooks:
 
