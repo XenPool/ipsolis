@@ -431,11 +431,21 @@ and body using `{{variable}}` placeholders.
 
 ### Create Runbooks (if applicable)
 
-If your asset types use runbook automation:
+ip·Solis ships with a fully configured example runbook:
+**"Virtual Machine Recycler"** — a standalone runbook that includes all required
+script modules (XenServer/XCP-ng, SCCM, Active Directory) and can serve as a
+template for your own automation.
+
+Find it under **Admin > Standalone Runbooks** to inspect, copy, or adapt it.
+
+To create asset-type runbooks:
 
 1. Go to **Admin > Runbooks > New**
 2. Define the steps (PowerShell modules or built-in modules)
 3. Link the runbook to an asset type
+
+Any number of custom runbooks with any combination of steps can be created — there
+is no restriction to specific modules or templates.
 
 ---
 

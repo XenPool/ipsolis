@@ -423,11 +423,22 @@ Standard-Vorlagen werden bei der Migration angelegt. Betreffzeile und Text könn
 
 ### Runbooks anlegen (falls zutreffend)
 
-Wenn Asset-Typen Runbook-Automatisierung verwenden:
+ip·Solis wird mit einem vollständigen Beispiel-Runbook ausgeliefert:
+**„Virtual Machine Recycler"** — ein Standalone-Runbook, das alle erforderlichen
+Skript-Module (XenServer/XCP-ng, SCCM, Active Directory) bereits enthält und als
+Vorlage für eigene Automatisierungen genutzt werden kann.
+
+Das Runbook ist unter **Admin > Standalone Runbooks** zu finden und kann dort direkt
+inspiziert, kopiert oder angepasst werden.
+
+Eigene Runbooks für Asset-Typen anlegen:
 
 1. Zu **Admin > Runbooks > Neu** navigieren
 2. Schritte definieren (PowerShell-Module oder eingebaute Module)
 3. Das Runbook mit einem Asset-Typ verknüpfen
+
+Beliebig viele eigene Runbooks mit individuellen Schritt-Kombinationen sind möglich —
+es gibt keine Einschränkung auf bestimmte Module oder Vorlagen.
 
 ---
 
