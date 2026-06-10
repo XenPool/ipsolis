@@ -230,7 +230,7 @@ The overlay is purely additive — same database, same migrations, same image ta
 
 See the full deployment guide: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**
 
-For per-feature setup walkthroughs (Admin RBAC, external secret management — including AppRole/Kubernetes/AssumeRole auth + bulk-migration tool, SIEM streaming — including Sentinel Logs Ingestion API, Teams approval cards, OpenTelemetry tracing, HA Beat, conditional approval rules with the recursive editor, per-classification approval routing, auto-decline, cost / chargeback, …) see **[docs/PRO_FEATURES.md](docs/PRO_FEATURES.md)**. High-availability deployment patterns (multi-replica api / worker, Postgres standby + failover) live in section 12 of **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. Grafana dashboard + Prometheus alerts in **[docs/grafana/](docs/grafana/)**; ops runbooks in **[docs/runbooks/](docs/runbooks/)**.
+High-availability deployment patterns (multi-replica api / worker, Postgres standby + failover) live in section 12 of **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. Grafana dashboard + Prometheus alerts in **[docs/grafana/](docs/grafana/)**; ops runbooks in **[docs/runbooks/](docs/runbooks/)**.
 
 Summary:
 1. Provision a Linux server with Docker
