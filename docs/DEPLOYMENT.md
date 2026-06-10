@@ -42,6 +42,14 @@ Install the following before proceeding:
 - **Docker Compose** >= 2.20 (included with Docker Engine)
 - **Git** -- to clone the repository
 
+After installing Docker, add the deployment user to the `docker` group so
+`docker compose` commands work without `sudo`:
+
+```bash
+sudo usermod -aG docker $USER
+# Then log out and back in (or: newgrp docker)
+```
+
 Verify your installation:
 
 ```bash

@@ -41,6 +41,14 @@ Vor der Installation folgendes einrichten:
 - **Docker Compose** >= 2.20 (im Docker Engine-Paket enthalten)
 - **Git** -- zum Klonen des Repositorys
 
+Nach der Docker-Installation den Deployment-User der `docker`-Gruppe hinzufügen,
+damit `docker compose`-Befehle ohne `sudo` ausgeführt werden können:
+
+```bash
+sudo usermod -aG docker $USER
+# Anschließend ab- und wieder anmelden (oder: newgrp docker)
+```
+
 Installation überprüfen:
 
 ```bash
