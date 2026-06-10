@@ -127,7 +127,7 @@ Wenn der Server nur im Unternehmensnetzwerk erreichbar ist, [mkcert](https://git
 # Ubuntu/Debian:
 sudo apt install -y libnss3-tools
 sudo curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
-chmod +x mkcert-v*-linux-amd64
+sudo chmod +x mkcert-v*-linux-amd64
 sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
 
 # Lokale CA in den System-Trust-Store installieren
@@ -232,49 +232,11 @@ server {
 
 ---
 
-## 5. Produktions-Compose-Overlay erstellen
+## 5. Produktions-Compose-Overlay
 
-Ein Produktions-Overlay erstellen, das den nginx-Dienst hinzufügt. Diese Datei erweitert die
-Basis-`docker-compose.yml`, ohne sie zu ändern:
-
-```bash
-cat > docker-compose.prod.yml << 'EOF'
-# Produktions-Overlay -- fügt nginx-Reverse-Proxy mit SSL hinzu.
-# Verwendung: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
-services:
-  api:
-    # Dev-Hot-Reload-Volumes entfernen, Code aus Docker-Image verwenden
-    volumes: []
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
-
-  worker:
-    # Dev-Hot-Reload-Volumes entfernen, persistente PowerShell-Module behalten
-    volumes:
-      - ps_user_modules:/root/.local/share/powershell/Modules
-      - ./scripts:/app/scripts:ro
-
-  # Beat-Schedule liegt in Redis (celery-redbeat); kein On-Disk-Schedule-Volume
-  # nötig. Skalieren mit: `docker compose up -d --scale beat=2`.
-
-  nginx:
-    image: nginx:alpine
-    container_name: ipsolis-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./certs:/etc/nginx/certs:ro
-    depends_on:
-      api:
-        condition: service_healthy
-EOF
-```
-
-> **Hinweis**: Das Produktions-Overlay fügt nginx für die SSL-Terminierung hinzu.
-> Der gesamte Anwendungscode ist zur Build-Zeit in die Docker-Images integriert.
+`docker-compose.prod.yml` liegt bereits im Repository und muss nicht angelegt werden.
+Das Overlay fügt nginx für die SSL-Terminierung hinzu und entfernt die Dev-Bind-Mounts
+aus `api` und `worker`. Kein weiterer Schritt nötig.
 
 ---
 

@@ -233,49 +233,11 @@ server {
 
 ---
 
-## 5. Create the Production Compose Overlay
+## 5. Production Compose Overlay
 
-Create a production overlay that adds the nginx service. This file extends the
-base `docker-compose.yml` without modifying it:
-
-```bash
-cat > docker-compose.prod.yml << 'EOF'
-# Production overlay -- adds nginx reverse proxy with SSL.
-# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
-services:
-  api:
-    # Remove dev hot-reload volumes and use built-in code from Docker image
-    volumes: []
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
-
-  worker:
-    # Remove dev hot-reload volumes, keep persistent PowerShell modules
-    volumes:
-      - ps_user_modules:/root/.local/share/powershell/Modules
-      - ./scripts:/app/scripts:ro
-
-  # Beat schedule lives in Redis (celery-redbeat); no on-disk schedule
-  # volume needed. Scale with: `docker compose up -d --scale beat=2`.
-
-  nginx:
-    image: nginx:alpine
-    container_name: ipsolis-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./certs:/etc/nginx/certs:ro
-    depends_on:
-      api:
-        condition: service_healthy
-EOF
-```
-
-> **Note**: The production compose overlay adds nginx for SSL termination.
-> All application code is baked into the Docker images at build time.
+`docker-compose.prod.yml` is already included in the repository — no action needed.
+The overlay adds nginx for SSL termination and removes the dev bind-mounts from
+`api` and `worker`.
 
 ---
 
