@@ -14,6 +14,13 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.4] — 2026-06-11
+
+### Changed
+
+- **THIRD-PARTY-LICENSES.md:** replaced link-only table with complete license texts and copyright notices for all 96 Python dependencies, as required by MIT, BSD, Apache 2.0, and LGPL; generated via `pip-licenses --from=mixed --with-license-file`; includes infrastructure (Docker base images) and frontend (HTMX, Tailwind) sections
+- **GitHub Actions:** added `run-name` to `release.yml` and `deploy-prelive.yml` so workflow runs display the version tag instead of the commit message
+
 ## [0.6.3] — 2026-06-10
 
 ### Fixed
