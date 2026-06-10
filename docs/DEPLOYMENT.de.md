@@ -378,8 +378,14 @@ Zu **Admin > Einstellungen** navigieren und Folgendes konfigurieren:
 | `ad.password` | Dienstkonto-Passwort | *(als Secret markiert)* |
 | `ad.use_ssl` | LDAPS verwenden | `true` oder `false` |
 
-> Das Dienstkonto benötigt **Nur-Lesen**-Zugriff auf Benutzerobjekte (Attribute:
-> `mail`, `displayName`, `sAMAccountName`, `userPrincipalName`, `manager`, `memberOf`).
+> Die erforderlichen AD-Berechtigungen hängen von den eingesetzten Modulen und
+> Runbook-Schritten ab. Als Ausgangspunkt werden benötigt:
+> - **Lesen** auf Benutzerobjekte (Attribute: `mail`, `displayName`, `sAMAccountName`,
+>   `userPrincipalName`, `manager`, `memberOf`, `distinguishedName`)
+> - **Schreiben auf `member`** an Gruppenobjekten — für AD-gruppenbasierte Zugriffszuweisung
+>
+> Weitergehende Berechtigungen (z. B. auf Computerobjekte, OUs oder andere Attribute)
+> sind je nach verwendeten Runbooks und Modulen zusätzlich erforderlich.
 
 #### SMTP (Pflicht für Benachrichtigungen)
 

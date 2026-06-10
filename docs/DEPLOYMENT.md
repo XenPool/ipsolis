@@ -386,8 +386,14 @@ Navigate to **Admin > Settings** and configure the following:
 | `ad.password` | Service account password | *(marked as secret)* |
 | `ad.use_ssl` | Use LDAPS | `true` or `false` |
 
-> The service account needs **read-only** access to user objects (attributes:
-> `mail`, `displayName`, `sAMAccountName`, `userPrincipalName`, `manager`, `memberOf`).
+> Required AD permissions depend on the modules and runbook steps in use.
+> As a baseline:
+> - **Read** on user objects (attributes: `mail`, `displayName`, `sAMAccountName`,
+>   `userPrincipalName`, `manager`, `memberOf`, `distinguishedName`)
+> - **Write `member`** on group objects — required for AD group-based access assignment
+>
+> Additional permissions (e.g. on computer objects, OUs, or other attributes) may be
+> needed depending on the runbooks and modules deployed.
 
 #### SMTP (Required for notifications)
 
