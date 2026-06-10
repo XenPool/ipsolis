@@ -252,8 +252,7 @@ services:
       - ./scripts:/app/scripts:ro
 
   # Beat schedule lives in Redis (celery-redbeat); no on-disk schedule
-  # volume needed. See PRO_FEATURES.md → "HA Beat scheduler" for
-  # multi-replica scaling: `docker compose up -d --scale beat=2`.
+  # volume needed. Scale with: `docker compose up -d --scale beat=2`.
 
   nginx:
     image: nginx:alpine
@@ -304,7 +303,7 @@ ipsolis-nginx         Up
 ```
 
 The beat container has no fixed `container_name` so it can be scaled
-for HA — see [PRO_FEATURES.md → HA Beat scheduler](PRO_FEATURES.md#ha-beat-scheduler-multi-replica-with-celery-redbeat).
+for HA — run `docker compose up -d --scale beat=N` to add replicas.
 
 Verify the application:
 
@@ -351,9 +350,9 @@ to each operator:
 superadmin > admin > approver > auditor > helpdesk
 ```
 
-See **[PRO_FEATURES.md → Admin RBAC](PRO_FEATURES.md#admin-rbac-roles-acl-grants-sod-password-policy)**
-for the full role ladder, per-asset-type ACL grants, separation-of-duties
-enforcement, and password-policy options.
+The full role ladder, per-asset-type ACL grants, separation-of-duties
+enforcement, and password-policy options are configurable in the Admin UI
+under Settings → Access Control.
 
 ### Legacy `ADMIN_API_KEY` fallback
 
@@ -592,8 +591,7 @@ snapshot is fresh when an unexpected regression appears.
 
 If you run multiple Beat replicas (`--scale beat=N`), `docker compose
 up --build -d` rolls the containers one at a time and the leader lock
-hands over to the surviving replica within ~13 s (see
-[PRO_FEATURES.md → HA Beat scheduler](PRO_FEATURES.md#ha-beat-scheduler-multi-replica-with-celery-redbeat)).
+hands over to the surviving replica within ~13 s.
 For single-Beat installs there's a brief gap during the restart
 where periodic tasks aren't running — usually invisible since cadences
 are minutes / hours.
@@ -603,10 +601,8 @@ are minutes / hours.
 ## 12. High-Availability Deployments
 
 ip·Solis is built to scale horizontally on every layer except Postgres
-(single-writer by design). The Beat scheduler shipped multi-replica in
-slice 1 — see
-[PRO_FEATURES.md → HA Beat scheduler](PRO_FEATURES.md#ha-beat-scheduler-multi-replica-with-celery-redbeat)
-— and this section covers the remaining three layers: API replicas
+(single-writer by design). The Beat scheduler supports multi-replica HA
+via celery-redbeat, and this section covers the remaining three layers: API replicas
 behind a load balancer, worker replicas per Celery queue, and a
 Postgres read-replica + failover plan.
 
@@ -669,8 +665,7 @@ done
   is fine.
 * **Health check**: `GET /health` (unauthenticated). Returns
   `{status: ok | degraded}` aggregating database, redis, and beat
-  liveness — see the *Beat-alive health probe* in
-  PRO_FEATURES. The endpoint is fast (one Redis ping + one
+  liveness. The endpoint is fast (one Redis ping + one
   DB SELECT 1) so a 5–10s LB check interval is safe.
 * **TLS termination**: keep on the load balancer (or the existing
   nginx sidecar from section 5). Replicas serve plain HTTP
@@ -721,7 +716,7 @@ scale-up; the worker code itself doesn't change.
 |---|---|---|
 | Lab / single-team (≤50 users) | 1 worker replica, `--concurrency=4 -Q provision,notifications,default,reclaim` | All queues on one process; concurrency 4 is plenty for the typical 1–2 orders/hour. |
 | Mid (≤500 users, ≤20 orders/hour) | 2 worker replicas split by queue: replica A `-Q provision --concurrency=4`, replica B `-Q notifications,default,reclaim --concurrency=2` | Provisioning latency stays bounded by replica A; replica B handles housekeeping + reminders without queue-head-of-line blocking. |
-| Enterprise (≥500 users, ≥50 orders/hour, regulated SLAs) | 3+ worker replicas: dedicated `provision` workers (`--concurrency=8` × 2 replicas), one `notifications` replica (`--concurrency=4`), one `default,reclaim` replica (`--concurrency=2`) | Per-queue scaling matches actual load shape. |
+| Large (≥500 users, ≥50 orders/hour, regulated SLAs) | 3+ worker replicas: dedicated `provision` workers (`--concurrency=8` × 2 replicas), one `notifications` replica (`--concurrency=4`), one `default,reclaim` replica (`--concurrency=2`) | Per-queue scaling matches actual load shape. |
 
 **Scaling command** (single-host, all queues on each replica):
 
