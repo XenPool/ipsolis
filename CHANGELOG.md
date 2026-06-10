@@ -14,6 +14,25 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-06-10
+
+### Changed
+
+- **CI: docs/changelog updates now triggered by release tag only.** The
+  `trigger-docs-rebuild.yml` workflow (prelive-push based) is removed. The
+  `release.yml` workflow now dispatches a `changelog-updated` event to
+  ipsolis-web after images are pushed, triggering a production rebuild
+  directly from the release tag.
+- **Docs: PRO_FEATURES.md references removed.** All links and references to
+  the deleted `PRO_FEATURES.md` file replaced with inline descriptions in
+  `DEPLOYMENT.md` and `README.md`.
+- **Docs: Enterprise sizing tier renamed.** Worker sizing table label
+  "Enterprise" renamed to "Large" to avoid confusion with the retired
+  Enterprise product tier.
+- **Legal: AGB added.** Full German terms and conditions for commercial
+  ip·Solis licensing added at `docs/legal/AGB.md` (XenPool Commercial
+  Source License, dual-track liability model, Munich jurisdiction).
+
 ## [0.6.0] — 2026-06-10
 
 ### Added
