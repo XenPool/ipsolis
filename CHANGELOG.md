@@ -14,6 +14,12 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-06-10
+
+### Added
+
+- `docs/DEPLOYMENT.de.md` — full German translation of the production deployment guide; code blocks and commands kept in English per technical documentation convention
+
 ## [0.6.1] — 2026-06-10
 
 ### Changed
