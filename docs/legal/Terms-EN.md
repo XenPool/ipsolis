@@ -4,8 +4,6 @@
 
 > **Non-binding English convenience translation.** Only the German-language version of these General Terms and Conditions is legally binding. In the event of any discrepancy or conflict between the German and English versions, the German version shall prevail.
 
-> **Draft for legal review – as of 10 June 2026.** This version contains editorial and substantive revisions to the prior draft (in particular regarding the free/commercial-use distinction, the scope of the owed performance, and the structuring of the limitation of liability) and must be reviewed by a qualified lawyer before publication.
-
 ## Table of Contents
 
 1. Scope

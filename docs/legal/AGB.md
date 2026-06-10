@@ -2,8 +2,6 @@
 
 **XenPool GmbH**, Am Egernfeld 35, 85748 Garching · E-Mail: sales@xenpool.de
 
-> **Entwurf zur rechtlichen Prüfung – Stand: 10. Juni 2026.** Diese Fassung enthält redaktionelle und inhaltliche Überarbeitungen gegenüber dem Vorentwurf (insbesondere zur Abgrenzung kostenfreier/kommerzieller Nutzung, zum geschuldeten Leistungssoll und zur Abschichtung der Haftungsbeschränkung) und ist vor Veröffentlichung anwaltlich zu prüfen.
-
 ## Inhaltsübersicht
 
 1. Geltungsbereich
