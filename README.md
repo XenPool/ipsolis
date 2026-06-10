@@ -222,7 +222,7 @@ The repository ships two compose files. The main one is the full stack (postgres
 | Mode | Command | When |
 |---|---|---|
 | **Direct** | `docker compose up -d` | Dev. API on `http://localhost:8000/`, no proxy. |
-| **TLS-fronted** | `docker compose -f docker-compose.yml -f docker-compose.nginx.yml up -d` | Pre-live / prod. Nginx handles TLS using `certs/cert.pem` + `certs/key.pem`; reach the app at `https://<your-host>/`. |
+| **TLS-fronted** | `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` | Pre-live / prod. Nginx handles TLS using `certs/cert.pem` + `certs/key.pem`; reach the app at `https://<your-host>/`. |
 
 The overlay is purely additive — same database, same migrations, same image tags. Switch between modes by stopping (`down`) and starting with the alternate command.
 

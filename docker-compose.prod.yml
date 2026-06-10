@@ -1,0 +1,39 @@
+# Production overlay -- adds nginx reverse proxy with SSL termination and
+# removes dev hot-reload volumes from api and worker.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Prerequisites (run once per host):
+#   1. Place TLS certificate and key at certs/cert.pem and certs/key.pem
+#      (see docs/DEPLOYMENT.md section 4 for options A/B/C)
+#   2. Set YOUR_HOSTNAME in nginx/nginx.conf:
+#      sudo sed -i 's/YOUR_HOSTNAME/<your-hostname>/g' nginx/nginx.conf
+
+services:
+  api:
+    # Remove dev bind-mount; use code baked into the Docker image
+    volumes: []
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+
+  worker:
+    # Remove dev bind-mount; keep persistent PowerShell module volume
+    volumes:
+      - ps_user_modules:/root/.local/share/powershell/Modules
+      - ./scripts:/app/scripts:ro
+
+  # Beat schedule lives in Redis (celery-redbeat); no on-disk schedule volume
+  # needed. Scale with: docker compose up -d --scale beat=2
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      api:
+        condition: service_healthy

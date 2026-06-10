@@ -71,7 +71,7 @@ Clone the repository and pull the images — no authentication required:
 
 ```bash
 cd /opt
-git clone https://github.com/XenPool/ipsolis.git ipsolis
+sudo git clone https://github.com/XenPool/ipsolis.git ipsolis
 cd ipsolis
 ```
 
@@ -126,17 +126,17 @@ If your server is only accessible within your corporate network, use [mkcert](ht
 ```bash
 # Install mkcert (one-time)
 # Ubuntu/Debian:
-apt install -y libnss3-tools
-curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
+sudo apt install -y libnss3-tools
+sudo curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
 chmod +x mkcert-v*-linux-amd64
-mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
+sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
 
 # Install the local CA into your system trust store
-mkcert -install
+sudo mkcert -install
 
 # Generate the certificate for your hostname
-mkdir -p certs
-mkcert -cert-file certs/cert.pem -key-file certs/key.pem selfservice.yourcompany.com
+sudo mkdir -p certs
+sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem selfservice.yourcompany.com
 ```
 
 > **Important**: For browsers on other machines to trust this certificate, you must
@@ -149,8 +149,8 @@ If your organization runs an internal Certificate Authority (e.g., Active Direct
 
 1. Generate a CSR on the server:
    ```bash
-   mkdir -p certs
-   openssl req -new -newkey rsa:2048 -nodes \
+   sudo mkdir -p certs
+   sudo openssl req -new -newkey rsa:2048 -nodes \
      -keyout certs/key.pem \
      -out certs/server.csr \
      -subj "/CN=selfservice.yourcompany.com"
@@ -159,7 +159,7 @@ If your organization runs an internal Certificate Authority (e.g., Active Direct
 3. Save the signed certificate as `certs/cert.pem`.
 4. If your CA provides an intermediate/chain certificate, append it to `cert.pem`:
    ```bash
-   cat signed-cert.pem intermediate-ca.pem > certs/cert.pem
+   cat signed-cert.pem intermediate-ca.pem | sudo tee certs/cert.pem > /dev/null
    ```
 
 ### Option C: Let's Encrypt (Public-facing servers)
@@ -167,32 +167,36 @@ If your organization runs an internal Certificate Authority (e.g., Active Direct
 If your server is publicly accessible, you can use free certificates from Let's Encrypt:
 
 ```bash
-apt install -y certbot
-certbot certonly --standalone -d selfservice.yourcompany.com
+sudo apt install -y certbot
+sudo certbot certonly --standalone -d selfservice.yourcompany.com
 
 # Symlink into the certs directory
-mkdir -p certs
-ln -sf /etc/letsencrypt/live/selfservice.yourcompany.com/fullchain.pem certs/cert.pem
-ln -sf /etc/letsencrypt/live/selfservice.yourcompany.com/privkey.pem certs/key.pem
+sudo mkdir -p certs
+sudo ln -sf /etc/letsencrypt/live/selfservice.yourcompany.com/fullchain.pem certs/cert.pem
+sudo ln -sf /etc/letsencrypt/live/selfservice.yourcompany.com/privkey.pem certs/key.pem
 ```
 
-Set up auto-renewal:
+#### Set up auto-renewal (Option C only)
 
 ```bash
 # Test renewal
-certbot renew --dry-run
+sudo certbot renew --dry-run
 
 # Add a cron job to reload nginx after renewal
-echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx nginx -s reload'" | crontab -
+echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx nginx -s reload'" | sudo crontab -
 ```
 
 ### Configure nginx
 
-Create the nginx config for your hostname:
+The repository already ships a ready-to-use `nginx/nginx.conf` with the placeholder `YOUR_HOSTNAME`. Replace both occurrences of the placeholder with your actual hostname (`sed` with the `g` flag handles both in one pass):
 
 ```bash
-mkdir -p nginx
-cat > nginx/nginx.conf << 'EOF'
+sudo sed -i 's/YOUR_HOSTNAME/selfservice.yourcompany.com/g' nginx/nginx.conf
+```
+
+The file will look like this afterwards (for reference):
+
+```nginx
 server {
     listen 80;
     server_name selfservice.yourcompany.com;
@@ -208,6 +212,8 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
 
+    client_max_body_size 2g;
+
     # WebSocket / HTMX support
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
@@ -221,11 +227,9 @@ server {
         proxy_set_header   X-Forwarded-Proto $scheme;
     }
 }
-EOF
 ```
 
-> Replace `selfservice.yourcompany.com` with your actual hostname in both the
-> nginx config and the certificate generation step.
+> Use the same hostname in the certificate generation step (Option A/B/C above).
 
 ---
 
@@ -1008,6 +1012,6 @@ with e.connect() as c: print(c.execute(text('SELECT 1')).scalar())
 ### Permission denied on certs directory
 
 ```bash
-chmod 644 certs/cert.pem
-chmod 600 certs/key.pem
+sudo chmod 644 certs/cert.pem
+sudo chmod 600 certs/key.pem
 ```

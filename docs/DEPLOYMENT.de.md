@@ -70,7 +70,7 @@ Repository klonen und Images beziehen — keine Authentifizierung erforderlich:
 
 ```bash
 cd /opt
-git clone https://github.com/XenPool/ipsolis.git ipsolis
+sudo git clone https://github.com/XenPool/ipsolis.git ipsolis
 cd ipsolis
 ```
 
@@ -125,17 +125,17 @@ Wenn der Server nur im Unternehmensnetzwerk erreichbar ist, [mkcert](https://git
 ```bash
 # mkcert installieren (einmalig)
 # Ubuntu/Debian:
-apt install -y libnss3-tools
-curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
+sudo apt install -y libnss3-tools
+sudo curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
 chmod +x mkcert-v*-linux-amd64
-mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
+sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
 
 # Lokale CA in den System-Trust-Store installieren
-mkcert -install
+sudo mkcert -install
 
 # Zertifikat für den Hostnamen generieren
-mkdir -p certs
-mkcert -cert-file certs/cert.pem -key-file certs/key.pem selfservice.ihreunternehmen.de
+sudo mkdir -p certs
+sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem selfservice.ihreunternehmen.de
 ```
 
 > **Wichtig**: Damit Browser auf anderen Rechnern diesem Zertifikat vertrauen, muss die
@@ -148,8 +148,8 @@ Wenn die Organisation eine interne Zertifizierungsstelle betreibt (z. B. Active 
 
 1. CSR auf dem Server erzeugen:
    ```bash
-   mkdir -p certs
-   openssl req -new -newkey rsa:2048 -nodes \
+   sudo mkdir -p certs
+   sudo openssl req -new -newkey rsa:2048 -nodes \
      -keyout certs/key.pem \
      -out certs/server.csr \
      -subj "/CN=selfservice.ihreunternehmen.de"
@@ -158,7 +158,7 @@ Wenn die Organisation eine interne Zertifizierungsstelle betreibt (z. B. Active 
 3. Das signierte Zertifikat als `certs/cert.pem` speichern.
 4. Falls die CA ein Zwischen-/Kettenzertifikat liefert, an `cert.pem` anhängen:
    ```bash
-   cat signiertes-zertifikat.pem zwischen-ca.pem > certs/cert.pem
+   cat signiertes-zertifikat.pem zwischen-ca.pem | sudo tee certs/cert.pem > /dev/null
    ```
 
 ### Option C: Let's Encrypt (öffentlich erreichbare Server)
@@ -166,32 +166,36 @@ Wenn die Organisation eine interne Zertifizierungsstelle betreibt (z. B. Active 
 Wenn der Server öffentlich zugänglich ist, können kostenlose Zertifikate von Let's Encrypt genutzt werden:
 
 ```bash
-apt install -y certbot
-certbot certonly --standalone -d selfservice.ihreunternehmen.de
+sudo apt install -y certbot
+sudo certbot certonly --standalone -d selfservice.ihreunternehmen.de
 
 # Symlinks in das certs-Verzeichnis
-mkdir -p certs
-ln -sf /etc/letsencrypt/live/selfservice.ihreunternehmen.de/fullchain.pem certs/cert.pem
-ln -sf /etc/letsencrypt/live/selfservice.ihreunternehmen.de/privkey.pem certs/key.pem
+sudo mkdir -p certs
+sudo ln -sf /etc/letsencrypt/live/selfservice.ihreunternehmen.de/fullchain.pem certs/cert.pem
+sudo ln -sf /etc/letsencrypt/live/selfservice.ihreunternehmen.de/privkey.pem certs/key.pem
 ```
 
-Automatische Erneuerung einrichten:
+#### Automatische Erneuerung einrichten (nur Option C)
 
 ```bash
 # Erneuerung testen
-certbot renew --dry-run
+sudo certbot renew --dry-run
 
 # Cron-Job zum Neuladen von nginx nach der Erneuerung
-echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx nginx -s reload'" | crontab -
+echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx nginx -s reload'" | sudo crontab -
 ```
 
 ### nginx konfigurieren
 
-nginx-Konfiguration für den Hostnamen erstellen:
+Das Repository enthält bereits eine fertige `nginx/nginx.conf` mit dem Platzhalter `YOUR_HOSTNAME`. Die Platzhalter durch den tatsächlichen Hostnamen ersetzen (der Platzhalter kommt zweimal vor, `sed` ersetzt beide):
 
 ```bash
-mkdir -p nginx
-cat > nginx/nginx.conf << 'EOF'
+sudo sed -i 's/YOUR_HOSTNAME/selfservice.ihreunternehmen.de/g' nginx/nginx.conf
+```
+
+Die Datei sieht danach so aus (zur Kontrolle):
+
+```nginx
 server {
     listen 80;
     server_name selfservice.ihreunternehmen.de;
@@ -207,6 +211,8 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
 
+    client_max_body_size 2g;
+
     # WebSocket / HTMX-Unterstützung
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
@@ -220,11 +226,9 @@ server {
         proxy_set_header   X-Forwarded-Proto $scheme;
     }
 }
-EOF
 ```
 
-> `selfservice.ihreunternehmen.de` durch den tatsächlichen Hostnamen ersetzen —
-> sowohl in der nginx-Konfiguration als auch im Zertifikatsgenerierungsschritt.
+> Den tatsächlichen Hostnamen auch im Zertifikatsgenerierungsschritt (Option A/B/C) verwenden.
 
 ---
 
@@ -971,6 +975,6 @@ with e.connect() as c: print(c.execute(text('SELECT 1')).scalar())
 ### Zugriff verweigert auf certs-Verzeichnis
 
 ```bash
-chmod 644 certs/cert.pem
-chmod 600 certs/key.pem
+sudo chmod 644 certs/cert.pem
+sudo chmod 600 certs/key.pem
 ```
