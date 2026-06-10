@@ -1,32 +1,28 @@
-# Allgemeine Geschäftsbedingungen (AGB)
-## XenPool GmbH — ip·Solis Software-Lizenzierung
+# ip·Solis – Allgemeine Geschäftsbedingungen (AGB)
 
-**Anbieter:**
-XenPool GmbH  
-Am Egernfeld 35  
-85748 Garching  
-E-Mail: sales@xenpool.de
+**XenPool GmbH**, Am Egernfeld 35, 85748 Garching · E-Mail: sales@xenpool.de
 
----
+> **Entwurf zur rechtlichen Prüfung – Stand: 10. Juni 2026.** Diese Fassung enthält redaktionelle und inhaltliche Überarbeitungen gegenüber dem Vorentwurf (insbesondere zur Abgrenzung kostenfreier/kommerzieller Nutzung, zum geschuldeten Leistungssoll und zur Abschichtung der Haftungsbeschränkung) und ist vor Veröffentlichung anwaltlich zu prüfen.
 
-## Inhaltsverzeichnis
+## Inhaltsübersicht
 
-1. [Geltungsbereich](#1-geltungsbereich)
-2. [Vertragsgegenstand und Lizenzmodell](#2-vertragsgegenstand-und-lizenzmodell)
-3. [Kostenlose / nicht-kommerzielle Nutzung](#3-kostenlose--nicht-kommerzielle-nutzung)
-4. [Kommerzielle Lizenzierung](#4-kommerzielle-lizenzierung)
-5. [Vertragsschluss](#5-vertragsschluss)
-6. [Widerrufsrecht](#6-widerrufsrecht)
-7. [Preise und Zahlungsbedingungen](#7-preise-und-zahlungsbedingungen)
-8. [Bereitstellung der Lizenzdatei](#8-bereitstellung-der-lizenzdatei)
-9. [Einräumung von Nutzungsrechten](#9-einräumung-von-nutzungsrechten)
-10. [Pflichten und Mitwirkung des Kunden](#10-pflichten-und-mitwirkung-des-kunden)
-11. [Mängelhaftung](#11-mängelhaftung)
-12. [Haftungsbeschränkung](#12-haftungsbeschränkung)
-13. [Laufzeit und Kündigung](#13-laufzeit-und-kündigung)
-14. [Anwendbares Recht](#14-anwendbares-recht)
-15. [Gerichtsstand](#15-gerichtsstand)
-16. [Alternative Streitbeilegung](#16-alternative-streitbeilegung)
+1. Geltungsbereich
+2. Vertragsgegenstand und Lizenzmodell
+3. Kostenlose / nicht-kommerzielle Nutzung
+4. Kommerzielle Lizenzierung
+5. Vertragsschluss
+6. Widerrufsrecht
+7. Preise und Zahlungsbedingungen
+8. Bereitstellung der Lizenzdatei
+9. Einräumung von Nutzungsrechten
+10. Pflichten und Mitwirkung des Kunden
+11. Mängelhaftung
+12. Haftungsbeschränkung
+13. Laufzeit und Kündigung
+14. Anwendbares Recht
+15. Gerichtsstand
+16. Alternative Streitbeilegung
+- Anlage 1: Open-Source-Komponenten
 
 ---
 
@@ -56,7 +52,7 @@ Jede Nutzung in einer Produktionsumgebung durch eine gewinnorientierte Organisat
 
 **2.3** Vertragsgegenstand der kommerziellen Lizenzierung ist die Einräumung des Rechts zur kommerziellen Nutzung durch Ausstellung einer kryptographisch signierten Lizenzdatei (nachfolgend „Lizenzdatei" oder „.lic-Datei"). Die Lizenzdatei aktiviert die Nutzung der Software im kommerziellen Produktivbetrieb und definiert den Umfang der erworbenen Lizenz (Laufzeit, lizenzierte Instanzen, freigeschaltete Features).
 
-**2.4** ip·Solis basiert auf Open-Source-Komponenten Dritter. Die jeweiligen Lizenzbedingungen dieser Komponenten (z. B. MIT, Apache 2.0) sind im Repository dokumentiert und bleiben von diesen AGB unberührt.
+**2.4** ip·Solis basiert auf Open-Source-Komponenten Dritter. Eine vollständige Aufstellung dieser Komponenten und ihrer jeweiligen Lizenzbedingungen ist als Anlage 1 (Open-Source-Komponenten) Bestandteil dieser AGB und wird im Repository fortlaufend gepflegt. Die Lizenzbedingungen dieser Komponenten bleiben von diesen AGB unberührt.
 
 **2.5** Der Anbieter schuldet ausschließlich die Bereitstellung der Lizenzdatei und die Zugänglichkeit des GitHub-Repositorys. Installation, Konfiguration, Betrieb und Wartung obliegen ausschließlich dem Kunden.
 
@@ -259,3 +255,105 @@ Ausschließlicher Gerichtsstand für alle Streitigkeiten aus diesem Vertrag ist 
 ## 16) Alternative Streitbeilegung
 
 Der Anbieter ist zur Teilnahme an einem Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle weder verpflichtet noch bereit. Da ip·Solis ausschließlich an Unternehmer vertrieben wird (vgl. Ziff. 1.4), findet die EU-Verordnung Nr. 524/2013 über Online-Streitbeilegung keine Anwendung.
+
+---
+
+## Anlage 1: Open-Source-Komponenten
+
+Die folgende Aufstellung listet die Open-Source-Bibliotheken und Infrastrukturkomponenten, auf denen ip·Solis aufbaut. Sie wird im Repository fortlaufend gepflegt und bei jedem Release mit dem tatsächlichen Software Bill of Materials (SBOM) abgeglichen. Die vollständigen Lizenztexte sind in den jeweiligen Paket-Repositories abrufbar. Stand: ip·Solis v0.6.2.
+
+### Web-Framework & API
+
+| Komponente | Version | Lizenz | Zweck |
+|---|---|---|---|
+| FastAPI | 0.115.6 | MIT | Web-Framework / API-Routen |
+| uvicorn | 0.34.0 | BSD-3-Clause | ASGI-Server |
+
+### Datenbank
+
+| Komponente | Version | Lizenz | Zweck |
+|---|---|---|---|
+| SQLAlchemy | 2.0.36 | MIT | ORM / Datenbankabstraktion |
+| asyncpg | 0.30.0 | Apache-2.0 | Async PostgreSQL-Treiber (API) |
+| psycopg2-binary | 2.9.10 | LGPL-3+ | Sync PostgreSQL-Treiber (Alembic, Celery) |
+| alembic | 1.14.0 | MIT | Datenbankmigrationen |
+
+### Task-Queue / Worker
+
+| Komponente | Version | Lizenz | Zweck |
+|---|---|---|---|
+| Celery | 5.4.0 | BSD-3-Clause | Distributed Task-Queue / Worker |
+| celery-redbeat | 2.3.2 | Apache-2.0 | Redis-basierter Beat-Scheduler (HA-fähig) |
+| redis (Python-Client) | 5.2.1 | MIT | Redis-Client (Broker / Ergebnis-Backend) |
+| croniter | 3.0.3 | MIT | Cron-Ausdrucks-Parser (Standalone-Runbooks) |
+
+### Validierung & Konfiguration
+
+| Komponente | Version | Lizenz | Zweck |
+|---|---|---|---|
+| pydantic | 2.10.4 | MIT | Datenvalidierung / Schemata |
+| pydantic-settings | 2.7.0 | MIT | Konfiguration über Umgebungsvariablen |
+| python-dotenv | 1.0.1 | BSD-3-Clause | `.env`-Datei-Parsing |
+| PyYAML | ≥ 6.0 | MIT | YAML-Parsing (Operator-Key-Overrides) |
+
+### HTTP & Netzwerk
+
+| Komponente | Version | Lizenz | Zweck |
+|---|---|---|---|
+| httpx | 0.28.1 | BSD-3-Clause | Async HTTP-Client |
+| python-multipart | 0.0.20 | Apache-2.0 | Multipart Form Parsing (Datei-Upload) |
+| aiosmtplib | 3.0.2 | MIT | Async SMTP (E-Mail-Versand) |
+
+### Authentifizierung & Sicherheit
+
+| Komponente | Version | Lizenz | Zweck |
+|---|---|---|---|
+| msal | ≥ 1.31.0 | MIT | Entra ID / Azure AD SSO (Portal-Authentifizierung) |
+| itsdangerous | ≥ 2.2.0 | BSD-3-Clause | Session-Cookie-Signierung |
+| cryptography | ≥ 43.0.0 | Apache-2.0 AND BSD-3-Clause | Ed25519-Lizenzsignatur-Verifikation |
+
+### Active Directory / LDAP
+
+| Komponente | Version | Lizenz | Zweck |
+|---|---|---|---|
+| msldap | aktuell | MIT | LDAP/NTLM-Integration mit Active Directory |
+
+### Templating & Frontend-Rendering
+
+| Komponente | Version | Lizenz | Zweck |
+|---|---|---|---|
+| jinja2 | 3.1.4 | BSD-3-Clause | Server-seitiges HTML-Templating (Admin UI / Portal) |
+| aiofiles | 24.1.0 | Apache-2.0 | Async Datei-I/O |
+| markdown | 3.7 | BSD-3-Clause | Markdown-zu-HTML-Rendering |
+| bleach | 6.2.0 | Apache-2.0 | HTML-Sanitierung (XSS-Schutz) |
+
+### Monitoring & Observability
+
+| Komponente | Version | Lizenz | Zweck |
+|---|---|---|---|
+| prometheus-client | 0.21.0 | Apache-2.0 | Prometheus-Metriken-Endpunkt (`/metrics`) |
+| opentelemetry-api | 1.29.0 | Apache-2.0 | OpenTelemetry-Tracing API |
+| opentelemetry-sdk | 1.29.0 | Apache-2.0 | OpenTelemetry-Tracing SDK |
+| opentelemetry-exporter-otlp-proto-http | 1.29.0 | Apache-2.0 | OTLP-Trace-Export (HTTP/Protobuf) |
+| opentelemetry-instrumentation-fastapi | 0.50b0 | Apache-2.0 | Automatische FastAPI-Instrumentierung |
+| opentelemetry-instrumentation-sqlalchemy | 0.50b0 | Apache-2.0 | Automatische SQLAlchemy-Instrumentierung |
+| opentelemetry-instrumentation-celery | 0.50b0 | Apache-2.0 | Automatische Celery-Instrumentierung |
+| structlog | 24.4.0 | MIT | Strukturiertes Logging |
+| flower | 2.0.1 | BSD-3-Clause | Celery-Monitoring-Weboberfläche |
+
+### Infrastruktur (Runtime, nicht im Python-Paketbaum)
+
+| Komponente | Version | Lizenz | Zweck |
+|---|---|---|---|
+| PostgreSQL | 16 | PostgreSQL License | Relationale Datenbank |
+| Redis | aktuell | BSD-3-Clause | Message Broker / Ergebnis-Backend / Beat-Speicher |
+| nginx | aktuell | BSD-2-Clause | Reverse Proxy / TLS-Terminierung |
+
+### Frontend (CDN, nur Laufzeit-Einbindung)
+
+| Komponente | Version | Lizenz | Zweck |
+|---|---|---|---|
+| HTMX | aktuell | BSD-2-Clause | Hypermedia-basiertes Frontend (kein Build-Schritt) |
+| Tailwind CSS | aktuell (CDN JIT) | MIT | Utility-first CSS Framework |
+
+*— Ende der AGB (deutsche, rechtlich verbindliche Fassung) —*
