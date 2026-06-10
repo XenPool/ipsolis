@@ -372,9 +372,37 @@ container). Docker secrets or a bind-mount both work.
 
 ### Configuration Checklist
 
-Navigate to **Admin > Settings** and configure the following:
+The in-app **Setup checklist** on the dashboard guides you through all required steps.
+The order below matches the checklist:
 
-#### Active Directory (Required)
+#### 1. Set application title and logo *(Essential)*
+
+Navigate to **Admin > Settings → General**:
+
+| Setting | Description |
+|---------|-------------|
+| `app.title` | Application name shown in the portal and emails (default: `ip·Solis`) |
+| `app.logo` | Logo upload (PNG/SVG recommended) |
+
+#### 2. Configure SMTP *(Essential)*
+
+Navigate to **Admin > Settings → Email**:
+
+| Setting | Description | Example |
+|---------|-------------|---------|
+| `smtp.host` | SMTP relay hostname | `smtp.yourcompany.com` |
+| `smtp.port` | SMTP port | `587` |
+| `smtp.user` | SMTP username (if auth required) | `selfservice@yourcompany.com` |
+| `smtp.password` | SMTP password | *(marked as secret)* |
+| `smtp.tls` | Use STARTTLS | `true` |
+| `smtp.from` | Sender email address | `noreply@yourcompany.com` |
+| `smtp.from_name` | Sender display name | `ip·Solis` |
+
+Navigate to **Admin > Email Templates** to customize notification email text.
+
+#### 3. Connect to Active Directory *(Essential)*
+
+Navigate to **Admin > Settings → Active Directory**:
 
 | Setting | Description | Example |
 |---------|-------------|---------|
@@ -395,32 +423,11 @@ Navigate to **Admin > Settings** and configure the following:
 > Additional permissions (e.g. on computer objects, OUs, or other attributes) may be
 > needed depending on the runbooks and modules deployed.
 
-#### SMTP (Required for notifications)
+#### 4. Enable portal SSO via Entra ID *(Essential)*
 
-| Setting | Description | Example |
-|---------|-------------|---------|
-| `smtp.host` | SMTP relay hostname | `smtp.yourcompany.com` |
-| `smtp.port` | SMTP port | `587` |
-| `smtp.user` | SMTP username (if auth required) | `selfservice@yourcompany.com` |
-| `smtp.password` | SMTP password | *(marked as secret)* |
-| `smtp.tls` | Use STARTTLS | `true` |
-| `smtp.from` | Sender email address | `noreply@yourcompany.com` |
-| `smtp.from_name` | Sender display name | `ip·Solis` |
+See [Section 8](#8-entra-id-sso-portal-authentication) for the full Entra ID setup.
 
-#### Email Templates
-
-Navigate to **Admin > Email Templates** to customize notification emails.
-Default templates are created during migration. You can edit the subject line
-and body using `{{variable}}` placeholders.
-
-#### Portal Settings
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `portal.max_advance_days` | How far ahead users can schedule orders | `0` (unlimited) |
-| `portal.app_title` | Application title shown in the portal | `ip·Solis` |
-
-### Create your first Asset Type
+#### 5. Create your first asset type *(Essential)*
 
 1. Go to **Admin > Asset Types > New**
 2. Fill in the name, description, and category
@@ -429,7 +436,14 @@ and body using `{{variable}}` placeholders.
 5. Optionally restrict access with an Eligible Requestors group DN
 6. Save
 
-### Create Runbooks (if applicable)
+#### 6. Add at least one asset to the pool *(Essential)*
+
+Go to **Admin > Asset Pool > New** and add at least one asset.
+
+> For pure `capacity_pooled` asset types (quota without dedicated instances) this
+> step can be skipped.
+
+#### Set up Runbooks *(if applicable)*
 
 ip·Solis ships with a fully configured example runbook:
 **"Virtual Machine Recycler"** — a standalone runbook that includes all required
@@ -444,8 +458,18 @@ To create asset-type runbooks:
 2. Define the steps (PowerShell modules or built-in modules)
 3. Link the runbook to an asset type
 
-Any number of custom runbooks with any combination of steps can be created — there
-is no restriction to specific modules or templates.
+Any number of custom runbooks with any combination of steps can be created.
+
+#### Recommended next steps
+
+- **Microsoft Teams approval cards**: Go to **Admin > Settings → Email** and add a
+  Teams webhook URL — approvers receive an Adaptive Card with a one-click review
+  link in addition to email.
+- **Stream audit log to SIEM**: Configure a Splunk HEC or webhook endpoint under
+  **Admin > Settings → Compliance**.
+- **Issue per-integration API tokens**: Go to **Admin > API Tokens** to create named,
+  revocable bearer tokens for ServiceNow, scripts, or Prometheus — replaces the
+  shared `X-Admin-Key`.
 
 ---
 

@@ -364,9 +364,37 @@ Docker-Secrets oder ein Bind-Mount funktionieren beides.
 
 ### Konfigurationscheckliste
 
-Zu **Admin > Einstellungen** navigieren und Folgendes konfigurieren:
+Die In-App-Setup-Checkliste (Dashboard → **Setup checklist**) führt durch alle
+erforderlichen Schritte. Die Reihenfolge hier entspricht der Checkliste:
 
-#### Active Directory (Pflicht)
+#### 1. Anwendungstitel und Logo setzen *(Essential)*
+
+Zu **Admin > Einstellungen → Allgemein** navigieren:
+
+| Einstellung | Beschreibung |
+|---|---|
+| `app.title` | Anwendungsname im Portal und in E-Mails (Standard: `ip·Solis`) |
+| `app.logo` | Logo-Upload (PNG/SVG empfohlen) |
+
+#### 2. SMTP konfigurieren *(Essential)*
+
+Zu **Admin > Einstellungen → E-Mail** navigieren:
+
+| Einstellung | Beschreibung | Beispiel |
+|---|---|---|
+| `smtp.host` | SMTP-Relay-Hostname | `smtp.ihreunternehmen.de` |
+| `smtp.port` | SMTP-Port | `587` |
+| `smtp.user` | SMTP-Benutzername (falls Auth erforderlich) | `selfservice@ihreunternehmen.de` |
+| `smtp.password` | SMTP-Passwort | *(als Secret markiert)* |
+| `smtp.tls` | STARTTLS verwenden | `true` |
+| `smtp.from` | Absender-E-Mail-Adresse | `noreply@ihreunternehmen.de` |
+| `smtp.from_name` | Absender-Anzeigename | `ip·Solis` |
+
+Zu **Admin > E-Mail-Vorlagen** navigieren, um Benachrichtigungstexte anzupassen.
+
+#### 3. Active Directory verbinden *(Essential)*
+
+Zu **Admin > Einstellungen → Active Directory** navigieren:
 
 | Einstellung | Beschreibung | Beispiel |
 |---|---|---|
@@ -387,32 +415,12 @@ Zu **Admin > Einstellungen** navigieren und Folgendes konfigurieren:
 > Weitergehende Berechtigungen (z. B. auf Computerobjekte, OUs oder andere Attribute)
 > sind je nach verwendeten Runbooks und Modulen zusätzlich erforderlich.
 
-#### SMTP (Pflicht für Benachrichtigungen)
+#### 4. Portal-SSO via Entra ID aktivieren *(Essential)*
 
-| Einstellung | Beschreibung | Beispiel |
-|---|---|---|
-| `smtp.host` | SMTP-Relay-Hostname | `smtp.ihreunternehmen.de` |
-| `smtp.port` | SMTP-Port | `587` |
-| `smtp.user` | SMTP-Benutzername (falls Auth erforderlich) | `selfservice@ihreunternehmen.de` |
-| `smtp.password` | SMTP-Passwort | *(als Secret markiert)* |
-| `smtp.tls` | STARTTLS verwenden | `true` |
-| `smtp.from` | Absender-E-Mail-Adresse | `noreply@ihreunternehmen.de` |
-| `smtp.from_name` | Absender-Anzeigename | `ip·Solis` |
+Siehe [Sektion 8](#8-entra-id-sso-portal-authentifizierung) für die vollständige
+Entra-ID-Einrichtung.
 
-#### E-Mail-Vorlagen
-
-Zu **Admin > E-Mail-Vorlagen** navigieren, um Benachrichtigungs-E-Mails anzupassen.
-Standard-Vorlagen werden bei der Migration angelegt. Betreffzeile und Text können mit
-`{{variable}}`-Platzhaltern angepasst werden.
-
-#### Portal-Einstellungen
-
-| Einstellung | Beschreibung | Standard |
-|---|---|---|
-| `portal.max_advance_days` | Wie weit im Voraus Benutzer Bestellungen planen können | `0` (unbegrenzt) |
-| `portal.app_title` | Anwendungstitel im Portal | `ip·Solis` |
-
-### Ersten Asset-Typ anlegen
+#### 5. Ersten Asset-Typ anlegen *(Essential)*
 
 1. Zu **Admin > Asset-Typen > Neu** navigieren
 2. Name, Beschreibung und Kategorie ausfüllen
@@ -421,7 +429,14 @@ Standard-Vorlagen werden bei der Migration angelegt. Betreffzeile und Text könn
 5. Optional Zugriff mit einer Gruppe für berechtigte Antragsteller einschränken
 6. Speichern
 
-### Runbooks anlegen (falls zutreffend)
+#### 6. Assets zum Pool hinzufügen *(Essential)*
+
+Zu **Admin > Asset-Pool > Neu** navigieren und mindestens ein Asset anlegen.
+
+> Für reine `capacity_pooled`-Asset-Typen (Kontingent ohne dedizierte Instanz) kann
+> dieser Schritt übersprungen werden.
+
+#### Runbooks einrichten *(falls zutreffend)*
 
 ip·Solis wird mit einem vollständigen Beispiel-Runbook ausgeliefert:
 **„Virtual Machine Recycler"** — ein Standalone-Runbook, das alle erforderlichen
@@ -437,8 +452,18 @@ Eigene Runbooks für Asset-Typen anlegen:
 2. Schritte definieren (PowerShell-Module oder eingebaute Module)
 3. Das Runbook mit einem Asset-Typ verknüpfen
 
-Beliebig viele eigene Runbooks mit individuellen Schritt-Kombinationen sind möglich —
-es gibt keine Einschränkung auf bestimmte Module oder Vorlagen.
+Beliebig viele eigene Runbooks mit individuellen Schritt-Kombinationen sind möglich.
+
+#### Empfohlene weitere Schritte *(Recommended)*
+
+- **Microsoft Teams Genehmigungskarten**: Zu **Admin > Einstellungen → E-Mail** navigieren
+  und Teams-Webhook-URL hinterlegen — Genehmiger erhalten eine Adaptive Card mit
+  Ein-Klick-Freigabelink zusätzlich zur E-Mail.
+- **Audit-Log an SIEM streamen**: Unter **Admin > Einstellungen → Compliance** Splunk-HEC-
+  oder Webhook-Endpunkt konfigurieren.
+- **Per-Integration-API-Token ausstellen**: Unter **Admin > API-Tokens** benannte,
+  widerrufliche Bearer-Tokens für ServiceNow, Skripte oder Prometheus erstellen —
+  ersetzt den geteilten `X-Admin-Key`.
 
 ---
 
