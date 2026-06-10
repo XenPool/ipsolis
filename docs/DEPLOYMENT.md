@@ -276,9 +276,6 @@ ipsolis-beat-1   Up
 ipsolis-nginx         Up
 ```
 
-The beat container has no fixed `container_name` so it can be scaled
-for HA — run `docker compose up -d --scale beat=N` to add replicas.
-
 Verify the application:
 
 ```bash
@@ -725,6 +722,17 @@ services:
     deploy: { replicas: 1 }
     env_file: .env
 ```
+
+**Beat scaling**: the beat container has no fixed `container_name` so it can be
+replicated for HA:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --scale beat=2
+```
+
+> **Note**: Celery Beat is a singleton scheduler. Multiple beat replicas only make
+> sense with a distributed lock backend — `celery-redbeat` (already configured) uses
+> Redis locks to prevent duplicate task firing.
 
 **Liveness**: each worker registers with Celery's mingle-on-startup,
 which means a fresh worker is visible to Beat / other workers within
