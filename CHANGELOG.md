@@ -14,6 +14,12 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.5] — 2026-06-11
+
+### Changed
+
+- **Legal: SBOM annexes now reference THIRD-PARTY-LICENSES.md.** `AGB.md` Anlage 1 and `Terms-EN.md` Annex 1 intro text updated to declare `THIRD-PARTY-LICENSES.md` as the incorporated-by-reference source for full license texts and copyright notices; version reference updated to v0.6.4.
+
 ## [0.6.4] — 2026-06-11
 
 ### Changed
