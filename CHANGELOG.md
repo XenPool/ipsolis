@@ -14,6 +14,10 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.6] — 2026-06-11
+### Changed
+- **Legal: AGB and Terms revised (v2).** Sections 1–16 substantively rewritten (free/commercial-use distinction, scope of owed performance, liability structuring). Draft notice removed. Anlage 1 / Annex 1 SBOM table retained.
+
 ## [0.6.5] — 2026-06-11
 
 ### Changed
