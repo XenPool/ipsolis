@@ -6,7 +6,7 @@
 
 1. Geltungsbereich
 2. Vertragsgegenstand und Lizenzmodell
-3. Kostenlose / nicht-kommerzielle Nutzung
+3. Kostenfreie Nutzung
 4. Kommerzielle Lizenzierung
 5. Vertragsschluss
 6. Widerrufsrecht
@@ -26,62 +26,53 @@
 
 ## 1) Geltungsbereich
 
-**1.1** Diese Allgemeinen Geschäftsbedingungen (nachfolgend „AGB") der XenPool GmbH, Am Egernfeld 35, 85748 Garching (nachfolgend „Anbieter"), gelten für alle Rechtsbeziehungen im Zusammenhang mit der Nutzung der Software ip·Solis — sowohl in der kostenfreien nicht-kommerziellen als auch in der kostenpflichtigen kommerziellen Variante.
+**1.1** Diese Allgemeinen Geschäftsbedingungen (nachfolgend „AGB") der XenPool GmbH, Am Egernfeld 35, 85748 Garching (nachfolgend „Anbieter"), gelten für alle Rechtsbeziehungen im Zusammenhang mit der Nutzung der Software ip·Solis – sowohl in der kostenfreien als auch in der kostenpflichtigen kommerziellen Variante.
 
-**1.2** Für die kostenpflichtige kommerzielle Lizenzierung gilt ergänzend: Diese AGB gelten ausschließlich gegenüber Unternehmern (§ 14 BGB), d. h. natürlichen oder juristischen Personen oder rechtsfähigen Personengesellschaften, die beim Abschluss des Rechtsgeschäfts in Ausübung ihrer gewerblichen oder selbstständigen beruflichen Tätigkeit handeln. Der Abschluss von Lizenzverträgen mit Verbrauchern (§ 13 BGB) ist ausgeschlossen.
+**1.2** Für die kostenpflichtige kommerzielle Lizenzierung gilt ergänzend: Diese AGB gelten ausschließlich gegenüber Unternehmern (§ 14 BGB), d. h. natürlichen oder juristischen Personen oder rechtsfähigen Personengesellschaften, die beim Abschluss des Rechtsgeschäfts in Ausübung ihrer gewerblichen oder selbstständigen beruflichen Tätigkeit handeln, sowie gegenüber juristischen Personen des öffentlichen Rechts. Der Abschluss von Lizenzverträgen mit Verbrauchern (§ 13 BGB) ist ausgeschlossen.
 
 **1.3** ip·Solis ist eine Plattform zur Orchestrierung von IT-Asset-Lifecycle-Workflows für den professionellen Einsatz in Unternehmensumgebungen.
 
 **1.4** Der Einbeziehung eigener Geschäftsbedingungen des Kunden wird hiermit ausdrücklich widersprochen, es sei denn, es ist schriftlich etwas anderes vereinbart.
 
----
-
 ## 2) Vertragsgegenstand und Lizenzmodell
 
-**2.1** ip·Solis ist eine Software zur Orchestrierung von IT-Asset-Lifecycle-Prozessen. Der Quellcode ist unter https://github.com/XenPool/ipsolis öffentlich einsehbar und wird vom Nutzer während der Installation eigenständig von dort bezogen (Self-hosted, Docker-basiert). ip·Solis unterliegt der XenPool Commercial Source License v1.0 (nachfolgend „XCSL"), die dem Nutzer im Repository und auf der Website des Anbieters zugänglich ist und Bestandteil dieser AGB ist.
+**2.1** ip·Solis ist eine Software zur Orchestrierung von IT-Asset-Lifecycle-Prozessen. Der Quellcode ist unter https://github.com/XenPool/ipsolis öffentlich einsehbar und wird vom Nutzer während der Installation eigenständig von dort bezogen (Self-hosted, Docker-basiert). ip·Solis unterliegt der XenPool Commercial Source License v1.0 (nachfolgend „XCSL"), die dem Nutzer im Repository und auf der Website des Anbieters zugänglich ist und Bestandteil dieser AGB ist. Die XCSL ist eine quelloffene, aber nicht im Sinne der Open Source Initiative freie Lizenz (Source-Available).
 
 **2.2** Das Lizenzmodell ist zweigleisig:
 
-**(a) Nicht-kommerzielle Nutzung (kostenfrei):**
-Nutzung ohne Lizenzdatei für persönliche, bildungsbezogene, interne Forschungs- oder gemeinnützige Zwecke sowie zur Evaluierung (bis 30 Tage). Diese Nutzung ist unentgeltlich. Rechtsgrundlage: Schenkungsvertrag (§ 516 BGB).
+> **(a) Kostenfreie Nutzung:** Die kostenfreie Nutzung ohne Lizenzdatei ist beschränkt auf (i) die rein private Nutzung durch natürliche Personen außerhalb jeder gewerblichen, beruflichen, behördlichen oder sonstigen organisatorischen Tätigkeit, (ii) die zeitlich begrenzte Evaluierung für bis zu 30 Tage sowie (iii) die nicht-produktive Nutzung zu Forschungs- und Lehrzwecken an staatlich anerkannten Bildungs- und Forschungseinrichtungen. Diese Nutzung ist unentgeltlich. Rechtsgrundlage: Schenkungsvertrag (§ 516 BGB).
 
-**(b) Kommerzielle Nutzung (kostenpflichtig):**
-Jede Nutzung in einer Produktionsumgebung durch eine gewinnorientierte Organisation sowie jede umsatzgenerierende Nutzung oder Nutzung zur Erbringung von Leistungen gegenüber zahlenden Kunden setzt eine gültige kostenpflichtige Lizenzdatei voraus. Rechtsgrundlage: Mietvertrag über Software (§§ 535 ff. BGB).
+> **(b) Kommerzielle (kostenpflichtige) Nutzung:** Jede über lit. (a) hinausgehende Nutzung setzt eine gültige kostenpflichtige Lizenzdatei voraus. Kommerziell ist insbesondere jeder produktive oder betriebliche Einsatz der Software im Rahmen einer gewerblichen, freiberuflichen, behördlichen oder sonstigen organisatorischen Tätigkeit – unabhängig von einer Gewinnerzielungsabsicht. Dies umfasst ausdrücklich auch die Nutzung durch juristische Personen des öffentlichen Rechts (z. B. Städte, Gemeinden, Behörden, Körperschaften und Anstalten des öffentlichen Rechts) sowie durch steuerbegünstigte oder gemeinnützige Körperschaften. Rechtsgrundlage: Mietvertrag über Software (§§ 535 ff. BGB).
 
-**2.3** Vertragsgegenstand der kommerziellen Lizenzierung ist die Einräumung des Rechts zur kommerziellen Nutzung durch Ausstellung einer kryptographisch signierten Lizenzdatei (nachfolgend „Lizenzdatei" oder „.lic-Datei"). Die Lizenzdatei aktiviert die Nutzung der Software im kommerziellen Produktivbetrieb und definiert den Umfang der erworbenen Lizenz (Laufzeit, lizenzierte Instanzen, freigeschaltete Features).
+**2.3** Vertragsgegenstand der kommerziellen Lizenzierung ist die zeitweise Überlassung der lizenzierten Software zur kommerziellen Nutzung im dokumentierten Funktionsumfang, freigeschaltet durch eine kryptographisch signierte Lizenzdatei (nachfolgend „Lizenzdatei" oder „.lic-Datei"). Die Lizenzdatei definiert den Umfang der erworbenen Lizenz (Laufzeit, lizenzierte Instanzen, freigeschaltete Features).
 
 **2.4** ip·Solis basiert auf Open-Source-Komponenten Dritter. Eine vollständige Aufstellung dieser Komponenten und ihrer jeweiligen Lizenzbedingungen ist als Anlage 1 (Open-Source-Komponenten) Bestandteil dieser AGB und wird im Repository fortlaufend gepflegt. Die Lizenzbedingungen dieser Komponenten bleiben von diesen AGB unberührt.
 
-**2.5** Der Anbieter schuldet ausschließlich die Bereitstellung der Lizenzdatei und die Zugänglichkeit des GitHub-Repositorys. Installation, Konfiguration, Betrieb und Wartung obliegen ausschließlich dem Kunden.
+**2.5** Der Anbieter schuldet die Bereitstellung der lizenzierten Software im jeweils dokumentierten Funktionsumfang, die Ausstellung einer gültigen Lizenzdatei sowie die Zugänglichkeit des Bezugs-Repositorys. Installation, Konfiguration, Betrieb, Wartung und die Bereitstellung einer geeigneten Betriebsumgebung obliegen ausschließlich dem Kunden (Ziff. 10).
 
----
+## 3) Kostenfreie Nutzung
 
-## 3) Kostenlose / nicht-kommerzielle Nutzung
+**3.1** Die unentgeltliche Nutzung von ip·Solis nach Ziff. 2.2 lit. (a) erfolgt auf Basis eines Schenkungsvertrags gemäß § 516 BGB. Der Anbieter stellt die Software ohne Gegenleistung zur Verfügung.
 
-**3.1** Die unentgeltliche Nutzung von ip·Solis erfolgt auf Basis eines Schenkungsvertrags gemäß § 516 BGB. Der Anbieter stellt die Software ohne Gegenleistung zur Verfügung.
-
-**3.2** Haftung bei unentgeltlicher Nutzung: Der Anbieter haftet gemäß § 521 BGB nur für Vorsatz und grobe Fahrlässigkeit. Eine weitergehende Haftung — insbesondere für einfache Fahrlässigkeit, Betriebsunterbrechungen, Datenverluste oder entgangenen Gewinn — ist ausgeschlossen.
+**3.2** Haftung bei unentgeltlicher Nutzung: Der Anbieter haftet gemäß § 521 BGB nur für Vorsatz und grobe Fahrlässigkeit. Eine weitergehende Haftung – insbesondere für einfache Fahrlässigkeit, Betriebsunterbrechungen, Datenverluste oder entgangenen Gewinn – ist ausgeschlossen.
 
 **3.3** Mängelhaftung bei unentgeltlicher Nutzung: Der Anbieter haftet für Sach- und Rechtsmängel gemäß § 524 BGB ausschließlich dann, wenn er einen Mangel bei Überlassung der Software arglistig verschwiegen hat. Eine darüberhinausgehende Mängelhaftung besteht nicht.
 
 **3.4** Der Anbieter ist nicht verpflichtet, Updates, Patches oder Support für die kostenfreie Nutzung bereitzustellen.
 
----
-
 ## 4) Kommerzielle Lizenzierung
 
-**4.1** Die kommerzielle Nutzung erfolgt auf Basis eines Mietvertrags über Software gemäß §§ 535 ff. BGB. Der Anbieter schuldet während der Vertragslaufzeit die Bereitstellung einer gültigen Lizenzdatei, die die vereinbarte kommerzielle Nutzung freischaltet.
+**4.1** Die kommerzielle Nutzung erfolgt auf Basis eines Mietvertrags über Software gemäß §§ 535 ff. BGB. Der Anbieter schuldet während der Vertragslaufzeit die Bereitstellung der lizenzierten Software im dokumentierten Funktionsumfang sowie einer gültigen Lizenzdatei, die die vereinbarte kommerzielle Nutzung freischaltet.
 
 **4.2** Ausschluss der verschuldensunabhängigen Haftung (§ 536a BGB): Die gesetzliche verschuldensunabhängige Haftung des Vermieters für anfängliche Mängel gemäß § 536a Abs. 1 BGB wird hiermit ausdrücklich ausgeschlossen. Dies gilt insbesondere für Mängel der Software, die bei Übergabe der Lizenzdatei bereits vorhanden, aber für den Anbieter nicht erkennbar waren. Der Anbieter haftet in diesen Fällen nur bei Vorsatz oder grober Fahrlässigkeit.
 
 **4.3** Mängelrechte des Kunden bei kommerzieller Lizenz setzen voraus, dass:
+
 - der Kunde den Mangel reproduzierbar beschreibt und dem Anbieter relevante Diagnosedaten (insbesondere vollständige Container-Logs, z. B. aus `docker logs` und `docker compose logs`) unverzüglich zur Verfügung stellt, und
 - der Mangel nicht auf eine vom Kunden vorgenommene Modifikation der Software, der Docker-Images oder der Konfiguration zurückzuführen ist, und
 - der Kunde die technischen Systemvoraussetzungen gemäß Ziff. 10.1 vollständig einhält.
 
-**4.4** Ablauf der Lizenzdatei: Nach Ablauf einer zeitlich befristeten Lizenzdatei gewährt der Anbieter eine Kulanzfrist von 30 Tagen, in der die Software weiterhin im Produktivbetrieb genutzt werden kann. Nach Ablauf dieser Frist wechselt die Software automatisch in den Evaluierungsmodus. Der Anbieter haftet nicht für Schäden oder Betriebsunterbrechungen, die durch den automatischen Wechsel in den Evaluierungsmodus nach Lizenzablauf entstehen. Der Kunde ist verpflichtet, rechtzeitig vor Ablauf eine Verlängerung zu beauftragen.
-
----
+**4.4** Ablauf der Lizenzdatei: Nach Ablauf einer zeitlich befristeten Lizenzdatei gewährt der Anbieter eine Kulanzfrist von 30 Tagen, in der die Software weiterhin im Produktivbetrieb genutzt werden kann. Nach Ablauf dieser Frist wechselt die Software automatisch in den Evaluierungsmodus. Der Kunde behält auch im Evaluierungsmodus Zugriff auf seine eigenen, in der Betriebsumgebung gespeicherten Daten und kann diese exportieren. Der Anbieter haftet nicht für Schäden oder Betriebsunterbrechungen, die durch den automatischen Wechsel in den Evaluierungsmodus nach Lizenzablauf entstehen. Der Kunde ist verpflichtet, rechtzeitig vor Ablauf eine Verlängerung zu beauftragen.
 
 ## 5) Vertragsschluss (kommerzielle Lizenz)
 
@@ -89,24 +80,17 @@ Jede Nutzung in einer Produktionsumgebung durch eine gewinnorientierte Organisat
 
 **5.2** Der Kunde gibt ein verbindliches Angebot per E-Mail, Bestellformular oder über das ipsolis-web-Portal ab.
 
-**5.3** Der Vertrag kommt zustande, wenn der Anbieter das Angebot annimmt durch:
-- schriftliche Auftragsbestätigung per E-Mail, oder
-- Bereitstellung der Lizenzdatei, oder
-- Zahlungsaufforderung.
-
-Für die Annahmefrist gilt § 147 Abs. 2 BGB.
+**5.3** Der Vertrag kommt zustande, wenn der Anbieter das Angebot annimmt durch schriftliche Auftragsbestätigung per E-Mail, durch Bereitstellung der Lizenzdatei oder durch Zahlungsaufforderung. Für die Annahmefrist gilt § 147 Abs. 2 BGB.
 
 **5.4** Vertragssprache: Deutsch; auf ausdrücklichen Wunsch auch Englisch. Im Widerspruchsfall gilt die deutsche Fassung.
 
 **5.5** Der Kunde stellt sicher, dass die angegebene E-Mail-Adresse korrekt und erreichbar ist und E-Mails des Anbieters empfangen werden können (ggf. Spam-Filter anpassen).
 
----
+**5.6** Da der Vertrag ausschließlich mit Unternehmern und juristischen Personen des öffentlichen Rechts geschlossen wird, werden die Pflichten nach § 312i Abs. 1 S. 1 Nr. 1 bis 3 sowie S. 2 BGB (Pflichten im elektronischen Geschäftsverkehr) gemäß § 312i Abs. 2 BGB abbedungen.
 
 ## 6) Widerrufsrecht
 
-Da ip·Solis im Rahmen der kommerziellen Lizenzierung ausschließlich an Unternehmer vertrieben wird (vgl. Ziff. 1.2) und im Übrigen als unentgeltliche Nutzung zugänglich ist, besteht kein gesetzliches Widerrufsrecht nach §§ 312g, 355 ff. BGB.
-
----
+Da ip·Solis im Rahmen der kommerziellen Lizenzierung ausschließlich an Unternehmer und juristische Personen des öffentlichen Rechts vertrieben wird (vgl. Ziff. 1.2) und im Übrigen als unentgeltliche Nutzung zugänglich ist, besteht kein gesetzliches Widerrufsrecht nach §§ 312g, 355 ff. BGB.
 
 ## 7) Preise und Zahlungsbedingungen
 
@@ -122,8 +106,6 @@ Da ip·Solis im Rahmen der kommerziellen Lizenzierung ausschließlich an Unterne
 
 **7.6** Bei Kunden außerhalb der Europäischen Union können zusätzliche Kosten entstehen (z. B. Bankgebühren, Wechselkursdifferenzen), die vom Kunden zu tragen sind.
 
----
-
 ## 8) Bereitstellung der Lizenzdatei
 
 **8.1** Nach Zahlungseingang oder nach gesonderter Vereinbarung stellt der Anbieter dem Kunden die Lizenzdatei (.lic) per E-Mail oder über das ipsolis-web-Portal zur Verfügung. Die Lizenzdatei ist kryptographisch signiert (Ed25519) und enthält alle relevanten Lizenzparameter.
@@ -136,8 +118,6 @@ Da ip·Solis im Rahmen der kommerziellen Lizenzierung ausschließlich an Unterne
 
 **8.5** Der Anbieter übernimmt keine Gewähr für die ununterbrochene Verfügbarkeit des GitHub-Repositorys, stellt jedoch im Falle eines dauerhaften Ausfalls eine alternative Bezugsquelle zur Verfügung.
 
----
-
 ## 9) Einräumung von Nutzungsrechten
 
 **9.1** Mit vollständiger Zahlung der Lizenzgebühr räumt der Anbieter dem Kunden ein nicht ausschließliches, nicht übertragbares Recht ein, ip·Solis im Rahmen der erworbenen Lizenzkategorie im eigenen Geschäftsbetrieb zu nutzen.
@@ -148,7 +128,7 @@ Da ip·Solis im Rahmen der kommerziellen Lizenzierung ausschließlich an Unterne
 
 **9.4** Die Nutzung von ip·Solis zum Aufbau eines konkurrierenden gehosteten oder verwalteten Dienstes, der Dritten angeboten wird, ist ausdrücklich ausgeschlossen.
 
-**9.5** Der Kunde ist verpflichtet, alle Urheberrechts-, Marken- und Lizenzhinweise in der Software unverändert zu belassen.
+**9.5** Der Kunde ist verpflichtet, alle Urheberrechts-, Marken- und Lizenzhinweise in der Software unverändert zu belassen. Die Lizenz räumt keine Rechte an Marken, Namen oder Logos des Anbieters, insbesondere nicht an der Bezeichnung „ip·Solis", ein.
 
 **9.6** Die Rechtseinräumung wird erst mit vollständigem Eingang der geschuldeten Vergütung wirksam.
 
@@ -156,11 +136,10 @@ Da ip·Solis im Rahmen der kommerziellen Lizenzierung ausschließlich an Unterne
 
 **9.8** Die gesetzlichen Regelungen zur zwingenden Nutzung nach § 69d UrhG bleiben unberührt.
 
----
-
 ## 10) Pflichten und Mitwirkung des Kunden
 
 **10.1** Systemvoraussetzungen: Der Kunde ist allein verantwortlich für eine Betriebsumgebung, die den vom Anbieter dokumentierten Systemvoraussetzungen entspricht. Dies umfasst mindestens:
+
 - eine unterstützte Linux-Distribution mit aktuellem Kernel,
 - Docker Engine in einer vom Anbieter freigegebenen Version und Docker Compose V2,
 - ausreichende CPU-, RAM- und Speicherressourcen gemäß Installationsdokumentation,
@@ -171,9 +150,10 @@ Mängelansprüche entfallen, wenn der Mangel auf die Nichterfüllung dieser Vora
 
 **10.2** Keine eigenmächtigen Änderungen an Infrastruktur oder Images: Der Kunde darf die vom Anbieter bereitgestellten Docker-Images nicht eigenmächtig modifizieren, sofern dies nicht ausdrücklich in der Dokumentation vorgesehen ist. Mängelansprüche entfallen bei Schäden, die durch Modifikationen an Images, Containern oder der Konfiguration entstanden sind, die nicht durch den Anbieter freigegeben wurden.
 
-**10.3** Datensicherung: Da ip·Solis on-premises beim Kunden betrieben wird und alle Daten in der Docker-Umgebung des Kunden liegen, ist der Kunde allein verantwortlich für regelmäßige, geprüfte Datensicherungen aller persistenten Daten — insbesondere der PostgreSQL-Datenbank-Volumes, Konfigurationsdateien und Lizenzdateien. Die Sicherungen sind mindestens täglich durchzuführen und auf einem vom Produktivsystem getrennten Medium zu speichern. Der Anbieter haftet bei Datenverlust ausschließlich für den Aufwand, der bei ordnungsgemäß durchgeführter Datensicherung zur Wiederherstellung des letzten gesicherten Zustands erforderlich gewesen wäre.
+**10.3** Datensicherung: Da ip·Solis on-premises beim Kunden betrieben wird und alle Daten in der Docker-Umgebung des Kunden liegen, ist der Kunde allein verantwortlich für regelmäßige, geprüfte Datensicherungen aller persistenten Daten – insbesondere der PostgreSQL-Datenbank-Volumes, Konfigurationsdateien und Lizenzdateien. Die Sicherungen sind mindestens täglich durchzuführen und auf einem vom Produktivsystem getrennten Medium zu speichern. Der Anbieter haftet bei Datenverlust ausschließlich für den Aufwand, der bei ordnungsgemäß durchgeführter Datensicherung zur Wiederherstellung des letzten gesicherten Zustands erforderlich gewesen wäre.
 
 **10.4** Mitwirkung bei Mängelbeseitigung: Im Falle einer Störung ist der Kunde verpflichtet, dem Anbieter zur Reproduktion und Analyse vollständige Diagnosedaten unverzüglich bereitzustellen. Dazu gehören insbesondere:
+
 - vollständige Container-Logs (`docker logs <container>` bzw. `docker compose logs`),
 - relevante Konfigurationsdateien (ohne Credentials),
 - eine reproduzierbare Beschreibung des Fehlerbilds inkl. der verwendeten Software-Version (Git-Commit-Hash oder Image-Tag).
@@ -184,15 +164,11 @@ Ohne diese Mitwirkung ist der Anbieter von der Pflicht zur unverzüglichen Mäng
 
 **10.6** Lizenzdatei: Der Kunde bewahrt die Lizenzdatei sicher auf und schützt sie vor unbefugtem Zugriff. Er stellt sicher, dass die Lizenzdatei rechtzeitig vor Ablauf erneuert wird (vgl. Ziff. 4.4).
 
----
-
 ## 11) Mängelhaftung
 
-**11.1** Die Mängelhaftung richtet sich nach dem Nutzungsmodell:
-- Bei unentgeltlicher Nutzung: ausschließlich nach Ziff. 3.2 und 3.3 (§§ 521, 524 BGB).
-- Bei kommerzieller Lizenzierung: nach den nachfolgenden Regelungen sowie Ziff. 4.2 und 4.3.
+**11.1** Die Mängelhaftung richtet sich nach dem Nutzungsmodell: bei unentgeltlicher Nutzung ausschließlich nach Ziff. 3.2 und 3.3 (§§ 521, 524 BGB); bei kommerzieller Lizenzierung nach den nachfolgenden Regelungen sowie Ziff. 4.2 und 4.3.
 
-**11.2** Bei der kommerziellen Lizenz bezieht sich die Mängelhaftung auf die Lizenzdatei selbst (korrekte Ausstellung, Gültigkeit, Übereinstimmung mit dem bestellten Lizenzumfang). Für Fehlfunktionen der Software gelten Mängelansprüche nur dann, wenn die Voraussetzungen nach Ziff. 4.3 vollständig erfüllt sind.
+**11.2** Bei der kommerziellen Lizenz schuldet der Anbieter die Mangelfreiheit der lizenzierten Software im jeweils dokumentierten Funktionsumfang sowie die korrekte Ausstellung, Gültigkeit und Übereinstimmung der Lizenzdatei mit dem bestellten Lizenzumfang. Mängelansprüche wegen Fehlfunktionen der Software bestehen nur, wenn die Voraussetzungen nach Ziff. 4.3 vollständig erfüllt sind. Ein Mangel liegt nicht vor bei unerheblichen Abweichungen von der dokumentierten Beschaffenheit oder bei Beeinträchtigungen, die aus der Betriebsumgebung, der Konfiguration oder Drittsystemen des Kunden resultieren.
 
 **11.3** Die verschuldensunabhängige Haftung für anfängliche Mängel (§ 536a Abs. 1 BGB) ist gemäß Ziff. 4.2 ausdrücklich ausgeschlossen.
 
@@ -200,28 +176,24 @@ Ohne diese Mitwirkung ist der Anbieter von der Pflicht zur unverzüglichen Mäng
 
 **11.5** Von der Mängelhaftung ausgeschlossen sind Fehlfunktionen, die auf Open-Source-Drittkomponenten zurückzuführen sind, solange der Anbieter die branchenübliche Sorgfalt (insbesondere regelmäßige Dependency-Scans) eingehalten hat.
 
----
-
 ## 12) Haftungsbeschränkung
 
-**12.1** Der Anbieter haftet unbeschränkt bei Vorsatz, grober Fahrlässigkeit sowie bei Verletzung von Leben, Körper und Gesundheit.
+**12.1** Der Anbieter haftet unbeschränkt bei Vorsatz, grober Fahrlässigkeit sowie bei Verletzung von Leben, Körper und Gesundheit. Unberührt bleibt die Haftung nach dem Produkthaftungsgesetz und für eine vom Anbieter übernommene Garantie.
 
-**12.2** Bei leichter Fahrlässigkeit haftet der Anbieter nur bei Verletzung wesentlicher Vertragspflichten (Kardinalpflichten). In diesen Fällen ist die Haftung der Höhe nach begrenzt auf die Summe der Lizenzgebühren, die der Kunde für die dem Schadenseintritt vorausgehenden zwölf Monate tatsächlich an den Anbieter gezahlt hat (Jahresbetrag).
+**12.2** Bei leichter Fahrlässigkeit haftet der Anbieter nur bei Verletzung wesentlicher Vertragspflichten (Kardinalpflichten), deren Erfüllung die ordnungsgemäße Durchführung des Vertrags überhaupt erst ermöglicht und auf deren Einhaltung der Kunde regelmäßig vertraut. In diesen Fällen ist die Haftung auf den vertragstypischen, vorhersehbaren Schaden begrenzt, höchstens jedoch auf die Summe der Lizenzgebühren, die der Kunde in den dem Schadenseintritt vorausgehenden zwölf Monaten tatsächlich an den Anbieter gezahlt hat (Jahresbetrag).
 
-**12.3** Eine weitergehende Haftung ist ausgeschlossen. Insbesondere übernimmt der Anbieter keine Haftung für:
+**12.3** Unbeschadet der unbeschränkten Haftung nach Ziff. 12.1 und der Haftung nach Ziff. 12.2 ist eine weitergehende Haftung des Anbieters ausgeschlossen. Im Rahmen der Haftung für leichte Fahrlässigkeit übernimmt der Anbieter insbesondere keine Haftung für:
+
 - Datenverlust oder Betriebsunterbrechungen infolge unzureichender Datensicherung durch den Kunden (vgl. Ziff. 10.3),
 - Schäden durch die Linux-Konfiguration, fehlerhafte Docker-Daemons, Netzwerkeinstellungen oder unzureichende Hardware des Kunden,
 - Schäden durch Open-Source-Drittkomponenten außerhalb des Einflussbereichs des Anbieters,
 - Schäden durch eigenmächtige Modifikationen des Kunden,
 - Schäden durch Sicherheitslücken infolge unterlassener Updates durch den Kunden (vgl. Ziff. 10.5),
-- Betriebsunterbrechungen durch den automatischen Wechsel in den Evaluierungsmodus nach Lizenzablauf (vgl. Ziff. 4.4),
-- entgangenen Gewinn oder mittelbare Schäden.
+- Betriebsunterbrechungen durch den automatischen Wechsel in den Evaluierungsmodus nach Lizenzablauf (vgl. Ziff. 4.4).
 
 **12.4** Diese Haftungsbeschränkungen gelten auch für die persönliche Haftung von Mitarbeitern, Vertretern und Erfüllungsgehilfen des Anbieters.
 
 **12.5** Für die unentgeltliche Nutzung gelten ausschließlich die Haftungsregelungen aus Ziff. 3.2 und 3.3.
-
----
 
 ## 13) Laufzeit und Kündigung (kommerzielle Lizenz)
 
@@ -229,30 +201,21 @@ Ohne diese Mitwirkung ist der Anbieter von der Pflicht zur unverzüglichen Mäng
 
 **13.2** Dauerhaftlizenzen (Perpetual Licenses) sind zeitlich unbegrenzt und bedürfen keiner Kündigung, solange die Nutzungsbedingungen eingehalten werden.
 
-**13.3** Das Recht zur außerordentlichen Kündigung aus wichtigem Grund bleibt unberührt. Ein wichtiger Grund liegt insbesondere vor bei:
-- schwerwiegender oder wiederholter Verletzung der Nutzungsrechte gemäß Ziff. 9,
-- Zahlungsverzug von mehr als 60 Tagen trotz Mahnung,
-- Eröffnung eines Insolvenzverfahrens über das Vermögen des Kunden oder Ablehnung mangels Masse.
+**13.3** Das Recht zur außerordentlichen Kündigung aus wichtigem Grund bleibt unberührt. Ein wichtiger Grund liegt insbesondere vor bei schwerwiegender oder wiederholter Verletzung der Nutzungsrechte gemäß Ziff. 9, bei Zahlungsverzug von mehr als 60 Tagen trotz Mahnung sowie bei Eröffnung eines Insolvenzverfahrens über das Vermögen des Kunden oder Ablehnung mangels Masse.
 
-**13.4** Mit Beendigung des Vertragsverhältnisses — aus welchem Grund auch immer — sind alle Installationen der Software zu deinstallieren und alle Lizenzdateien unwiderruflich zu löschen. Der Kunde bestätigt dies dem Anbieter auf Verlangen in Textform. Die Nutzung der Software nach Vertragsende ohne gültige Lizenzdatei stellt eine Urheberrechtsverletzung dar.
-
----
+**13.4** Mit Beendigung des Vertragsverhältnisses – aus welchem Grund auch immer – sind alle Installationen der Software zu deinstallieren und alle Lizenzdateien unwiderruflich zu löschen. Der Kunde bestätigt dies dem Anbieter auf Verlangen in Textform. Die Nutzung der Software nach Vertragsende ohne gültige Lizenzdatei stellt eine Urheberrechtsverletzung dar.
 
 ## 14) Anwendbares Recht
 
 Für sämtliche Rechtsbeziehungen der Parteien gilt das Recht der Bundesrepublik Deutschland unter Ausschluss des UN-Kaufrechts (CISG) und der Kollisionsnormen des internationalen Privatrechts.
 
----
-
 ## 15) Gerichtsstand
 
 Ausschließlicher Gerichtsstand für alle Streitigkeiten aus diesem Vertrag ist München, sofern der Kunde Kaufmann, juristische Person des öffentlichen Rechts oder öffentlich-rechtliches Sondervermögen ist oder keinen allgemeinen Gerichtsstand in Deutschland hat. Der Anbieter ist berechtigt, den Kunden auch an dessen Gerichtsstand zu verklagen.
 
----
-
 ## 16) Alternative Streitbeilegung
 
-Der Anbieter ist zur Teilnahme an einem Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle weder verpflichtet noch bereit. Da ip·Solis ausschließlich an Unternehmer vertrieben wird (vgl. Ziff. 1.4), findet die EU-Verordnung Nr. 524/2013 über Online-Streitbeilegung keine Anwendung.
+Der Anbieter ist zur Teilnahme an einem Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle weder verpflichtet noch bereit. Da ip·Solis ausschließlich an Unternehmer und juristische Personen des öffentlichen Rechts vertrieben wird (vgl. Ziff. 1.2), findet die EU-Verordnung Nr. 524/2013 über Online-Streitbeilegung keine Anwendung.
 
 ---
 
