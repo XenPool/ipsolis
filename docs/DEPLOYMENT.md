@@ -502,6 +502,10 @@ Any number of custom runbooks with any combination of steps can be created.
   revocable bearer tokens for ServiceNow, scripts, or Prometheus — replaces the
   shared `X-Admin-Key`.
 
+> **After a DB restore:** The `api_tokens` table is restored along with the database.
+> Review all tokens under **Admin > API Tokens** — revoke any old or unused tokens
+> and issue new, dedicated tokens for active integrations only.
+
 ---
 
 ## 8. Entra ID SSO (Portal Authentication)

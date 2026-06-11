@@ -497,6 +497,10 @@ Beliebig viele eigene Runbooks mit individuellen Schritt-Kombinationen sind mög
   widerrufliche Bearer-Tokens für ServiceNow, Skripte oder Prometheus erstellen —
   ersetzt den geteilten `X-Admin-Key`.
 
+> **Nach einem DB-Restore:** Die `api_tokens`-Tabelle wird mit wiederhergestellt.
+> Unter **Admin > API-Tokens** alle Tokens prüfen — alte oder nicht mehr benötigte
+> Tokens widerrufen und nur neue, dedizierte Tokens für aktive Integrationen ausstellen.
+
 ---
 
 ## 8. Entra ID SSO (Portal-Authentifizierung)
