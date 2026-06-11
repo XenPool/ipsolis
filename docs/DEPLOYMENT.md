@@ -98,8 +98,8 @@ you start the stack.
 Copy the example file and edit it:
 
 ```bash
-cp .env.example .env
-nano .env
+sudo cp .env.example .env
+sudo nano .env
 ```
 
 ### Required settings to change

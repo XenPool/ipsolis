@@ -95,8 +95,8 @@ Die Docker-Images (`ghcr.io/xenpool/ipsolis-api` und `ghcr.io/xenpool/ipsolis-wo
 Beispieldatei kopieren und bearbeiten:
 
 ```bash
-cp .env.example .env
-nano .env
+sudo cp .env.example .env
+sudo nano .env
 ```
 
 ### Pflichtfelder
