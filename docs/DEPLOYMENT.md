@@ -20,6 +20,9 @@ This guide walks you through setting up the ip·Solis platform on a fresh on-pre
 11. [Updating to a New Version](#11-updating-to-a-new-version)
 12. [High-Availability Deployments](#12-high-availability-deployments)
 13. [Troubleshooting](#13-troubleshooting)
+14. [Clean Reset (Test Environments)](#14-clean-reset-test-environments)
+
+---
 
 ---
 
@@ -75,6 +78,11 @@ Inbound: ports **80** and **443** must be reachable from your users' browsers.
 
 ## 2. Get the Software
 
+> **Fresh environment recommended:** Docker volumes (database data) survive
+> `rm -rf /opt/ipsolis` — they live under `/var/lib/docker/volumes/` and persist
+> until explicitly removed. For a clean first install, ensure no old volumes exist.
+> See [Clean Reset (Test Environments)](#14-clean-reset-test-environments).
+
 Clone the repository and pull the images — no authentication required:
 
 ```bash
@@ -98,8 +106,8 @@ you start the stack.
 Copy the example file and edit it:
 
 ```bash
-cp .env.example .env
-nano .env
+sudo cp .env.example .env
+sudo nano .env
 ```
 
 ### Required settings to change
@@ -113,8 +121,8 @@ API_SECRET_KEY=<random-string-min-32-chars>
 WEBHOOK_SECRET_TOKEN=<random-string>
 ADMIN_API_KEY=<random-string-min-32-chars>
 
-# CORS -- set to your production domain
-CORS_ORIGINS=https://selfservice.yourcompany.com
+# CORS -- set to your production domain  ← replace YOUR_HOSTNAME.YOUR_COMPANY.COM
+CORS_ORIGINS=https://YOUR_HOSTNAME.YOUR_COMPANY.COM
 FLOWER_PASSWORD=<strong-password>
 ```
 
@@ -142,26 +150,49 @@ sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
 # Install the local CA into your system trust store
 sudo mkcert -install
 
-# Generate the certificate for your hostname
+# Generate the certificate for your hostname  ← replace YOUR_HOSTNAME.YOUR_COMPANY.COM
 sudo mkdir -p certs
-sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem selfservice.yourcompany.com
+sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem YOUR_HOSTNAME.YOUR_COMPANY.COM
 ```
 
 > **Important**: For browsers on other machines to trust this certificate, you must
 > distribute the root CA (`mkcert -CAROOT` shows the path) to client machines via
 > Group Policy or your enterprise CA trust store.
 
+**Installing the root CA on a Windows client:**
+
+```bash
+# On the server — make the root CA available for download
+sudo cp $(sudo mkcert -CAROOT)/rootCA.pem /tmp/ipsolis-rootCA.pem
+sudo chmod 644 /tmp/ipsolis-rootCA.pem
+```
+
+Copy the file to your Windows laptop (SCP, USB, etc.), then:
+
+**Option 1 — via double-click:**
+1. Rename the file to `ipsolis-rootCA.crt`
+2. Double-click → **Install Certificate**
+3. **Local Machine** → **Trusted Root Certification Authorities**
+4. Restart your browser
+
+**Option 2 — via PowerShell (as Administrator):**
+```powershell
+certutil -addstore -f "ROOT" ipsolis-rootCA.crt
+```
+
+After installation Chrome, Edge and Firefox (using the Windows trust store) will trust the certificate without warnings.
+
 ### Option B: Certificate from your Enterprise CA (Recommended for production)
 
 If your organization runs an internal Certificate Authority (e.g., Active Directory Certificate Services):
 
-1. Generate a CSR on the server:
+1. Generate a CSR on the server: *(replace YOUR_HOSTNAME.YOUR_COMPANY.COM)*
    ```bash
    sudo mkdir -p certs
    sudo openssl req -new -newkey rsa:2048 -nodes \
      -keyout certs/key.pem \
      -out certs/server.csr \
-     -subj "/CN=selfservice.yourcompany.com"
+     -subj "/CN=YOUR_HOSTNAME.YOUR_COMPANY.COM"
    ```
 2. Submit `certs/server.csr` to your CA and obtain the signed certificate.
 3. Save the signed certificate as `certs/cert.pem`.
@@ -176,12 +207,12 @@ If your server is publicly accessible, you can use free certificates from Let's 
 
 ```bash
 sudo apt install -y certbot
-sudo certbot certonly --standalone -d selfservice.yourcompany.com
+sudo certbot certonly --standalone -d YOUR_HOSTNAME.YOUR_COMPANY.COM  # ← replace
 
 # Symlink into the certs directory
 sudo mkdir -p certs
-sudo ln -sf /etc/letsencrypt/live/selfservice.yourcompany.com/fullchain.pem certs/cert.pem
-sudo ln -sf /etc/letsencrypt/live/selfservice.yourcompany.com/privkey.pem certs/key.pem
+sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/fullchain.pem certs/cert.pem
+sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/privkey.pem certs/key.pem
 ```
 
 #### Set up auto-renewal (Option C only)
@@ -196,10 +227,10 @@ echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx ngi
 
 ### Configure nginx
 
-The repository already ships a ready-to-use `nginx/nginx.conf` with the placeholder `YOUR_HOSTNAME`. Replace both occurrences of the placeholder with your actual hostname (`sed` with the `g` flag handles both in one pass):
+The repository already ships a ready-to-use `nginx/nginx.conf` with the placeholder `YOUR_HOSTNAME.YOUR_COMPANY.COM`. Replace it with your actual FQDN (`sed` handles both occurrences in one pass):
 
 ```bash
-sudo sed -i 's/YOUR_HOSTNAME/selfservice.yourcompany.com/g' nginx/nginx.conf
+sudo sed -i 's/YOUR_HOSTNAME.YOUR_COMPANY.COM/ipsolis.acme.com/g' nginx/nginx.conf
 ```
 
 The file will look like this afterwards (for reference):
@@ -207,13 +238,13 @@ The file will look like this afterwards (for reference):
 ```nginx
 server {
     listen 80;
-    server_name selfservice.yourcompany.com;
+    server_name YOUR_HOSTNAME.YOUR_COMPANY.COM;
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl;
-    server_name selfservice.yourcompany.com;
+    server_name YOUR_HOSTNAME.YOUR_COMPANY.COM;
 
     ssl_certificate     /etc/nginx/certs/cert.pem;
     ssl_certificate_key /etc/nginx/certs/key.pem;
@@ -280,10 +311,10 @@ Verify the application:
 
 ```bash
 # Direct API health check
-curl -f http://localhost:8000/health
+curl -f http://localhost:8000/health | python3 -m json.tool
 
 # Through nginx (HTTPS)
-curl -fsk https://selfservice.yourcompany.com/health
+curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health | python3 -m json.tool
 ```
 
 ---
@@ -292,7 +323,7 @@ curl -fsk https://selfservice.yourcompany.com/health
 
 ### First-run admin account (RBAC)
 
-Open **https://selfservice.yourcompany.com/ui/** in your browser. On
+Open **https://YOUR_HOSTNAME.YOUR_COMPANY.COM/ui/** in your browser. On
 the very first visit (when `admin_users` is empty), the login page
 renders a **"Create first administrator"** form instead of the
 normal sign-in form. Fill in:
@@ -347,7 +378,7 @@ deployments, XenPool delivers a signed `.lic` file after purchase.
 Install it through the Admin UI:
 
 1. Navigate to **Admin → License** (or open
-   `https://selfservice.yourcompany.com/ui/license`).
+   `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/ui/license`).
 2. Click **Upload license** and select your `ipsolis.lic` file.
 3. The page reloads showing licensee name and expiry — no restart required.
 
@@ -471,6 +502,10 @@ Any number of custom runbooks with any combination of steps can be created.
   revocable bearer tokens for ServiceNow, scripts, or Prometheus — replaces the
   shared `X-Admin-Key`.
 
+> **After a DB restore:** The `api_tokens` table is restored along with the database.
+> Review all tokens under **Admin > API Tokens** — revoke any old or unused tokens
+> and issue new, dedicated tokens for active integrations only.
+
 ---
 
 ## 8. Entra ID SSO (Portal Authentication)
@@ -481,7 +516,7 @@ The self-service portal supports Microsoft Entra ID (Azure AD) for single sign-o
 
 1. Go to the [Azure Portal](https://portal.azure.com) > **App registrations** > **New registration**
 2. Name: `ip·Solis`
-3. Redirect URI: `https://selfservice.yourcompany.com/portal/auth/callback` (Web)
+3. Redirect URI: `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/portal/auth/callback` (Web)
 4. Note down the **Application (client) ID** and **Directory (tenant) ID**
 5. Under **Certificates & secrets**, create a new client secret
 
@@ -495,7 +530,7 @@ Navigate to **Admin > Settings** and set:
 | `entra.client_id` | Application (client) ID |
 | `entra.client_secret` | Client secret value *(marked as secret)* |
 | `entra.tenant_id` | Directory (tenant) ID |
-| `entra.redirect_uri` | `https://selfservice.yourcompany.com/portal/auth/callback` |
+| `entra.redirect_uri` | `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/portal/auth/callback` *(replace)* |
 | `entra.allowed_domains` | Comma-separated list of allowed email domains, e.g. `yourcompany.com` |
 
 Use the **Test Entra Connection** button to verify the configuration.
@@ -512,14 +547,14 @@ Use the **Test Entra Connection** button to verify the configuration.
 
 Run through this checklist to confirm everything works:
 
-- [ ] **HTTPS**: `https://selfservice.yourcompany.com` loads with a valid certificate
-- [ ] **Admin UI**: `https://selfservice.yourcompany.com/ui/` is accessible
+- [ ] **HTTPS**: `https://YOUR_HOSTNAME.YOUR_COMPANY.COM` loads with a valid certificate
+- [ ] **Admin UI**: `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/ui/` is accessible
 - [ ] **First-run setup**: visiting the admin login renders the "Create first administrator" form (or, if already done, the regular sign-in form with no error)
 - [ ] **Setup checklist**: the dashboard shows the in-app setup checklist; tick off Essential items as you configure them
 - [ ] **Portal login**: Users can sign in via Entra ID SSO
 - [ ] **AD lookup**: On the order form, user validation (deputy, RDP, admin fields) resolves names
 - [ ] **Email**: Submit a test order and confirm notification email arrives
-- [ ] **Health check**: `curl -fsk https://selfservice.yourcompany.com/health` returns `{"status": "ok"}`
+- [ ] **Health check**: `curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health` returns `{"status": "ok"}`
 - [ ] *(optional)* **API tokens**: issue a per-integration token for any automation that previously used `X-Admin-Key`
 - [ ] *(optional)* **SIEM streaming**: configure under *Settings → Compliance* if you have Splunk / Sentinel / a generic webhook receiver
 - [ ] *(optional)* **Prometheus**: scrape `/metrics` from your monitoring; the dashboard ships in [docs/grafana/](grafana/)
@@ -577,11 +612,11 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 # Run any new database migrations
 docker compose exec -T api alembic upgrade head
 
-# Reload nginx to pick up new container IPs
-docker compose exec -T nginx nginx -s reload
+# Restart nginx to pick up new container IPs and any config changes
+docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
 
 # Verify health
-curl -fsk https://selfservice.yourcompany.com/health
+curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health | python3 -m json.tool
 ```
 
 > Migrations are safe to run multiple times -- Alembic tracks which have
@@ -611,22 +646,9 @@ are minutes / hours.
 
 ## 12. High-Availability Deployments
 
-ip·Solis is built to scale horizontally on every layer except Postgres
-(single-writer by design). The Beat scheduler supports multi-replica HA
-via celery-redbeat, and this section covers the remaining three layers: API replicas
-behind a load balancer, worker replicas per Celery queue, and a
-Postgres read-replica + failover plan.
-
-> **Status note**: the patterns in this section have been verified
-> against single-host stacks and the codebase's stateless contracts
-> (cookie-signed sessions, RedBeat-locked Beat, queue-routed Celery).
-> The Postgres standby + failover plan **needs real failover testing
-> in a staging environment before production roll-out** — the docs
-> are accurate but the operational runbook (read-replica promotion,
-> connection-string flip, Celery worker reconnect) hasn't been
-> drilled end-to-end on the project's own stack. Treat the Postgres
-> guidance as a reference architecture rather than a battle-tested
-> playbook.
+ip·Solis scales horizontally at the API and worker layers. The Beat scheduler
+supports multi-replica HA via celery-redbeat. This section covers the two
+tested scaling scenarios: API replicas and worker replicas.
 
 ### 12.1 Multi-replica API
 
@@ -665,7 +687,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml \
 
 # Verify each replica is reachable through the load balancer
 for i in 1 2 3; do
-  curl -fsk https://selfservice.yourcompany.com/health \
+  curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health \
     -H 'X-Replica-Probe: '$i
 done
 ```
@@ -785,187 +807,12 @@ queue depth, and task-by-task duration breakdown. For production,
 front it with the same nginx auth as the admin UI; Flower has no
 built-in authn beyond HTTP basic.
 
-### 12.3 Postgres standby + failover
+### 12.3 Postgres high-availability
 
-> **Read this twice**: ip·Solis is single-primary against Postgres.
-> A standby is for **disaster recovery / read scale-out**, not for
-> active-active writes. Promoting a standby is a manual operation
-> (or scripted via Patroni / repmgr / pg_auto_failover); the
-> application's connection string must be flipped to point at the
-> new primary, and every API + worker + Beat replica restarted to
-> drop stale connections from the asyncpg / psycopg2 pools.
-
-**Two complementary tools**:
-
-| Tool | What it does | Where it fits |
-|---|---|---|
-| **Streaming replication** (built into Postgres) | Continuous WAL stream from primary → standby. Standby is read-only and lags behind primary by 10ms–seconds depending on load. | Daily operations: hot read replica, near-zero RPO failover candidate. |
-| **pgBackRest** | Backup + PITR + standby bootstrap. Stores compressed encrypted backups in object storage (S3 / Azure Blob / on-prem object store). | Disaster recovery: cold backup, can restore to any point in time within retention, used to bootstrap fresh standbys without touching the primary. |
-
-Production deployments typically use **both**: pgBackRest for
-backups + standby bootstrap, streaming replication for the live
-standby. The patterns below assume that combination.
-
-#### 12.3.1 Streaming replication setup
-
-On the **primary** (`ipsolis-postgres` container — bind-mount the config
-overlay so it survives image rebuilds):
-
-```ini
-# postgresql.conf overlay (mount as /etc/postgresql/conf.d/replication.conf)
-wal_level = replica
-max_wal_senders = 10
-max_replication_slots = 10
-hot_standby = on
-synchronous_commit = on   # async-only ('off') saves a few ms per write
-                          # at the cost of unbounded lag on the standby —
-                          # leave at 'on' unless you have a dedicated
-                          # WAL-relay replica and accept the trade-off.
-```
-
-```ini
-# pg_hba.conf — allow the standby host to authenticate as a replication user
-# (CIDR matches your standby's network)
-host  replication  ipsolis_repl  10.0.0.0/24  scram-sha-256
-```
-
-Create the replication user once (on the primary):
-
-```sql
-CREATE ROLE ipsolis_repl WITH REPLICATION LOGIN PASSWORD '<rotate-me>';
-SELECT pg_create_physical_replication_slot('ipsolis_standby_1');
-```
-
-On the **standby** host (separate VM / container, not `ipsolis-postgres`):
-
-```bash
-# Bootstrap the standby's data dir from the primary
-pg_basebackup \
-  -h <primary_host> -U ipsolis_repl -W \
-  -D /var/lib/postgresql/data \
-  -X stream -R --slot=ipsolis_standby_1 \
-  -P
-```
-
-`-R` writes `standby.signal` + connection info into
-`postgresql.auto.conf` so the standby starts in hot-standby mode
-on next boot. Restart the standby's Postgres process and verify:
-
-```sql
--- On the standby
-SELECT pg_is_in_recovery();           -- → t
-SELECT now() - pg_last_xact_replay_timestamp();  -- replication lag
-```
-
-#### 12.3.2 pgBackRest backup + bootstrap
-
-```ini
-# pgbackrest.conf on the primary
-[global]
-repo1-type=s3
-repo1-s3-bucket=ipsolis-backups
-repo1-s3-region=eu-central-1
-repo1-s3-key=AKIA…
-repo1-s3-key-secret=…
-repo1-cipher-type=aes-256-cbc
-repo1-cipher-pass=<rotate-me>
-repo1-retention-full=14
-repo1-retention-diff=7
-
-[ipsolis]
-pg1-path=/var/lib/postgresql/data
-```
-
-Daily full backup + hourly differentials via cron / systemd timer:
-
-```bash
-# Weekly full
-pgbackrest --stanza=ipsolis backup --type=full
-
-# Daily incremental + WAL archive
-pgbackrest --stanza=ipsolis backup --type=incr
-```
-
-Restore (PITR) for DR:
-
-```bash
-pgbackrest --stanza=ipsolis --type=time \
-  --target='2026-04-30 14:30:00+02' \
-  restore
-```
-
-This is also how a fresh standby is bootstrapped without touching
-the primary — `pgbackrest restore` to the standby's data dir
-(replacing the `pg_basebackup` step above), then start Postgres
-in standby mode with the same `standby.signal` + replication slot
-config.
-
-#### 12.3.3 Failover plan
-
-Manual failover (no Patroni / repmgr — keep it simple):
-
-1. **Verify the standby is current** —
-   `SELECT now() - pg_last_xact_replay_timestamp()` should be < 1s
-   under typical load. Anything over that means in-flight
-   transactions might be lost.
-2. **Stop writes** — bring the API + worker + Beat replicas down
-   so nothing is hammering the primary while the cutover happens.
-3. **Promote the standby** — on the standby host:
-
-   ```bash
-   pg_ctl promote -D /var/lib/postgresql/data
-   ```
-
-   The standby exits recovery mode and becomes a read-write primary.
-4. **Flip the connection string** — update `DATABASE_URL` in `.env`
-   to point at the new primary. All replicas must be updated; on a
-   single-host stack this is one file edit.
-5. **Restart everything**:
-
-   ```bash
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-     restart api worker beat
-   ```
-
-   The old asyncpg / psycopg2 pools drop stale connections during
-   restart; new pools authenticate against the freshly-promoted
-   primary.
-6. **Rebuild the dead primary as a new standby** — once the failed
-   primary is recovered, run the standby bootstrap (12.3.1) against
-   the *new* primary so the topology has a hot replica again.
-
-**RPO / RTO realistic targets**:
-
-| Metric | Streaming replication only | + pgBackRest |
-|---|---|---|
-| Recovery Point Objective (data loss) | ≤ 1s under normal load | Same (streaming replication is the live data path) |
-| Recovery Time Objective (downtime) | 5–15 minutes (manual promotion + restart) | Same — pgBackRest doesn't accelerate live failover; it accelerates *cold* recovery from a deleted DB |
-
-**Automation**: the manual flip is fine for stacks where 5–15
-minutes of downtime per year is acceptable. Patroni
-(<https://patroni.readthedocs.io/>) automates the
-quorum/promotion/connection-string cutover and can drop RTO to
-under a minute, at the cost of a Consul / etcd / Zookeeper
-control plane to run alongside Postgres.
-
-#### 12.3.4 Verification before going live
-
-Treat Postgres HA as **untested until you've drilled it on staging**:
-
-1. Bootstrap the standby from a primary copy of staging data.
-2. Verify `pg_is_in_recovery()` returns `t` and replication lag
-   sits under 1s under simulated load.
-3. Stop the primary container; promote the standby; flip
-   `DATABASE_URL`; restart the api/worker/beat replicas.
-4. Verify the API answers `/health` against the new primary,
-   create a test order through the portal, observe it land in the
-   new primary's `orders` table.
-5. Rebuild the dead primary as a new standby and re-run the lag
-   check.
-
-**Until that drill has been done end-to-end on your stack**, the
-HA story is "we have backups + a read replica" — not "we have
-verified failover." Document the difference in your DR plan.
+Postgres HA (streaming replication, pgBackRest, Patroni) is architecturally
+possible — ip·Solis is single-primary and any connection-string switch requires
+only a `.env` change and restart. A validated step-by-step guide is not included
+in this version.
 
 ---
 
@@ -983,10 +830,11 @@ docker compose logs <service-name> --tail=50
 
 ### Health check fails through nginx but API is healthy
 
-Nginx may have cached the old container IP. Reload it:
+Nginx may have cached the old container IP. Restart the container
+(not just `nginx -s reload` — Docker bind-mounts retain the old inode otherwise):
 
 ```bash
-docker compose exec -T nginx nginx -s reload
+docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
 ```
 
 ### Database connection errors
@@ -1033,3 +881,31 @@ with e.connect() as c: print(c.execute(text('SELECT 1')).scalar())
 sudo chmod 644 certs/cert.pem
 sudo chmod 600 certs/key.pem
 ```
+
+---
+
+## 14. Clean Reset (Test Environments)
+
+> **Test and staging environments only.** This section permanently destroys all
+> data. Never run on a production instance.
+
+Docker volumes (database data, Redis data) survive `rm -rf /opt/ipsolis` because
+they are stored under `/var/lib/docker/volumes/` — independent of the repository
+directory. For a fully clean reinstall:
+
+```bash
+# 1. Stop the stack and delete volumes
+cd /opt/ipsolis
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
+
+# 2. Remove the repository directory
+cd /opt
+sudo rm -rf ipsolis
+
+# 3. Reinstall (continue from section 2)
+sudo git clone https://github.com/XenPool/ipsolis.git ipsolis
+cd ipsolis
+```
+
+After this reset the database contains no users, no configuration and no assets —
+the initial setup (section 7) must be completed again.
