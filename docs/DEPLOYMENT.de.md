@@ -23,6 +23,19 @@ Diese Anleitung führt durch die Einrichtung der ip·Solis-Plattform auf einem n
 
 ---
 
+> ### ⚠ Platzhalter ersetzen
+>
+> Diese Zeichenketten kommen mehrfach in der gesamten Dokumentation vor und müssen
+> durch die tatsächlichen Werte der eigenen Umgebung ersetzt werden:
+>
+> | Platzhalter | Ersetzen durch |
+> |---|---|
+> | `selfservice.ihreunternehmen.de` | FQDN des Servers (z. B. `ipsolis.firma.de`) |
+> | `YOUR_HOSTNAME` | Derselbe FQDN — wird in `nginx/nginx.conf` per `sed` ersetzt (Abschnitt 5) |
+> | `xpuser` / `xppassword` | Datenbankbenutzer und -passwort aus `.env` |
+
+---
+
 ## 1. Voraussetzungen
 
 ### Serveranforderungen

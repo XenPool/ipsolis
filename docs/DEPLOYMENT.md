@@ -24,6 +24,19 @@ This guide walks you through setting up the ip·Solis platform on a fresh on-pre
 
 ---
 
+> ### ⚠ Replace these placeholders
+>
+> The following strings appear multiple times throughout this guide and must be
+> replaced with the actual values for your environment:
+>
+> | Placeholder | Replace with |
+> |---|---|
+> | `selfservice.yourcompany.com` | Your server's FQDN (e.g. `ipsolis.acme.com`) |
+> | `YOUR_HOSTNAME` | The same FQDN — substituted in `nginx/nginx.conf` via `sed` (section 5) |
+> | `xpuser` / `xppassword` | Database user and password from `.env` |
+
+---
+
 ## 1. Prerequisites
 
 ### Server Requirements
