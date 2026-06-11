@@ -25,12 +25,12 @@ Diese Anleitung führt durch die Einrichtung der ip·Solis-Plattform auf einem n
 
 > ### ⚠ Platzhalter ersetzen
 >
-> Diese Zeichenketten kommen mehrfach in der gesamten Dokumentation vor und müssen
-> durch die tatsächlichen Werte der eigenen Umgebung ersetzt werden:
+> Die folgende Zeichenkette kommt mehrfach in dieser Dokumentation vor und muss
+> überall durch den tatsächlichen FQDN des eigenen Servers ersetzt werden:
 >
 > | Platzhalter | Ersetzen durch |
 > |---|---|
-> | `selfservice.ihreunternehmen.de` | FQDN des Servers (z. B. `ipsolis.firma.de`) |
+> | `YOUR_HOSTNAME.YOUR_COMPANY.COM` | FQDN des Servers (z. B. `ipsolis.firma.de`) |
 > | `YOUR_HOSTNAME` | Derselbe FQDN — wird in `nginx/nginx.conf` per `sed` ersetzt (Abschnitt 5) |
 > | `xpuser` / `xppassword` | Datenbankbenutzer und -passwort aus `.env` |
 
@@ -131,7 +131,7 @@ WEBHOOK_SECRET_TOKEN=<zufallszeichenkette>
 ADMIN_API_KEY=<zufallszeichenkette-min-32-zeichen>
 
 # CORS -- auf die Produktionsdomain setzen
-CORS_ORIGINS=https://selfservice.ihreunternehmen.de
+CORS_ORIGINS=https://YOUR_HOSTNAME.YOUR_COMPANY.COM
 FLOWER_PASSWORD=<sicheres-passwort>
 ```
 
@@ -163,7 +163,7 @@ sudo mkcert -install
 
 # Zertifikat für den Hostnamen generieren
 sudo mkdir -p certs
-sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem selfservice.ihreunternehmen.de
+sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem YOUR_HOSTNAME.YOUR_COMPANY.COM
 ```
 
 > **Wichtig**: Damit Browser auf anderen Rechnern diesem Zertifikat vertrauen, muss die
@@ -180,7 +180,7 @@ Wenn die Organisation eine interne Zertifizierungsstelle betreibt (z. B. Active 
    sudo openssl req -new -newkey rsa:2048 -nodes \
      -keyout certs/key.pem \
      -out certs/server.csr \
-     -subj "/CN=selfservice.ihreunternehmen.de"
+     -subj "/CN=YOUR_HOSTNAME.YOUR_COMPANY.COM"
    ```
 2. `certs/server.csr` bei der CA einreichen und das signierte Zertifikat erhalten.
 3. Das signierte Zertifikat als `certs/cert.pem` speichern.
@@ -195,12 +195,12 @@ Wenn der Server öffentlich zugänglich ist, können kostenlose Zertifikate von 
 
 ```bash
 sudo apt install -y certbot
-sudo certbot certonly --standalone -d selfservice.ihreunternehmen.de
+sudo certbot certonly --standalone -d YOUR_HOSTNAME.YOUR_COMPANY.COM
 
 # Symlinks in das certs-Verzeichnis
 sudo mkdir -p certs
-sudo ln -sf /etc/letsencrypt/live/selfservice.ihreunternehmen.de/fullchain.pem certs/cert.pem
-sudo ln -sf /etc/letsencrypt/live/selfservice.ihreunternehmen.de/privkey.pem certs/key.pem
+sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/fullchain.pem certs/cert.pem
+sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/privkey.pem certs/key.pem
 ```
 
 #### Automatische Erneuerung einrichten (nur Option C)
@@ -218,7 +218,7 @@ echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx ngi
 Das Repository enthält bereits eine fertige `nginx/nginx.conf` mit dem Platzhalter `YOUR_HOSTNAME`. Die Platzhalter durch den tatsächlichen Hostnamen ersetzen (der Platzhalter kommt zweimal vor, `sed` ersetzt beide):
 
 ```bash
-sudo sed -i 's/YOUR_HOSTNAME/selfservice.ihreunternehmen.de/g' nginx/nginx.conf
+sudo sed -i 's/YOUR_HOSTNAME/YOUR_HOSTNAME.YOUR_COMPANY.COM/g' nginx/nginx.conf
 ```
 
 Die Datei sieht danach so aus (zur Kontrolle):
@@ -226,13 +226,13 @@ Die Datei sieht danach so aus (zur Kontrolle):
 ```nginx
 server {
     listen 80;
-    server_name selfservice.ihreunternehmen.de;
+    server_name YOUR_HOSTNAME.YOUR_COMPANY.COM;
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl;
-    server_name selfservice.ihreunternehmen.de;
+    server_name YOUR_HOSTNAME.YOUR_COMPANY.COM;
 
     ssl_certificate     /etc/nginx/certs/cert.pem;
     ssl_certificate_key /etc/nginx/certs/key.pem;
@@ -302,7 +302,7 @@ Anwendung überprüfen:
 curl -f http://localhost:8000/health | python3 -m json.tool
 
 # Über nginx (HTTPS)
-curl -fsk https://selfservice.ihreunternehmen.de/health | python3 -m json.tool
+curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health | python3 -m json.tool
 ```
 
 ---
@@ -311,7 +311,7 @@ curl -fsk https://selfservice.ihreunternehmen.de/health | python3 -m json.tool
 
 ### Erstes Admin-Konto (RBAC)
 
-**https://selfservice.ihreunternehmen.de/ui/** im Browser öffnen. Beim allerersten Aufruf
+**https://YOUR_HOSTNAME.YOUR_COMPANY.COM/ui/** im Browser öffnen. Beim allerersten Aufruf
 (wenn `admin_users` leer ist) zeigt die Login-Seite ein **„Ersten Administrator anlegen"**-Formular
 anstelle des normalen Anmeldeformulars. Folgende Felder ausfüllen:
 
@@ -360,7 +360,7 @@ Deployments stellt XenPool nach dem Kauf eine signierte `.lic`-Datei bereit.
 
 Installation über die Admin-Oberfläche:
 
-1. Zu **Admin → Lizenz** navigieren (oder `https://selfservice.ihreunternehmen.de/ui/license` öffnen).
+1. Zu **Admin → Lizenz** navigieren (oder `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/ui/license` öffnen).
 2. **Lizenz hochladen** klicken und die `ipsolis.lic`-Datei auswählen.
 3. Die Seite lädt mit Lizenznehmername und Ablaufdatum neu -- kein Neustart erforderlich.
 
@@ -495,7 +495,7 @@ Das Self-Service-Portal unterstützt Microsoft Entra ID (Azure AD) für Single S
 
 1. Im [Azure-Portal](https://portal.azure.com) zu **App-Registrierungen** > **Neue Registrierung**
 2. Name: `ip·Solis`
-3. Umleitungs-URI: `https://selfservice.ihreunternehmen.de/portal/auth/callback` (Web)
+3. Umleitungs-URI: `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/portal/auth/callback` (Web)
 4. **Anwendungs-ID (Client)** und **Verzeichnis-ID (Mandant)** notieren
 5. Unter **Zertifikate & Geheimnisse** ein neues Client-Secret erstellen
 
@@ -509,7 +509,7 @@ Zu **Admin > Einstellungen** navigieren und einstellen:
 | `entra.client_id` | Anwendungs-ID (Client) |
 | `entra.client_secret` | Client-Secret-Wert *(als Secret markiert)* |
 | `entra.tenant_id` | Verzeichnis-ID (Mandant) |
-| `entra.redirect_uri` | `https://selfservice.ihreunternehmen.de/portal/auth/callback` |
+| `entra.redirect_uri` | `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/portal/auth/callback` |
 | `entra.allowed_domains` | Kommagetrennte Liste erlaubter E-Mail-Domänen, z. B. `ihreunternehmen.de` |
 
 Die Schaltfläche **Entra-Verbindung testen** zur Überprüfung der Konfiguration verwenden.
@@ -525,14 +525,14 @@ Die Schaltfläche **Entra-Verbindung testen** zur Überprüfung der Konfiguratio
 
 Diese Checkliste durcharbeiten, um die korrekte Funktion zu bestätigen:
 
-- [ ] **HTTPS**: `https://selfservice.ihreunternehmen.de` lädt mit gültigem Zertifikat
-- [ ] **Admin-Oberfläche**: `https://selfservice.ihreunternehmen.de/ui/` erreichbar
+- [ ] **HTTPS**: `https://YOUR_HOSTNAME.YOUR_COMPANY.COM` lädt mit gültigem Zertifikat
+- [ ] **Admin-Oberfläche**: `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/ui/` erreichbar
 - [ ] **Ersteinrichtung**: Admin-Login zeigt „Ersten Administrator anlegen"-Formular (oder bei vorhandenem Konto das reguläre Anmeldeformular ohne Fehler)
 - [ ] **Setup-Checkliste**: Dashboard zeigt die In-App-Setup-Checkliste; grundlegende Punkte nach Konfiguration abhaken
 - [ ] **Portal-Anmeldung**: Benutzer können sich per Entra ID SSO anmelden
 - [ ] **AD-Suche**: Im Bestellformular werden Benutzer in Stellvertreter-, RDP- und Admin-Feldern korrekt aufgelöst
 - [ ] **E-Mail**: Testbestellung einreichen und Eingang der Benachrichtigungs-E-Mail bestätigen
-- [ ] **Health-Check**: `curl -fsk https://selfservice.ihreunternehmen.de/health` gibt `{"status": "ok"}` zurück
+- [ ] **Health-Check**: `curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health` gibt `{"status": "ok"}` zurück
 - [ ] *(optional)* **API-Tokens**: Per-Integration-Token für Automatisierungen ausstellen, die bisher `X-Admin-Key` verwenden
 - [ ] *(optional)* **SIEM-Streaming**: Unter *Einstellungen → Compliance* konfigurieren, falls Splunk / Sentinel / generischer Webhook-Empfänger vorhanden
 - [ ] *(optional)* **Prometheus**: `/metrics` von der Monitoring-Lösung abfragen; das Dashboard liegt unter [docs/grafana/](grafana/)
@@ -594,7 +594,7 @@ docker compose exec -T api alembic upgrade head
 docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
 
 # Gesundheit prüfen
-curl -fsk https://selfservice.ihreunternehmen.de/health | python3 -m json.tool
+curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health | python3 -m json.tool
 ```
 
 > Migrationen können mehrfach ausgeführt werden -- Alembic verfolgt, welche bereits
@@ -659,7 +659,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml \
 
 # Jede Replika über den Load Balancer prüfen
 for i in 1 2 3; do
-  curl -fsk https://selfservice.ihreunternehmen.de/health \
+  curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health \
     -H 'X-Replica-Probe: '$i
 done
 ```
