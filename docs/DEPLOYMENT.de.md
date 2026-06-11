@@ -282,7 +282,7 @@ Anwendung überprüfen:
 curl -f http://localhost:8000/health
 
 # Über nginx (HTTPS)
-curl -fsk https://selfservice.ihreunternehmen.de/health
+curl -fsk https://selfservice.ihreunternehmen.de/health | python3 -m json.tool
 ```
 
 ---
@@ -574,7 +574,7 @@ docker compose exec -T api alembic upgrade head
 docker compose exec -T nginx nginx -s reload
 
 # Gesundheit prüfen
-curl -fsk https://selfservice.ihreunternehmen.de/health
+curl -fsk https://selfservice.ihreunternehmen.de/health | python3 -m json.tool
 ```
 
 > Migrationen können mehrfach ausgeführt werden -- Alembic verfolgt, welche bereits
