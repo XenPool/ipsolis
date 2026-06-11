@@ -280,7 +280,7 @@ Verify the application:
 
 ```bash
 # Direct API health check
-curl -f http://localhost:8000/health
+curl -f http://localhost:8000/health | python3 -m json.tool
 
 # Through nginx (HTTPS)
 curl -fsk https://selfservice.yourcompany.com/health | python3 -m json.tool

@@ -279,7 +279,7 @@ Anwendung überprüfen:
 
 ```bash
 # Direkter API-Health-Check
-curl -f http://localhost:8000/health
+curl -f http://localhost:8000/health | python3 -m json.tool
 
 # Über nginx (HTTPS)
 curl -fsk https://selfservice.ihreunternehmen.de/health | python3 -m json.tool
