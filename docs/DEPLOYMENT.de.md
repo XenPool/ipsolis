@@ -119,7 +119,7 @@ API_SECRET_KEY=<zufallszeichenkette-min-32-zeichen>
 WEBHOOK_SECRET_TOKEN=<zufallszeichenkette>
 ADMIN_API_KEY=<zufallszeichenkette-min-32-zeichen>
 
-# CORS -- auf die Produktionsdomain setzen
+# CORS -- auf die Produktionsdomain setzen  ← YOUR_HOSTNAME.YOUR_COMPANY.COM ersetzen
 CORS_ORIGINS=https://YOUR_HOSTNAME.YOUR_COMPANY.COM
 FLOWER_PASSWORD=<sicheres-passwort>
 ```
@@ -150,7 +150,7 @@ sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
 # Lokale CA in den System-Trust-Store installieren
 sudo mkcert -install
 
-# Zertifikat für den Hostnamen generieren
+# Zertifikat für den Hostnamen generieren  ← YOUR_HOSTNAME.YOUR_COMPANY.COM ersetzen
 sudo mkdir -p certs
 sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem YOUR_HOSTNAME.YOUR_COMPANY.COM
 ```
@@ -163,7 +163,7 @@ sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem YOUR_HOSTNAME.YOUR
 
 Wenn die Organisation eine interne Zertifizierungsstelle betreibt (z. B. Active Directory Certificate Services):
 
-1. CSR auf dem Server erzeugen:
+1. CSR auf dem Server erzeugen: *(YOUR_HOSTNAME.YOUR_COMPANY.COM ersetzen)*
    ```bash
    sudo mkdir -p certs
    sudo openssl req -new -newkey rsa:2048 -nodes \
@@ -184,7 +184,7 @@ Wenn der Server öffentlich zugänglich ist, können kostenlose Zertifikate von 
 
 ```bash
 sudo apt install -y certbot
-sudo certbot certonly --standalone -d YOUR_HOSTNAME.YOUR_COMPANY.COM
+sudo certbot certonly --standalone -d YOUR_HOSTNAME.YOUR_COMPANY.COM  # ← ersetzen
 
 # Symlinks in das certs-Verzeichnis
 sudo mkdir -p certs
@@ -498,7 +498,7 @@ Zu **Admin > Einstellungen** navigieren und einstellen:
 | `entra.client_id` | Anwendungs-ID (Client) |
 | `entra.client_secret` | Client-Secret-Wert *(als Secret markiert)* |
 | `entra.tenant_id` | Verzeichnis-ID (Mandant) |
-| `entra.redirect_uri` | `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/portal/auth/callback` |
+| `entra.redirect_uri` | `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/portal/auth/callback` *(ersetzen)* |
 | `entra.allowed_domains` | Kommagetrennte Liste erlaubter E-Mail-Domänen, z. B. `ihreunternehmen.de` |
 
 Die Schaltfläche **Entra-Verbindung testen** zur Überprüfung der Konfiguration verwenden.

@@ -121,7 +121,7 @@ API_SECRET_KEY=<random-string-min-32-chars>
 WEBHOOK_SECRET_TOKEN=<random-string>
 ADMIN_API_KEY=<random-string-min-32-chars>
 
-# CORS -- set to your production domain
+# CORS -- set to your production domain  ← replace YOUR_HOSTNAME.YOUR_COMPANY.COM
 CORS_ORIGINS=https://YOUR_HOSTNAME.YOUR_COMPANY.COM
 FLOWER_PASSWORD=<strong-password>
 ```
@@ -150,7 +150,7 @@ sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
 # Install the local CA into your system trust store
 sudo mkcert -install
 
-# Generate the certificate for your hostname
+# Generate the certificate for your hostname  ← replace YOUR_HOSTNAME.YOUR_COMPANY.COM
 sudo mkdir -p certs
 sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem YOUR_HOSTNAME.YOUR_COMPANY.COM
 ```
@@ -163,7 +163,7 @@ sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem YOUR_HOSTNAME.YOUR
 
 If your organization runs an internal Certificate Authority (e.g., Active Directory Certificate Services):
 
-1. Generate a CSR on the server:
+1. Generate a CSR on the server: *(replace YOUR_HOSTNAME.YOUR_COMPANY.COM)*
    ```bash
    sudo mkdir -p certs
    sudo openssl req -new -newkey rsa:2048 -nodes \
@@ -184,7 +184,7 @@ If your server is publicly accessible, you can use free certificates from Let's 
 
 ```bash
 sudo apt install -y certbot
-sudo certbot certonly --standalone -d YOUR_HOSTNAME.YOUR_COMPANY.COM
+sudo certbot certonly --standalone -d YOUR_HOSTNAME.YOUR_COMPANY.COM  # ← replace
 
 # Symlink into the certs directory
 sudo mkdir -p certs
@@ -503,7 +503,7 @@ Navigate to **Admin > Settings** and set:
 | `entra.client_id` | Application (client) ID |
 | `entra.client_secret` | Client secret value *(marked as secret)* |
 | `entra.tenant_id` | Directory (tenant) ID |
-| `entra.redirect_uri` | `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/portal/auth/callback` |
+| `entra.redirect_uri` | `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/portal/auth/callback` *(replace)* |
 | `entra.allowed_domains` | Comma-separated list of allowed email domains, e.g. `yourcompany.com` |
 
 Use the **Test Entra Connection** button to verify the configuration.
