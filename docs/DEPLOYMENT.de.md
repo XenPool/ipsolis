@@ -846,7 +846,7 @@ Repository-Verzeichnis. Für eine vollständig saubere Neuinstallation:
 ```bash
 # 1. Stack stoppen und Volumes löschen
 cd /opt/ipsolis
-docker compose down -v
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
 
 # 2. Repository-Verzeichnis löschen
 cd /opt
