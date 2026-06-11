@@ -617,22 +617,9 @@ are minutes / hours.
 
 ## 12. High-Availability Deployments
 
-ip·Solis is built to scale horizontally on every layer except Postgres
-(single-writer by design). The Beat scheduler supports multi-replica HA
-via celery-redbeat, and this section covers the remaining three layers: API replicas
-behind a load balancer, worker replicas per Celery queue, and a
-Postgres read-replica + failover plan.
-
-> **Status note**: the patterns in this section have been verified
-> against single-host stacks and the codebase's stateless contracts
-> (cookie-signed sessions, RedBeat-locked Beat, queue-routed Celery).
-> The Postgres standby + failover plan **needs real failover testing
-> in a staging environment before production roll-out** — the docs
-> are accurate but the operational runbook (read-replica promotion,
-> connection-string flip, Celery worker reconnect) hasn't been
-> drilled end-to-end on the project's own stack. Treat the Postgres
-> guidance as a reference architecture rather than a battle-tested
-> playbook.
+ip·Solis scales horizontally at the API and worker layers. The Beat scheduler
+supports multi-replica HA via celery-redbeat. This section covers the two
+tested scaling scenarios: API replicas and worker replicas.
 
 ### 12.1 Multi-replica API
 
@@ -791,187 +778,12 @@ queue depth, and task-by-task duration breakdown. For production,
 front it with the same nginx auth as the admin UI; Flower has no
 built-in authn beyond HTTP basic.
 
-### 12.3 Postgres standby + failover
+### 12.3 Postgres high-availability
 
-> **Read this twice**: ip·Solis is single-primary against Postgres.
-> A standby is for **disaster recovery / read scale-out**, not for
-> active-active writes. Promoting a standby is a manual operation
-> (or scripted via Patroni / repmgr / pg_auto_failover); the
-> application's connection string must be flipped to point at the
-> new primary, and every API + worker + Beat replica restarted to
-> drop stale connections from the asyncpg / psycopg2 pools.
-
-**Two complementary tools**:
-
-| Tool | What it does | Where it fits |
-|---|---|---|
-| **Streaming replication** (built into Postgres) | Continuous WAL stream from primary → standby. Standby is read-only and lags behind primary by 10ms–seconds depending on load. | Daily operations: hot read replica, near-zero RPO failover candidate. |
-| **pgBackRest** | Backup + PITR + standby bootstrap. Stores compressed encrypted backups in object storage (S3 / Azure Blob / on-prem object store). | Disaster recovery: cold backup, can restore to any point in time within retention, used to bootstrap fresh standbys without touching the primary. |
-
-Production deployments typically use **both**: pgBackRest for
-backups + standby bootstrap, streaming replication for the live
-standby. The patterns below assume that combination.
-
-#### 12.3.1 Streaming replication setup
-
-On the **primary** (`ipsolis-postgres` container — bind-mount the config
-overlay so it survives image rebuilds):
-
-```ini
-# postgresql.conf overlay (mount as /etc/postgresql/conf.d/replication.conf)
-wal_level = replica
-max_wal_senders = 10
-max_replication_slots = 10
-hot_standby = on
-synchronous_commit = on   # async-only ('off') saves a few ms per write
-                          # at the cost of unbounded lag on the standby —
-                          # leave at 'on' unless you have a dedicated
-                          # WAL-relay replica and accept the trade-off.
-```
-
-```ini
-# pg_hba.conf — allow the standby host to authenticate as a replication user
-# (CIDR matches your standby's network)
-host  replication  ipsolis_repl  10.0.0.0/24  scram-sha-256
-```
-
-Create the replication user once (on the primary):
-
-```sql
-CREATE ROLE ipsolis_repl WITH REPLICATION LOGIN PASSWORD '<rotate-me>';
-SELECT pg_create_physical_replication_slot('ipsolis_standby_1');
-```
-
-On the **standby** host (separate VM / container, not `ipsolis-postgres`):
-
-```bash
-# Bootstrap the standby's data dir from the primary
-pg_basebackup \
-  -h <primary_host> -U ipsolis_repl -W \
-  -D /var/lib/postgresql/data \
-  -X stream -R --slot=ipsolis_standby_1 \
-  -P
-```
-
-`-R` writes `standby.signal` + connection info into
-`postgresql.auto.conf` so the standby starts in hot-standby mode
-on next boot. Restart the standby's Postgres process and verify:
-
-```sql
--- On the standby
-SELECT pg_is_in_recovery();           -- → t
-SELECT now() - pg_last_xact_replay_timestamp();  -- replication lag
-```
-
-#### 12.3.2 pgBackRest backup + bootstrap
-
-```ini
-# pgbackrest.conf on the primary
-[global]
-repo1-type=s3
-repo1-s3-bucket=ipsolis-backups
-repo1-s3-region=eu-central-1
-repo1-s3-key=AKIA…
-repo1-s3-key-secret=…
-repo1-cipher-type=aes-256-cbc
-repo1-cipher-pass=<rotate-me>
-repo1-retention-full=14
-repo1-retention-diff=7
-
-[ipsolis]
-pg1-path=/var/lib/postgresql/data
-```
-
-Daily full backup + hourly differentials via cron / systemd timer:
-
-```bash
-# Weekly full
-pgbackrest --stanza=ipsolis backup --type=full
-
-# Daily incremental + WAL archive
-pgbackrest --stanza=ipsolis backup --type=incr
-```
-
-Restore (PITR) for DR:
-
-```bash
-pgbackrest --stanza=ipsolis --type=time \
-  --target='2026-04-30 14:30:00+02' \
-  restore
-```
-
-This is also how a fresh standby is bootstrapped without touching
-the primary — `pgbackrest restore` to the standby's data dir
-(replacing the `pg_basebackup` step above), then start Postgres
-in standby mode with the same `standby.signal` + replication slot
-config.
-
-#### 12.3.3 Failover plan
-
-Manual failover (no Patroni / repmgr — keep it simple):
-
-1. **Verify the standby is current** —
-   `SELECT now() - pg_last_xact_replay_timestamp()` should be < 1s
-   under typical load. Anything over that means in-flight
-   transactions might be lost.
-2. **Stop writes** — bring the API + worker + Beat replicas down
-   so nothing is hammering the primary while the cutover happens.
-3. **Promote the standby** — on the standby host:
-
-   ```bash
-   pg_ctl promote -D /var/lib/postgresql/data
-   ```
-
-   The standby exits recovery mode and becomes a read-write primary.
-4. **Flip the connection string** — update `DATABASE_URL` in `.env`
-   to point at the new primary. All replicas must be updated; on a
-   single-host stack this is one file edit.
-5. **Restart everything**:
-
-   ```bash
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-     restart api worker beat
-   ```
-
-   The old asyncpg / psycopg2 pools drop stale connections during
-   restart; new pools authenticate against the freshly-promoted
-   primary.
-6. **Rebuild the dead primary as a new standby** — once the failed
-   primary is recovered, run the standby bootstrap (12.3.1) against
-   the *new* primary so the topology has a hot replica again.
-
-**RPO / RTO realistic targets**:
-
-| Metric | Streaming replication only | + pgBackRest |
-|---|---|---|
-| Recovery Point Objective (data loss) | ≤ 1s under normal load | Same (streaming replication is the live data path) |
-| Recovery Time Objective (downtime) | 5–15 minutes (manual promotion + restart) | Same — pgBackRest doesn't accelerate live failover; it accelerates *cold* recovery from a deleted DB |
-
-**Automation**: the manual flip is fine for stacks where 5–15
-minutes of downtime per year is acceptable. Patroni
-(<https://patroni.readthedocs.io/>) automates the
-quorum/promotion/connection-string cutover and can drop RTO to
-under a minute, at the cost of a Consul / etcd / Zookeeper
-control plane to run alongside Postgres.
-
-#### 12.3.4 Verification before going live
-
-Treat Postgres HA as **untested until you've drilled it on staging**:
-
-1. Bootstrap the standby from a primary copy of staging data.
-2. Verify `pg_is_in_recovery()` returns `t` and replication lag
-   sits under 1s under simulated load.
-3. Stop the primary container; promote the standby; flip
-   `DATABASE_URL`; restart the api/worker/beat replicas.
-4. Verify the API answers `/health` against the new primary,
-   create a test order through the portal, observe it land in the
-   new primary's `orders` table.
-5. Rebuild the dead primary as a new standby and re-run the lag
-   check.
-
-**Until that drill has been done end-to-end on your stack**, the
-HA story is "we have backups + a read replica" — not "we have
-verified failover." Document the difference in your DR plan.
+Postgres HA (streaming replication, pgBackRest, Patroni) is architecturally
+possible — ip·Solis is single-primary and any connection-string switch requires
+only a `.env` change and restart. A validated step-by-step guide is not included
+in this version.
 
 ---
 
