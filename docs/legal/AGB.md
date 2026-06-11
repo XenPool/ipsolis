@@ -258,7 +258,7 @@ Der Anbieter ist zur Teilnahme an einem Streitbeilegungsverfahren vor einer Verb
 
 ## Anlage 1: Open-Source-Komponenten
 
-Die folgende Aufstellung listet die Open-Source-Bibliotheken und Infrastrukturkomponenten, auf denen ip·Solis aufbaut. Sie wird im Repository fortlaufend gepflegt und bei jedem Release mit dem tatsächlichen Software Bill of Materials (SBOM) abgeglichen. Die vollständigen Lizenztexte sind in den jeweiligen Paket-Repositories abrufbar. Stand: ip·Solis v0.6.2.
+Die folgende Aufstellung listet die wesentlichen direkten Open-Source-Abhängigkeiten, auf denen ip·Solis aufbaut. Sie wird im Repository fortlaufend gepflegt und bei jedem Release mit dem tatsächlichen Software Bill of Materials (SBOM) abgeglichen. Die vollständigen Lizenztexte aller direkten und transitiven Abhängigkeiten (einschließlich Copyright-Vermerken) sind in der Datei [`THIRD-PARTY-LICENSES.md`](../../THIRD-PARTY-LICENSES.md) im Repository enthalten und gelten als Bestandteil dieser Anlage. Stand: ip·Solis v0.6.4.
 
 ### Web-Framework & API
 
