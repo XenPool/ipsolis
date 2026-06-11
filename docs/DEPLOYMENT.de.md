@@ -19,6 +19,7 @@ Diese Anleitung führt durch die Einrichtung der ip·Solis-Plattform auf einem n
 11. [Update auf neue Version](#11-update-auf-neue-version)
 12. [Hochverfügbarkeit](#12-hochverfügbarkeit)
 13. [Fehlerbehebung](#13-fehlerbehebung)
+14. [Sauberer Neustart (Testumgebungen)](#14-sauberer-neustart-testumgebungen)
 
 ---
 
@@ -73,6 +74,12 @@ Eingehend: Die Ports **80** und **443** müssen von den Browsern der Nutzer erre
 ---
 
 ## 2. Software beziehen
+
+> **Frische Umgebung empfohlen:** Docker-Volumes (Datenbankdaten) überleben ein
+> `rm -rf /opt/ipsolis` — sie liegen unter `/var/lib/docker/volumes/` und bleiben
+> erhalten, bis sie explizit gelöscht werden. Für eine saubere Erstinstallation
+> sicherstellen, dass keine alten Volumes vorhanden sind. Anleitung:
+> [Sauberer Neustart (Testumgebungen)](#14-sauberer-neustart-testumgebungen).
 
 Repository klonen und Images beziehen — keine Authentifizierung erforderlich:
 
@@ -570,8 +577,8 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 # Neue Datenbankmigrationen ausführen
 docker compose exec -T api alembic upgrade head
 
-# nginx neu laden, um neue Container-IPs zu übernehmen
-docker compose exec -T nginx nginx -s reload
+# nginx neu starten, um neue Container-IPs und ggf. geänderte Konfiguration zu übernehmen
+docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
 
 # Gesundheit prüfen
 curl -fsk https://selfservice.ihreunternehmen.de/health | python3 -m json.tool
@@ -948,10 +955,11 @@ docker compose logs <dienstname> --tail=50
 
 ### Health-Check schlägt durch nginx fehl, aber API ist gesund
 
-Nginx hat möglicherweise die alte Container-IP gecacht. Neu laden:
+Nginx hat möglicherweise die alte Container-IP gecacht. Container neu starten
+(nicht nur `nginx -s reload` — Docker bind-mounts behalten sonst den alten Inode):
 
 ```bash
-docker compose exec -T nginx nginx -s reload
+docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
 ```
 
 ### Datenbankverbindungsfehler
@@ -998,3 +1006,31 @@ with e.connect() as c: print(c.execute(text('SELECT 1')).scalar())
 sudo chmod 644 certs/cert.pem
 sudo chmod 600 certs/key.pem
 ```
+
+---
+
+## 14. Sauberer Neustart (Testumgebungen)
+
+> **Nur für Test- und Staging-Umgebungen.** Dieser Abschnitt löscht alle Daten
+> unwiderruflich. Niemals auf einer Produktionsinstanz ausführen.
+
+Docker-Volumes (Datenbankdaten, Redis-Daten) überleben ein `rm -rf /opt/ipsolis`,
+da sie unter `/var/lib/docker/volumes/` gespeichert sind — unabhängig vom
+Repository-Verzeichnis. Für eine vollständig saubere Neuinstallation:
+
+```bash
+# 1. Stack stoppen und Volumes löschen
+cd /opt/ipsolis
+docker compose down -v
+
+# 2. Repository-Verzeichnis löschen
+cd /opt
+sudo rm -rf ipsolis
+
+# 3. Neu installieren (ab Abschnitt 2)
+sudo git clone https://github.com/XenPool/ipsolis.git ipsolis
+cd ipsolis
+```
+
+Nach diesem Reset enthält die Datenbank keine Benutzer, keine Konfiguration und
+keine Assets — die Ersteinrichtung (Abschnitt 7) muss erneut durchgeführt werden.
