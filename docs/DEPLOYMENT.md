@@ -867,7 +867,7 @@ directory. For a fully clean reinstall:
 ```bash
 # 1. Stop the stack and delete volumes
 cd /opt/ipsolis
-docker compose down -v
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
 
 # 2. Remove the repository directory
 cd /opt
