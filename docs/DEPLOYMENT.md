@@ -159,6 +159,29 @@ sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem YOUR_HOSTNAME.YOUR
 > distribute the root CA (`mkcert -CAROOT` shows the path) to client machines via
 > Group Policy or your enterprise CA trust store.
 
+**Installing the root CA on a Windows client:**
+
+```bash
+# On the server — make the root CA available for download
+sudo cp $(sudo mkcert -CAROOT)/rootCA.pem /tmp/ipsolis-rootCA.pem
+sudo chmod 644 /tmp/ipsolis-rootCA.pem
+```
+
+Copy the file to your Windows laptop (SCP, USB, etc.), then:
+
+**Option 1 — via double-click:**
+1. Rename the file to `ipsolis-rootCA.crt`
+2. Double-click → **Install Certificate**
+3. **Local Machine** → **Trusted Root Certification Authorities**
+4. Restart your browser
+
+**Option 2 — via PowerShell (as Administrator):**
+```powershell
+certutil -addstore -f "ROOT" ipsolis-rootCA.crt
+```
+
+After installation Chrome, Edge and Firefox (using the Windows trust store) will trust the certificate without warnings.
+
 ### Option B: Certificate from your Enterprise CA (Recommended for production)
 
 If your organization runs an internal Certificate Authority (e.g., Active Directory Certificate Services):

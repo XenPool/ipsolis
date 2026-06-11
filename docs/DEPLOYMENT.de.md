@@ -159,6 +159,29 @@ sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem YOUR_HOSTNAME.YOUR
 > Root-CA (`mkcert -CAROOT` zeigt den Pfad) via Gruppenrichtlinie oder den
 > unternehmensinternen CA-Trust-Store auf die Client-Rechner verteilt werden.
 
+**Stammzertifikat auf Windows-Client installieren:**
+
+```bash
+# Auf dem Server — Stammzertifikat für den Download bereitstellen
+sudo cp $(sudo mkcert -CAROOT)/rootCA.pem /tmp/ipsolis-rootCA.pem
+sudo chmod 644 /tmp/ipsolis-rootCA.pem
+```
+
+Datei auf den Windows-Laptop kopieren (SCP, USB o. ä.), dann:
+
+**Option 1 — per Doppelklick:**
+1. Datei in `ipsolis-rootCA.crt` umbenennen
+2. Doppelklick → **Zertifikat installieren**
+3. **Lokaler Computer** → **Vertrauenswürdige Stammzertifizierungsstellen**
+4. Browser neu starten
+
+**Option 2 — per PowerShell (als Administrator):**
+```powershell
+certutil -addstore -f "ROOT" ipsolis-rootCA.crt
+```
+
+Nach der Installation vertrauen Chrome, Edge und Firefox (mit Windows-Trust-Store) dem Zertifikat ohne Warnung.
+
 ### Option B: Zertifikat der internen CA (Empfohlen für Produktion)
 
 Wenn die Organisation eine interne Zertifizierungsstelle betreibt (z. B. Active Directory Certificate Services):
