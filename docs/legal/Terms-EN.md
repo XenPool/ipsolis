@@ -260,7 +260,7 @@ The Provider is neither obliged nor willing to participate in dispute-resolution
 
 ## Annex 1: Open-Source Components
 
-The following list covers the open-source libraries and infrastructure components on which ip·Solis is built. It is maintained on an ongoing basis in the repository and reconciled with the actual Software Bill of Materials (SBOM) on each release. Full license texts are available in the respective package repositories. As of: ip·Solis v0.6.2.
+The following list covers the primary direct open-source dependencies on which ip·Solis is built. It is maintained on an ongoing basis in the repository and reconciled with the actual Software Bill of Materials (SBOM) on each release. Full license texts for all direct and transitive dependencies (including copyright notices) are included in the file [`THIRD-PARTY-LICENSES.md`](../../THIRD-PARTY-LICENSES.md) in the repository and are incorporated by reference into this Annex. As of: ip·Solis v0.6.4.
 
 ### Web Framework & API
 
