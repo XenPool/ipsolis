@@ -1,4 +1,5 @@
 name: Build & push release images
+run-name: Release ${{ github.ref_name }}
 
 # Triggered by pushing a semver tag, e.g.:
 #   git tag v0.5.2 && git push origin v0.5.2
@@ -9,6 +10,12 @@ name: Build & push release images
 #
 # Images are PUBLIC — no registry token required for customers.
 # Commercial use requires a license (see LICENSE).
+#
+# After images are pushed, a `changelog-updated` dispatch is sent to
+# ipsolis-web, triggering a production rebuild that fetches the latest
+# CHANGELOG.md and docs/web/ from this tag.
+# Required secret: IPSOLIS_WEB_DISPATCH_PAT
+#   Fine-grained PAT: repository XenPool/ipsolis-web, permission Contents: write
 
 on:
   push:
@@ -103,3 +110,20 @@ jobs:
           echo "ghcr.io/xenpool/ipsolis-api:${VER}" >> "$GITHUB_STEP_SUMMARY"
           echo "ghcr.io/xenpool/ipsolis-worker:${VER}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Notify ipsolis-web ────────────────────────────────────────────────────────
+  notify-web:
+    name: Trigger ipsolis-web production rebuild
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.IPSOLIS_WEB_DISPATCH_PAT }}
+          script: |
+            await github.rest.repos.createDispatchEvent({
+              owner: 'XenPool',
+              repo: 'ipsolis-web',
+              event_type: 'changelog-updated',
+              client_payload: { version: context.ref.replace('refs/tags/', '') },
+            })

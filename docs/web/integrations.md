@@ -15,7 +15,6 @@ ip·Solis connects to your existing infrastructure rather than replacing it. All
 
 ## Active Directory / LDAP
 
-**Available in:** Community and above
 
 Active Directory is the backbone of user identity in ip·Solis. It is used for:
 
@@ -39,7 +38,6 @@ Configure in **Admin → Settings → Active Directory**:
 
 ## Microsoft Entra ID (Azure AD) SSO
 
-**Available in:** Community and above
 
 Entra ID provides SSO authentication for the self-service portal. When `entra.mode` is set to `entra_only` or `entra_with_onprem`, users are redirected to Microsoft's login page and returned to the portal with a verified identity.
 
@@ -149,7 +147,6 @@ Configure in **Admin → Settings → SCCM**:
 
 ## SMTP
 
-**Available in:** Community and above
 
 All transactional email (approval notifications, reminders, expiry warnings, leaver notifications, health alerts) is sent via Python's `smtplib`.
 

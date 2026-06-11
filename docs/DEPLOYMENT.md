@@ -42,6 +42,14 @@ Install the following before proceeding:
 - **Docker Compose** >= 2.20 (included with Docker Engine)
 - **Git** -- to clone the repository
 
+After installing Docker, add the deployment user to the `docker` group so
+`docker compose` commands work without `sudo`:
+
+```bash
+sudo usermod -aG docker $USER
+# Then log out and back in (or: newgrp docker)
+```
+
 Verify your installation:
 
 ```bash
@@ -58,7 +66,7 @@ The server needs outbound access to:
 |-------------|---------|
 | Your Active Directory / LDAP server (port 389 or 636) | User validation, manager lookup, group membership |
 | Your SMTP relay | Email notifications |
-| vSphere / XenServer (if applicable, Pro Edition) | VM lifecycle automation |
+| vSphere / XenServer (if applicable) | VM lifecycle automation |
 | SCCM server (if applicable) | Task sequence triggers |
 
 Inbound: ports **80** and **443** must be reachable from your users' browsers.
@@ -71,7 +79,7 @@ Clone the repository and pull the images — no authentication required:
 
 ```bash
 cd /opt
-git clone https://github.com/XenPool/ipsolis.git ipsolis
+sudo git clone https://github.com/XenPool/ipsolis.git ipsolis
 cd ipsolis
 ```
 
@@ -126,17 +134,17 @@ If your server is only accessible within your corporate network, use [mkcert](ht
 ```bash
 # Install mkcert (one-time)
 # Ubuntu/Debian:
-apt install -y libnss3-tools
-curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
+sudo apt install -y libnss3-tools
+sudo curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
 chmod +x mkcert-v*-linux-amd64
-mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
+sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
 
 # Install the local CA into your system trust store
-mkcert -install
+sudo mkcert -install
 
 # Generate the certificate for your hostname
-mkdir -p certs
-mkcert -cert-file certs/cert.pem -key-file certs/key.pem selfservice.yourcompany.com
+sudo mkdir -p certs
+sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem selfservice.yourcompany.com
 ```
 
 > **Important**: For browsers on other machines to trust this certificate, you must
@@ -149,8 +157,8 @@ If your organization runs an internal Certificate Authority (e.g., Active Direct
 
 1. Generate a CSR on the server:
    ```bash
-   mkdir -p certs
-   openssl req -new -newkey rsa:2048 -nodes \
+   sudo mkdir -p certs
+   sudo openssl req -new -newkey rsa:2048 -nodes \
      -keyout certs/key.pem \
      -out certs/server.csr \
      -subj "/CN=selfservice.yourcompany.com"
@@ -159,7 +167,7 @@ If your organization runs an internal Certificate Authority (e.g., Active Direct
 3. Save the signed certificate as `certs/cert.pem`.
 4. If your CA provides an intermediate/chain certificate, append it to `cert.pem`:
    ```bash
-   cat signed-cert.pem intermediate-ca.pem > certs/cert.pem
+   cat signed-cert.pem intermediate-ca.pem | sudo tee certs/cert.pem > /dev/null
    ```
 
 ### Option C: Let's Encrypt (Public-facing servers)
@@ -167,32 +175,36 @@ If your organization runs an internal Certificate Authority (e.g., Active Direct
 If your server is publicly accessible, you can use free certificates from Let's Encrypt:
 
 ```bash
-apt install -y certbot
-certbot certonly --standalone -d selfservice.yourcompany.com
+sudo apt install -y certbot
+sudo certbot certonly --standalone -d selfservice.yourcompany.com
 
 # Symlink into the certs directory
-mkdir -p certs
-ln -sf /etc/letsencrypt/live/selfservice.yourcompany.com/fullchain.pem certs/cert.pem
-ln -sf /etc/letsencrypt/live/selfservice.yourcompany.com/privkey.pem certs/key.pem
+sudo mkdir -p certs
+sudo ln -sf /etc/letsencrypt/live/selfservice.yourcompany.com/fullchain.pem certs/cert.pem
+sudo ln -sf /etc/letsencrypt/live/selfservice.yourcompany.com/privkey.pem certs/key.pem
 ```
 
-Set up auto-renewal:
+#### Set up auto-renewal (Option C only)
 
 ```bash
 # Test renewal
-certbot renew --dry-run
+sudo certbot renew --dry-run
 
 # Add a cron job to reload nginx after renewal
-echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx nginx -s reload'" | crontab -
+echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx nginx -s reload'" | sudo crontab -
 ```
 
 ### Configure nginx
 
-Create the nginx config for your hostname:
+The repository already ships a ready-to-use `nginx/nginx.conf` with the placeholder `YOUR_HOSTNAME`. Replace both occurrences of the placeholder with your actual hostname (`sed` with the `g` flag handles both in one pass):
 
 ```bash
-mkdir -p nginx
-cat > nginx/nginx.conf << 'EOF'
+sudo sed -i 's/YOUR_HOSTNAME/selfservice.yourcompany.com/g' nginx/nginx.conf
+```
+
+The file will look like this afterwards (for reference):
+
+```nginx
 server {
     listen 80;
     server_name selfservice.yourcompany.com;
@@ -208,6 +220,8 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
 
+    client_max_body_size 2g;
+
     # WebSocket / HTMX support
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
@@ -221,58 +235,17 @@ server {
         proxy_set_header   X-Forwarded-Proto $scheme;
     }
 }
-EOF
 ```
 
-> Replace `selfservice.yourcompany.com` with your actual hostname in both the
-> nginx config and the certificate generation step.
+> Use the same hostname in the certificate generation step (Option A/B/C above).
 
 ---
 
-## 5. Create the Production Compose Overlay
+## 5. Production Compose Overlay
 
-Create a production overlay that adds the nginx service. This file extends the
-base `docker-compose.yml` without modifying it:
-
-```bash
-cat > docker-compose.prod.yml << 'EOF'
-# Production overlay -- adds nginx reverse proxy with SSL.
-# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
-services:
-  api:
-    # Remove dev hot-reload volumes and use built-in code from Docker image
-    volumes: []
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
-
-  worker:
-    # Remove dev hot-reload volumes, keep persistent PowerShell modules
-    volumes:
-      - ps_user_modules:/root/.local/share/powershell/Modules
-      - ./scripts:/app/scripts:ro
-
-  # Beat schedule lives in Redis (celery-redbeat); no on-disk schedule
-  # volume needed. See PRO_FEATURES.md → "HA Beat scheduler" for
-  # multi-replica scaling: `docker compose up -d --scale beat=2`.
-
-  nginx:
-    image: nginx:alpine
-    container_name: ipsolis-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./certs:/etc/nginx/certs:ro
-    depends_on:
-      api:
-        condition: service_healthy
-EOF
-```
-
-> **Note**: The production compose overlay adds nginx for SSL termination.
-> All application code is baked into the Docker images at build time.
+`docker-compose.prod.yml` is already included in the repository — no action needed.
+The overlay adds nginx for SSL termination and removes the dev bind-mounts from
+`api` and `worker`.
 
 ---
 
@@ -302,9 +275,6 @@ ipsolis-worker        Up (healthy)
 ipsolis-beat-1   Up
 ipsolis-nginx         Up
 ```
-
-The beat container has no fixed `container_name` so it can be scaled
-for HA — see [PRO_FEATURES.md → HA Beat scheduler](PRO_FEATURES.md#ha-beat-scheduler-multi-replica-with-celery-redbeat).
 
 Verify the application:
 
@@ -351,9 +321,9 @@ to each operator:
 superadmin > admin > approver > auditor > helpdesk
 ```
 
-See **[PRO_FEATURES.md → Admin RBAC](PRO_FEATURES.md#admin-rbac-roles-acl-grants-sod-password-policy)**
-for the full role ladder, per-asset-type ACL grants, separation-of-duties
-enforcement, and password-policy options.
+The full role ladder, per-asset-type ACL grants, separation-of-duties
+enforcement, and password-policy options are configurable in the Admin UI
+under Settings → Access Control.
 
 ### Legacy `ADMIN_API_KEY` fallback
 
@@ -402,24 +372,21 @@ container). Docker secrets or a bind-mount both work.
 
 ### Configuration Checklist
 
-Navigate to **Admin > Settings** and configure the following:
+The in-app **Setup checklist** on the dashboard guides you through all required steps.
+The order below matches the checklist:
 
-#### Active Directory (Required)
+#### 1. Set application title and logo *(Essential)*
 
-| Setting | Description | Example |
-|---------|-------------|---------|
-| `ad.server` | AD domain controller hostname or IP | `dc01.yourcompany.com` |
-| `ad.port` | LDAP port | `389` (or `636` for LDAPS) |
-| `ad.base_dn` | Search base DN | `DC=yourcompany,DC=com` |
-| `ad.domain` | NetBIOS domain name | `YOURCOMPANY` |
-| `ad.username` | Service account (sAMAccountName) | `svc-selfservice` |
-| `ad.password` | Service account password | *(marked as secret)* |
-| `ad.use_ssl` | Use LDAPS | `true` or `false` |
+Navigate to **Admin > Settings → General**:
 
-> The service account needs **read-only** access to user objects (attributes:
-> `mail`, `displayName`, `sAMAccountName`, `userPrincipalName`, `manager`, `memberOf`).
+| Setting | Description |
+|---------|-------------|
+| `app.title` | Application name shown in the portal and emails (default: `ip·Solis`) |
+| `app.logo` | Logo upload (PNG/SVG recommended) |
 
-#### SMTP (Required for notifications)
+#### 2. Configure SMTP *(Essential)*
+
+Navigate to **Admin > Settings → Email**:
 
 | Setting | Description | Example |
 |---------|-------------|---------|
@@ -431,20 +398,36 @@ Navigate to **Admin > Settings** and configure the following:
 | `smtp.from` | Sender email address | `noreply@yourcompany.com` |
 | `smtp.from_name` | Sender display name | `ip·Solis` |
 
-#### Email Templates
+Navigate to **Admin > Email Templates** to customize notification email text.
 
-Navigate to **Admin > Email Templates** to customize notification emails.
-Default templates are created during migration. You can edit the subject line
-and body using `{{variable}}` placeholders.
+#### 3. Connect to Active Directory *(Essential)*
 
-#### Portal Settings
+Navigate to **Admin > Settings → Active Directory**:
 
-| Setting | Description | Default |
+| Setting | Description | Example |
 |---------|-------------|---------|
-| `portal.max_advance_days` | How far ahead users can schedule orders | `0` (unlimited) |
-| `portal.app_title` | Application title shown in the portal | `ip·Solis` |
+| `ad.server` | AD domain controller hostname or IP | `dc01.yourcompany.com` |
+| `ad.port` | LDAP port | `389` (or `636` for LDAPS) |
+| `ad.base_dn` | Search base DN | `DC=yourcompany,DC=com` |
+| `ad.domain` | NetBIOS domain name | `YOURCOMPANY` |
+| `ad.username` | Service account (sAMAccountName) | `svc-selfservice` |
+| `ad.password` | Service account password | *(marked as secret)* |
+| `ad.use_ssl` | Use LDAPS | `true` or `false` |
 
-### Create your first Asset Type
+> Required AD permissions depend on the modules and runbook steps in use.
+> As a baseline:
+> - **Read** on user objects (attributes: `mail`, `displayName`, `sAMAccountName`,
+>   `userPrincipalName`, `manager`, `memberOf`, `distinguishedName`)
+> - **Write `member`** on group objects — required for AD group-based access assignment
+>
+> Additional permissions (e.g. on computer objects, OUs, or other attributes) may be
+> needed depending on the runbooks and modules deployed.
+
+#### 4. Enable portal SSO via Entra ID *(Essential)*
+
+See [Section 8](#8-entra-id-sso-portal-authentication) for the full Entra ID setup.
+
+#### 5. Create your first asset type *(Essential)*
 
 1. Go to **Admin > Asset Types > New**
 2. Fill in the name, description, and category
@@ -453,13 +436,40 @@ and body using `{{variable}}` placeholders.
 5. Optionally restrict access with an Eligible Requestors group DN
 6. Save
 
-### Create Runbooks (if applicable)
+#### 6. Add at least one asset to the pool *(Essential)*
 
-If your asset types use runbook automation:
+Go to **Admin > Asset Pool > New** and add at least one asset.
+
+> For pure `capacity_pooled` asset types (quota without dedicated instances) this
+> step can be skipped.
+
+#### Set up Runbooks *(if applicable)*
+
+ip·Solis ships with a fully configured example runbook:
+**"Virtual Machine Recycler"** — a standalone runbook that includes all required
+script modules (XenServer/XCP-ng, SCCM, Active Directory) and can serve as a
+template for your own automation.
+
+Find it under **Admin > Runbooks** to inspect, copy, or adapt it.
+
+To create asset-type runbooks:
 
 1. Go to **Admin > Runbooks > New**
 2. Define the steps (PowerShell modules or built-in modules)
 3. Link the runbook to an asset type
+
+Any number of custom runbooks with any combination of steps can be created.
+
+#### Recommended next steps
+
+- **Microsoft Teams approval cards**: Go to **Admin > Settings → Email** and add a
+  Teams webhook URL — approvers receive an Adaptive Card with a one-click review
+  link in addition to email.
+- **Stream audit log to SIEM**: Configure a Splunk HEC or webhook endpoint under
+  **Admin > Settings → Compliance**.
+- **Issue per-integration API tokens**: Go to **Admin > API Tokens** to create named,
+  revocable bearer tokens for ServiceNow, scripts, or Prometheus — replaces the
+  shared `X-Admin-Key`.
 
 ---
 
@@ -592,8 +602,7 @@ snapshot is fresh when an unexpected regression appears.
 
 If you run multiple Beat replicas (`--scale beat=N`), `docker compose
 up --build -d` rolls the containers one at a time and the leader lock
-hands over to the surviving replica within ~13 s (see
-[PRO_FEATURES.md → HA Beat scheduler](PRO_FEATURES.md#ha-beat-scheduler-multi-replica-with-celery-redbeat)).
+hands over to the surviving replica within ~13 s.
 For single-Beat installs there's a brief gap during the restart
 where periodic tasks aren't running — usually invisible since cadences
 are minutes / hours.
@@ -603,10 +612,8 @@ are minutes / hours.
 ## 12. High-Availability Deployments
 
 ip·Solis is built to scale horizontally on every layer except Postgres
-(single-writer by design). The Beat scheduler shipped multi-replica in
-slice 1 — see
-[PRO_FEATURES.md → HA Beat scheduler](PRO_FEATURES.md#ha-beat-scheduler-multi-replica-with-celery-redbeat)
-— and this section covers the remaining three layers: API replicas
+(single-writer by design). The Beat scheduler supports multi-replica HA
+via celery-redbeat, and this section covers the remaining three layers: API replicas
 behind a load balancer, worker replicas per Celery queue, and a
 Postgres read-replica + failover plan.
 
@@ -669,8 +676,7 @@ done
   is fine.
 * **Health check**: `GET /health` (unauthenticated). Returns
   `{status: ok | degraded}` aggregating database, redis, and beat
-  liveness — see the *Beat-alive health probe* in
-  PRO_FEATURES. The endpoint is fast (one Redis ping + one
+  liveness. The endpoint is fast (one Redis ping + one
   DB SELECT 1) so a 5–10s LB check interval is safe.
 * **TLS termination**: keep on the load balancer (or the existing
   nginx sidecar from section 5). Replicas serve plain HTTP
@@ -721,7 +727,7 @@ scale-up; the worker code itself doesn't change.
 |---|---|---|
 | Lab / single-team (≤50 users) | 1 worker replica, `--concurrency=4 -Q provision,notifications,default,reclaim` | All queues on one process; concurrency 4 is plenty for the typical 1–2 orders/hour. |
 | Mid (≤500 users, ≤20 orders/hour) | 2 worker replicas split by queue: replica A `-Q provision --concurrency=4`, replica B `-Q notifications,default,reclaim --concurrency=2` | Provisioning latency stays bounded by replica A; replica B handles housekeeping + reminders without queue-head-of-line blocking. |
-| Enterprise (≥500 users, ≥50 orders/hour, regulated SLAs) | 3+ worker replicas: dedicated `provision` workers (`--concurrency=8` × 2 replicas), one `notifications` replica (`--concurrency=4`), one `default,reclaim` replica (`--concurrency=2`) | Per-queue scaling matches actual load shape. |
+| Large (≥500 users, ≥50 orders/hour, regulated SLAs) | 3+ worker replicas: dedicated `provision` workers (`--concurrency=8` × 2 replicas), one `notifications` replica (`--concurrency=4`), one `default,reclaim` replica (`--concurrency=2`) | Per-queue scaling matches actual load shape. |
 
 **Scaling command** (single-host, all queues on each replica):
 
@@ -756,6 +762,17 @@ services:
     deploy: { replicas: 1 }
     env_file: .env
 ```
+
+**Beat scaling**: the beat container has no fixed `container_name` so it can be
+replicated for HA:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --scale beat=2
+```
+
+> **Note**: Celery Beat is a singleton scheduler. Multiple beat replicas only make
+> sense with a distributed lock backend — `celery-redbeat` (already configured) uses
+> Redis locks to prevent duplicate task firing.
 
 **Liveness**: each worker registers with Celery's mingle-on-startup,
 which means a fresh worker is visible to Beat / other workers within
@@ -1013,6 +1030,6 @@ with e.connect() as c: print(c.execute(text('SELECT 1')).scalar())
 ### Permission denied on certs directory
 
 ```bash
-chmod 644 certs/cert.pem
-chmod 600 certs/key.pem
+sudo chmod 644 certs/cert.pem
+sudo chmod 600 certs/key.pem
 ```

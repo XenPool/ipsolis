@@ -14,6 +14,89 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.5] — 2026-06-11
+
+### Changed
+
+- **Legal: SBOM annexes now reference THIRD-PARTY-LICENSES.md.** `AGB.md` Anlage 1 and `Terms-EN.md` Annex 1 intro text updated to declare `THIRD-PARTY-LICENSES.md` as the incorporated-by-reference source for full license texts and copyright notices; version reference updated to v0.6.4.
+
+## [0.6.4] — 2026-06-11
+
+### Changed
+
+- **THIRD-PARTY-LICENSES.md:** replaced link-only table with complete license texts and copyright notices for all 96 Python dependencies, as required by MIT, BSD, Apache 2.0, and LGPL; generated via `pip-licenses --from=mixed --with-license-file`; includes infrastructure (Docker base images) and frontend (HTMX, Tailwind) sections
+- **GitHub Actions:** added `run-name` to `release.yml` and `deploy-prelive.yml` so workflow runs display the version tag instead of the commit message
+
+## [0.6.3] — 2026-06-10
+
+### Fixed
+
+- **Admin login page:** removed legacy `ADMIN_API_KEY` hint text and placeholder copy from the login form — the break-glass backend path still works but is no longer advertised publicly
+- **AD service account docs:** corrected "read-only" permission note to reflect that write access on group `member` attributes is required for group-based access assignment; added note that additional permissions depend on deployed modules and runbooks
+
+### Changed
+
+- **Deployment docs (EN + DE):** sudo fixes throughout — all writes to root-owned `/opt/ipsolis` now use `sudo`; `cat > file` redirections replaced with `sudo tee`; Option C auto-renewal section clearly marked; nginx config placeholder (`YOUR_HOSTNAME`) replaces hardcoded XenPool test hostname; docs now use `sudo sed -i` to substitute the placeholder
+- **Deployment docs:** `docker-compose.nginx.yml` renamed to `docker-compose.prod.yml` and expanded with api/worker production overrides (strip dev volumes, set uvicorn `--workers 4`); all references updated
+- **Deployment docs:** section 5 (compose overlay creation) replaced with a note that `docker-compose.prod.yml` is already included in the repository
+- **Deployment docs:** docker group prerequisite added to section 1 (`sudo usermod -aG docker $USER`)
+- **Deployment docs:** section 7 configuration checklist reordered to match the in-app Setup checklist; added missing items: "Set application title and logo", "Add at least one asset to the pool", Teams approval cards, SIEM, and per-integration API tokens
+- **Deployment docs:** beat scaling note moved from section 6 (stack start) to section 12.2 (HA / multi-replica worker) with explanation of `celery-redbeat` distributed lock
+- **Deployment docs:** section 7 mentions the included "Virtual Machine Recycler" example runbook as a starting template
+- **`nginx/nginx.conf`:** replaced hardcoded `ipsolis-pre.xenpool.local` with `YOUR_HOSTNAME` placeholder; added `client_max_body_size 2g`
+- **AGB / Terms:** completed SBOM (Annex 1) with all 35 dependencies across 9 categories, version-pinned with SPDX license identifiers; removed draft blockquote; added English convenience translation (`docs/legal/Terms-EN.md`)
+- **TASKS.md:** compressed 3100-line backlog into concise open-tasks + done-summary format; added `[open]` task for `onprem_ldap` portal auth mode
+
+## [0.6.2] — 2026-06-10
+
+### Added
+
+- `docs/DEPLOYMENT.de.md` — full German translation of the production deployment guide; code blocks and commands kept in English per technical documentation convention
+
+## [0.6.1] — 2026-06-10
+
+### Changed
+
+- **CI: docs/changelog updates now triggered by release tag only.** The
+  `trigger-docs-rebuild.yml` workflow (prelive-push based) is removed. The
+  `release.yml` workflow now dispatches a `changelog-updated` event to
+  ipsolis-web after images are pushed, triggering a production rebuild
+  directly from the release tag.
+- **Docs: PRO_FEATURES.md references removed.** All links and references to
+  the deleted `PRO_FEATURES.md` file replaced with inline descriptions in
+  `DEPLOYMENT.md` and `README.md`.
+- **Docs: Enterprise sizing tier renamed.** Worker sizing table label
+  "Enterprise" renamed to "Large" to avoid confusion with the retired
+  Enterprise product tier.
+- **Legal: AGB added.** Full German terms and conditions for commercial
+  ip·Solis licensing added at `docs/legal/AGB.md` (XenPool Commercial
+  Source License, dual-track liability model, Munich jurisdiction).
+
+## [0.6.0] — 2026-06-10
+
+### Added
+
+- **License tab: full license text.** Maintenance → License now displays the full
+  XenPool Commercial Source License in both English and German, replacing the
+  previous "about" link. No external request needed — text is embedded in the template.
+
+### Changed
+
+- **Edition cleanup: all remaining Pro / Community split artifacts removed.** The
+  `community` field is stripped from `BeatEntry` and Beat schedule entries; the PRO
+  badge on the Beat schedule page is removed. Stale Pro Edition and community-install
+  comments removed from `hr_webhook.py`. `enterprise_teaser` import and `nav_locked`
+  calls removed from `base.html`. All residual "Pro Edition" / "Community Edition"
+  copy removed from `.env.example`, testlab compose files, and docs.
+
+### Fixed
+
+- **Asset type form: section nav and copy.** Section navigation behavior corrected;
+  form copy improved for clarity.
+- **`base.html` template errors.** Orphaned `enterprise_teaser` import and stale
+  `nav_locked` calls removed, resolving template rendering errors on pages that use
+  the base layout.
+
 ## [0.5.2] — 2026-06-09
 
 ### Changed

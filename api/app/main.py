@@ -79,7 +79,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             valid=license_info.valid, licensee=license_info.licensee,
         )
     except Exception as exc:
-        logger.warning("License load failed; running Community: %s", exc)
+        logger.warning("License load failed; running in evaluation mode: %s", exc)
 
     # OpenTelemetry tracing — opt-in via otel.* config keys. Auto-instrument
     # FastAPI + SQLAlchemy after the provider is wired up so spans flow.

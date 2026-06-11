@@ -10,7 +10,7 @@ problems.**
 Report privately through either channel:
 
 1. **GitHub private vulnerability reporting** —
-   [open a draft advisory](https://github.com/XenPool/ipsolis-community/security/advisories/new)
+   [open a draft advisory](https://github.com/XenPool/ipsolis/security/advisories/new)
    (preferred; keeps the report linked to the repo).
 2. **Email** — [security@xenpool.de](mailto:security@xenpool.de). Encrypt with
    our PGP key on request.
@@ -19,7 +19,7 @@ Please include:
 
 - A description of the issue and its impact.
 - Steps to reproduce or a proof of concept.
-- Affected version (see the `VERSION` file) and edition (Community / Pro).
+- Affected version (see the `VERSION` file).
 - Any relevant configuration — **with secrets, tokens, and personal data redacted**.
 
 ## What to expect

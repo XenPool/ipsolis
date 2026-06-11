@@ -2,14 +2,7 @@
 {% block title %}Runbooks – {{ app_title }}{% endblock %}
 
 {% block content %}
-{% if edition == 'community' %}
-{% from "_partials/enterprise_teaser.html" import teaser_pane %}
-{{ teaser_pane(
-    "Standalone Runbooks",
-    "Schedule and run automation tasks independent of any asset type. Build complex multi-step workflows — VM recycling, audit exports, housekeeping jobs — and trigger them on a cron schedule or ad-hoc. Includes the Virtual Machine Recycler runbook out of the box.",
-    "https://ipsolis.com"
-) }}
-{% else %}
+
 <div class="flex items-center justify-between mb-6">
   <div>
     <h1 class="text-lg font-semibold text-heading">Runbooks</h1>
@@ -138,5 +131,4 @@ async function deleteRunbook(id, name) {
 loadRunbooks();
 {% endraw %}
 </script>
-{% endif %}
 {% endblock %}

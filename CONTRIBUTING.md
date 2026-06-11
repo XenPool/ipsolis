@@ -6,21 +6,17 @@ reports, and ideas — are welcome.
 ## Before you start
 
 - **Discuss first.** For anything beyond a trivial fix, open an issue or a
-  [Discussion](https://github.com/XenPool/ipsolis-community/discussions) before writing
+  [Discussion](https://github.com/XenPool/ipsolis/discussions) before writing
   code, so we can agree on the approach and avoid wasted effort.
 - **Questions** belong in Discussions, **bugs and concrete features** in Issues.
   See [SUPPORT.md](SUPPORT.md).
 
 ## Licensing of contributions
 
-ip·Solis Community Edition is licensed under **AGPL-3.0**. By submitting a
-contribution you agree it is licensed under the same terms and that you have the
-right to contribute it. Keep third-party code compatible with AGPL-3.0 and record
-it in [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md).
-
-> Note: ip·Solis ships as a single codebase. Pro features live in the same repo
-> but are excluded from the Community Docker image at build time. If your change
-> touches a Pro-only file, say so in the PR description.
+ip·Solis is source-available under the **XenPool Commercial Source License v1.0**
+(see [LICENSE](LICENSE)). By submitting a contribution you agree it is licensed
+under the same terms and that you have the right to contribute it. Record any
+third-party code in [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md).
 
 ## Development setup
 

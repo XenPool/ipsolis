@@ -4,23 +4,15 @@ Open-source platform for IT asset lifecycle automation. Built for on-premises da
 
 Give your users a self-service portal to request, extend, and return IT assets (VDIs, application access, infrastructure resources) while your IT team keeps full control through configurable approval workflows, runbooks, and audit trails.
 
-## Editions
+## Licensing
 
-| | Community | Pro |
-|---|---|---|
-| Self-service portal + approval workflows | ✓ | ✓ |
-| Runbook engine + PowerShell modules | ✓ | ✓ |
-| Asset lifecycle + cost reporting | ✓ | ✓ |
-| Admin RBAC + audit log | ✓ | ✓ |
-| Active Directory / Entra ID / SMTP | ✓ | ✓ |
-| vSphere / XenServer automation | ✓ | ✓ |
-| Standalone runbooks (ad-hoc + cron) | — | ✓ |
-| SCCM integration + ServiceNow webhook | — | ✓ |
-| SCIM 2.0 + HR leaver feed | — | ✓ |
-| Access certification campaigns | — | ✓ |
-| SIEM streaming (Splunk / Sentinel / webhook) | — | ✓ |
+ip·Solis is source-available under the **XenPool Commercial Source License v1.0**.
 
-Community is free and open-source (AGPL-3.0). Pro adds operational integrations (ServiceNow, SCCM, SCIM, HR feed, standalone runbooks, SIEM streaming, access certifications) and ships as a pre-built image via the XenPool container registry. Contact **sales@xenpool.de** for pricing.
+- **Non-commercial use** (personal, educational, internal research, non-profit) — free, no license key required.
+- **Evaluation** — 30 days free in any environment, no license key required.
+- **Commercial use** — requires a valid license purchased from XenPool GmbH. Contact **sales@xenpool.de**.
+
+All features ship in a single image. There is no feature-limited free tier.
 
 ## Why This Exists
 
@@ -193,8 +185,8 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 ## Quick Start (Local)
 
 ```bash
-git clone https://github.com/XenPool/ipsolis-community.git
-cd ipsolis-community
+git clone https://github.com/XenPool/ipsolis.git
+cd ipsolis
 
 cp .env.example .env
 # Edit .env -- set database credentials and API secrets
@@ -230,7 +222,7 @@ The repository ships two compose files. The main one is the full stack (postgres
 | Mode | Command | When |
 |---|---|---|
 | **Direct** | `docker compose up -d` | Dev. API on `http://localhost:8000/`, no proxy. |
-| **TLS-fronted** | `docker compose -f docker-compose.yml -f docker-compose.nginx.yml up -d` | Pre-live / prod. Nginx handles TLS using `certs/cert.pem` + `certs/key.pem`; reach the app at `https://<your-host>/`. |
+| **TLS-fronted** | `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` | Pre-live / prod. Nginx handles TLS using `certs/cert.pem` + `certs/key.pem`; reach the app at `https://<your-host>/`. |
 
 The overlay is purely additive — same database, same migrations, same image tags. Switch between modes by stopping (`down`) and starting with the alternate command.
 
@@ -238,7 +230,7 @@ The overlay is purely additive — same database, same migrations, same image ta
 
 See the full deployment guide: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**
 
-For per-feature setup walkthroughs (Admin RBAC, external secret management — including AppRole/Kubernetes/AssumeRole auth + bulk-migration tool, SIEM streaming — including Sentinel Logs Ingestion API, Teams approval cards, OpenTelemetry tracing, HA Beat, conditional approval rules with the recursive editor, per-classification approval routing, auto-decline, cost / chargeback, …) see **[docs/PRO_FEATURES.md](docs/PRO_FEATURES.md)**. High-availability deployment patterns (multi-replica api / worker, Postgres standby + failover) live in section 12 of **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. Grafana dashboard + Prometheus alerts in **[docs/grafana/](docs/grafana/)**; ops runbooks in **[docs/runbooks/](docs/runbooks/)**.
+High-availability deployment patterns (multi-replica api / worker, Postgres standby + failover) live in section 12 of **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**. Grafana dashboard + Prometheus alerts in **[docs/grafana/](docs/grafana/)**; ops runbooks in **[docs/runbooks/](docs/runbooks/)**.
 
 Summary:
 1. Provision a Linux server with Docker
@@ -299,7 +291,6 @@ backups/            Persisted DB dumps (bind-mounted into api + worker)
 licenses/           Signed `.lic` license file (read-write)
 docs/
   DEPLOYMENT.md             Production deployment guide
-  PRO_FEATURES.md           Pro edition feature walkthroughs
   grafana/                  Ready-to-import dashboard + Prometheus alerts
   runbooks/                 Operational runbooks (e.g. compose project rename)
 ```
@@ -395,7 +386,7 @@ Contributions are welcome! Please open an issue first to discuss what you'd like
 
 ## Support
 
-- **Community**: [GitHub Issues](https://github.com/XenPool/ipsolis-community/issues) for bug reports and feature requests
+- **Bug reports & features**: [GitHub Issues](https://github.com/XenPool/ipsolis/issues)
 - **Commercial support**: Contact sales@xenpool.de for SLA-backed support contracts and consulting
 
 ---

@@ -8,7 +8,7 @@ body:
       value: >-
         Thanks for taking the time to file a bug. Please search existing issues
         first. For questions or "how do I…?", use
-        [Discussions](https://github.com/XenPool/ipsolis-community/discussions) instead.
+        [Discussions](https://github.com/XenPool/ipsolis/discussions) instead.
         **Never** paste secrets, license files, or unredacted audit logs.
   - type: textarea
     id: what-happened
@@ -33,8 +33,8 @@ body:
     attributes:
       label: Edition
       options:
-        - Community
-        - Pro
+        - Non-commercial
+        - Commercial (licensed)
         - Not sure
     validations:
       required: true
