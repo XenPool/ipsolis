@@ -24,17 +24,6 @@ This guide walks you through setting up the ip·Solis platform on a fresh on-pre
 
 ---
 
-> ### ⚠ Replace these placeholders
->
-> The following placeholder appears multiple times throughout this guide and must be
-> replaced with your server's actual FQDN everywhere it occurs:
->
-> | Placeholder | Replace with |
-> |---|---|
-> | `YOUR_HOSTNAME.YOUR_COMPANY.COM` | Your server's FQDN (e.g. `ipsolis.acme.com`) |
-> | `YOUR_HOSTNAME` | The same FQDN — substituted in `nginx/nginx.conf` via `sed` (section 5) |
-> | `xpuser` / `xppassword` | Database user and password from `.env` |
-
 ---
 
 ## 1. Prerequisites
@@ -215,10 +204,10 @@ echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx ngi
 
 ### Configure nginx
 
-The repository already ships a ready-to-use `nginx/nginx.conf` with the placeholder `YOUR_HOSTNAME`. Replace both occurrences of the placeholder with your actual hostname (`sed` with the `g` flag handles both in one pass):
+The repository already ships a ready-to-use `nginx/nginx.conf` with the placeholder `YOUR_HOSTNAME.YOUR_COMPANY.COM`. Replace it with your actual FQDN (`sed` handles both occurrences in one pass):
 
 ```bash
-sudo sed -i 's/YOUR_HOSTNAME/YOUR_HOSTNAME.YOUR_COMPANY.COM/g' nginx/nginx.conf
+sudo sed -i 's/YOUR_HOSTNAME.YOUR_COMPANY.COM/ipsolis.acme.com/g' nginx/nginx.conf
 ```
 
 The file will look like this afterwards (for reference):
