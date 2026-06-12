@@ -6,6 +6,39 @@ Format: `[open]` / `[done]` / `[blocked]`. Add new tasks at the top of their sec
 
 ## Open Tasks
 
+### [open] Publish prebuilt Docker images to GHCR (ghcr.io) via CI
+
+**Problem:** ip·Solis ships only as source — installs run `docker compose up --build`,
+which compiles locally (slow first run, no version pinning) and gives **no visibility
+into adoption**. GitHub git-clone counts are inflated by our own CI (the `ipsolis-web`
+build pulls docs from this repo on every deploy) and never reveal *who* cloned, so they
+are a poor proxy for real installations.
+
+**Proposed solution:** Publish prebuilt images to **GitHub Container Registry**
+(`ghcr.io/xenpool/ipsolis-*`) from a GitHub Actions workflow on release tags
+(`v*.*.*`), and add a compose overlay that **pulls** the published image instead of
+building. GHCR exposes **per-package pull counts** → the closest privacy-respecting
+signal for actual downloads/installations.
+
+**Why this approach:**
+- Pull counts beat clone counts as an install proxy (clones polluted by CI; GitHub hides cloner identity by design).
+- Faster, reproducible installs (no local build); version-pinned images.
+- `ghcr.io` is free for public images, uses `GITHUB_TOKEN`, no extra registry account.
+- Reuses the existing Dockerfile(s) (Community / Pro tiers).
+
+**Implementation slices:**
+- [ ] GitHub Actions workflow: build + push multi-arch images to `ghcr.io` on `v*.*.*` tags (+ `:latest`) via `docker/build-push-action` (`packages: write`, `GITHUB_TOKEN`)
+- [ ] Tag both tier images if applicable (community / pro Dockerfiles)
+- [ ] Make the GHCR package **public**; document image usage in README + `docs/DEPLOYMENT.md`
+- [ ] Add `docker-compose.ghcr.yml` (or adjust `docker-compose.prod.yml`) to pull `ghcr.io/xenpool/ipsolis-api:<tag>` instead of `build:`
+- [ ] (optional) Document where to read pull counts (package page / API) for adoption tracking
+
+**Related (deeper signal, separate task):** an opt-in, anonymous update-checker
+phone-home would be the only way to count *actually running* deployments (GHCR pulls
+still ≠ live installs). Commercial installs are already known via license activation.
+
+---
+
 ### [open] On-premises-only portal authentication (`onprem_ldap` mode)
 
 **Problem:** Customers without Entra ID (Azure AD) cannot authenticate portal users.
