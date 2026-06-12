@@ -487,10 +487,18 @@ def run_restore(self, backup_id: int, safety_backup_id: int) -> dict:
 
 
 _RETENTION_TABLES = [
-    # (config_key, table_name, timestamp_column)
-    ("retention.orders_days",           "orders",                  "created_at"),
-    ("retention.audit_log_days",        "audit_log",               "timestamp"),
-    ("retention.standalone_runs_days",  "standalone_runbook_runs", "created_at"),
+    # (config_key, table_name, timestamp_column, extra_where)
+    # Orders: exclude rows still referenced by asset_pool.current_order_id
+    # (no ON DELETE on that FK — deleting a live order would raise a constraint
+    # violation and abort the entire cleanup batch).
+    (
+        "retention.orders_days",
+        "orders",
+        "created_at",
+        "AND id NOT IN (SELECT current_order_id FROM asset_pool WHERE current_order_id IS NOT NULL)",
+    ),
+    ("retention.audit_log_days",        "audit_log",               "timestamp",    ""),
+    ("retention.standalone_runs_days",  "standalone_runbook_runs", "created_at",   ""),
 ]
 
 
@@ -508,18 +516,21 @@ def run_cleanup(self, dry_run: bool = False) -> dict:
     """Deletes rows older than the per-table retention window.
 
     Returns a summary per table: {orders: {days, would_delete|deleted}, ...}
+    Each table entry runs in its own transaction so a failure in one table
+    does not prevent the others from being cleaned up.
     """
     db = _db()
     summary: dict[str, dict] = {}
-    try:
-        for key, table, col in _RETENTION_TABLES:
+    for key, table, col, extra_where in _RETENTION_TABLES:
+        try:
             days = _get_retention(db, key)
             if days <= 0:
                 summary[table] = {"days": days, "skipped": True}
                 continue
             cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            where = f"{col} < :c {extra_where}".strip()
             count_row = db.execute(
-                text(f"SELECT COUNT(*) FROM {table} WHERE {col} < :c"),
+                text(f"SELECT COUNT(*) FROM {table} WHERE {where}"),
                 {"c": cutoff},
             ).first()
             n = int(count_row[0]) if count_row else 0
@@ -527,18 +538,18 @@ def run_cleanup(self, dry_run: bool = False) -> dict:
                 summary[table] = {"days": days, "would_delete": n}
             else:
                 db.execute(
-                    text(f"DELETE FROM {table} WHERE {col} < :c"),
+                    text(f"DELETE FROM {table} WHERE {where}"),
                     {"c": cutoff},
                 )
                 db.commit()
                 summary[table] = {"days": days, "deleted": n}
-        return {"success": True, "dry_run": dry_run, "summary": summary}
-    except Exception as exc:
-        logger.exception("Cleanup failed: %s", exc)
-        db.rollback()
-        return {"success": False, "error": str(exc), "summary": summary}
-    finally:
-        db.close()
+        except Exception as exc:
+            logger.exception("Cleanup failed for table %s: %s", table, exc)
+            db.rollback()
+            summary[table] = {"error": str(exc)}
+    db.close()
+    failed = [t for t, v in summary.items() if "error" in v]
+    return {"success": not failed, "dry_run": dry_run, "summary": summary}
 
 
 # ── Scheduled backups (Beat) ──────────────────────────────────────────────────

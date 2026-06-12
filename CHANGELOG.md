@@ -14,6 +14,24 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.7] — 2026-06-13
+
+### Added
+- **Portal approval notice.** When an asset type requires manager or application-owner approval, an amber info bar now appears on the order form before the user submits. Message text adapts to the approval combination (manager / owner / both) and switches language live without a page reload.
+- **Hard-delete revoked API tokens.** Superadmins can now permanently remove individual revoked token rows via a ✕ button on the API Tokens page. The endpoint (`DELETE /admin/api-tokens/{id}/hard`) requires the token to be revoked first and writes an audit row before deleting.
+- **Conditional approver AD validation.** Rule-configured approver emails are now validated against Active Directory at order-creation time (same as manager approval). Orders are blocked with a clear error if a configured approver cannot be resolved as a valid domain account. AD-canonical display name and email are used in all notifications.
+- **Docs: Approval Workflow and Conditional Approval Rules.** `docs/web/self-service.md` now contains a full reference for all three approval types, quorum (N-of-M), per-rule quorum groups, approver deduplication, SoD exemption, condition field reference (built-in + `attr.<key>` custom fields), operators, compound logic (ALL/ANY/NOT, max depth 8), and three worked examples.
+- **Docs: Parameter system and Parse-from-Script.** `docs/web/automation.md` now documents the `param_schema` structure, what the ↻ "Parse from Script" button does, the PowerShell-to-schema type mapping, and all three parameter scopes (PARAMS / VARS / CTX) with a full CTX key table.
+
+### Fixed
+- **Eligible Requestors DN can now be cleared.** Editing an asset definition with the DN field empty no longer silently retains the previous value; the field is unconditionally written (`None` when blank).
+- **Retention: FK constraint no longer poisons entire order cleanup batch.** Orders referenced by `asset_pool.current_order_id` are now excluded from the retention DELETE via an `AND id NOT IN (...)` guard, preventing FK RESTRICT violations from aborting the whole batch.
+- **Retention: one failing table no longer aborts the others.** Each retention table is now wrapped in its own try/except and commits independently; a failure in one table is logged and reported but does not roll back the others.
+
+### Changed
+- **Admin sidebar: three infrequently-used links moved to footer.** Cost Report, Certifications, and Leaver Events are now rendered as small `target="_blank"` links in the sidebar footer, eliminating the scrollbar on standard viewport heights.
+- **Admin sidebar footer: Documentation link added.** A book-icon link to `https://www.ipsolis.com/en/docs` appears in the footer alongside Swagger UI.
+
 ## [0.6.6] — 2026-06-11
 ### Changed
 - **Legal: AGB and Terms revised (v2).** Sections 1–16 substantively rewritten (free/commercial-use distinction, scope of owed performance, liability structuring). Draft notice removed. Anlage 1 / Annex 1 SBOM table retained.

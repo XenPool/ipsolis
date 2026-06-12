@@ -2,7 +2,7 @@
 title: Automation & Runbooks
 slug: automation
 order: 3
-description: Runbook editor, PowerShell steps, automation strategies, standalone and cron runbooks, PowerShell module store, and global variables.
+description: Runbook editor, PowerShell steps, automation strategies, parameter scopes (local/global/context), standalone and cron runbooks, PowerShell module store, and global variables.
 ---
 
 # Automation & Runbooks
@@ -51,7 +51,7 @@ Each runbook definition is scoped to an **action**:
 
 Steps are added from the module registry. Each step specifies:
 - **Module** — the script module to call
-- **Parameters** — values mapped to the module's PowerShell `param()` block. Parameters can be static values or dynamic references to order attributes (e.g., `{{order.username}}`), asset attributes, or global variables
+- **Parameters** — values mapped to the module's PowerShell `param()` block. Each parameter is bound either to a **context variable** (order, asset, or user data resolved at runtime) or a **literal value** (a fixed string typed directly into the field)
 
 Steps can be reordered using the drag handle (`☰`) or the ↑/↓ keyboard buttons.
 
@@ -80,6 +80,83 @@ The in-app script editor at **Admin → Script Modules** supports:
 - Return JSON on stdout
 - Use plain ASCII (no Unicode characters)
 - Not rely on interactive prompts
+
+### Parameter Schema and "Parse from Script"
+
+Every script module has a **parameter schema** — a structured list of the parameters the script accepts (name, type, required flag, optional default value). The schema is what the runbook step editor reads to build the parameter binding UI: one row per parameter, with a type badge and a required indicator.
+
+You define the schema manually using the parameter table below the editor, or let ip·Solis derive it automatically by clicking **↻ Parse from script**. That button sends the current script body to the server, which reads the PowerShell `param()` block and extracts each declared parameter — its name, type annotation, `[Parameter(Mandatory=$true)]` flag, and default value. Existing rows are updated in place; new parameters are added; parameters that have been removed from the script are left untouched (so you can remove them manually if needed).
+
+Supported PowerShell types are mapped to four canonical types used by the UI:
+
+| PowerShell type | Schema type |
+|---|---|
+| `[string]`, `[datetime]`, `[PSCredential]` | `string` |
+| `[int]`, `[int32]`, `[int64]`, `[long]` | `int` |
+| `[bool]`, `[switch]` | `bool` |
+| `[hashtable]`, `[array]`, `[object]` | `json` |
+
+---
+
+## Parameter Scopes
+
+Scripts and runbook step bindings work with three distinct variable scopes. The **§ Insert variable** picker in the script editor groups them visually.
+
+### Local parameters (PARAMS)
+
+Local parameters are the parameters declared in the script's own `param()` block. They represent the script's inputs — the values the runbook step binding must supply each time the script runs.
+
+Inside the script, local parameters are available both as their declared PowerShell variables (`$VMName`, `$UserEmail`, …) and via the injected `$PARAMS` hashtable (`$PARAMS.VMName`). The `$PARAMS` form is useful when parameter names are dynamic or when passing the whole set to a helper function.
+
+In the runbook step editor, each local parameter appears as a binding row. You choose whether to supply it as a **literal value** (a fixed string) or map it to a **context variable** resolved at runtime.
+
+### Global variables (VARS)
+
+Global variables are key-value pairs stored in the database at **Admin → Global Variables**. They are available to every script without being explicitly passed as parameters, via the injected `$VARS` hashtable:
+
+```powershell
+$domain = $VARS.'ad.domain'
+$server = $VARS.'sccm.server'
+```
+
+Use global variables for values that appear across many scripts but may change — domain names, server addresses, organisation codes, shared credentials. Changing the value in one place updates it everywhere.
+
+In addition to user-defined global variables, the `$VARS` hashtable also exposes infrastructure connection keys from the admin settings: `xenserver.host`, `xenserver.username`, `xenserver.password`, `vsphere.host`, `vsphere.username`, `vsphere.password`.
+
+Secret-typed global variables are stored encrypted. Their values are never rendered in the admin UI after creation and are only decrypted at worker execution time.
+
+### Runbook context variables (CTX)
+
+Context variables are injected by the runbook runner at execution time and represent the live state of the order being processed. They are not declared in the script's `param()` block — the runner passes them alongside the step's own local parameters, so they are also accessible via `$PARAMS`:
+
+```powershell
+$assetName  = $PARAMS.asset_name
+$userEmail  = $PARAMS.user_email
+$orderId    = $PARAMS.order_id
+$expiresAt  = $PARAMS.expires_at
+```
+
+Available context variables:
+
+| Key | Description |
+|---|---|
+| `asset_name` | Name of the asset picked from the pool |
+| `asset_id` | Database ID of the asset |
+| `asset_type_name` | Name of the asset type |
+| `asset_type_id` | Database ID of the asset type |
+| `order_id` | Database ID of the order |
+| `requested_from` | Order start date |
+| `expires_at` | Order expiry date |
+| `user_email` | Email of the requesting user |
+| `user_name` | Display name of the requesting user |
+| `owner_email` | Email of the asset owner (if set) |
+| `owner_name` | Display name of the asset owner |
+| `rdp_users` | RDP user list (from the order form) |
+| `admin_users` | Admin user list (from the order form) |
+| `snow_req` | ServiceNow REQ number (from the inbound webhook) |
+| `snow_ritm` | ServiceNow RITM number (from the inbound webhook) |
+
+In the runbook step editor, context variables are offered in the **Context var** dropdown grouped by category (Asset, Order, Users, XenServer, vSphere). Selecting one is equivalent to writing `$PARAMS.<key>` in the script.
 
 ---
 
