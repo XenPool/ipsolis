@@ -134,15 +134,6 @@
 
       {# ── Oversight (read-only) — auditor+ ────────────────────────────── #}
       {% if admin_role_at_least(request, 'auditor') %}
-      <a href="/ui/cost-report"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'cost-report' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-        </svg>
-        Cost Report
-      </a>
       <a href="/ui/audit-log"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'audit-log' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -191,32 +182,6 @@
       </a>
       {% endif %}
 
-      {% if admin_role_at_least(request, 'auditor') %}
-        {% if has_certifications %}
-      <a href="/ui/certifications"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'certifications' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
-        </svg>
-        Certifications
-      </a>
-        {% endif %}
-        {% if has_leaver_events %}
-      <a href="/ui/leaver-events"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'leaver-events' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M13 7H7v6h6V7z M9 1v6m6-6v6M1 9h6m6-6v6M9 13v8m6-8v8m-6-4h6m-6 4h6M1 17h6"/>
-        </svg>
-        Leaver Events
-      </a>
-        {% endif %}
-      {% endif %}
-
-
       {# ── User portal — opens in a new tab so the admin session stays put ── #}
       <a href="/portal/" target="_blank" rel="noopener"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:bg-surface-raised hover:text-body transition-colors">
@@ -248,6 +213,44 @@
         <span class="text-[10px] uppercase tracking-[0.15em] text-muted">Theme</span>
         {% include "_partials/theme_toggle.html" %}
       </div>
+      {% if admin_role_at_least(request, 'auditor') %}
+      <a href="/ui/cost-report" target="_blank"
+         class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
+        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        Cost Report
+      </a>
+      {% if has_certifications %}
+      <a href="/ui/certifications" target="_blank"
+         class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
+        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+        </svg>
+        Certifications
+      </a>
+      {% endif %}
+      {% if has_leaver_events %}
+      <a href="/ui/leaver-events" target="_blank"
+         class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
+        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M13 7H7v6h6V7z M9 1v6m6-6v6M1 9h6m6-6v6M9 13v8m6-8v8m-6-4h6m-6 4h6M1 17h6"/>
+        </svg>
+        Leaver Events
+      </a>
+      {% endif %}
+      {% endif %}
+      <a href="https://www.ipsolis.com/en/docs" target="_blank" rel="noopener"
+         class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
+        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+        </svg>
+        Documentation
+      </a>
       <a href="/docs" target="_blank"
          class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
         <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

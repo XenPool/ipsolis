@@ -698,15 +698,24 @@ async def portal_create_order(
         for ra in rule_approvers:
             if ra["email"].lower() in seen_emails:
                 continue  # already covered by manager / owner — don't double-charge
+            from app.utils.ad_lookup import lookup_user
+            ad_result = lookup_user(ra["email"])
+            if not ad_result.get("success"):
+                await db.rollback()
+                return await _render_error(
+                    f"Conditional approval rule \"{ra['rule_name']}\" names approver "
+                    f"\"{ra['email']}\" who could not be found as a valid domain account. "
+                    "Please contact your administrator to update the approval rule."
+                )
             db.add(await _make_approval(
                 "rule:" + ra["rule_name"][:24],  # approver_type column is String(30)
-                ra["email"],
-                ra["name"],
+                ad_result["email"],
+                ad_result["display_name"],
                 rule_name=ra["rule_name"],          # full, untruncated for grouping
                 rule_threshold=ra.get("rule_threshold"),
                 sod_exempt=ra.get("sod_exempt", False),
             ))
-            seen_emails.add(ra["email"].lower())
+            seen_emails.add(ad_result["email"].lower())
 
         # Per-classification step(s). Skips entries already covered by
         # manager / owner / rule approvers — common case is "the

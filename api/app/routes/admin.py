@@ -772,10 +772,8 @@ async def update_asset_type(
         asset_type.min_approvals_required = payload.min_approvals_required or None
     if payload.requires_approval_on_modify is not None:
         asset_type.requires_approval_on_modify = payload.requires_approval_on_modify
-    if payload.eligible_requestors_dn is not None:
-        asset_type.eligible_requestors_dn = payload.eligible_requestors_dn or None
-    if payload.logo is not None:
-        asset_type.logo = payload.logo or None
+    asset_type.eligible_requestors_dn = payload.eligible_requestors_dn or None
+    asset_type.logo = payload.logo or None
     if payload.show_on_dashboard is not None:
         asset_type.show_on_dashboard = payload.show_on_dashboard
     await aaudit(db, "asset_type", asset_type.id, "updated", old=old_snap, new=_type_snap(asset_type),
