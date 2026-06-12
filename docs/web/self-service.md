@@ -57,19 +57,161 @@ When an asset type has a `monthly_cost` configured, the order form shows the pro
 
 ---
 
-## Approval Flow
+## Approval Workflow
 
-Orders that require approval enter a `pending_approval` state. The portal displays the current approval status on the order detail page.
+Orders that require approval enter a `pending_approval` state. The portal displays the current approval status on the order detail page. Provisioning does not begin until all required approvals are collected (subject to quorum — see below).
 
-Approvers receive an email with one-click **Approve** and **Decline** links. No portal login is required for the approver — the link contains a signed token that works from any email client.
+### Approval Types
+
+ip·Solis supports three complementary approval mechanisms that can be combined on any asset definition. All active mechanisms contribute approvers to the same order; the system deduplicates by email so a person who qualifies under multiple paths receives only one request.
+
+#### Manager Approval
+
+Enabled per asset type with **Requires Manager Approval**. When an order is submitted, ip·Solis looks up the requester's manager in Active Directory in real time. If no manager is configured for the account, the order is blocked with a clear error — the user must contact IT to have a manager assigned before they can request that asset type.
+
+The manager's email and display name are taken from AD at order-creation time. If the manager has an active delegation window configured, the approval request is automatically re-routed to the deputy.
+
+#### Application Owner Approval
+
+Enabled per asset type with **Requires Application Owner Approval**. Owners are a fixed list of email addresses configured on the asset definition under **Access & Approval → Application Owners**. Every owner in the list receives an approval request; the quorum setting determines how many responses are needed.
+
+#### Conditional Approval Rules
+
+Rules add approvers dynamically based on the content of each order. They fire on top of (and merged with) manager and owner approvals — a single order can trigger all three. Rules are configured per asset type under **Access & Approval → Conditional Approval Rules**.
+
+See the dedicated [Conditional Approval Rules](#conditional-approval-rules) section below for full reference.
+
+---
+
+### Approval Delivery
+
+Approvers receive an email with one-click **Approve** and **Decline** links. The link contains a signed token — no portal login is required. Approvers act directly from their email client.
 
 **Microsoft Teams cards** — when Teams integration is enabled, the same approve/decline prompt is also delivered as an Adaptive Card to the configured Teams channel.
 
-**Reminders** — if an approver hasn't responded after the configured interval (default: 24 hours), the system re-sends the notification. Up to three reminders are sent before escalation.
+**Reminders** — if an approver has not responded after the configured interval (default: 24 hours), the system re-sends the notification. Up to three reminders are sent before escalation.
 
-**Escalation** — after reminders are exhausted, the configured escalation contacts are notified. In assignment mode, they receive their own one-click approval link.
+**Escalation** — after reminders are exhausted, the configured escalation contacts are notified and receive their own one-click link.
 
-**Auto-decline** — stale pending approvals past the configured inactivity window are automatically declined by a daily background task.
+**Auto-decline** — pending approvals past the configured inactivity window are automatically declined by a daily background task.
+
+---
+
+### Quorum (N-of-M)
+
+The **Min. Approvals Required** setting on an asset type controls how many of the collected approvers must approve before provisioning begins. Leaving it blank or set to `0` means *all* approvers must agree. Setting it to `1` means the first approval unblocks the order regardless of how many other approvers were notified.
+
+Conditional rules can define their own per-rule quorum that applies only to the approvers that rule contributed, independently of the asset-type-level setting (see below).
+
+---
+
+### Approval Notification in the Portal
+
+When an asset type has any approval configured, the request form shows an amber notice bar so users know before they submit that their order will require approval. The bar adapts its message:
+
+- *Manager only* — "This request requires approval from your manager before provisioning begins."
+- *Application owner only* — "This request requires approval from an application owner before provisioning begins."
+- *Both* — "This request requires approval from your manager and an application owner before provisioning begins."
+
+Conditional rules do not appear in the portal notice because they fire conditionally — the user may or may not trigger them depending on what they fill in.
+
+---
+
+## Conditional Approval Rules
+
+Conditional rules let you add approvers based on the attributes of each individual order. They are evaluated at order-creation time; every rule whose condition matches contributes its listed approvers. Multiple rules can match a single order.
+
+### Rule Structure
+
+Each rule has:
+
+| Field | Description |
+|---|---|
+| **Name** | Human-readable label shown in the audit log and approval emails |
+| **Condition** | A tree of conditions that must match for this rule to fire |
+| **Approvers** | One or more email addresses (must be valid domain accounts) |
+| **Quorum** | Optional N-of-M override for this rule's approvers only. Leave blank to fold into the asset-type-level quorum |
+
+### Condition Fields
+
+Conditions compare a named field from the order context to a value.
+
+**Built-in fields** — always available regardless of the asset type's attribute configuration:
+
+| Field | Type | Description |
+|---|---|---|
+| `duration_days` | number | Requested duration in days (`requested_until` − `requested_from`) |
+| `monthly_cost` | number | The asset type's configured monthly cost |
+| `has_pii` | boolean | `true` if any attribute on the asset type is classified as PII |
+| `has_phi` | boolean | `true` if any attribute is classified as PHI |
+| `has_pci` | boolean | `true` if any attribute is classified as PCI |
+| `requester_department` | string | AD-resolved department of the requesting user |
+
+**Custom attribute fields** — any attribute defined on the asset type's **Attributes** tab is available as `attr.<key>`, where `<key>` is the attribute's internal key name. For example, an attribute with key `project_code` is referenced as `attr.project_code`. The value comes from what the requester filled in when placing the order.
+
+### Operators
+
+| Operator | Applies to | Behaviour |
+|---|---|---|
+| `>` `>=` `<` `<=` | Numbers | Numeric comparison. Non-numeric values never match |
+| `==` | Any | Case-insensitive string equality. Booleans match both `true`/`false` and `True`/`False` |
+| `contains` | Strings, lists | Case-insensitive substring match. For list-valued attributes, checks whether any element contains the value |
+
+### Compound Logic
+
+Conditions can be nested using `ALL (AND)`, `ANY (OR)`, and `NOT` groups to any depth (up to 8 levels). The root of every rule is an `ALL` or `ANY` group.
+
+- **ALL (AND)** — every condition in the group must match. An empty group always matches.
+- **ANY (OR)** — at least one condition must match. An empty group never matches.
+- **NOT** — inverts a single nested condition.
+
+Groups can be nested inside other groups. For example: *(duration > 30 AND project_code contains "EU-") OR has_pii == true*.
+
+### Approvers
+
+Each rule lists one or more approver email addresses. Approvers must be **valid domain accounts** — ip·Solis looks up each email in Active Directory when the rule fires. If a configured approver cannot be resolved, the order is blocked with an error until the rule is corrected by an administrator.
+
+This mirrors the behaviour of manager approval: the system refuses to create an approval record for an unresolvable identity. The AD-canonical display name is used in all notifications regardless of what name was typed when configuring the rule.
+
+### Approver Deduplication
+
+The same email address is never notified twice for the same order, even if it appears in multiple rules or overlaps with the manager or application owner. The first matching rule's quorum setting wins when the same email appears in more than one rule — keep approver lists disjoint across rules when per-rule quorum matters.
+
+### Per-Rule Quorum
+
+Setting **Quorum** on a rule creates an independent quorum group for that rule's approvers, separate from the asset-type-level `Min. Approvals Required`. For example:
+
+- Asset type: min 1 of all approvers (manager + owner + rule approvers combined)
+- Rule "CISO + DPO": quorum 1 — either CISO or DPO is sufficient for this rule's group
+
+Both quorums must be satisfied before provisioning begins.
+
+### SoD Exemption
+
+Administrators who are also configured as rule approvers would normally be blocked by the Separation of Duties check (an admin cannot approve their own configuration choices). Enabling **SoD exempt** on a rule bypasses this check for that rule's approvers — use this for static compliance officers who happen to hold an admin role.
+
+### Examples
+
+**Extension over 30 days in an EU project requires CISO and DPO (either one sufficient):**
+
+> Rule: *EU project + long duration needs CISO+DPO*
+> Condition: `ALL` — `duration_days > 30` AND `attr.project_code contains "EU-"`
+> Approvers: `ciso@example.com`, `dpo@example.com`
+> Quorum: 1
+
+**Any order involving personal data notifies the privacy team:**
+
+> Rule: *Personal data tag*
+> Condition: `has_pii == true`
+> Approvers: `privacy@example.com`
+> Quorum: (blank — folds into asset-type quorum)
+
+**High-cost orders from the Finance department need CFO sign-off:**
+
+> Rule: *Finance high cost*
+> Condition: `ANY` — `monthly_cost >= 500` AND `requester_department == Finance`
+> Approvers: `cfo@example.com`
+> Quorum: 1
 
 ---
 

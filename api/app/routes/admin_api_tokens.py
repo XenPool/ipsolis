@@ -16,8 +16,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import delete as sa_delete
+
 from app.database import get_db
 from app.models.api_token import ApiToken
+from app.utils.audit import aaudit
 from app.utils.api_tokens import (
     AVAILABLE_SCOPES,
     create_token,
@@ -187,6 +190,44 @@ async def revoke_api_token(
         await db.commit()
         actor = getattr(request.state, "actor", "admin:unknown")
         logger.info("admin: revoked API token id=%s name=%r by=%s", token.id, token.name, actor)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/{token_id}/hard",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    dependencies=[require_role("superadmin")],
+)
+async def hard_delete_api_token(
+    token_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Permanently delete a single revoked API token row.
+
+    Only revoked tokens may be hard-deleted this way. Active tokens must
+    be revoked first. One audit row is written before the delete so the
+    removal is traceable even after the row is gone.
+    """
+    result = await db.execute(select(ApiToken).where(ApiToken.id == token_id))
+    token = result.scalar_one_or_none()
+    if not token:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Token not found")
+    if token.revoked_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Token must be revoked before it can be deleted.",
+        )
+    actor = getattr(request.state, "actor", "admin:unknown")
+    await aaudit(
+        db, "api_token", token.id, "hard_deleted",
+        old={"name": token.name, "prefix": token.token_prefix, "reason": "manual hard-delete"},
+        by=actor,
+    )
+    await db.execute(sa_delete(ApiToken).where(ApiToken.id == token_id))
+    await db.commit()
+    logger.info("admin: hard-deleted API token id=%s name=%r by=%s", token_id, token.name, actor)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

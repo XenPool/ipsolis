@@ -120,6 +120,16 @@
     </div>
   </div>
 
+  <!-- Approval notice (dynamic, based on selected type) -->
+  <div id="approval-notice" class="hidden rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/10 px-5 py-3">
+    <div class="flex items-center gap-3">
+      <svg class="shrink-0 w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3a9 9 0 110 18A9 9 0 0112 3z"/>
+      </svg>
+      <p id="approval-notice-text" class="text-sm text-amber-800 dark:text-amber-300"></p>
+    </div>
+  </div>
+
   <!-- Help text (dynamic, based on selected type — only types with help_text get a panel) -->
   <div id="help-section-wrapper" class="hidden">
     {% for t in asset_types %}
@@ -480,8 +490,10 @@ function removeDeputy() {
 
 // ── User list visibility per asset type ────────────────────────────────────────
 
-var _allowRdpUsers   = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.allow_rdp_users else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
-var _allowAdminUsers = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.allow_admin_users else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
+var _allowRdpUsers        = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.allow_rdp_users else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
+var _allowAdminUsers      = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.allow_admin_users else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
+var _requiresManagerApproval = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.requires_manager_approval else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
+var _requiresOwnerApproval   = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.requires_owner_approval else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
 
 function updateUserListsSection() {
   var checked = document.querySelector('[name="asset_type_id"]:checked');
@@ -557,6 +569,26 @@ function updateHelpSection() {
   }
 }
 
+function updateApprovalNotice() {
+  var checked = document.querySelector('[name="asset_type_id"]:checked');
+  var typeId = checked ? parseInt(checked.value) : null;
+  var notice = document.getElementById('approval-notice');
+  var noticeText = document.getElementById('approval-notice-text');
+  var mgr = typeId && _requiresManagerApproval[typeId];
+  var owner = typeId && _requiresOwnerApproval[typeId];
+  if (!mgr && !owner) {
+    notice.classList.add('hidden');
+    noticeText.removeAttribute('data-i18n');
+    return;
+  }
+  var key = (mgr && owner) ? 'portal.order_new.approval_notice_both'
+          : mgr             ? 'portal.order_new.approval_notice_manager'
+          :                   'portal.order_new.approval_notice_owner';
+  noticeText.setAttribute('data-i18n', key);
+  noticeText.textContent = window.t ? window.t(key) : noticeText.textContent;
+  notice.classList.remove('hidden');
+}
+
 var _unavailableIds = new Set([{% for tid in unavailable_ids %}{{ tid }}{% if not loop.last %}, {% endif %}{% endfor %}]);
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -571,6 +603,7 @@ document.addEventListener('DOMContentLoaded', function() {
     r.addEventListener('change', updateAttrSection);
     r.addEventListener('change', updateUserListsSection);
     r.addEventListener('change', updateHelpSection);
+    r.addEventListener('change', updateApprovalNotice);
   });
 
   // visibleWhen: observe fields within each section
@@ -652,6 +685,7 @@ document.addEventListener('DOMContentLoaded', function() {
       updateAttrSection();
       updateUserListsSection();
       updateHelpSection();
+      updateApprovalNotice();
     }
   }
 
@@ -668,6 +702,7 @@ document.addEventListener('DOMContentLoaded', function() {
   updateAttrSection();
   updateUserListsSection();
   updateHelpSection();
+  updateApprovalNotice();
   applyCatalogFilter();
 });
 </script>
