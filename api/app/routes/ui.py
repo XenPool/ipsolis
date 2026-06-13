@@ -19,6 +19,7 @@ from app.models.order import Order, OrderAction, OrderStatus
 from app.models.runbook import RunbookDefinition, RunbookStep
 from app.models.script_module import ScriptModule
 from app.models.standalone_runbook import StandaloneRunbook, StandaloneRunbookStep
+from app.utils.audit import aaudit, actor_by
 from app.utils.auth import require_admin_session
 from app.templates_instance import templates
 
@@ -549,6 +550,7 @@ async def admin_change_order(
 @router.post("/orders/{order_id}/cancel")
 async def admin_cancel_order(
     order_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Admin: Bestellung im Namen des Users abbestellen (DELETE)."""
@@ -586,6 +588,12 @@ async def admin_cancel_order(
     _cancel_order_action = cancel_order.action
     cancel_order.status = OrderStatus.PROCESSING
 
+    await aaudit(
+        db, "order", original.id, "cancel_requested",
+        new={"cancel_order_id": _cancel_order_id},
+        by=actor_by(request, "admin_cancel_order"),
+    )
+
     # Commit FIRST so the row is visible to the worker before dispatch
     await db.commit()
 
@@ -599,6 +607,49 @@ async def admin_cancel_order(
 
     logger.info("Admin: Cancel order id=%s from order=%s", _cancel_order_id, order_id)
     return RedirectResponse(url=f"/ui/orders/{_cancel_order_id}", status_code=303)
+
+
+@router.post("/orders/{order_id}/retry")
+async def admin_retry_order(
+    order_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin: restart a failed order from the beginning (Option A — full re-run)."""
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if order.status != OrderStatus.FAILED:
+        raise HTTPException(status_code=422, detail="Only failed orders can be retried")
+
+    # Clear step history so the detail page shows a clean run
+    await db.execute(
+        text("DELETE FROM order_steps WHERE order_id = :id"),
+        {"id": order_id},
+    )
+
+    order.status = OrderStatus.PROCESSING
+    order.error_message = None
+
+    await aaudit(
+        db, "order", order.id, "retry_requested",
+        by=actor_by(request, "admin_retry_order"),
+    )
+
+    await db.commit()
+
+    from app.routes.webhook import _dispatch_runbook
+    task_id = _dispatch_runbook(order_id, order.action.value)
+    await db.execute(
+        text("UPDATE orders SET celery_task_id = :t WHERE id = :id"),
+        {"t": task_id, "id": order_id},
+    )
+    await db.commit()
+
+    logger.info("Admin: retry order id=%s by=%s", order_id, actor_by(request, "admin_retry_order"))
+    return RedirectResponse(url=f"/ui/orders/{order_id}", status_code=303)
 
 
 # ── Asset Types UI ─────────────────────────────────────────────────────────────
