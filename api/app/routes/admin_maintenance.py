@@ -953,3 +953,23 @@ async def test_alert(db: AsyncSession = Depends(get_db)) -> dict:
         queue="default",
     )
     return {"enqueued": True, "task_id": result.id, "recipient": to_addr}
+
+
+@router.post("/updates/check-now", dependencies=[_WRITE_GATE])
+async def check_updates_now() -> dict:
+    """Trigger the update checker immediately and wait for the result (15 s timeout)."""
+    import asyncio as _asyncio
+
+    celery = _get_celery()
+
+    def _run() -> dict:
+        try:
+            ar = celery.send_task(
+                "tasks.workflows.update_checker.check_for_updates",
+                queue="default",
+            )
+            return ar.get(timeout=15)
+        except Exception as exc:  # noqa: BLE001
+            return {"status": "error", "message": str(exc)}
+
+    return await _asyncio.get_running_loop().run_in_executor(None, _run)

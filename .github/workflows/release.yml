@@ -23,7 +23,7 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
-  contents: read
+  contents: write   # needed to create GitHub Releases
   packages: write   # needed to push to ghcr.io/xenpool/*
 
 jobs:
@@ -110,6 +110,33 @@ jobs:
           echo "ghcr.io/xenpool/ipsolis-api:${VER}" >> "$GITHUB_STEP_SUMMARY"
           echo "ghcr.io/xenpool/ipsolis-worker:${VER}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  # ── GitHub Release ───────────────────────────────────────────────────────────
+  create-release:
+    name: Create GitHub Release
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract CHANGELOG section for this version
+        id: notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Extract the block between "## [VERSION]" and the next "## [" heading
+          NOTES=$(awk "/^## \[$VERSION\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
+          # Write to a file so multiline content survives the env export
+          echo "$NOTES" > release_notes.md
+          echo "Generated release notes ($(wc -l < release_notes.md) lines)"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "ip·Solis $GITHUB_REF_NAME" \
+            --notes-file release_notes.md \
+            --verify-tag
 
   # ── Notify ipsolis-web ────────────────────────────────────────────────────────
   notify-web:
