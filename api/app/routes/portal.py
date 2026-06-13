@@ -2,10 +2,10 @@
 
 Authentication: Entra ID SSO (entra.mode must be set to 'enabled' via Admin > Settings).
 """
+import asyncio
+import base64
 import logging
 from datetime import date, datetime, timedelta, timezone
-
-import base64
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -1588,6 +1588,52 @@ async def _post_approval_dispatch(order: Order, db: AsyncSession, celery_app) ->
         # ORM expiry problem.
         order._pending_dispatch_id = _order_id
         order._pending_dispatch_action = _order_action
+
+
+# ── Nav Badges ─────────────────────────────────────────────────────────────────
+
+@router.get("/nav-badges")
+async def portal_nav_badges(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
+) -> dict:
+    """Return pending-item counts for the three badged nav items."""
+    from sqlalchemy import func as sa_func
+    from app.models.approval import OrderApproval
+    from app.models.approval_delegation import ApprovalDelegation
+    from app.models.certification import CertificationReview
+
+    email = current_user["email"]
+    now = datetime.now(timezone.utc)
+
+    approvals_q, delegations_q, reviews_q = await asyncio.gather(
+        db.execute(
+            select(sa_func.count()).select_from(OrderApproval).where(
+                OrderApproval.approver_email == email,
+                OrderApproval.status == "pending",
+            )
+        ),
+        db.execute(
+            select(sa_func.count()).select_from(ApprovalDelegation).where(
+                ApprovalDelegation.approver_email == email,
+                ApprovalDelegation.revoked_at.is_(None),
+                ApprovalDelegation.from_at <= now,
+                ApprovalDelegation.until_at >= now,
+            )
+        ),
+        db.execute(
+            select(sa_func.count()).select_from(CertificationReview).where(
+                CertificationReview.reviewer_email == email,
+                CertificationReview.status == "pending",
+            )
+        ),
+    )
+
+    return {
+        "approvals": approvals_q.scalar() or 0,
+        "delegations": delegations_q.scalar() or 0,
+        "certifications": reviews_q.scalar() or 0,
+    }
 
 
 # ── HTMX: User Validation ──────────────────────────────────────────────────────

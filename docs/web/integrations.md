@@ -86,11 +86,166 @@ See [Lifecycle & Asset Pool → HR Leaver Flow](./lifecycle#hr-leaver-flow) for 
 
 ## ServiceNow Webhook *(Pro)*
 
-ip·Solis can receive order dispatch requests from ServiceNow via an HMAC-signed inbound webhook at `POST /webhook/servicenow`.
+ip·Solis can receive order dispatch requests from ServiceNow (or any HTTP-capable workflow tool) via an inbound webhook at `POST /webhook/servicenow`. The webhook creates an order and immediately dispatches the appropriate runbook — ServiceNow-originated orders go through the same approval workflows, capacity checks, runbooks, and audit trail as portal orders.
 
-Configure the shared secret in **Admin → Settings → ServiceNow** (`WEBHOOK_SECRET_TOKEN`). The webhook validates the `X-Hub-Signature-256` header on every request.
+### Authentication
 
-The webhook payload maps directly to an order creation request. ServiceNow-originated orders go through the same approval workflows, runbooks, and audit trail as portal orders.
+Two authentication paths are supported. Either is sufficient; both can coexist.
+
+**Bearer token (recommended for new integrations)**
+
+Mint a named API token with scope `webhook:in` from **Admin → API Tokens**. Pass it in the `Authorization` header:
+
+```
+Authorization: Bearer xpat_…
+```
+
+Bearer tokens are individually revocable from the Admin UI without touching the running container or rotating a shared secret.
+
+**HMAC-SHA256 signature (legacy / back-compat)**
+
+Configure a shared secret under **Admin → Settings → ServiceNow** (env var `WEBHOOK_SECRET_TOKEN`). Sign the raw request body with HMAC-SHA256 and send the result as:
+
+```
+X-Hub-Signature-256: sha256=<hex-digest>
+```
+
+This is the GitHub-compatible body-signing format. If both headers are present, Bearer takes precedence.
+
+---
+
+### Request Format
+
+**Endpoint:** `POST /webhook/servicenow`  
+**Content-Type:** `application/json`
+
+#### Payload Fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `servicenow_ref` | string | ✓ | ServiceNow RITM number (e.g. `RITM0012345`). Used as idempotency key — a second POST with the same value returns `409 Conflict`. |
+| `snow_req` | string | — | ServiceNow REQ number (e.g. `REQ0009876`). Stored for cross-reference in the order detail and audit log. |
+| `action` | string | ✓ | `"provision"` or `"delete"`. Determines which runbook is dispatched. |
+| `user_email` | string (email) | ✓ | Email address of the user the asset is assigned to. |
+| `user_name` | string | ✓ | Display name of the user (used in notifications and the order UI). |
+| `owner_email` | string (email) | — | If the asset has a distinct owner (e.g. ordered on behalf of someone), their email. Defaults to `user_email` if omitted. |
+| `owner_name` | string | — | Display name of the owner. |
+| `asset_type_name` | string | ✓ | Exact name of the asset type as configured in ip·Solis (e.g. `"Standard VDI"`). Returns `400` if not found. |
+| `requested_from` | ISO 8601 datetime | ✓ | Start of the assignment window (e.g. `"2026-06-13T00:00:00Z"`). |
+| `requested_until` | ISO 8601 datetime | ✓ | End of the assignment window / expiry date. |
+| `rdp_users` | array of strings | — | Additional RDP users to grant access. Only applies to asset types with `allow_user_lists` enabled. |
+| `admin_users` | array of strings | — | Additional admin users to grant access. Same restriction as `rdp_users`. |
+| `config` | object | — | Free-form key/value map for custom asset attributes defined on the asset type. Keys must match the attribute `key` field on the asset definition. Values are stored as the order's `config` JSON and are accessible in runbook steps as `$PARAMS.attr_<key>` context variables. |
+
+#### Example Request
+
+```bash
+curl -X POST https://ipsolis.example.com/webhook/servicenow \
+  -H "Authorization: Bearer xpat_abc123..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "servicenow_ref": "RITM0012345",
+    "snow_req": "REQ0009876",
+    "action": "provision",
+    "user_email": "jane.doe@example.com",
+    "user_name": "Jane Doe",
+    "asset_type_name": "Standard VDI",
+    "requested_from": "2026-06-13T00:00:00Z",
+    "requested_until": "2026-07-13T00:00:00Z",
+    "config": {
+      "project_code": "EU-FINANCE-2026",
+      "cost_center": "CC-4400"
+    }
+  }'
+```
+
+---
+
+### Response
+
+On success the endpoint returns `201 Created` with the newly created order as JSON:
+
+```json
+{
+  "id": 312,
+  "servicenow_ref": "RITM0012345",
+  "snow_req": "REQ0009876",
+  "action": "provision",
+  "status": "processing",
+  "user_email": "jane.doe@example.com",
+  "user_name": "Jane Doe",
+  "owner_email": null,
+  "owner_name": null,
+  "asset_type_id": 3,
+  "assigned_asset_id": null,
+  "rdp_users": [],
+  "admin_users": [],
+  "requested_from": "2026-06-13T00:00:00Z",
+  "requested_until": "2026-07-13T00:00:00Z",
+  "celery_task_id": "a3f2c1d0-84e7-4b91-bc2e-9f1a0e5d3c88",
+  "config": {
+    "project_code": "EU-FINANCE-2026",
+    "cost_center": "CC-4400"
+  },
+  "error_message": null,
+  "created_at": "2026-06-13T21:07:00Z",
+  "updated_at": "2026-06-13T21:07:01Z",
+  "steps": []
+}
+```
+
+Notable fields in the response:
+
+| Field | Notes |
+|---|---|
+| `id` | ip·Solis order ID — use this to poll order status via `GET /orders/{id}` |
+| `status` | `"processing"` once dispatched; `"pending_approval"` if the asset type requires approval before the runbook runs |
+| `assigned_asset_id` | `null` at creation time for `capacity_pooled` types — populated by the runbook once an asset is allocated |
+| `celery_task_id` | Celery task UUID — visible in Flower for debugging |
+| `steps` | Empty at creation; populated as the runbook executes |
+
+The order is already dispatched to the worker by the time the response arrives.
+
+---
+
+### Capacity and Quota Checks
+
+For `action: provision`, ip·Solis enforces the same pre-flight checks as portal orders before creating anything:
+
+- **Pool capacity** — if the asset type is `capacity_pooled` and has a pool size limit, the request is rejected with `429` when no capacity is available.
+- **Per-user quota** — if `max_per_user` is set on the asset type, the request is rejected with `429` if the user already holds that many active instances.
+
+---
+
+### Idempotency
+
+`servicenow_ref` is a unique key. Submitting the same RITM number a second time returns:
+
+```
+HTTP 409 Conflict
+{"detail": "Order with servicenow_ref 'RITM0012345' already exists"}
+```
+
+This allows ServiceNow to safely retry a failed webhook delivery without creating duplicate orders.
+
+---
+
+### Error Reference
+
+| Status | Cause |
+|---|---|
+| `400 Bad Request` | `asset_type_name` not found in ip·Solis |
+| `401 Unauthorized` | Missing or invalid authentication (no Bearer token and no valid HMAC signature) |
+| `403 Forbidden` | Bearer token present but lacks `webhook:in` scope |
+| `409 Conflict` | `servicenow_ref` already exists (duplicate delivery) |
+| `422 Unprocessable Entity` | Payload validation error (missing required field, invalid email, etc.) |
+| `429 Too Many Requests` | Pool capacity or per-user quota exceeded |
+
+---
+
+### Audit Trail
+
+Every webhook-created order appears in **Admin → Audit Log** with `triggered_by` set to either `webhook:token:<token-name>` (Bearer path) or `webhook:hmac` (HMAC path), making it possible to distinguish ServiceNow-driven orders from portal and API orders at a glance.
 
 ---
 
@@ -205,7 +360,7 @@ Tokens are stored as SHA-256 hashes. The raw token (`xpat_…`) is shown once on
 | `admin:*` | Full admin API access |
 | `admin:read` | Read-only admin access |
 | `orders:write` | Create orders via the REST API |
-| `webhook:servicenow` | Call the ServiceNow inbound webhook |
+| `webhook:in` | Call the ServiceNow inbound webhook (`POST /webhook/servicenow`) |
 | `hr:leaver` | Call the HR leaver webhook |
 | `scim:read` | SCIM GET operations |
 | `scim:write` | SCIM POST/PUT/PATCH/DELETE (triggers leaver flow) |

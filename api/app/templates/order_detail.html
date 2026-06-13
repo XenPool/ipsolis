@@ -116,8 +116,86 @@
   </div>
 </div>
 
+<!-- Admin Actions -->
+{% if order.status.value in ("delivered", "provisioned") %}
+<div id="admin-actions" class="mt-6 bg-surface rounded-lg border border-token-border p-5">
+  <h2 class="text-sm font-semibold text-body mb-5">Admin Actions</h2>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+    <!-- Extend / Modify -->
+    <div>
+      <h3 class="text-xs font-semibold text-muted uppercase tracking-wide mb-3">Extend / Modify</h3>
+      <form method="post" action="/ui/orders/{{ order.id }}/change" class="space-y-3">
+
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Valid until</label>
+          <input type="date" name="new_until"
+                 value="{{ order.requested_until.strftime('%Y-%m-%d') if order.requested_until else '' }}"
+                 class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 w-full focus:outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
+
+        {% if asset_type and asset_type.allow_user_lists %}
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">RDP Users <span class="text-muted/70">(one per line)</span></label>
+          <textarea name="rdp_users" rows="3"
+                    class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 w-full font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >{{ order.rdp_users | join('\n') if order.rdp_users else '' }}</textarea>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Admin Users <span class="text-muted/70">(one per line)</span></label>
+          <textarea name="admin_users" rows="3"
+                    class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 w-full font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >{{ order.admin_users | join('\n') if order.admin_users else '' }}</textarea>
+        </div>
+        {% endif %}
+
+        <button type="submit"
+                class="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 focus:outline-none">
+          Update
+        </button>
+      </form>
+    </div>
+
+    <!-- Cancel -->
+    <div>
+      <h3 class="text-xs font-semibold text-muted uppercase tracking-wide mb-3">Cancel</h3>
+      <p class="text-xs text-muted mb-3">
+        Removes the assignment and returns the asset to the pool (per deprovision policy).
+      </p>
+      <form method="post" action="/ui/orders/{{ order.id }}/cancel"
+            onsubmit="return confirm('Really cancel order #{{ order.id }}?')">
+        <button type="submit"
+                class="px-4 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700 focus:outline-none">
+          Cancel now
+        </button>
+      </form>
+    </div>
+
+  </div>
+</div>
+{% endif %}
+
+<!-- Retry (failed orders only) -->
+{% if order.status.value == "failed" %}
+<div id="admin-actions-retry" class="mt-6 bg-surface rounded-lg border border-red-300 dark:border-red-500/30 p-5">
+  <h2 class="text-sm font-semibold text-body mb-1">Admin Actions</h2>
+  <p class="text-xs text-muted mb-5">This order failed. Retry re-runs the full runbook from the beginning and clears the previous step log.</p>
+  <form method="post" action="/ui/orders/{{ order.id }}/retry"
+        onsubmit="return confirm('Retry order #{{ order.id }}? This will re-run the runbook from the beginning.')">
+    <button type="submit"
+            class="inline-flex items-center gap-1.5 px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded focus:outline-none">
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12a7.5 7.5 0 1 1 1.41 4.39M4.5 12V7.5M4.5 12H9"/>
+      </svg>
+      Retry now
+    </button>
+  </form>
+</div>
+{% endif %}
+
 <!-- Steps Timeline -->
-<div>
+<div class="mt-8">
   <h2 class="text-sm font-semibold text-body mb-3">
     Execution Steps
     <span class="font-normal text-muted/70">({{ order.steps | length }} Steps)</span>
@@ -244,66 +322,6 @@
       {% endif %}
     </div>
     {% endfor %}
-  </div>
-</div>
-{% endif %}
-
-<!-- Admin Actions -->
-{% if order.status.value in ("delivered", "provisioned") %}
-<div id="admin-actions" class="mt-8 bg-surface rounded-lg border border-token-border p-5">
-  <h2 class="text-sm font-semibold text-body mb-5">Admin Actions</h2>
-
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-    <!-- Extend / Modify -->
-    <div>
-      <h3 class="text-xs font-semibold text-muted uppercase tracking-wide mb-3">Extend / Modify</h3>
-      <form method="post" action="/ui/orders/{{ order.id }}/change" class="space-y-3">
-
-        <div>
-          <label class="block text-xs font-medium text-muted mb-1">Valid until</label>
-          <input type="date" name="new_until"
-                 value="{{ order.requested_until.strftime('%Y-%m-%d') if order.requested_until else '' }}"
-                 class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 w-full focus:outline-none focus:ring-1 focus:ring-blue-500">
-        </div>
-
-        {% if asset_type and asset_type.allow_user_lists %}
-        <div>
-          <label class="block text-xs font-medium text-muted mb-1">RDP Users <span class="text-muted/70">(one per line)</span></label>
-          <textarea name="rdp_users" rows="3"
-                    class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 w-full font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    >{{ order.rdp_users | join('\n') if order.rdp_users else '' }}</textarea>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-muted mb-1">Admin Users <span class="text-muted/70">(one per line)</span></label>
-          <textarea name="admin_users" rows="3"
-                    class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 w-full font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    >{{ order.admin_users | join('\n') if order.admin_users else '' }}</textarea>
-        </div>
-        {% endif %}
-
-        <button type="submit"
-                class="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 focus:outline-none">
-          Update
-        </button>
-      </form>
-    </div>
-
-    <!-- Cancel -->
-    <div>
-      <h3 class="text-xs font-semibold text-muted uppercase tracking-wide mb-3">Cancel</h3>
-      <p class="text-xs text-muted mb-3">
-        Removes the assignment and returns the asset to the pool (per deprovision policy).
-      </p>
-      <form method="post" action="/ui/orders/{{ order.id }}/cancel"
-            onsubmit="return confirm('Really cancel order #{{ order.id }}?')">
-        <button type="submit"
-                class="px-4 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700 focus:outline-none">
-          Cancel now
-        </button>
-      </form>
-    </div>
-
   </div>
 </div>
 {% endif %}
