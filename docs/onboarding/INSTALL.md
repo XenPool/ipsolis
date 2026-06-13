@@ -210,14 +210,16 @@ cd /opt/ipsolis
 # Option A: pull latest
 docker compose pull
 docker compose up -d
+docker compose exec api alembic upgrade head
 
 # Option B: pin a specific release (edit .env first)
 #   IPSOLIS_VERSION=1.3.0
 docker compose pull
 docker compose up -d
+docker compose exec api alembic upgrade head
 ```
 
-Database migrations run automatically on api container startup.
+> **Always run `alembic upgrade head` after pulling a new image.** Migrations are not applied automatically on startup — they must be run explicitly. Alembic tracks which migrations have already been applied and skips them, so this command is always safe to re-run.
 
 ---
 
