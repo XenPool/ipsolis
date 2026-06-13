@@ -14,6 +14,16 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.9] — 2026-06-14
+
+### Added
+- **Update Notifier: "Check now" button.** Triggers an immediate update check from the Settings page without waiting for the daily Beat tick. Shows inline feedback: "Up to date", "New version available: vX.Y.Z", or the actual error text — auto-fades after 5 s on success.
+- **Update Notifier: GitHub Release created on tag push.** `release.yml` now includes a `create-release` job that extracts the matching CHANGELOG section and publishes a GitHub Release after images are pushed. Previously only a git tag was pushed, causing `releases/latest` to return 404.
+
+### Fixed
+- **Update Notifier: 404 no longer shown as error.** When the GitHub repo has no published releases yet, the checker now clears the error field and logs "no releases yet" instead of recording a failure.
+- **Update Notifier: error box shows actual error text.** Settings page previously displayed the static "See server logs for details" message regardless of the real error. Now shows the stored `updates.check_error` value.
+
 ## [0.6.8] — 2026-06-14
 
 ### Added
