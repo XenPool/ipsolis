@@ -197,6 +197,7 @@
       {% if not (updates_config and updates_config.get('updates.check_error')) %}hidden{% endif %}">
       {{ updates_config.get('updates.check_error', '') if updates_config else '' }}
     </div>
+    <div id="updates-check-ok" class="hidden mt-3 px-3 py-2 rounded bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/30 text-xs text-green-700 dark:text-green-300"></div>
   </div>
 
   <!-- Order Settings -->
@@ -2153,19 +2154,31 @@ async function checkUpdatesNow(btn) {
   btn.disabled = true;
   btn.textContent = 'Checking…';
   var errEl = document.getElementById('updates-check-error');
+  var okEl  = document.getElementById('updates-check-ok');
   errEl.classList.add('hidden');
+  okEl.classList.add('hidden');
   try {
     var resp = await fetch('/admin/maintenance/updates/check-now', {method: 'POST'});
     var data = resp.ok ? await resp.json() : {status: 'error', message: 'HTTP ' + resp.status};
+    document.getElementById('updates-checked-at').textContent = new Date().toISOString();
     if (data.status === 'error') {
       errEl.textContent = data.message || 'Check failed.';
       errEl.classList.remove('hidden');
-    } else if (data.status === 'ok' && data.tag) {
-      errEl.classList.add('hidden');
-      document.getElementById('updates-checked-at').textContent = new Date().toISOString();
+    } else if (data.tag) {
+      var current = '{{ app_version }}';
+      var latest  = data.tag.replace(/^v/, '');
+      if (latest !== current) {
+        okEl.textContent = 'New version available: ' + data.tag;
+        okEl.className = okEl.className.replace('green', 'amber');
+      } else {
+        okEl.textContent = 'Up to date — no new version found.';
+      }
+      okEl.classList.remove('hidden');
+      setTimeout(function(){ okEl.classList.add('hidden'); }, 5000);
     } else {
-      errEl.classList.add('hidden');
-      document.getElementById('updates-checked-at').textContent = new Date().toISOString();
+      okEl.textContent = 'No releases published yet.';
+      okEl.classList.remove('hidden');
+      setTimeout(function(){ okEl.classList.add('hidden'); }, 5000);
     }
   } catch (e) {
     errEl.textContent = 'Request failed: ' + e.message;
