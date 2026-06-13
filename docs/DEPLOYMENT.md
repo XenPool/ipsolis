@@ -286,7 +286,10 @@ The overlay adds nginx for SSL termination and removes the dev bind-mounts from
 cd /opt/ipsolis
 
 # Build and start all services
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  up --build -d
 
 # Run database migrations
 docker compose exec -T api alembic upgrade head
@@ -607,13 +610,19 @@ cd /opt/ipsolis
 git pull origin main
 
 # Rebuild and restart
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  up --build -d
 
 # Run any new database migrations
 docker compose exec -T api alembic upgrade head
 
 # Restart nginx to pick up new container IPs and any config changes
-docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  restart nginx
 
 # Verify health
 curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health | python3 -m json.tool
@@ -789,7 +798,10 @@ services:
 replicated for HA:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --scale beat=2
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  up -d --scale beat=2
 ```
 
 > **Note**: Celery Beat is a singleton scheduler. Multiple beat replicas only make
@@ -834,7 +846,10 @@ Nginx may have cached the old container IP. Restart the container
 (not just `nginx -s reload` — Docker bind-mounts retain the old inode otherwise):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  restart nginx
 ```
 
 ### Database connection errors
@@ -896,7 +911,10 @@ directory. For a fully clean reinstall:
 ```bash
 # 1. Stop the stack and delete volumes
 cd /opt/ipsolis
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  down -v
 
 # 2. Remove the repository directory
 cd /opt

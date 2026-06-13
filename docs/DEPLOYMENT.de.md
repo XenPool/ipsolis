@@ -286,7 +286,10 @@ aus `api` und `worker`. Kein weiterer Schritt nötig.
 cd /opt/ipsolis
 
 # Alle Dienste bauen und starten
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  up --build -d
 
 # Datenbankmigrationen ausführen
 docker compose exec -T api alembic upgrade head
@@ -601,13 +604,19 @@ cd /opt/ipsolis
 git pull origin main
 
 # Neu bauen und starten
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  up --build -d
 
 # Neue Datenbankmigrationen ausführen
 docker compose exec -T api alembic upgrade head
 
 # nginx neu starten, um neue Container-IPs und ggf. geänderte Konfiguration zu übernehmen
-docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  restart nginx
 
 # Gesundheit prüfen
 curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health | python3 -m json.tool
@@ -770,7 +779,10 @@ services:
 repliziert werden kann. Für HA-Setups mit mehreren Beat-Instanzen:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --scale beat=2
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  up -d --scale beat=2
 ```
 
 > **Hinweis**: Celery Beat ist ein Singleton-Scheduler. Mehrere Beat-Replikas sind nur
@@ -813,7 +825,10 @@ Nginx hat möglicherweise die alte Container-IP gecacht. Container neu starten
 (nicht nur `nginx -s reload` — Docker bind-mounts behalten sonst den alten Inode):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  restart nginx
 ```
 
 ### Datenbankverbindungsfehler
@@ -875,7 +890,10 @@ Repository-Verzeichnis. Für eine vollständig saubere Neuinstallation:
 ```bash
 # 1. Stack stoppen und Volumes löschen
 cd /opt/ipsolis
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  down -v
 
 # 2. Repository-Verzeichnis löschen
 cd /opt
