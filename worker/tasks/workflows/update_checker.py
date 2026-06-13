@@ -82,7 +82,22 @@ def check_for_updates(self) -> dict:
 
         try:
             release = _fetch_latest_release()
-        except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as exc:
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                # Repo exists but has no published releases yet — not an error.
+                _write_kv(db, "updates.check_error", "")
+                _write_kv(db, "updates.checked_at", datetime.now(timezone.utc).isoformat())
+                _write_kv(db, "updates.latest_version", "")
+                db.commit()
+                logger.info("update_checker: no releases published yet (404)")
+                return {"status": "ok", "tag": None, "note": "no_releases_yet"}
+            msg = f"HTTPError {exc.code}: {exc.reason}"
+            logger.warning("update_checker: poll failed: %s", msg)
+            _write_kv(db, "updates.check_error", msg[:500])
+            _write_kv(db, "updates.checked_at", datetime.now(timezone.utc).isoformat())
+            db.commit()
+            return {"status": "error", "reason": "fetch_failed", "message": msg}
+        except (urllib.error.URLError, OSError, ValueError) as exc:
             msg = f"{type(exc).__name__}: {exc}"
             logger.warning("update_checker: poll failed: %s", msg)
             _write_kv(db, "updates.check_error", msg[:500])
