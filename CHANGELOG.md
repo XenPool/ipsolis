@@ -14,6 +14,19 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.8] — 2026-06-14
+
+### Added
+- **Portal nav badges.** My Approvals, Delegations, and Access Reviews now show a live count badge (red / amber) when the signed-in user has pending items. Loaded via `GET /portal/nav-badges` (3 parallel COUNT queries) on every page without touching existing route handlers.
+- **Retry failed orders.** Admin order detail shows an amber "Retry now" button when an order is in `failed` state. Clears the step history, resets the order to `processing`, re-dispatches the runbook, and writes an audit row.
+
+### Fixed
+- **Audit log: admin cancel now records the acting user.** `POST /ui/orders/{id}/cancel` was missing `request: Request`, so the audit `triggered_by` showed `celery:dynamic_runner` instead of the admin session. Fixed.
+
+### Changed
+- **Admin order detail: Admin Actions moved above Execution Steps.** Cancel / Extend / Retry panel now appears directly below the user and asset cards, before the step log.
+- **Docs: ServiceNow webhook fully documented.** `integrations.md` section rewritten from a 4-line stub to a complete integration reference: both auth methods, full payload schema, `curl` example, complete response JSON, capacity checks, idempotency, error table, and audit trail. Fixed incorrect scope name `webhook:servicenow` → `webhook:in`.
+
 ## [0.6.7] — 2026-06-13
 
 ### Added
