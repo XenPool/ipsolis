@@ -274,7 +274,7 @@ server {
 
 ## 5. Produktions-Compose-Overlay
 
-`docker-compose.prod.yml` liegt bereits im Repository und muss nicht angelegt werden.
+`docker-compose.prelive.yml` liegt bereits im Repository und muss nicht angelegt werden.
 Das Overlay fügt nginx für die SSL-Terminierung hinzu und entfernt die Dev-Bind-Mounts
 aus `api` und `worker`. Kein weiterer Schritt nötig.
 
@@ -288,7 +288,7 @@ cd /opt/ipsolis
 # Alle Dienste bauen und starten
 docker compose \
   -f docker-compose.yml \
-  -f docker-compose.prod.yml \
+  -f docker-compose.prelive.yml \
   up --build -d
 
 # Datenbankmigrationen ausführen
@@ -613,7 +613,7 @@ git pull origin main
 # Neu bauen und starten
 docker compose \
   -f docker-compose.yml \
-  -f docker-compose.prod.yml \
+  -f docker-compose.prelive.yml \
   up --build -d
 
 # Neue Datenbankmigrationen ausführen
@@ -622,7 +622,7 @@ docker compose exec -T api alembic upgrade head
 # nginx neu starten, um neue Container-IPs und ggf. geänderte Konfiguration zu übernehmen
 docker compose \
   -f docker-compose.yml \
-  -f docker-compose.prod.yml \
+  -f docker-compose.prelive.yml \
   restart nginx
 
 # Gesundheit prüfen
@@ -686,7 +686,7 @@ Sticky-Session-Affinität am Load Balancer ist nicht erforderlich.
 
 ```bash
 # Single-Host: API-Replika-Anzahl via Compose erhöhen
-docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+docker compose -f docker-compose.yml -f docker-compose.prelive.yml \
   up -d --scale api=3
 
 # Jede Replika über den Load Balancer prüfen
@@ -713,7 +713,7 @@ Rollouts den `up --build -d`-Schritt in eine Per-Replika-Schleife umwandeln:
 ```bash
 for i in 1 2 3; do
   docker compose stop api-$i
-  docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  docker compose -f docker-compose.yml -f docker-compose.prelive.yml \
     up --build -d --no-deps api-$i
   # Warten bis der neue Container den Health-Check besteht
   until curl -fsk http://localhost/health > /dev/null 2>&1; do
@@ -752,7 +752,7 @@ selbst ändert sich nicht.
 **Skalierungsbefehl** (Single-Host, alle Queues auf jeder Replika):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+docker compose -f docker-compose.yml -f docker-compose.prelive.yml \
   up -d --scale worker=3
 ```
 
@@ -761,7 +761,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml \
 Überschreiben der Standard-Queue-Liste, oder ein Runtime-`command:`-Override:
 
 ```yaml
-# docker-compose.prod.yml — Queue-Aufteilung
+# docker-compose.prelive.yml — Queue-Aufteilung
 services:
   worker-provision:
     image: ipsolis-worker
@@ -788,7 +788,7 @@ repliziert werden kann. Für HA-Setups mit mehreren Beat-Instanzen:
 ```bash
 docker compose \
   -f docker-compose.yml \
-  -f docker-compose.prod.yml \
+  -f docker-compose.prelive.yml \
   up -d --scale beat=2
 ```
 
@@ -834,7 +834,7 @@ Nginx hat möglicherweise die alte Container-IP gecacht. Container neu starten
 ```bash
 docker compose \
   -f docker-compose.yml \
-  -f docker-compose.prod.yml \
+  -f docker-compose.prelive.yml \
   restart nginx
 ```
 
@@ -899,7 +899,7 @@ Repository-Verzeichnis. Für eine vollständig saubere Neuinstallation:
 cd /opt/ipsolis
 docker compose \
   -f docker-compose.yml \
-  -f docker-compose.prod.yml \
+  -f docker-compose.prelive.yml \
   down -v
 
 # 2. Repository-Verzeichnis löschen
