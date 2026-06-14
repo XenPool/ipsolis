@@ -152,9 +152,10 @@ server {
 
 ```bash
 cd /opt/ipsolis
-docker compose pull          # download the latest images
-docker compose up -d         # start all services
-docker compose ps            # confirm everything is healthy
+docker compose pull                              # download the latest images
+docker compose up -d                             # start all services
+docker compose exec api alembic upgrade head     # apply database migrations
+docker compose ps                                # confirm everything is healthy
 ```
 
 All services should reach `healthy` within about 60 seconds.  
@@ -203,6 +204,13 @@ All settings are stored in the database and take effect immediately — no conta
 ---
 
 ## Updating to a New Version
+
+> **Pre-flight SSL check** — run this before pulling. If either file is missing,
+> the nginx container will start but serve no HTTPS traffic.
+> ```bash
+> ls -la nginx/ssl/cert.pem nginx/ssl/key.pem
+> ```
+> If missing, re-run Step 5 to restore your certificate before proceeding.
 
 ```bash
 cd /opt/ipsolis
