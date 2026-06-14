@@ -151,8 +151,8 @@ sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
 sudo mkcert -install
 
 # Zertifikat für den Hostnamen generieren  ← YOUR_HOSTNAME.YOUR_COMPANY.COM ersetzen
-sudo mkdir -p certs
-sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem YOUR_HOSTNAME.YOUR_COMPANY.COM
+sudo mkdir -p nginx/ssl
+sudo mkcert -cert-file nginx/ssl/cert.pem -key-file nginx/ssl/key.pem YOUR_HOSTNAME.YOUR_COMPANY.COM
 ```
 
 > **Wichtig**: Damit Browser auf anderen Rechnern diesem Zertifikat vertrauen, muss die
@@ -188,17 +188,17 @@ Wenn die Organisation eine interne Zertifizierungsstelle betreibt (z. B. Active 
 
 1. CSR auf dem Server erzeugen: *(YOUR_HOSTNAME.YOUR_COMPANY.COM ersetzen)*
    ```bash
-   sudo mkdir -p certs
+   sudo mkdir -p nginx/ssl
    sudo openssl req -new -newkey rsa:2048 -nodes \
-     -keyout certs/key.pem \
-     -out certs/server.csr \
+     -keyout nginx/ssl/key.pem \
+     -out nginx/ssl/server.csr \
      -subj "/CN=YOUR_HOSTNAME.YOUR_COMPANY.COM"
    ```
-2. `certs/server.csr` bei der CA einreichen und das signierte Zertifikat erhalten.
-3. Das signierte Zertifikat als `certs/cert.pem` speichern.
+2. `nginx/ssl/server.csr` bei der CA einreichen und das signierte Zertifikat erhalten.
+3. Das signierte Zertifikat als `nginx/ssl/cert.pem` speichern.
 4. Falls die CA ein Zwischen-/Kettenzertifikat liefert, an `cert.pem` anhängen:
    ```bash
-   cat signiertes-zertifikat.pem zwischen-ca.pem | sudo tee certs/cert.pem > /dev/null
+   cat signiertes-zertifikat.pem zwischen-ca.pem | sudo tee nginx/ssl/cert.pem > /dev/null
    ```
 
 ### Option C: Let's Encrypt (öffentlich erreichbare Server)
@@ -209,10 +209,10 @@ Wenn der Server öffentlich zugänglich ist, können kostenlose Zertifikate von 
 sudo apt install -y certbot
 sudo certbot certonly --standalone -d YOUR_HOSTNAME.YOUR_COMPANY.COM  # ← ersetzen
 
-# Symlinks in das certs-Verzeichnis
-sudo mkdir -p certs
-sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/fullchain.pem certs/cert.pem
-sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/privkey.pem certs/key.pem
+# Symlinks in das ssl-Verzeichnis
+sudo mkdir -p nginx/ssl
+sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/fullchain.pem nginx/ssl/cert.pem
+sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/privkey.pem nginx/ssl/key.pem
 ```
 
 #### Automatische Erneuerung einrichten (nur Option C)
@@ -246,8 +246,8 @@ server {
     listen 443 ssl;
     server_name YOUR_HOSTNAME.YOUR_COMPANY.COM;
 
-    ssl_certificate     /etc/nginx/certs/cert.pem;
-    ssl_certificate_key /etc/nginx/certs/key.pem;
+    ssl_certificate     /etc/nginx/ssl/cert.pem;
+    ssl_certificate_key /etc/nginx/ssl/key.pem;
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
 
@@ -597,6 +597,13 @@ docker image prune -f
 
 ## 11. Update auf neue Version
 
+> **SSL-Vorprüfung** — vor dem Pull ausführen. Fehlt eine der Dateien,
+> startet der nginx-Container, liefert aber kein HTTPS.
+> ```bash
+> ls -la nginx/ssl/cert.pem nginx/ssl/key.pem
+> ```
+> Falls Dateien fehlen, Zertifikat zuerst neu erstellen (siehe Abschnitt 4).
+
 ```bash
 cd /opt/ipsolis
 
@@ -869,11 +876,11 @@ with e.connect() as c: print(c.execute(text('SELECT 1')).scalar())
    docker compose exec api curl -v telnet://smtp.ihreunternehmen.de:587
    ```
 
-### Zugriff verweigert auf certs-Verzeichnis
+### Zugriff verweigert auf ssl-Verzeichnis
 
 ```bash
-sudo chmod 644 certs/cert.pem
-sudo chmod 600 certs/key.pem
+sudo chmod 644 nginx/ssl/cert.pem
+sudo chmod 600 nginx/ssl/key.pem
 ```
 
 ---

@@ -151,8 +151,8 @@ sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
 sudo mkcert -install
 
 # Generate the certificate for your hostname  ← replace YOUR_HOSTNAME.YOUR_COMPANY.COM
-sudo mkdir -p certs
-sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem YOUR_HOSTNAME.YOUR_COMPANY.COM
+sudo mkdir -p nginx/ssl
+sudo mkcert -cert-file nginx/ssl/cert.pem -key-file nginx/ssl/key.pem YOUR_HOSTNAME.YOUR_COMPANY.COM
 ```
 
 > **Important**: For browsers on other machines to trust this certificate, you must
@@ -188,17 +188,17 @@ If your organization runs an internal Certificate Authority (e.g., Active Direct
 
 1. Generate a CSR on the server: *(replace YOUR_HOSTNAME.YOUR_COMPANY.COM)*
    ```bash
-   sudo mkdir -p certs
+   sudo mkdir -p nginx/ssl
    sudo openssl req -new -newkey rsa:2048 -nodes \
-     -keyout certs/key.pem \
-     -out certs/server.csr \
+     -keyout nginx/ssl/key.pem \
+     -out nginx/ssl/server.csr \
      -subj "/CN=YOUR_HOSTNAME.YOUR_COMPANY.COM"
    ```
-2. Submit `certs/server.csr` to your CA and obtain the signed certificate.
-3. Save the signed certificate as `certs/cert.pem`.
+2. Submit `nginx/ssl/server.csr` to your CA and obtain the signed certificate.
+3. Save the signed certificate as `nginx/ssl/cert.pem`.
 4. If your CA provides an intermediate/chain certificate, append it to `cert.pem`:
    ```bash
-   cat signed-cert.pem intermediate-ca.pem | sudo tee certs/cert.pem > /dev/null
+   cat signed-cert.pem intermediate-ca.pem | sudo tee nginx/ssl/cert.pem > /dev/null
    ```
 
 ### Option C: Let's Encrypt (Public-facing servers)
@@ -209,10 +209,10 @@ If your server is publicly accessible, you can use free certificates from Let's 
 sudo apt install -y certbot
 sudo certbot certonly --standalone -d YOUR_HOSTNAME.YOUR_COMPANY.COM  # ← replace
 
-# Symlink into the certs directory
-sudo mkdir -p certs
-sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/fullchain.pem certs/cert.pem
-sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/privkey.pem certs/key.pem
+# Symlink into the ssl directory
+sudo mkdir -p nginx/ssl
+sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/fullchain.pem nginx/ssl/cert.pem
+sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/privkey.pem nginx/ssl/key.pem
 ```
 
 #### Set up auto-renewal (Option C only)
@@ -246,8 +246,8 @@ server {
     listen 443 ssl;
     server_name YOUR_HOSTNAME.YOUR_COMPANY.COM;
 
-    ssl_certificate     /etc/nginx/certs/cert.pem;
-    ssl_certificate_key /etc/nginx/certs/key.pem;
+    ssl_certificate     /etc/nginx/ssl/cert.pem;
+    ssl_certificate_key /etc/nginx/ssl/key.pem;
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
 
@@ -603,6 +603,13 @@ docker image prune -f
 
 ## 11. Updating to a New Version
 
+> **Pre-flight SSL check** — run this before pulling. If either file is missing,
+> the nginx container will start but serve no HTTPS traffic.
+> ```bash
+> ls -la nginx/ssl/cert.pem nginx/ssl/key.pem
+> ```
+> If missing, regenerate the certificate (see section 4) before proceeding.
+
 ```bash
 cd /opt/ipsolis
 
@@ -890,11 +897,11 @@ with e.connect() as c: print(c.execute(text('SELECT 1')).scalar())
    docker compose exec api curl -v telnet://smtp.yourcompany.com:587
    ```
 
-### Permission denied on certs directory
+### Permission denied on ssl directory
 
 ```bash
-sudo chmod 644 certs/cert.pem
-sudo chmod 600 certs/key.pem
+sudo chmod 644 nginx/ssl/cert.pem
+sudo chmod 600 nginx/ssl/key.pem
 ```
 
 ---
