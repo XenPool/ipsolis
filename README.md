@@ -222,7 +222,7 @@ The repository ships two compose files. The main one is the full stack (postgres
 | Mode | Command | When |
 |---|---|---|
 | **Direct** | `docker compose up -d` | Dev. API on `http://localhost:8000/`, no proxy. |
-| **TLS-fronted** | `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` | Pre-live / prod. Nginx handles TLS using `certs/cert.pem` + `certs/key.pem`; reach the app at `https://<your-host>/`. |
+| **TLS-fronted** | `docker compose -f docker-compose.yml -f docker-compose.prelive.yml up -d` | Pre-live / prod. Nginx handles TLS using `nginx/ssl/cert.pem` + `nginx/ssl/key.pem`; reach the app at `https://<your-host>/`. |
 
 The overlay is purely additive — same database, same migrations, same image tags. Switch between modes by stopping (`down`) and starting with the alternate command.
 
@@ -236,7 +236,7 @@ Summary:
 1. Provision a Linux server with Docker
 2. Configure `.env` with secure credentials
 3. Set up SSL certificates (internal CA, mkcert, or Let's Encrypt)
-4. Start with `docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d`
+4. Start with `docker compose -f docker-compose.yml -f docker-compose.prelive.yml up --build -d`
 5. Run migrations: `docker compose exec -T api alembic upgrade head`
 6. Configure AD, SMTP, and Entra ID through the Admin UI
 

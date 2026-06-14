@@ -166,7 +166,7 @@
       click through for release notes. <strong>Off by default</strong> so
       air-gapped installs don't make outbound calls without explicit consent.
       ip·Solis never auto-updates — operators control upgrades via
-      <code class="font-mono bg-surface-raised px-1 rounded">docker compose pull &amp;&amp; docker compose up -d</code>.
+      <code class="font-mono bg-surface-raised px-1 rounded">docker compose pull &amp;&amp; docker compose up -d &amp;&amp; docker compose exec api alembic upgrade head</code>.
     </p>
     <div>
       <label class="block text-xs font-medium text-muted mb-1">Mode</label>

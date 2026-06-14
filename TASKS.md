@@ -30,7 +30,7 @@ signal for actual downloads/installations.
 - [ ] GitHub Actions workflow: build + push multi-arch images to `ghcr.io` on `v*.*.*` tags (+ `:latest`) via `docker/build-push-action` (`packages: write`, `GITHUB_TOKEN`)
 - [ ] Tag both tier images if applicable (community / pro Dockerfiles)
 - [ ] Make the GHCR package **public**; document image usage in README + `docs/DEPLOYMENT.md`
-- [ ] Add `docker-compose.ghcr.yml` (or adjust `docker-compose.prod.yml`) to pull `ghcr.io/xenpool/ipsolis-api:<tag>` instead of `build:`
+- [ ] Add `docker-compose.ghcr.yml` (or adjust `docker-compose.prelive.yml`) to pull `ghcr.io/xenpool/ipsolis-api:<tag>` instead of `build:`
 - [ ] (optional) Document where to read pull counts (package page / API) for adoption tracking
 
 **Related (deeper signal, separate task):** an opt-in, anonymous update-checker

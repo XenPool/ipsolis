@@ -151,8 +151,8 @@ sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
 sudo mkcert -install
 
 # Generate the certificate for your hostname  ← replace YOUR_HOSTNAME.YOUR_COMPANY.COM
-sudo mkdir -p certs
-sudo mkcert -cert-file certs/cert.pem -key-file certs/key.pem YOUR_HOSTNAME.YOUR_COMPANY.COM
+sudo mkdir -p nginx/ssl
+sudo mkcert -cert-file nginx/ssl/cert.pem -key-file nginx/ssl/key.pem YOUR_HOSTNAME.YOUR_COMPANY.COM
 ```
 
 > **Important**: For browsers on other machines to trust this certificate, you must
@@ -188,17 +188,17 @@ If your organization runs an internal Certificate Authority (e.g., Active Direct
 
 1. Generate a CSR on the server: *(replace YOUR_HOSTNAME.YOUR_COMPANY.COM)*
    ```bash
-   sudo mkdir -p certs
+   sudo mkdir -p nginx/ssl
    sudo openssl req -new -newkey rsa:2048 -nodes \
-     -keyout certs/key.pem \
-     -out certs/server.csr \
+     -keyout nginx/ssl/key.pem \
+     -out nginx/ssl/server.csr \
      -subj "/CN=YOUR_HOSTNAME.YOUR_COMPANY.COM"
    ```
-2. Submit `certs/server.csr` to your CA and obtain the signed certificate.
-3. Save the signed certificate as `certs/cert.pem`.
+2. Submit `nginx/ssl/server.csr` to your CA and obtain the signed certificate.
+3. Save the signed certificate as `nginx/ssl/cert.pem`.
 4. If your CA provides an intermediate/chain certificate, append it to `cert.pem`:
    ```bash
-   cat signed-cert.pem intermediate-ca.pem | sudo tee certs/cert.pem > /dev/null
+   cat signed-cert.pem intermediate-ca.pem | sudo tee nginx/ssl/cert.pem > /dev/null
    ```
 
 ### Option C: Let's Encrypt (Public-facing servers)
@@ -209,10 +209,10 @@ If your server is publicly accessible, you can use free certificates from Let's 
 sudo apt install -y certbot
 sudo certbot certonly --standalone -d YOUR_HOSTNAME.YOUR_COMPANY.COM  # ← replace
 
-# Symlink into the certs directory
-sudo mkdir -p certs
-sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/fullchain.pem certs/cert.pem
-sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/privkey.pem certs/key.pem
+# Symlink into the ssl directory
+sudo mkdir -p nginx/ssl
+sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/fullchain.pem nginx/ssl/cert.pem
+sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/privkey.pem nginx/ssl/key.pem
 ```
 
 #### Set up auto-renewal (Option C only)
@@ -246,8 +246,8 @@ server {
     listen 443 ssl;
     server_name YOUR_HOSTNAME.YOUR_COMPANY.COM;
 
-    ssl_certificate     /etc/nginx/certs/cert.pem;
-    ssl_certificate_key /etc/nginx/certs/key.pem;
+    ssl_certificate     /etc/nginx/ssl/cert.pem;
+    ssl_certificate_key /etc/nginx/ssl/key.pem;
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
 
@@ -274,7 +274,7 @@ server {
 
 ## 5. Production Compose Overlay
 
-`docker-compose.prod.yml` is already included in the repository — no action needed.
+`docker-compose.prelive.yml` is already included in the repository — no action needed.
 The overlay adds nginx for SSL termination and removes the dev bind-mounts from
 `api` and `worker`.
 
@@ -286,7 +286,10 @@ The overlay adds nginx for SSL termination and removes the dev bind-mounts from
 cd /opt/ipsolis
 
 # Build and start all services
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prelive.yml \
+  up --build -d
 
 # Run database migrations
 docker compose exec -T api alembic upgrade head
@@ -600,6 +603,13 @@ docker image prune -f
 
 ## 11. Updating to a New Version
 
+> **Pre-flight SSL check** — run this before pulling. If either file is missing,
+> the nginx container will start but serve no HTTPS traffic.
+> ```bash
+> ls -la nginx/ssl/cert.pem nginx/ssl/key.pem
+> ```
+> If missing, regenerate the certificate (see section 4) before proceeding.
+
 ```bash
 cd /opt/ipsolis
 
@@ -607,13 +617,19 @@ cd /opt/ipsolis
 git pull origin main
 
 # Rebuild and restart
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prelive.yml \
+  up --build -d
 
 # Run any new database migrations
 docker compose exec -T api alembic upgrade head
 
 # Restart nginx to pick up new container IPs and any config changes
-docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prelive.yml \
+  restart nginx
 
 # Verify health
 curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health | python3 -m json.tool
@@ -682,7 +698,7 @@ the load balancer.
 
 ```bash
 # Single-host: bump the api replica count via compose
-docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+docker compose -f docker-compose.yml -f docker-compose.prelive.yml \
   up -d --scale api=3
 
 # Verify each replica is reachable through the load balancer
@@ -715,7 +731,7 @@ rolls, fold the `up --build -d` step into a per-replica loop:
 ```bash
 for i in 1 2 3; do
   docker compose stop api-$i
-  docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  docker compose -f docker-compose.yml -f docker-compose.prelive.yml \
     up --build -d --no-deps api-$i
   # Wait for the new container to pass health
   until curl -fsk http://localhost/health > /dev/null 2>&1; do
@@ -754,7 +770,7 @@ scale-up; the worker code itself doesn't change.
 **Scaling command** (single-host, all queues on each replica):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+docker compose -f docker-compose.yml -f docker-compose.prelive.yml \
   up -d --scale worker=3
 ```
 
@@ -764,7 +780,7 @@ each with its own `command:` overriding the default queue list, or
 a runtime `command:` override:
 
 ```yaml
-# docker-compose.prod.yml — per-queue split
+# docker-compose.prelive.yml — per-queue split
 services:
   worker-provision:
     image: ipsolis-worker
@@ -789,7 +805,10 @@ services:
 replicated for HA:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --scale beat=2
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prelive.yml \
+  up -d --scale beat=2
 ```
 
 > **Note**: Celery Beat is a singleton scheduler. Multiple beat replicas only make
@@ -834,7 +853,10 @@ Nginx may have cached the old container IP. Restart the container
 (not just `nginx -s reload` — Docker bind-mounts retain the old inode otherwise):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml restart nginx
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prelive.yml \
+  restart nginx
 ```
 
 ### Database connection errors
@@ -875,11 +897,11 @@ with e.connect() as c: print(c.execute(text('SELECT 1')).scalar())
    docker compose exec api curl -v telnet://smtp.yourcompany.com:587
    ```
 
-### Permission denied on certs directory
+### Permission denied on ssl directory
 
 ```bash
-sudo chmod 644 certs/cert.pem
-sudo chmod 600 certs/key.pem
+sudo chmod 644 nginx/ssl/cert.pem
+sudo chmod 600 nginx/ssl/key.pem
 ```
 
 ---
@@ -896,7 +918,10 @@ directory. For a fully clean reinstall:
 ```bash
 # 1. Stop the stack and delete volumes
 cd /opt/ipsolis
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prelive.yml \
+  down -v
 
 # 2. Remove the repository directory
 cd /opt

@@ -2,8 +2,8 @@
 # Generate self-signed TLS certs for the nginx reverse proxy if they
 # don't already exist.
 #
-# On a fresh install (or after wiping ./certs) nginx crash-loops
-# because /etc/nginx/certs/cert.pem is missing. This script creates a
+# On a fresh install (or after wiping ./nginx/ssl) nginx crash-loops
+# because /etc/nginx/ssl/cert.pem is missing. This script creates a
 # 1-year self-signed cert with the right SubjectAltNames so nginx boots
 # cleanly. The deploy workflow calls it before `docker compose up`, and
 # operators can run it directly the first time too.
@@ -29,7 +29,7 @@
 # When CORS_ORIGINS contains multiple comma-separated hosts, the first
 # becomes the cert CN and all are added as SANs.
 #
-# Production: replace ./certs/cert.pem + key.pem with files from your
+# Production: replace ./nginx/ssl/cert.pem + key.pem with files from your
 # real CA / Let's Encrypt afterwards. Same paths, same nginx config —
 # only the issuer differs.
 
@@ -66,12 +66,12 @@ for arg in "$@"; do
   esac
 done
 
-mkdir -p certs
+mkdir -p nginx/ssl
 
 # ── Idempotency guard (run BEFORE FQDN resolution so a no-op deploy
 #    is completely silent and never prompts) ───────────────────────────────
-if [[ -f certs/cert.pem && -f certs/key.pem && "$force" == "false" ]]; then
-  echo "✓ TLS certs already present in ./certs — nothing to do."
+if [[ -f nginx/ssl/cert.pem && -f nginx/ssl/key.pem && "$force" == "false" ]]; then
+  echo "✓ TLS certs already present in ./nginx/ssl — nothing to do."
   echo "  Pass --force to regenerate (e.g. for a different FQDN)."
   exit 0
 fi
@@ -163,23 +163,23 @@ done
 MSYS_NO_PATHCONV=1 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -subj "/CN=$fqdn/O=ipSolis Self-Signed/C=DE" \
   -addext "subjectAltName=$san" \
-  -keyout certs/key.pem \
-  -out certs/cert.pem 2>/dev/null
+  -keyout nginx/ssl/key.pem \
+  -out nginx/ssl/cert.pem 2>/dev/null
 
-chmod 644 certs/cert.pem
-chmod 600 certs/key.pem
+chmod 644 nginx/ssl/cert.pem
+chmod 600 nginx/ssl/key.pem
 
 echo ""
 echo "✓ Self-signed TLS cert generated"
-echo "    cert: certs/cert.pem"
-echo "    key:  certs/key.pem"
+echo "    cert: nginx/ssl/cert.pem"
+echo "    key:  nginx/ssl/key.pem"
 echo "    CN:   $fqdn"
 echo "    SAN:  $san"
 echo "    valid 365 days from today"
 echo ""
 echo "Next steps:"
 echo "  1) Bring up the stack:"
-echo "       docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d"
+echo "       docker compose -f docker-compose.yml -f docker-compose.prelive.yml up -d"
 echo "  2) Run migrations (creates the schema on a fresh DB):"
 echo "       docker compose exec -T api alembic upgrade head"
 echo "  3) First-run wizard:"
