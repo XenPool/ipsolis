@@ -25,6 +25,13 @@
         "it": "Italiano"
       }
     },
+    "login": {
+      "title": "Anmelden",
+      "subtitle": "Bitte Active-Directory-Zugangsdaten eingeben",
+      "username": "Benutzername",
+      "password": "Kennwort",
+      "sign_in": "Anmelden"
+    },
     "common": {
       "back_to_orders": "← Bestellungen",
       "back_to_my_it": "← Meine IT",

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-surface-raised">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in – {{ app_title }}</title>
+
+  <script>document.documentElement.classList.add('i18n-pending');
+    window.setTimeout(function(){ document.documentElement.classList.remove('i18n-pending'); }, 2000);
+  </script>
+  <style>html.i18n-pending [data-i18n] { visibility: hidden; }</style>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/static/js/i18n.js"></script>
+</head>
+<body class="h-full flex items-center justify-center">
+  <div class="max-w-sm w-full mx-4">
+
+    {% if app_logo_url %}
+    <div class="flex justify-center mb-6">
+      <img src="{{ app_logo_url }}" alt="{{ app_title }}" class="h-10 object-contain">
+    </div>
+    {% endif %}
+
+    <div class="bg-surface rounded-lg border border-token-border shadow-sm p-8">
+      <h1 class="text-lg font-semibold text-heading mb-1" data-i18n="portal.login.title">Sign in</h1>
+      <p class="text-xs text-muted mb-6" data-i18n="portal.login.subtitle">Use your Active Directory credentials</p>
+
+      {% if error %}
+      <div class="mb-4 rounded bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
+        {{ error }}
+      </div>
+      {% endif %}
+
+      <form method="post" action="/portal/auth/ldap" class="space-y-4">
+        <div>
+          <label for="username" class="block text-xs font-medium text-muted mb-1" data-i18n="portal.login.username">Username</label>
+          <input id="username" type="text" name="username"
+                 autocomplete="username" autofocus required
+                 value="{{ username or '' }}"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
+        <div>
+          <label for="password" class="block text-xs font-medium text-muted mb-1" data-i18n="portal.login.password">Password</label>
+          <input id="password" type="password" name="password"
+                 autocomplete="current-password" required
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
+        <button type="submit"
+                class="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+                data-i18n="portal.login.sign_in">
+          Sign in
+        </button>
+      </form>
+    </div>
+
+  </div>
+</body>
+</html>
