@@ -4,9 +4,9 @@ Config is read from app_config (entra.* keys), not from .env, so credentials
 can be updated via the admin settings page without a restart.
 
 entra.mode values:
-  disabled            – no auth required (dev / before Entra setup)
-  entra_only          – SSO required, no additional on-prem check
-  entra_with_onprem   – SSO required + UPN validated against on-prem LDAP
+  disabled    – no auth required (dev / before Entra setup)
+  entra_only  – Entra ID SSO required
+  onprem_ldap – on-prem AD username/password form (no Entra ID required)
 """
 
 import logging
