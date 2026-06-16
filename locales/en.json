@@ -25,6 +25,13 @@
         "it": "Italiano"
       }
     },
+    "login": {
+      "title": "Sign in",
+      "subtitle": "Use your Active Directory credentials",
+      "username": "Username",
+      "password": "Password",
+      "sign_in": "Sign in"
+    },
     "common": {
       "back_to_orders": "← Orders",
       "back_to_my_it": "← My IT",

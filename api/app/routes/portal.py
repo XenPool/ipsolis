@@ -112,6 +112,7 @@ async def require_portal_auth(
     - 'disabled'          → portal open, anonymous shared identity (no login)
     - 'entra_only'        → Entra ID login required
     - 'entra_with_onprem' → Entra ID login + on-prem LDAP check
+    - 'onprem_ldap'       → on-prem AD login form (no Entra ID required)
     """
     mode_row = await db.execute(
         select(AppConfig).where(AppConfig.key == "entra.mode")

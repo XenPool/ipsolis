@@ -246,6 +246,7 @@
           <option value="disabled"   {% if entra_config.get('entra.mode','disabled') == 'disabled'             %}selected{% endif %}>disabled — portal open (no login required)</option>
           <option value="entra_only" {% if entra_config.get('entra.mode','disabled') == 'entra_only'           %}selected{% endif %}>entra_only — Entra ID login required</option>
           <option value="entra_with_onprem" {% if entra_config.get('entra.mode','disabled') == 'entra_with_onprem' %}selected{% endif %}>entra_with_onprem — Entra ID + on-prem LDAP check</option>
+          <option value="onprem_ldap" {% if entra_config.get('entra.mode','disabled') == 'onprem_ldap' %}selected{% endif %}>onprem_ldap — on-prem AD login (no Entra ID required)</option>
         </select>
       </div>
 
