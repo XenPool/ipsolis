@@ -41,14 +41,6 @@ still ≠ live installs). Commercial installs are already known via license acti
 
 ---
 
-### [open] Entra ID Connect / Cloud Sync setup — infrastructure (no code change needed)
-Sync `xenpool.local` on-prem users to the Entra ID tenant so they can use portal SSO with
-their existing domain credentials. Pure Windows Server / Azure infrastructure task.
-- [ ] Install Entra ID Connect (or Entra Cloud Sync agent) on a domain-joined server
-- [ ] Configure UPN suffix (`xenpool.de`) for synced accounts
-- [ ] Verify synced users can log into the portal (no code change required)
-
----
 
 ### [open] Cloud group management via Microsoft Graph — future
 Extend `target_executor` to manage Entra cloud-only security groups for asset types
