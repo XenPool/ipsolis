@@ -39,31 +39,6 @@ still ≠ live installs). Commercial installs are already known via license acti
 
 ---
 
-### [open] On-premises-only portal authentication (`onprem_ldap` mode)
-
-**Problem:** Customers without Entra ID (Azure AD) cannot authenticate portal users.
-Current modes are `disabled` (anonymous, demo-only), `entra_only`, and
-`entra_with_onprem`. There is no mode for pure on-prem AD shops.
-
-**Proposed solution:** Add a new `entra.mode = onprem_ldap` option.
-Portal users enter their AD username + password; the API performs an LDAP bind
-via the existing `msldap` connection (already configured via `ad.*` settings).
-On success a portal session is created with the user's AD attributes — same
-session model as Entra ID, no cloud dependency.
-
-**Why this approach:**
-- Reuses the existing `msldap` infrastructure (`ad.server`, `ad.base_dn`, `ad.domain` etc.)
-- No new dependencies or Azure requirement
-- `entra_with_onprem` already has the LDAP user-lookup code — can be reused
-- Tradeoff: no SSO (user must log in manually); AD password sent over HTTPS (no Kerberos flow)
-
-**Implementation slices:**
-- [ ] New portal auth route `POST /portal/auth/ldap` — LDAP bind via msldap, create session
-- [ ] Portal login page: show username/password form when `entra.mode = onprem_ldap`
-- [ ] Add `onprem_ldap` to the `entra.mode` config enum + Admin UI Settings dropdown
-- [ ] Admin UI: "Test connection" using the existing AD config (same credentials)
-- [ ] Docs: update DEPLOYMENT.md section 8 (Entra ID SSO) to cover the new mode
-
 ---
 
 ### [open] Entra ID Connect / Cloud Sync setup — infrastructure (no code change needed)
@@ -90,7 +65,6 @@ library is needed. The main work is abstracting the auth layer away from Entra-s
 
 **Key design decisions to resolve before starting:**
 - [ ] IDP routing strategy: domain-based auto-routing vs. a picker page at `/portal/login/select`
-- [ ] Whether `entra_with_onprem` mode needs a per-IDP equivalent for Okta users
 
 **Implementation slices:**
 - [ ] Extract generic OIDC helper (`api/app/utils/oidc.py`)
@@ -117,6 +91,7 @@ All items below are shipped. Detailed implementation notes live in git history.
 | Access certification campaigns | 2026-04-30 | Slice 1+2: schema, admin CRUD, signed-token review URL, auto-revoke Beat task |
 | Multi-instance HA | 2026-04-30 | Multi-replica API/worker docs, Postgres standby + failover docs, Beat-alive health probe |
 | Portal SSO (Entra ID) | 2026-03-23 | MSAL, session middleware, `entra.mode` config, domain check |
+| Portal auth `onprem_ldap` mode | 2026-06 | LDAP bind form, 5-locale i18n, `entra_with_onprem` removed (not implemented, no prod deployments) |
 | Open Core model | 2026-04-xx | Community + Pro tiers, two Dockerfiles, license simplification, public mirror repo |
 | PS Modules | 2026-04-30 | Linux compatibility flag, upload support, Gallery installer |
 | Standalone Runbooks | — | Ad-hoc + cron-scheduled runbooks, execution history |
