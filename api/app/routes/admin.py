@@ -741,6 +741,36 @@ async def asset_type_logo(type_id: int, db: AsyncSession = Depends(get_db)):
     return Response(content=raw, media_type=mime, headers={"Cache-Control": "no-cache"})
 
 
+@router.get("/asset-type-logos", include_in_schema=False)
+async def asset_type_logos(db: AsyncSession = Depends(get_db)) -> dict:
+    """Returns the distinct tile logos already in use across asset types.
+
+    Powers the "Choose existing" logo picker so an operator can reuse a logo
+    that was uploaded for another asset type, without re-uploading the file.
+    Deduped by content; each entry lists the names of types currently using it.
+    Path is /asset-type-logos (not /asset-types/...) to avoid the
+    /asset-types/{type_id} route shadowing 'logos' as an id.
+    """
+    result = await db.execute(
+        select(AssetType.name, AssetType.logo)
+        .where(AssetType.logo.isnot(None))
+        .order_by(AssetType.name)
+    )
+    seen: dict[str, dict] = {}
+    for name, logo in result.all():
+        if not logo:
+            continue
+        entry = seen.get(logo)
+        if entry is None:
+            seen[logo] = {"data_url": logo, "used_by": [name]}
+        else:
+            entry["used_by"].append(name)
+    # Tile logos are tiny (resized to <=160x40); a soft cap guards against a
+    # pathological payload if someone has hundreds of distinct logos.
+    logos = list(seen.values())[:60]
+    return {"logos": logos, "total": len(seen)}
+
+
 @router.post(
     "/asset-types",
     response_model=AssetTypeRead,
