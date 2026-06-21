@@ -27,8 +27,12 @@
       </div>
       <div>
         <label class="block text-xs font-medium text-muted mb-1">Description</label>
+        {# title shows the full text on hover (the field truncates visually);
+           oninput keeps the tooltip in sync after edits. #}
         <input type="text" id="mod-desc"
                value="{{ module.description if module and module.description else '' }}"
+               title="{{ module.description if module and module.description else '' }}"
+               oninput="this.title = this.value"
                placeholder="What does this module do?"
                class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
       </div>
