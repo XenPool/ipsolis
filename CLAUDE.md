@@ -18,7 +18,7 @@ operators, and a webhook receiver for ServiceNow integration.
 | Workflow Engine | Celery + Redis |
 | Scheduling | Celery Beat |
 | Database | PostgreSQL 16 (SQLAlchemy + Alembic) |
-| Portal Auth | Entra ID SSO (MSAL) |
+| Portal Auth | Generic OIDC SSO (any compliant IdP) + on-prem LDAP |
 | Admin Auth | Session login + `ADMIN_API_KEY` header |
 | Active Directory | `msldap` (NTLM signing / Kerberos) |
 | Virtualization | XenServer/XCP-ng + VMware vSphere (PowerShell / PowerCLI) |
@@ -104,7 +104,8 @@ Enum types (e.g. `order_action`, `asset_status`) already exist in the DB — use
 `op.execute(raw SQL)` instead of `op.create_table()` with `sa.Enum` to avoid
 `DuplicateObject` errors.
 
-Current head: `0093_seed_api_token_purge.py`.
+Current head: `0003_portal_auth_oidc_registry.py` (on-disk chain is `0001` squashed
+initial schema → `0002` → `0003`).
 
 ### Template changes require image rebuild
 `api/app/templates/` and `api/app/routes/` are baked into the `ipsolis-api` image, not
@@ -149,13 +150,13 @@ runtime; no build step needed.
 | `api/app/routes/admin_standalone_runbooks.py` | Ad-hoc / cron-scheduled runbooks |
 | `api/app/routes/admin_maintenance.py` | Backups, health, queue, retention, alerts |
 | `api/app/routes/portal.py` | Self-service portal (Entra ID protected) |
-| `api/app/routes/auth.py` | Entra ID login/callback/logout for portal |
+| `api/app/routes/auth.py` | Portal OIDC login/picker/callback/logout + LDAP login |
 | `api/app/routes/webhook.py` | ServiceNow inbound webhook |
 | `api/app/routes/orders.py` | Order API (create/list/get/cancel) |
 | `api/app/routes/ui.py` | Admin UI pages (dashboard, pool, orders, settings, …) |
 | `api/app/utils/module_registry.py` | Module metadata mirror for Admin UI |
 | `api/app/utils/capacity.py` | Pool capacity enforcement |
-| `api/app/utils/entra.py` | MSAL helper (auth URL, token exchange, domain check) |
+| `api/app/utils/oidc.py` | Generic OIDC helper (discovery, provider registry, auth URL, code exchange + JWKS ID-token validation, claim mapping, RP logout) |
 | `api/app/utils/ad_lookup.py` | msldap user/manager/group lookup (sync wrapper over async) |
 | `api/app/utils/auth.py` | `require_admin_key` / session dependencies |
 | `api/app/utils/ps_param_parser.py` | PowerShell `param()` block introspection |
@@ -253,7 +254,7 @@ Dashboard tiles (Admin UI `/ui/`) count Free / In use / Failed / Reinstall / Mai
 - **Audit logging**: `aaudit()` (async, API) · `waudit()` (sync, Worker) — see `worker/tasks/modules/audit_helper.py`
 - **Step tracking**: `worker/tasks/modules/step_helper.py`
 - **Admin auth**: `require_admin_key` accepts either `X-Admin-Key: <ADMIN_API_KEY>` header or an authenticated admin session cookie
-- **Portal auth**: controlled by `entra.mode` (Admin → Settings). `disabled` = portal open with shared anonymous identity; `entra_only` = Entra ID login required; `entra_with_onprem` = Entra ID + on-prem LDAP check
+- **Portal auth**: generic OIDC (`app/utils/oidc.py`) over a provider registry in `app_config` (`idp.<id>.*`). Gated by `portal.auth_required` (false = portal open with shared anonymous identity; true = login required). Each enabled `idp.<id>` provider self-configures from its issuer's discovery doc; `auth.ldap_enabled` additionally offers on-prem LDAP login. Callback is parametric: `/portal/auth/{provider_id}/callback`. (Replaced the Entra-only MSAL path; `entra.*` keys are retired.)
 - **`dynamic_runner`, `standalone_runner`, `ps_module_installer`, `sccm_probe`, `maintenance`** must be listed in `include=[]` in `worker/tasks/__init__.py` or Beat tasks won't register
 - **Worker queues**: `default` (maintenance), `provision` (orders + standalone + installs), `reclaim` (expiry checks), `notifications` (email)
 - **Timezone**: Celery configured for `Europe/Berlin`; DB timestamps stored in UTC

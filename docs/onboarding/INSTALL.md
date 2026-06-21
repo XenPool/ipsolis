@@ -263,9 +263,9 @@ Ensure the `.lic` file is unmodified. The file contains a cryptographic
 signature — any whitespace or encoding change invalidates it.
 
 **Portal shows "Login disabled"**
-Entra ID SSO is not configured yet.  
-Go to **Admin → Settings → Authentication** and set `entra.mode = disabled`
-to open the portal with a shared anonymous identity while you configure SSO.
+Portal SSO is not configured yet.  
+Go to **Admin → Settings → Authentication** and leave **Require login** off
+to open the portal with a shared anonymous identity while you add an OIDC provider.
 
 **Database connection refused on first start**
 PostgreSQL may still be initialising. Wait 30 seconds and retry:

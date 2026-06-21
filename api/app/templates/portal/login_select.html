@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-surface-raised">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in – {{ app_title }}</title>
+
+  <script>document.documentElement.classList.add('i18n-pending');
+    window.setTimeout(function(){ document.documentElement.classList.remove('i18n-pending'); }, 2000);
+  </script>
+  <style>html.i18n-pending [data-i18n] { visibility: hidden; }</style>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/static/js/i18n.js"></script>
+</head>
+<body class="h-full flex items-center justify-center">
+  <div class="max-w-sm w-full mx-4">
+
+    {% if app_logo_url %}
+    <div class="flex justify-center mb-6">
+      <img src="{{ app_logo_url }}" alt="{{ app_title }}" class="h-10 object-contain">
+    </div>
+    {% endif %}
+
+    <div class="bg-surface rounded-lg border border-token-border shadow-sm p-8">
+      <h1 class="text-lg font-semibold text-heading mb-1" data-i18n="portal.login.title">Sign in</h1>
+      <p class="text-xs text-muted mb-6" data-i18n="portal.login.choose_method">Choose how you want to sign in</p>
+
+      <div class="space-y-3">
+        {% for p in providers %}
+        <a href="/portal/login?provider={{ p.id }}"
+           class="block w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1">
+          <span data-i18n="portal.login.sign_in_with"
+                data-i18n-params='{{ {"provider": p.display_name} | tojson }}'>Sign in with {{ p.display_name }}</span>
+        </a>
+        {% endfor %}
+
+        {% if ldap_enabled %}
+        <a href="/portal/login?method=ldap"
+           class="block w-full py-2.5 px-4 bg-surface-raised hover:bg-surface text-body text-sm font-medium rounded text-center border border-token-border focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+           data-i18n="portal.login.use_ad">
+          Sign in with Active Directory
+        </a>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

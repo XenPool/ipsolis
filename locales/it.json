@@ -30,7 +30,10 @@
       "subtitle": "Usa le credenziali Active Directory",
       "username": "Nome utente",
       "password": "Password",
-      "sign_in": "Accedi"
+      "sign_in": "Accedi",
+      "choose_method": "Scegli come accedere",
+      "sign_in_with": "Accedi con {provider}",
+      "use_ad": "Accedi con Active Directory"
     },
     "common": {
       "back_to_orders": "← Ordini",

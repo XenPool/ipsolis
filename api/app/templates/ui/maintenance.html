@@ -737,7 +737,7 @@
       var resp = await fetch('/admin/maintenance/health');
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       var data = await resp.json();
-      var labels = {database: 'PostgreSQL', redis: 'Redis', entra: 'Entra ID', sccm: 'SCCM', smtp: 'SMTP'};
+      var labels = {database: 'PostgreSQL', redis: 'Redis', sso: 'Portal SSO', sccm: 'SCCM', smtp: 'SMTP'};
       var html = '';
       Object.keys(labels).forEach(function(key) {
         var p = data[key] || {};

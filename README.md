@@ -22,7 +22,7 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 
 ### Self-Service Portal
 - Users request assets through a clean web interface
-- Entra ID (Azure AD) single sign-on
+- Single sign-on via OpenID Connect — Entra ID, Okta, Ping, Google, Keycloak, … (any compliant IdP)
 - Order tracking with real-time status updates
 - "My IT" dashboard showing active assets with extend/modify/cancel options
 - Deputy support (order on behalf of another user)
@@ -131,7 +131,7 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 
 ### Integrations
 - **Active Directory / LDAP** -- user validation, manager lookup, group membership
-- **Microsoft Entra ID** -- SSO authentication for the portal
+- **OpenID Connect IdP** -- portal SSO via any compliant provider (Entra ID, Okta, Ping, Google, Keycloak, …)
 - **vSphere / XenServer / XCP-ng** -- VM lifecycle operations via PowerShell
 - **SCCM** -- task sequence triggers for OS deployment
 - **SMTP** -- transactional email notifications
@@ -177,7 +177,7 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 | Scheduling | Celery Beat |
 | Database | PostgreSQL 16 (SQLAlchemy + Alembic) |
 | Frontend | HTMX + Jinja2 + Tailwind CSS |
-| Authentication | Entra ID SSO (MSAL) |
+| Portal Authentication | OIDC SSO — any compliant IdP (Entra ID, Okta, …) + on-prem LDAP |
 | VM Operations | PowerShell / PowerCLI |
 | Directory Services | Active Directory (msldap) |
 | Deployment | Docker Compose |
@@ -315,7 +315,7 @@ This software is designed for on-premises deployment. All data stays within your
 - Tamper-evident audit log (BEFORE-statement triggers block DELETE / UPDATE / TRUNCATE outside a documented bypass)
 - Per-classification audit retention windows (PII / PHI / PCI configurable independently of the global window)
 - Five-tier admin RBAC with per-asset-type ACL grants and separation-of-duties enforcement
-- Entra ID SSO for the portal (no password storage on the portal side)
+- OIDC SSO for the portal — any compliant IdP (no password storage on the portal side)
 - Admin password storage uses PBKDF2-SHA256 (600k iterations, OWASP-2023)
 - External secret management (HashiCorp Vault / CyberArk CCP / Azure Key Vault / AWS Secrets Manager / CyberArk Conjur) replaces plaintext credentials in `app_config`; bulk-migration tool to push existing plaintext to the chosen backend in one pass
 - All traffic encrypted via HTTPS (nginx TLS termination)

@@ -14,6 +14,18 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+### Added
+- **Provider-agnostic portal SSO (generic OIDC).** The self-service portal now authenticates users against any standards-compliant OpenID Connect identity provider — Entra ID, Okta, Ping, Google, Keycloak, Authentik, Zitadel, … — through a single code path. Each provider self-configures from its issuer URL via the discovery document (`<issuer>/.well-known/openid-configuration`); adding an IdP is a config entry, not a vendor integration. New helper `api/app/utils/oidc.py` validates ID-token signatures against the provider JWKS (PyJWT) plus iss/aud/exp and the OIDC nonce.
+- **OIDC provider registry.** Providers are stored in `app_config` under `idp.<id>.*` (unlimited providers, stable URL-safe ids). Admin → Settings → Authentication gains an add/edit/delete provider UI with a **Test** button that runs a discovery probe. New endpoints: `GET /admin/config/oidc/providers`, `PUT/DELETE /admin/config/oidc/{provider_id}`, `POST /admin/config/oidc/{provider_id}/test`, `PUT /admin/config/portal-auth`.
+- **Login method picker.** When more than one login method is enabled the portal shows a chooser at `/portal/login`; with exactly one it redirects straight to it. On-prem AD/LDAP username+password login can be offered alongside OIDC (`auth.ldap_enabled`).
+
+### Changed
+- **Parametric OIDC callback.** Portal callback is now `/portal/auth/{provider_id}/callback` (was the Entra-only `/portal/auth/callback`). Logout is generic RP-initiated logout via each provider's `end_session_endpoint`.
+- **Portal auth gate.** Replaced the Entra-specific `entra.mode` (`disabled`/`entra_only`/`onprem_ldap`) with `portal.auth_required` (login on/off) + per-provider `idp.<id>.enabled` + `auth.ldap_enabled`. Service-health probe `entra` renamed to `sso` (probes discovery for every enabled provider). SAML 2.0 remains out of scope (tracked as a separate task).
+
+### Removed
+- **Entra-only MSAL login path.** `api/app/utils/entra.py` and the `entra.*` config keys are retired; the generic OIDC path supersedes them (no MSAL-only feature was in use). `msal` is retained only for the legacy Entra credential test and may be dropped later.
+
 ## [0.6.9] — 2026-06-14
 
 ### Added

@@ -14,7 +14,7 @@ This guide walks you through setting up the ip·Solis platform on a fresh on-pre
 6. [Start the Stack](#6-start-the-stack)
 7. [Initial Admin Setup](#7-initial-admin-setup)
    - [Install Your License (Pro)](#install-your-license-pro)
-8. [Entra ID SSO (Portal Authentication)](#8-entra-id-sso-portal-authentication)
+8. [Portal SSO — OpenID Connect (Portal Authentication)](#8-portal-sso--openid-connect-portal-authentication)
 9. [Verify the Deployment](#9-verify-the-deployment)
 10. [Backup & Maintenance](#10-backup--maintenance)
 11. [Updating to a New Version](#11-updating-to-a-new-version)
@@ -457,9 +457,10 @@ Navigate to **Admin > Settings → Active Directory**:
 > Additional permissions (e.g. on computer objects, OUs, or other attributes) may be
 > needed depending on the runbooks and modules deployed.
 
-#### 4. Enable portal SSO via Entra ID *(Essential)*
+#### 4. Enable portal SSO (OIDC) *(Essential)*
 
-See [Section 8](#8-entra-id-sso-portal-authentication) for the full Entra ID setup.
+See [Section 8](#8-portal-sso--openid-connect-portal-authentication) for the full setup
+(Entra ID, Okta, and any other OIDC provider).
 
 #### 5. Create your first asset type *(Essential)*
 
@@ -511,38 +512,58 @@ Any number of custom runbooks with any combination of steps can be created.
 
 ---
 
-## 8. Entra ID SSO (Portal Authentication)
+## 8. Portal SSO — OpenID Connect (Portal Authentication)
 
-The self-service portal supports Microsoft Entra ID (Azure AD) for single sign-on.
-
-### Register an App in Entra ID
-
-1. Go to the [Azure Portal](https://portal.azure.com) > **App registrations** > **New registration**
-2. Name: `ip·Solis`
-3. Redirect URI: `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/portal/auth/callback` (Web)
-4. Note down the **Application (client) ID** and **Directory (tenant) ID**
-5. Under **Certificates & secrets**, create a new client secret
+The self-service portal authenticates end users via **generic OpenID Connect (OIDC)**.
+Any standards-compliant identity provider works through a single code path — Entra ID,
+Okta, Ping, Google Workspace, Keycloak, Authentik, Zitadel, … — because each provider
+self-configures from its **issuer URL** via the discovery document
+(`<issuer>/.well-known/openid-configuration`). Adding a new IdP is a config entry, not
+a code change. On-prem AD/LDAP username+password login can be offered alongside OIDC.
 
 ### Configure in Admin UI
 
-Navigate to **Admin > Settings** and set:
+Navigate to **Admin → Settings → Authentication**:
 
-| Setting | Description |
-|---------|-------------|
-| `entra.mode` | `entra_only` (Entra ID login required) or `entra_with_onprem` (Entra ID + on-prem LDAP check) |
-| `entra.client_id` | Application (client) ID |
-| `entra.client_secret` | Client secret value *(marked as secret)* |
-| `entra.tenant_id` | Directory (tenant) ID |
-| `entra.redirect_uri` | `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/portal/auth/callback` *(replace)* |
-| `entra.allowed_domains` | Comma-separated list of allowed email domains, e.g. `yourcompany.com` |
+1. **Require login to access the portal** — toggle on for multi-user production.
+   (Off = portal open with a shared anonymous identity; demo / air-gapped labs only.)
+2. *(optional)* **Also offer on-prem AD / LDAP login** — uses the LDAP service account
+   configured in the same page.
+3. Under **OIDC providers**, click **+ Add provider** and fill in:
 
-Use the **Test Entra Connection** button to verify the configuration.
+| Field | Description |
+|-------|-------------|
+| Provider ID | Stable URL-safe slug (`a–z 0–9 _ -`), e.g. `entra`, `okta`. Appears in the callback URL and **cannot be changed later**. |
+| Display name | Button label on the login page, e.g. `Entra ID`. |
+| Issuer URL | The OIDC issuer (discovery is derived from it). See recipes below. |
+| Client ID | Application / client ID from the IdP app registration. |
+| Client secret | Confidential-client secret *(stored encrypted; supports `vault://…` / `ccp://…` references)*. |
+| Redirect URI | Leave blank to auto-derive `https://YOUR_HOST/portal/auth/<provider-id>/callback`, or set an explicit value. Register **this exact URI** in the IdP app. |
+| Allowed domains | *(optional)* comma-separated UPN/email domain allow-list. Blank = allow any. |
+| *Advanced* | Scopes (default `openid profile email`) and claim mapping (username/email/name). |
 
-> When `entra.mode` is set to `disabled`, the portal is open to anyone
-> on the network with a shared anonymous identity — every visitor sees
-> and can act on the same set of orders. Only use this for demo /
-> air-gapped lab deployments. For multi-user production, set
-> `entra.mode = entra_only`.
+Click **Test** to run a discovery probe (confirms the issuer is reachable and the
+authorization/token/JWKS endpoints resolve), then **Save**.
+
+> When **more than one** login method is enabled the portal shows a chooser at
+> `/portal/login`; with exactly one it redirects straight to it.
+
+#### Recipe — Microsoft Entra ID (Azure AD)
+
+1. [Azure Portal](https://portal.azure.com) → **App registrations** → **New registration**.
+2. Redirect URI (Web): `https://YOUR_HOST/portal/auth/entra/callback`.
+3. Copy the **Application (client) ID** and **Directory (tenant) ID**; create a client
+   secret under **Certificates & secrets**.
+4. In ip·Solis: Provider ID `entra`, Issuer URL
+   `https://login.microsoftonline.com/<tenant-id>/v2.0`, plus the client id/secret.
+
+#### Recipe — Okta
+
+1. Okta Admin → **Applications** → **Create App Integration** → **OIDC / Web Application**.
+2. Sign-in redirect URI: `https://YOUR_HOST/portal/auth/okta/callback`.
+3. Copy the **Client ID** and **Client secret**.
+4. In ip·Solis: Provider ID `okta`, Issuer URL `https://<your-org>.okta.com`
+   (or your custom authorization-server issuer), plus the client id/secret.
 
 ---
 
@@ -554,7 +575,7 @@ Run through this checklist to confirm everything works:
 - [ ] **Admin UI**: `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/ui/` is accessible
 - [ ] **First-run setup**: visiting the admin login renders the "Create first administrator" form (or, if already done, the regular sign-in form with no error)
 - [ ] **Setup checklist**: the dashboard shows the in-app setup checklist; tick off Essential items as you configure them
-- [ ] **Portal login**: Users can sign in via Entra ID SSO
+- [ ] **Portal login**: Users can sign in via an OIDC provider (Entra ID, Okta, …) — the discovery **Test** passes and a real login completes
 - [ ] **AD lookup**: On the order form, user validation (deputy, RDP, admin fields) resolves names
 - [ ] **Email**: Submit a test order and confirm notification email arrives
 - [ ] **Health check**: `curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health` returns `{"status": "ok"}`

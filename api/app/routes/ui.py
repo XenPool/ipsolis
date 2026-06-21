@@ -1120,12 +1120,16 @@ async def settings_page(
         for r in tpl_result.fetchall()
     ]
 
-    # Load entra.* config keys
-    entra_result = await db.execute(
-        select(AppConfig).where(AppConfig.key.like("entra.%")).order_by(AppConfig.key)
+    # Portal auth toggles (generic OIDC registry is fetched client-side via
+    # /admin/config/oidc/providers; only the two global flags need server render).
+    portal_auth_result = await db.execute(
+        select(AppConfig).where(AppConfig.key.in_(["portal.auth_required", "auth.ldap_enabled"]))
     )
-    entra_rows = entra_result.scalars().all()
-    entra_config = {r.key: (_MASK if r.is_secret else (r.value or "")) for r in entra_rows}
+    _pa = {r.key: (r.value or "") for r in portal_auth_result.scalars().all()}
+    portal_auth_config = {
+        "auth_required": _pa.get("portal.auth_required", "").strip().lower() in ("1", "true", "yes", "on"),
+        "ldap_enabled": _pa.get("auth.ldap_enabled", "").strip().lower() in ("1", "true", "yes", "on"),
+    }
 
     # Load teams.* config keys
     teams_result = await db.execute(
@@ -1221,7 +1225,7 @@ async def settings_page(
 
     return templates.TemplateResponse(
         request, "ui/settings.html",
-        {"vars": masked_vars, "ad_config": ad_config, "entra_config": entra_config,
+        {"vars": masked_vars, "ad_config": ad_config, "portal_auth_config": portal_auth_config,
          "email_config": email_config, "email_templates": email_templates,
          "teams_config": teams_config,
          "siem_config": siem_config,

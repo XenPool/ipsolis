@@ -58,8 +58,10 @@ async def setup_state(db: AsyncSession = Depends(get_db)) -> dict:
 
     ad_server = await _get_value(db, "ad.server")
 
-    entra_mode = (await _get_value(db, "entra.mode")) or "disabled"
-    entra_client_id = await _get_value(db, "entra.client_id")
+    portal_auth_required = (await _get_value(db, "portal.auth_required") or "false").lower() in ("1", "true", "yes", "on")
+    # SSO counts as configured once at least one enabled, usable OIDC provider exists.
+    from app.utils import oidc
+    sso_providers = await oidc.enabled_providers(db)
 
     teams_mode = (await _get_value(db, "teams.mode")) or "disabled"
     teams_webhook = await _get_value(db, "teams.webhook_url")
@@ -105,10 +107,10 @@ async def setup_state(db: AsyncSession = Depends(get_db)) -> dict:
             "tier": "essential",
         },
         {
-            "key": "entra",
-            "label": "Enable portal SSO via Entra ID",
-            "done": entra_mode != "disabled" and bool(entra_client_id),
-            "hint": "End users log into the self-service portal with their Entra ID account.",
+            "key": "sso",
+            "label": "Enable portal SSO (OIDC)",
+            "done": portal_auth_required and bool(sso_providers),
+            "hint": "End users log into the self-service portal with their OIDC identity provider (Entra ID, Okta, …).",
             "link": "/ui/settings#ad",
             "tier": "essential",
         },
