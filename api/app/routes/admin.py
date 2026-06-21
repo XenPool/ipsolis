@@ -375,7 +375,11 @@ class PortalAuthPayload(_PydanticBase):
     ldap_enabled: bool = False
 
 
-@router.put("/config/portal-auth",
+# NOTE: path is /admin/portal-auth (NOT under /admin/config/) on purpose — a single
+# segment like /config/portal-auth is shadowed by the generic PUT /config/{key} route
+# registered earlier, which parses "portal-auth" as a config key and rejects this body
+# with 422. The /config/oidc/{id} routes are safe (extra path segment).
+@router.put("/portal-auth",
             dependencies=[require_scopes("config:write"), require_role("admin")])
 async def set_portal_auth(
     request: Request, payload: PortalAuthPayload, db: AsyncSession = Depends(get_db)

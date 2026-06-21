@@ -16,7 +16,7 @@ the full upgrade procedure including DB backup recommendations.
 
 ### Added
 - **Provider-agnostic portal SSO (generic OIDC).** The self-service portal now authenticates users against any standards-compliant OpenID Connect identity provider — Entra ID, Okta, Ping, Google, Keycloak, Authentik, Zitadel, … — through a single code path. Each provider self-configures from its issuer URL via the discovery document (`<issuer>/.well-known/openid-configuration`); adding an IdP is a config entry, not a vendor integration. New helper `api/app/utils/oidc.py` validates ID-token signatures against the provider JWKS (PyJWT) plus iss/aud/exp and the OIDC nonce.
-- **OIDC provider registry.** Providers are stored in `app_config` under `idp.<id>.*` (unlimited providers, stable URL-safe ids). Admin → Settings → Authentication gains an add/edit/delete provider UI with a **Test** button that runs a discovery probe. New endpoints: `GET /admin/config/oidc/providers`, `PUT/DELETE /admin/config/oidc/{provider_id}`, `POST /admin/config/oidc/{provider_id}/test`, `PUT /admin/config/portal-auth`.
+- **OIDC provider registry.** Providers are stored in `app_config` under `idp.<id>.*` (unlimited providers, stable URL-safe ids). Admin → Settings → Authentication gains an add/edit/delete provider UI with a **Test** button that runs a discovery probe. New endpoints: `GET /admin/config/oidc/providers`, `PUT/DELETE /admin/config/oidc/{provider_id}`, `POST /admin/config/oidc/{provider_id}/test`, `PUT /admin/portal-auth`.
 - **Login method picker.** When more than one login method is enabled the portal shows a chooser at `/portal/login`; with exactly one it redirects straight to it. On-prem AD/LDAP username+password login can be offered alongside OIDC (`auth.ldap_enabled`).
 
 ### Changed

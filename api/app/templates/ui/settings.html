@@ -2359,7 +2359,7 @@ async function savePortalAuth() {
     auth_required: document.getElementById('portal-auth-required').checked,
     ldap_enabled:  document.getElementById('portal-ldap-enabled').checked,
   };
-  var resp = await fetch('/admin/config/portal-auth', {
+  var resp = await fetch('/admin/portal-auth', {
     method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
   });
   showBanner(resp.ok ? {ok: true, message: 'Login settings saved.'}

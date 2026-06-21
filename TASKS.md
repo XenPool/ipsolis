@@ -91,7 +91,7 @@ starting any implementation slice. Do not let the agent jump straight into `oidc
 - [x] Generic RP-initiated logout via provider `end_session_endpoint`
 - [x] Admin UI: add/edit/delete OIDC provider + "Test connection" (discovery probe);
       endpoints `GET /admin/config/oidc/providers`, `PUT/DELETE /admin/config/oidc/{id}`,
-      `POST /admin/config/oidc/{id}/test`, `PUT /admin/config/portal-auth`
+      `POST /admin/config/oidc/{id}/test`, `PUT /admin/portal-auth`
 - [x] Portal auth gate made provider-agnostic (`portal.py` → `oidc.auth_required`);
       login picker auto-skips to the single enabled method
 - [x] Retired `entra.py` + `entra.*` keys; health probe `entra`→`sso`; setup checklist updated
