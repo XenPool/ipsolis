@@ -96,7 +96,9 @@ async def create_script_module(
         name=payload.name,
         description=payload.description,
         script_content=payload.script_content,
-        script_type=payload.script_type,
+        # Only PowerShell is supported: the worker runs pwsh and injects $VARS/$PARAMS.
+        # Python/Bash were never wired up (PS-only preamble) — coerce to powershell.
+        script_type="powershell",
         param_schema=payload.param_schema,
         is_active=payload.is_active,
     )
@@ -139,7 +141,7 @@ async def update_script_module(
     if payload.script_content is not None:
         module.script_content = payload.script_content
     if payload.script_type is not None:
-        module.script_type = payload.script_type
+        module.script_type = "powershell"  # only PowerShell is supported (see create_script_module)
     if payload.param_schema is not None:
         await db.execute(
             text("UPDATE script_modules SET param_schema = CAST(:ps AS jsonb), updated_at = NOW() WHERE id = :id"),

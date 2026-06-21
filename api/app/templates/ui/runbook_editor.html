@@ -20,7 +20,7 @@
            {% if runbook.is_active %}checked{% endif %}
            onchange="toggleActive()"
            class="w-4 h-4 rounded">
-    <span class="text-sm text-muted">Aktiv</span>
+    <span class="text-sm text-muted">Active</span>
   </label>
 </div>
 
@@ -68,11 +68,11 @@
       <!-- Aktionen -->
       <div class="flex items-center gap-1 flex-shrink-0">
         <button onclick="moveStep({{ step.id }}, 'up')"
-                class="p-1 text-muted/70 hover:text-body rounded" title="Nach oben">↑</button>
+                class="p-1 text-muted/70 hover:text-body rounded" title="Move up">↑</button>
         <button onclick="moveStep({{ step.id }}, 'down')"
-                class="p-1 text-muted/70 hover:text-body rounded" title="Nach unten">↓</button>
+                class="p-1 text-muted/70 hover:text-body rounded" title="Move down">↓</button>
         <button onclick='editStep({{ step.id }}, {{ step | tojson | safe }})'
-                class="px-2 py-1 text-xs text-muted hover:text-blue-600 rounded">Bearbeiten</button>
+                class="px-2 py-1 text-xs text-muted hover:text-blue-600 rounded">Edit</button>
         <button onclick="deleteStep({{ step.id }})"
                 class="px-2 py-1 text-xs text-muted/70 hover:text-red-500 rounded">Entfernen</button>
       </div>
@@ -434,7 +434,7 @@ function _getFormData() {
   var name = document.getElementById('new-step-name').value.trim();
   var script_module_id = parseInt(document.getElementById('new-step-module').value);
   if (!name || !script_module_id) {
-    alert('Step-Name und Modul sind erforderlich');
+    alert('Step name and module are required');
     return null;
   }
   var params_template = null;
