@@ -49,24 +49,68 @@ Microsoft Graph API integration (separate sprint).
 
 ---
 
-### [open] Okta as 2nd Identity Provider — future
-Add Okta as an optional second IDP alongside Entra ID for portal SSO. Estimated effort: 4–6 days.
+### [open] Provider-agnostic SSO (generic OIDC) — Entra + any compliant IdP
+De-couple portal SSO from Entra-specific assumptions and support any standards-
+compliant OIDC IdP (Okta, Ping, Google, Keycloak, Authentik, Zitadel) via a single
+generic code path. "Okta support" then = a config entry, not a vendor integration.
+Estimated effort: ~4 days (no backward-compat burden — no customers yet).
 
-**Context:** Okta uses standard OIDC (same protocol as Entra underneath MSAL), so no exotic
-library is needed. The main work is abstracting the auth layer away from Entra-specific assumptions.
+**Context:** All target IdPs speak standard OIDC. Using the IdP's discovery document
+(`.well-known/openid-configuration`) lets each provider self-configure from just an
+issuer URL + client credentials — no per-vendor code. Scope is OIDC-first; SAML 2.0
+is a separate future task (relevant mainly as an enterprise-procurement checkbox).
+No existing deployments → design the config schema correctly from the start, no
+`entra.*` legacy to carry, no migration path required.
 
-**Key design decisions to resolve before starting:**
-- [ ] IDP routing strategy: domain-based auto-routing vs. a picker page at `/portal/login/select`
+**⚠️ Process note (agent handoff):** Resolve the open design decisions below BEFORE
+starting any implementation slice. Do not let the agent jump straight into `oidc.py`.
 
-**Implementation slices:**
-- [ ] Extract generic OIDC helper (`api/app/utils/oidc.py`)
-- [ ] New `okta.*` app_config keys + DB migration
-- [ ] Auth routing: IDP selection logic, second callback endpoint `/portal/auth/okta/callback`
-- [ ] Okta logout support
-- [ ] Admin UI: Okta settings section + "Test connection" button
-- [ ] Make portal auth gate provider-agnostic (currently hardcoded to `entra.mode` in `portal.py`)
+**Design decisions:**
+- [x] Entra handling: FOLD INTO the generic provider model — single code path, no
+      special case. (Decided: no backward-compat reason to keep a parallel MSAL path.)
+      → MSAL audit (2026-06-20): only standard OIDC calls in use (authorize URL, code
+        exchange, client-credentials test, manual logout URL). No token cache / OBO /
+        Graph / device-code / cert auth. Nothing MSAL-only is dropped. Only Entra-specific
+        nuance to preserve: `preferred_username`→UPN claim mapping → becomes a per-provider
+        claim-mapping config.
+- [x] IDP routing strategy: **picker at `/portal/login`, auto-skipped when exactly one
+      provider is enabled** (single-IdP UX unchanged). Domain-based home-realm routing is a
+      later optional per-provider enhancement, not built now.
+- [x] Config shape: **provider registry `idp.<id>.*`** in `app_config` (N providers, stable
+      ids, matches parametric callback). Portal auth gate moves from `entra.mode` to
+      `portal.auth_required` + per-provider `idp.<id>.enabled`.
+- [x] SAML 2.0: **out of scope** — OIDC-first. All target IdPs speak OIDC. SAML recorded as
+      a separate future task (enterprise-procurement checkbox, no current technical need).
 
----
+**Implementation slices:** _(code-complete 2026-06-20 — pending operator local test/build)_
+- [x] Generic OIDC helper consuming discovery doc (`api/app/utils/oidc.py`) — JWKS
+      ID-token signature validation + nonce via PyJWT[crypto] (added to requirements)
+- [x] Provider-registry config schema (`idp.<id>.*` in `app_config`) + `portal.auth_required`
+      gate + `auth.ldap_enabled`
+- [x] Parametric callback endpoint `/portal/auth/{provider_id}/callback`
+- [x] Generic RP-initiated logout via provider `end_session_endpoint`
+- [x] Admin UI: add/edit/delete OIDC provider + "Test connection" (discovery probe);
+      endpoints `GET /admin/config/oidc/providers`, `PUT/DELETE /admin/config/oidc/{id}`,
+      `POST /admin/config/oidc/{id}/test`, `PUT /admin/config/portal-auth`
+- [x] Portal auth gate made provider-agnostic (`portal.py` → `oidc.auth_required`);
+      login picker auto-skips to the single enabled method
+- [x] Retired `entra.py` + `entra.*` keys; health probe `entra`→`sso`; setup checklist updated
+
+**Documentation updates:**
+- [x] SSO setup guide rewritten provider-agnostic with Entra + Okta recipe blocks (`docs/DEPLOYMENT.md` §8)
+- [x] Parametric callback documented (redirect-URI guidance in §8; auto-exposed in Swagger)
+- [x] README / datasheet / CLAUDE.md lines updated to "SSO via OIDC — Entra ID, Okta, …"
+- [x] Admin UI in-app help text for the new provider settings section
+- [x] CHANGELOG `[Unreleased]` entry (Added/Changed/Removed); 5-locale i18n keys added
+
+**Out of scope (separate future tasks):**
+- SAML 2.0 SSO — split out of this task on 2026-06-20 (OIDC-first decision). Enterprise-
+  procurement checkbox; no current target IdP requires it. Needs metadata exchange +
+  signed-assertion validation (`python3-saml`), a different code path from OIDC.
+- Okta-specific OIN listing / certified app — defer until a paying enterprise requires it
+- SCIM provisioning (joiner/mover/leaver → asset lifecycle) — higher strategic value, own task
+
+------
 
 ## Done — Summary
 

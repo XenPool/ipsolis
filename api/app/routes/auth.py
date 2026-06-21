@@ -1,10 +1,14 @@
-"""Portal authentication routes — Entra ID OAuth2/OIDC auth code flow + on-prem LDAP.
+"""Portal authentication routes — generic OIDC (any compliant IdP) + on-prem LDAP.
+
+A single OIDC code path serves every provider in the registry (Entra, Okta, Ping,
+Google, Keycloak, …); see `app.utils.oidc`. On-prem LDAP username/password login is
+offered alongside as a non-OIDC method.
 
 Routes:
-  GET  /portal/login           → redirect to Entra ID, or render LDAP form (onprem_ldap mode)
-  GET  /portal/auth/callback   → exchange code, set session, redirect to portal
-  POST /portal/auth/ldap       → LDAP bind, set session, redirect to portal (onprem_ldap mode)
-  GET  /portal/logout          → clear session, redirect to Entra ID logout (or /portal/login)
+  GET  /portal/login                       → pick a method (auto-skipped when only one)
+  GET  /portal/auth/{provider_id}/callback → exchange code, set session, redirect to portal
+  POST /portal/auth/ldap                   → LDAP bind, set session, redirect to portal
+  GET  /portal/logout                      → clear session, RP-initiated IdP logout
 """
 
 import logging
@@ -15,38 +19,96 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.templates_instance import templates
-from app.utils import entra as entra_utils
+from app.utils import oidc
 from app.utils.ad_lookup import authenticate_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/portal", tags=["auth"])
 
 
-@router.get("/login")
-async def portal_login(request: Request, db: AsyncSession = Depends(get_db)):
-    """Redirects to Entra ID, or renders the LDAP login form for onprem_ldap mode."""
-    cfg = await entra_utils._get_entra_config(db)
-    mode = cfg.get("entra.mode", "disabled")
+def _auth_error(request: Request, title: str, message: str, status: int):
+    return templates.TemplateResponse(
+        request, "portal/auth_error.html",
+        {"title": title, "message": message},
+        status_code=status,
+    )
 
-    if mode == "onprem_ldap":
+
+def _redirect_uri_for(request: Request, provider: dict) -> str:
+    """Per-provider redirect URI: explicit override, else derived from the route."""
+    return provider["redirect_uri"] or str(
+        request.url_for("portal_auth_callback", provider_id=provider["id"])
+    )
+
+
+async def _start_oidc(request: Request, provider: dict):
+    """Begins the auth-code flow: stash CSRF state + nonce, redirect to the IdP."""
+    try:
+        metadata = oidc.discover(provider["issuer"])
+    except ValueError as exc:
+        logger.error("[auth] Discovery failed for provider '%s': %s", provider["id"], exc)
+        return _auth_error(
+            request, "Login unavailable",
+            f"The identity provider '{provider['display_name']}' could not be reached. {exc}",
+            502,
+        )
+
+    state = oidc.new_state()
+    nonce = oidc.new_nonce()
+    request.session["oauth_state"] = state
+    request.session["oauth_nonce"] = nonce
+
+    redirect_uri = _redirect_uri_for(request, provider)
+    auth_url = oidc.build_auth_url(provider, metadata, redirect_uri, state, nonce)
+    logger.info("[auth] Redirecting to IdP '%s' login", provider["id"])
+    return RedirectResponse(url=auth_url, status_code=302)
+
+
+@router.get("/login")
+async def portal_login(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    provider: str = "",
+    method: str = "",
+):
+    """Routes the user to a login method.
+
+    - explicit `?provider=<id>` → start that OIDC provider
+    - explicit `?method=ldap`   → render the LDAP form
+    - otherwise: auto-skip to the single enabled method, or show the picker
+    """
+    providers = await oidc.enabled_providers(db)
+    ldap = await oidc.ldap_enabled(db)
+
+    # Explicit selection from the picker
+    if provider:
+        chosen = next((p for p in providers if p["id"] == provider), None)
+        if chosen:
+            return await _start_oidc(request, chosen)
+        return _auth_error(request, "Login failed", "Unknown or disabled identity provider.", 404)
+    if method == "ldap" and ldap:
         return templates.TemplateResponse(
             request, "portal/login.html", {"error": None, "username": ""}
         )
 
-    msal_app = entra_utils.get_msal_app(cfg)
-    if msal_app is None:
-        # Entra not configured — send back to portal (bypass)
+    total = len(providers) + (1 if ldap else 0)
+
+    if total == 0:
+        # No method configured — treat the portal as open.
         return RedirectResponse(url="/portal/", status_code=302)
 
-    redirect_uri = cfg.get("entra.redirect_uri", "").strip() or str(
-        request.url_for("portal_auth_callback")
-    )
-    state = entra_utils.new_state()
-    request.session["oauth_state"] = state
+    if total == 1:
+        if providers:
+            return await _start_oidc(request, providers[0])
+        return templates.TemplateResponse(
+            request, "portal/login.html", {"error": None, "username": ""}
+        )
 
-    auth_url = entra_utils.build_auth_url(msal_app, redirect_uri=redirect_uri, state=state)
-    logger.info("[auth] Redirecting to Entra ID login")
-    return RedirectResponse(url=auth_url, status_code=302)
+    # Multiple methods → picker
+    return templates.TemplateResponse(
+        request, "portal/login_select.html",
+        {"providers": providers, "ldap_enabled": ldap},
+    )
 
 
 @router.post("/auth/ldap", response_class=HTMLResponse)
@@ -55,7 +117,7 @@ async def portal_ldap_login(
     username: str = Form(""),
     password: str = Form(""),
 ):
-    """Authenticate portal user via LDAP bind (onprem_ldap mode)."""
+    """Authenticate portal user via LDAP bind (on-prem AD)."""
     result = authenticate_user(username, password)
 
     if not result.get("success"):
@@ -72,6 +134,7 @@ async def portal_ldap_login(
         "name": result["name"],
         "oid": result["sam_account"],
         "upn": result["upn"],
+        "provider": "ldap",
     }
     logger.info("[auth/ldap] Login successful: %s (%s)", result["name"], result["email"])
 
@@ -79,74 +142,66 @@ async def portal_ldap_login(
     return RedirectResponse(url=next_url, status_code=302)
 
 
-@router.get("/auth/callback", response_class=HTMLResponse, name="portal_auth_callback")
+@router.get("/auth/{provider_id}/callback", response_class=HTMLResponse, name="portal_auth_callback")
 async def portal_auth_callback(
     request: Request,
+    provider_id: str,
     db: AsyncSession = Depends(get_db),
     code: str = "",
     state: str = "",
     error: str = "",
     error_description: str = "",
 ):
-    """Handles the Entra ID redirect after successful (or failed) authentication."""
-    # Show error page on Entra-side failures
+    """Handles the IdP redirect after authentication for `provider_id`."""
     if error:
-        logger.warning("[auth] Entra ID returned error: %s – %s", error, error_description)
-        return templates.TemplateResponse(
-            request, "portal/auth_error.html",
-            {"title": "Login failed", "message": error_description or error},
-            status_code=401,
-        )
+        logger.warning("[auth] IdP '%s' returned error: %s – %s", provider_id, error, error_description)
+        return _auth_error(request, "Login failed", error_description or error, 401)
 
     # CSRF state check
     expected_state = request.session.pop("oauth_state", None)
+    expected_nonce = request.session.pop("oauth_nonce", None)
     if not state or state != expected_state:
         logger.warning("[auth] OAuth state mismatch — possible CSRF attempt")
-        return templates.TemplateResponse(
-            request, "portal/auth_error.html",
-            {"title": "Login failed", "message": "Invalid state parameter. Please try again."},
-            status_code=400,
+        return _auth_error(
+            request, "Login failed",
+            "Invalid state parameter. Please try again.", 400,
         )
 
-    cfg = await entra_utils._get_entra_config(db)
-    msal_app = entra_utils.get_msal_app(cfg)
-    if msal_app is None:
-        return RedirectResponse(url="/portal/", status_code=302)
-
-    redirect_uri = cfg.get("entra.redirect_uri", "").strip() or str(
-        request.url_for("portal_auth_callback")
-    )
+    provider = await oidc.get_provider(db, provider_id)
+    if provider is None or not provider["enabled"]:
+        return _auth_error(request, "Login failed", "Unknown or disabled identity provider.", 404)
 
     try:
-        token_response = entra_utils.exchange_code(msal_app, code=code, redirect_uri=redirect_uri)
+        metadata = oidc.discover(provider["issuer"])
     except ValueError as exc:
-        logger.error("[auth] Token exchange failed: %s", exc)
-        return templates.TemplateResponse(
-            request, "portal/auth_error.html",
-            {"title": "Login failed", "message": str(exc)},
-            status_code=401,
+        logger.error("[auth] Discovery failed during callback for '%s': %s", provider_id, exc)
+        return _auth_error(request, "Login failed", str(exc), 502)
+
+    redirect_uri = _redirect_uri_for(request, provider)
+    try:
+        claims = oidc.exchange_code(
+            provider, metadata, code=code, redirect_uri=redirect_uri,
+            expected_nonce=expected_nonce or "",
         )
+    except ValueError as exc:
+        logger.error("[auth] Token exchange failed for '%s': %s", provider_id, exc)
+        return _auth_error(request, "Login failed", str(exc), 401)
 
-    user = entra_utils.extract_portal_user(token_response)
+    user = oidc.extract_user(provider, claims)
 
-    # Domain restriction check
-    allowed_domains = cfg.get("entra.allowed_domains", "")
-    if not entra_utils.check_allowed_domains(user, allowed_domains):
+    if not oidc.check_allowed_domains(user, provider["allowed_domains"]):
         logger.warning("[auth] Login rejected — domain not allowed: %s", user.get("upn"))
-        return templates.TemplateResponse(
-            request, "portal/auth_error.html",
-            {
-                "title": "Access denied",
-                "message": (
-                    f"Your account ({user.get('upn')}) is not permitted to access this portal. "
-                    "Please contact your IT administrator."
-                ),
-            },
-            status_code=403,
+        return _auth_error(
+            request, "Access denied",
+            (
+                f"Your account ({user.get('upn')}) is not permitted to access this portal. "
+                "Please contact your IT administrator."
+            ),
+            403,
         )
 
     request.session["portal_user"] = user
-    logger.info("[auth] Login successful: %s (%s)", user.get("name"), user.get("email"))
+    logger.info("[auth] Login successful via '%s': %s (%s)", provider_id, user.get("name"), user.get("email"))
 
     next_url = request.session.pop("login_next", "/portal/")
     return RedirectResponse(url=next_url, status_code=302)
@@ -154,19 +209,22 @@ async def portal_auth_callback(
 
 @router.get("/logout")
 async def portal_logout(request: Request, db: AsyncSession = Depends(get_db)):
-    """Clears the session and redirects to Entra ID logout or /portal/login."""
-    cfg = await entra_utils._get_entra_config(db)
-    mode = cfg.get("entra.mode", "disabled")
-    tenant_id = cfg.get("entra.tenant_id", "").strip()
-
+    """Clears the session and performs RP-initiated logout at the IdP when possible."""
+    user = request.session.get("portal_user") or {}
+    provider_id = user.get("provider")
     request.session.clear()
 
-    if mode != "onprem_ldap" and tenant_id:
-        post_logout_uri = str(request.base_url).rstrip("/") + "/portal/login"
-        entra_logout_url = (
-            f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/logout"
-            f"?post_logout_redirect_uri={post_logout_uri}"
-        )
-        return RedirectResponse(url=entra_logout_url, status_code=302)
+    post_logout_uri = str(request.base_url).rstrip("/") + "/portal/login"
+
+    if provider_id and provider_id != "ldap":
+        provider = await oidc.get_provider(db, provider_id)
+        if provider:
+            try:
+                metadata = oidc.discover(provider["issuer"])
+                url = oidc.logout_url(provider, metadata, post_logout_uri)
+                if url:
+                    return RedirectResponse(url=url, status_code=302)
+            except ValueError:
+                logger.warning("[auth] Logout discovery failed for '%s'; local logout only", provider_id)
 
     return RedirectResponse(url="/portal/login", status_code=302)

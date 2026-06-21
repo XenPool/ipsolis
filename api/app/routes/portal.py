@@ -1,6 +1,7 @@
 """User Self-Service Portal – HTML routes.
 
-Authentication: Entra ID SSO (entra.mode must be set to 'enabled' via Admin > Settings).
+Authentication: generic OIDC SSO / on-prem LDAP, gated by `portal.auth_required`
+(Admin → Settings). See app.utils.oidc and app.routes.auth.
 """
 import asyncio
 import base64
@@ -108,18 +109,14 @@ async def require_portal_auth(
 ) -> dict:
     """FastAPI dependency: returns the authenticated portal user dict.
 
-    Behavior by entra.mode:
-    - 'disabled'          → portal open, anonymous shared identity (no login)
-    - 'entra_only'        → Entra ID login required
-    - 'onprem_ldap'       → on-prem AD login form (no Entra ID required)
+    Gated by `portal.auth_required`:
+    - false / unset → portal open, anonymous shared identity (no login)
+    - true          → login required; the user picks an enabled OIDC provider or
+                      on-prem LDAP at /portal/login (see app.utils.oidc).
     """
-    mode_row = await db.execute(
-        select(AppConfig).where(AppConfig.key == "entra.mode")
-    )
-    mode_cfg = mode_row.scalar_one_or_none()
-    mode = (mode_cfg.value or "disabled") if mode_cfg else "disabled"
+    from app.utils import oidc
 
-    if mode == "disabled":
+    if not await oidc.auth_required(db):
         return ANONYMOUS_PORTAL_USER
 
     user = request.session.get("portal_user")

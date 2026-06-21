@@ -5,7 +5,7 @@ Each portal user manages **their own** delegations only — the API forces
 regardless of what the client sends. So a portal user can never set up
 a delegation that re-routes someone else's approvals.
 
-Anonymous mode (``entra.mode = disabled``) is rejected at the route
+Anonymous mode (``portal.auth_required = false``) is rejected at the route
 boundary — there is no real identity to delegate from.
 """
 from __future__ import annotations
@@ -72,7 +72,7 @@ def _require_real_user(current_user: dict) -> str:
     if not email or current_user.get("anonymous"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Delegations require a real authenticated user. Enable Entra ID SSO.",
+            detail="Delegations require a real authenticated user. Enable portal SSO (OIDC) or LDAP login.",
         )
     return email
 

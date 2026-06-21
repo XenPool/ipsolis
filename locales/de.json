@@ -30,7 +30,10 @@
       "subtitle": "Bitte Active-Directory-Zugangsdaten eingeben",
       "username": "Benutzername",
       "password": "Kennwort",
-      "sign_in": "Anmelden"
+      "sign_in": "Anmelden",
+      "choose_method": "Wählen Sie Ihre Anmeldemethode",
+      "sign_in_with": "Mit {provider} anmelden",
+      "use_ad": "Mit Active Directory anmelden"
     },
     "common": {
       "back_to_orders": "← Bestellungen",

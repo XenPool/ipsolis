@@ -30,7 +30,10 @@
       "subtitle": "Usa tus credenciales de Active Directory",
       "username": "Usuario",
       "password": "Contraseña",
-      "sign_in": "Iniciar sesión"
+      "sign_in": "Iniciar sesión",
+      "choose_method": "Elija cómo desea iniciar sesión",
+      "sign_in_with": "Iniciar sesión con {provider}",
+      "use_ad": "Iniciar sesión con Active Directory"
     },
     "common": {
       "back_to_orders": "← Pedidos",

@@ -608,28 +608,25 @@ def _probe_redis() -> dict:
         return {"ok": False, "detail": str(exc)[:200]}
 
 
-async def _probe_entra(db: AsyncSession) -> dict:
-    row = await db.execute(
-        text("SELECT value FROM app_config WHERE key = 'entra.mode'")
-    )
-    mode = (row.first() or (None,))[0]
-    if (mode or "disabled") == "disabled":
-        return {"ok": None, "detail": "disabled"}
-    try:
-        from app.utils.entra import _get_entra_config, get_msal_app
-        cfg = await _get_entra_config(db)
-        msal_app = get_msal_app(cfg)
-        if msal_app is None:
-            return {"ok": False, "detail": "Missing tenant_id, client_id, or client_secret"}
-        result = msal_app.acquire_token_for_client(
-            scopes=["https://graph.microsoft.com/.default"]
-        )
-        if "access_token" in result:
-            return {"ok": True, "detail": f"token acquired (mode={mode})"}
-        err = result.get("error_description") or result.get("error") or "unknown error"
-        return {"ok": False, "detail": str(err)[:200]}
-    except Exception as exc:
-        return {"ok": False, "detail": str(exc)[:200]}
+async def _probe_sso(db: AsyncSession) -> dict:
+    """Health-probes portal SSO by running the discovery probe on every enabled
+    OIDC provider. Green only if all reachable; degraded if any discovery fails."""
+    from app.utils import oidc
+
+    providers = await oidc.enabled_providers(db)
+    if not providers:
+        return {"ok": None, "detail": "no OIDC providers enabled"}
+
+    ok, bad = [], []
+    for p in providers:
+        try:
+            oidc.discover(p["issuer"])
+            ok.append(p["id"])
+        except Exception as exc:  # ValueError from discover, network, etc.
+            bad.append(f"{p['id']}: {str(exc)[:80]}")
+    if bad:
+        return {"ok": False, "detail": f"discovery failed — {'; '.join(bad)}"}
+    return {"ok": True, "detail": f"discovery OK for {', '.join(ok)}"}
 
 
 async def _probe_sccm(db: AsyncSession) -> dict:
@@ -741,7 +738,7 @@ async def health(db: AsyncSession = Depends(get_db)) -> dict:
         "database": await _probe_db(db),
         "redis":    _probe_redis(),
         "beat":     _probe_beat(),
-        "entra":    await _probe_entra(db),
+        "sso":      await _probe_sso(db),
         "sccm":     await _probe_sccm(db),
         "smtp":     await _probe_smtp(db),
         "siem":     siem,
