@@ -132,30 +132,10 @@
       </a>
       {% endif %}
 
-      {# ── Oversight (read-only) — auditor+ ────────────────────────────── #}
-      {% if admin_role_at_least(request, 'auditor') %}
-      <a href="/ui/audit-log"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'audit-log' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-        </svg>
-        Audit Log
-      </a>
-      {% endif %}
-
       {# ── Authority-level — superadmin only ───────────────────────────── #}
+      {# Audit Log (auditor+) and API Tokens (superadmin) live in the footer
+         section below — see "Footer links + sign out". #}
       {% if admin_role_at_least(request, 'superadmin') %}
-      <a href="/ui/api-tokens"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'api-tokens' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
-        </svg>
-        API Tokens
-      </a>
       <a href="/ui/admin-users"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == 'admin-users' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
@@ -209,10 +189,27 @@
 
     <!-- Footer links + sign out -->
     <div class="px-4 py-3 border-t border-token-border space-y-1 flex-shrink-0">
-      <div class="flex items-center justify-between mb-1">
-        <span class="text-[10px] uppercase tracking-[0.15em] text-muted">Theme</span>
-        {% include "_partials/theme_toggle.html" %}
-      </div>
+      {# ── Oversight / authority — moved here from the main nav ─────────── #}
+      {% if admin_role_at_least(request, 'auditor') %}
+      <a href="/ui/audit-log"
+         class="flex items-center gap-2.5 text-xs {% if active_page == 'audit-log' %}text-blue-700 dark:text-blue-300 font-medium{% else %}text-muted hover:text-body{% endif %}">
+        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        Audit Log
+      </a>
+      {% endif %}
+      {% if admin_role_at_least(request, 'superadmin') %}
+      <a href="/ui/api-tokens"
+         class="flex items-center gap-2.5 text-xs {% if active_page == 'api-tokens' %}text-blue-700 dark:text-blue-300 font-medium{% else %}text-muted hover:text-body{% endif %}">
+        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+        </svg>
+        API Tokens
+      </a>
+      {% endif %}
       {% if admin_role_at_least(request, 'auditor') %}
       <a href="/ui/cost-report" target="_blank"
          class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
@@ -277,19 +274,31 @@
           Sign out
         </button>
       </form>
-      {% if request and request.session.get('admin_user') %}
-      <div class="mt-2 text-[10px] text-muted/70">
-        Signed in as <span class="font-medium text-body">{{ request.session.get('admin_user') }}</span>
-        <span class="ml-1 px-1.5 py-0.5 rounded bg-surface-raised text-muted">{{ _admin_role }}</span>
-      </div>
-      {% endif %}
-      <div class="mt-2 text-[10px] text-muted/70">v{{ app_version }}</div>
+
+      {# Version only — theme toggle + signed-in user moved to the top-right header.
+         !mt-6 (important) is required: the parent's space-y-1 has higher specificity
+         than a plain mt-* and would otherwise reset this gap to 0.25rem. The extra
+         top margin balances the link group between the top divider and this line. #}
+      <div class="!mt-6 pt-3 border-t border-token-border text-[10px] text-muted/70">v{{ app_version }}</div>
     </div>
 
   </aside>
 
   <!-- ── Main content ───────────────────────────────────────────────────────── -->
   <div class="flex-1 overflow-auto">
+    {# Top bar — theme toggle + signed-in user, right-aligned. Sticky so it stays
+       visible while content scrolls; moved here from the sidebar to free vertical
+       space so the nav no longer needs an internal scrollbar. #}
+    <header class="sticky top-0 z-20 flex items-center justify-end gap-4 px-6 sm:px-8 h-11
+                   bg-surface-raised/80 backdrop-blur border-b border-token-border">
+      {% if request and request.session.get('admin_user') %}
+      <div class="text-[11px] text-muted/80">
+        Signed in as <span class="font-medium text-body">{{ request.session.get('admin_user') }}</span>
+        <span class="ml-1 px-1.5 py-0.5 rounded bg-surface text-muted">{{ _admin_role }}</span>
+      </div>
+      {% endif %}
+      {% include "_partials/theme_toggle.html" %}
+    </header>
     {% include "_partials/update_banner.html" %}
     <main class="max-w-7xl mx-auto px-6 sm:px-8 py-8">
       {% block content %}{% endblock %}
