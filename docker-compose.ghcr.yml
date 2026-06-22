@@ -1,3 +1,25 @@
+# Prebuilt-image deployment -- pulls the published GHCR images instead of
+# building from source. Faster, reproducible, version-pinned installs.
+#
+# This is a SELF-CONTAINED compose file (not an overlay): a `-f` overlay cannot
+# remove the `build:` keys from docker-compose.yml, so the prebuilt-image setup
+# is its own file.
+#
+# Usage:
+#   cp .env.example .env && edit .env          # passwords, secrets, admin key
+#   export IPSOLIS_VERSION=0.6.9               # pin a release (or leave unset for :latest)
+#   docker compose -f docker-compose.ghcr.yml pull
+#   docker compose -f docker-compose.ghcr.yml up -d
+#
+# Add TLS / nginx for production by layering the prelive overlay on top
+# (it only overrides volumes/command and adds nginx -- it inherits these images):
+#   docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml up -d
+#
+# Images are PUBLIC (no registry login needed):
+#   ghcr.io/xenpool/ipsolis-api:<version>      (api -- FastAPI dispatcher + REST + Admin UI)
+#   ghcr.io/xenpool/ipsolis-worker:<version>   (worker/beat/flower -- Celery)
+# Commercial use requires a license (see LICENSE).
+
 services:
 
   # ─────────────────────────────────────────────────────────────────
@@ -42,20 +64,10 @@ services:
       start_period: 5s
 
   # ─────────────────────────────────────────────────────────────────
-  # FastAPI – Dispatcher + REST API
+  # FastAPI – Dispatcher + REST API (prebuilt GHCR image)
   # ─────────────────────────────────────────────────────────────────
   api:
-    build:
-      # Context = repo root so the image can bake shared locales/ + scripts/
-      # (see api/Dockerfile). A root .dockerignore keeps secrets/.git out.
-      context: .
-      dockerfile: api/Dockerfile
-      args:
-        # Bake APP_VERSION into the image as a fallback. Runtime prefers
-        # /app/VERSION (bind-mounted below) so the canonical VERSION
-        # file is the single source of truth — bump it once and every
-        # restart picks up the new number without a rebuild.
-        APP_VERSION: ${APP_VERSION:-unknown-build}
+    image: ghcr.io/xenpool/ipsolis-api:${IPSOLIS_VERSION:-latest}
     container_name: ipsolis-api
     restart: unless-stopped
     env_file: .env
@@ -66,11 +78,14 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./scripts:/app/scripts      # PowerShell scripts (read/write for script editor)
-      - ./backups:/app/backups      # Local DB backups (shared with worker)
-      - ./licenses:/app/license     # Signed .lic file (read-write: api handles uploads)
-      - ./locales:/app/locales:ro   # Portal i18n JSON (served via /locales/*.json)
-      - ./VERSION:/app/VERSION:ro   # Single source of truth for the running version
+      # Only runtime state/secrets are mounted. locales/ + scripts/ are BAKED into
+      # the image (and VERSION falls back to the baked APP_VERSION env), so a
+      # prebuilt install needs no repo copy of them.
+      #   ⚠️ Baking landed AFTER v0.6.9. If you pin IPSOLIS_VERSION<=0.6.9, also add:
+      #       - ./scripts:/app/scripts
+      #       - ./locales:/app/locales:ro
+      - ./backups:/app/backups      # Local DB backups (shared with worker) — runtime state
+      - ./licenses:/app/license     # Signed .lic file (read-write) — secret, never baked
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,12 +99,10 @@ services:
       start_period: 20s
 
   # ─────────────────────────────────────────────────────────────────
-  # Celery Worker
+  # Celery Worker (prebuilt GHCR image)
   # ─────────────────────────────────────────────────────────────────
   worker:
-    build:
-      context: .
-      dockerfile: worker/Dockerfile
+    image: ghcr.io/xenpool/ipsolis-worker:${IPSOLIS_VERSION:-latest}
     container_name: ipsolis-worker
     restart: unless-stopped
     env_file: .env
@@ -99,7 +112,8 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       PYTHONUNBUFFERED: "1"
     volumes:
-      - ./scripts:/app/scripts:ro          # PowerShell scripts (read-only)
+      # scripts/ is baked into the image (see the api service note). For a pinned
+      # IPSOLIS_VERSION<=0.6.9, add: - ./scripts:/app/scripts:ro
       - ./backups:/app/backups             # Local DB backups (shared with api)
       - ./licenses:/app/license:ro         # Signed .lic file (read-only)
       - ps_user_modules:/root/.local/share/powershell/Modules
@@ -122,15 +136,10 @@ services:
       start_period: 30s
 
   # ─────────────────────────────────────────────────────────────────
-  # Celery Beat – Scheduler (Ablauf-Checks, Erinnerungen)
+  # Celery Beat – Scheduler (prebuilt GHCR image)
   # ─────────────────────────────────────────────────────────────────
   beat:
-    build:
-      context: .
-      dockerfile: worker/Dockerfile
-    # No ``container_name`` so this service can be scaled to N replicas
-    # (``docker compose up -d --scale beat=2``). RedBeat's distributed
-    # lock keeps the dispatch single-leader regardless of replica count.
+    image: ghcr.io/xenpool/ipsolis-worker:${IPSOLIS_VERSION:-latest}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -153,12 +162,10 @@ services:
       --scheduler redbeat.RedBeatScheduler
 
   # ─────────────────────────────────────────────────────────────────
-  # Flower – Celery Monitoring UI
+  # Flower – Celery Monitoring UI (prebuilt GHCR image)
   # ─────────────────────────────────────────────────────────────────
   flower:
-    build:
-      context: .
-      dockerfile: worker/Dockerfile
+    image: ghcr.io/xenpool/ipsolis-worker:${IPSOLIS_VERSION:-latest}
     container_name: ipsolis-flower
     restart: unless-stopped
     env_file: .env
@@ -179,6 +186,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  # ``beat_schedule`` (file-based PersistentScheduler shadow) was retired
-  # when Beat moved to RedBeat — schedule lives in Redis now.
   ps_user_modules:

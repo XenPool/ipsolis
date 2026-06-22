@@ -27,11 +27,24 @@ signal for actual downloads/installations.
 - Reuses the existing Dockerfile(s) (Community / Pro tiers).
 
 **Implementation slices:**
-- [ ] GitHub Actions workflow: build + push multi-arch images to `ghcr.io` on `v*.*.*` tags (+ `:latest`) via `docker/build-push-action` (`packages: write`, `GITHUB_TOKEN`)
-- [ ] Tag both tier images if applicable (community / pro Dockerfiles)
-- [ ] Make the GHCR package **public**; document image usage in README + `docs/DEPLOYMENT.md`
-- [ ] Add `docker-compose.ghcr.yml` (or adjust `docker-compose.prelive.yml`) to pull `ghcr.io/xenpool/ipsolis-api:<tag>` instead of `build:`
+- [x] GitHub Actions workflow: build + push images to `ghcr.io` on `v*.*.*` tags (+ `:latest`)
+      via `docker/build-push-action` — `release.yml` (api + worker, VERSION-match guard,
+      GitHub Release, web dispatch). ⚠️ currently **single-arch `linux/amd64`** — multi-arch
+      (arm64) still open.
+- [ ] ~~Tag both tier images (community / pro)~~ — N/A: tiers consolidated to one
+      `api/Dockerfile` + one `worker/Dockerfile`. Revisit only if tiers are re-split.
+- [x] Make the GHCR package **public** — done (2026-06-21): `ghcr.io/xenpool/ipsolis-{api,worker}`
+      now return **HTTP 200** to anonymous pulls, so `docker-compose.ghcr.yml` works without
+      `docker login`. Image usage referenced in `docs/DEPLOYMENT.md` + `INSTALL.md`.
+- [x] Add `docker-compose.ghcr.yml` to pull `ghcr.io/xenpool/ipsolis-{api,worker}:<tag>`
+      instead of `build:` — self-contained file, pinnable via `IPSOLIS_VERSION` (default
+      `:latest`); layer `docker-compose.prelive.yml` for nginx/TLS.
+      ⚠️ Images bake only app code + alembic, **not** `locales/`/`scripts/`, so those are
+      still bind-mounted → consider baking them in the Dockerfiles for clone-free installs.
 - [ ] (optional) Document where to read pull counts (package page / API) for adoption tracking
+
+**Still open here:** multi-arch (arm64) build; bake `locales/`+`scripts/` into images for
+truly clone-free installs; pull-count tracking note. (GHCR public flip ✅ done.)
 
 **Related (deeper signal, separate task):** an opt-in, anonymous update-checker
 phone-home would be the only way to count *actually running* deployments (GHCR pulls
