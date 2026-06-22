@@ -17,7 +17,7 @@
     </button>
     <button onclick="showTab('ad')" id="tab-btn-ad"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
-      Active Directory
+      Authentication
     </button>
     <button onclick="showTab('vars')" id="tab-btn-vars"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
@@ -166,7 +166,7 @@
       click through for release notes. <strong>Off by default</strong> so
       air-gapped installs don't make outbound calls without explicit consent.
       ip·Solis never auto-updates — operators control upgrades via
-      <code class="font-mono bg-surface-raised px-1 rounded">docker compose pull &amp;&amp; docker compose up -d</code>.
+      <code class="font-mono bg-surface-raised px-1 rounded">docker compose pull &amp;&amp; docker compose up -d &amp;&amp; docker compose exec api alembic upgrade head</code>.
     </p>
     <div>
       <label class="block text-xs font-medium text-muted mb-1">Mode</label>
@@ -229,89 +229,158 @@
 <div id="tab-ad" class="hidden">
   <div id="ad-banner" class="hidden mb-4 px-4 py-3 rounded text-sm font-medium"></div>
 
-  <!-- ── Entra ID / Azure AD (Portal SSO) ──────────────────────────────── -->
+  <!-- ── Portal SSO — Identity Providers (generic OIDC) ─────────────────── -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
-    <h2 class="text-sm font-semibold text-body mb-1">Entra ID / Azure AD — Portal SSO</h2>
+    <h2 class="text-sm font-semibold text-body mb-1">Portal SSO — Identity Providers (OIDC)</h2>
     <p class="text-xs text-muted mb-4">
-      OAuth2/OIDC login for the self-service portal. Works with cloud-only accounts and
-      on-premises accounts synced via Entra ID Connect (hybrid).
-      Set <strong>Mode = disabled</strong> to keep the portal open (development / before Entra setup).
+      Standards-based OpenID Connect login for the self-service portal. Add any compliant
+      IdP (Entra ID, Okta, Ping, Google, Keycloak, Authentik, Zitadel, …) — each provider
+      self-configures from its issuer URL via the discovery document. When more than one
+      login method is enabled, users see a chooser; with exactly one, they go straight there.
     </p>
-    <div class="space-y-4">
 
+    <!-- Global gate -->
+    <div class="space-y-3 mb-6 pb-6 border-b border-token-border">
+      <label class="flex items-center gap-2 text-sm text-body">
+        <input type="checkbox" id="portal-auth-required"
+               {% if portal_auth_config.auth_required %}checked{% endif %}
+               class="rounded border-token-border">
+        Require login to access the portal
+        <span class="text-xs text-muted/70">(off = portal open with a shared anonymous identity)</span>
+      </label>
+      <label class="flex items-center gap-2 text-sm text-body">
+        <input type="checkbox" id="portal-ldap-enabled"
+               {% if portal_auth_config.ldap_enabled %}checked{% endif %}
+               class="rounded border-token-border">
+        Also offer on-prem AD / LDAP username + password login
+        <span class="text-xs text-muted/70">(uses the LDAP service account below)</span>
+      </label>
       <div>
-        <label class="block text-xs font-medium text-muted mb-1">Mode</label>
-        <select id="entra-mode"
-                class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
-          <option value="disabled"   {% if entra_config.get('entra.mode','disabled') == 'disabled'             %}selected{% endif %}>disabled — portal open (no login required)</option>
-          <option value="entra_only" {% if entra_config.get('entra.mode','disabled') == 'entra_only'           %}selected{% endif %}>entra_only — Entra ID login required</option>
-          <option value="entra_with_onprem" {% if entra_config.get('entra.mode','disabled') == 'entra_with_onprem' %}selected{% endif %}>entra_with_onprem — Entra ID + on-prem LDAP check</option>
-        </select>
+        <button onclick="savePortalAuth()"
+                class="px-4 py-1.5 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700">
+          Save login settings
+        </button>
       </div>
-
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs font-medium text-muted mb-1">Tenant ID</label>
-          <input type="text" id="entra-tenant-id"
-                 value="{{ entra_config.get('entra.tenant_id', '') }}"
-                 placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-muted mb-1">Client ID (App Registration)</label>
-          <input type="text" id="entra-client-id"
-                 value="{{ entra_config.get('entra.client_id', '') }}"
-                 placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                 class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
-        </div>
-      </div>
-
-      <div>
-        <label class="block text-xs font-medium text-muted mb-1">Client Secret</label>
-        <input type="password" id="entra-client-secret"
-               value=""
-               placeholder="(leave blank to keep current)"
-               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
-      </div>
-
-      <div>
-        <label class="block text-xs font-medium text-muted mb-1">Redirect URI</label>
-        <input type="text" id="entra-redirect-uri"
-               value="{{ entra_config.get('entra.redirect_uri', '') }}"
-               placeholder="https://selfservice.xenpool.de/portal/auth/callback"
-               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
-        <p class="text-xs text-muted/70 mt-1">Must match the Redirect URI registered in your Entra ID App Registration.</p>
-      </div>
-
-      <div>
-        <label class="block text-xs font-medium text-muted mb-1">Allowed UPN Domains <span class="font-normal text-muted/70">(optional)</span></label>
-        <input type="text" id="entra-allowed-domains"
-               value="{{ entra_config.get('entra.allowed_domains', '') }}"
-               placeholder="xenpool.de, xenpool.local"
-               class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
-        <p class="text-xs text-muted/70 mt-1">Comma-separated. Leave blank to allow all domains in your tenant.</p>
-      </div>
-
     </div>
 
-    <div class="flex gap-3 mt-6">
-      <button onclick="saveEntraConfig()"
-              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
-        Save
+    <!-- OIDC provider registry (rendered client-side) -->
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-xs font-semibold text-body uppercase tracking-wide">OIDC providers</h3>
+      <button onclick="addOidcProvider()"
+              class="px-3 py-1.5 bg-surface-raised text-body text-xs font-medium rounded hover:bg-surface border border-token-border">
+        + Add provider
       </button>
-      <button onclick="testEntraConfig()"
-              class="px-5 py-2 bg-surface-raised text-body text-sm font-medium rounded hover:bg-surface border border-token-border">
-        Test Connection
-      </button>
+    </div>
+    <div id="oidc-providers" class="space-y-4">
+      <p class="text-xs text-muted">Loading…</p>
     </div>
   </div>
+
+  <!-- Template for one OIDC provider card (cloned by JS) -->
+  <template id="oidc-provider-template">
+    <div class="oidc-card bg-surface-raised rounded-lg border border-token-border p-5">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <label class="flex items-center gap-2 text-sm font-medium text-body">
+            <input type="checkbox" data-f="enabled" class="rounded border-token-border">
+            Enabled
+          </label>
+        </div>
+        <div class="flex gap-2">
+          <button data-act="test" class="px-3 py-1 text-xs rounded bg-surface text-body border border-token-border hover:bg-surface-raised">Test</button>
+          <button data-act="save" class="px-3 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700">Save</button>
+          <button data-act="delete" class="px-3 py-1 text-xs rounded bg-surface text-red-600 border border-red-200 dark:border-red-500/30 hover:bg-red-50 dark:hover:bg-red-500/10">Delete</button>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <div class="oidc-id-row grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Provider ID</label>
+            <input type="text" data-f="id" placeholder="okta"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono read-only:opacity-60 read-only:cursor-not-allowed">
+            <p class="text-xs text-muted/70 mt-1">Lowercase a–z, 0–9, <code>_</code> or <code>-</code>. Used in the callback URL — cannot be changed after creation.</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Display name</label>
+            <input type="text" data-f="display_name" placeholder="Entra ID"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-muted mb-1">Client ID</label>
+            <input type="text" data-f="client_id" placeholder="application / client id"
+                   class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Issuer URL</label>
+          <input type="text" data-f="issuer" placeholder="https://login.microsoftonline.com/&lt;tenant-id&gt;/v2.0"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-xs text-muted/70 mt-1">Discovery is read from <code>&lt;issuer&gt;/.well-known/openid-configuration</code>. Examples: Entra <code>…/&lt;tenant&gt;/v2.0</code>, Okta <code>https://&lt;org&gt;.okta.com</code>, Google <code>https://accounts.google.com</code>.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Client secret</label>
+          <input type="password" data-f="client_secret" placeholder="(leave blank to keep current)"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Redirect URI</label>
+          <input type="text" data-f="redirect_uri" placeholder="(auto — derived from the portal host)"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-xs text-muted/70 mt-1 oidc-redirect-hint">Register this exact URI in the IdP app.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Allowed domains <span class="font-normal text-muted/70">(optional)</span></label>
+          <input type="text" data-f="allowed_domains" placeholder="xenpool.de, xenpool.local"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+          <p class="text-xs text-muted/70 mt-1">Comma-separated UPN/email domain allow-list. Blank = allow any.</p>
+        </div>
+
+        <details class="text-xs">
+          <summary class="cursor-pointer text-muted hover:text-body">Advanced — scopes &amp; claim mapping</summary>
+          <div class="mt-3 space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-muted mb-1">Scopes</label>
+              <input type="text" data-f="scopes" placeholder="openid profile email"
+                     class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-muted mb-1">Username claim</label>
+                <input type="text" data-f="username_claim" placeholder="preferred_username"
+                       class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-muted mb-1">Email claim</label>
+                <input type="text" data-f="email_claim" placeholder="email"
+                       class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-muted mb-1">Name claim</label>
+                <input type="text" data-f="name_claim" placeholder="name"
+                       class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </template>
 
   <!-- ── On-Premises AD / LDAP ──────────────────────────────────────────── -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl">
     <h2 class="text-sm font-semibold text-body mb-1">On-Premises Active Directory / LDAP</h2>
     <p class="text-xs text-muted mb-4">
       Service account for on-premises AD user lookups (LDAP).
-      Required regardless of the Entra ID mode above.
+      Used for AD lookups in runbooks, and — when "offer on-prem AD / LDAP login" is enabled
+      above — for portal username/password authentication.
     </p>
     <div class="space-y-4">
 
@@ -2281,39 +2350,140 @@ async function removeLogo() {
   if (ok) location.reload();
 }
 
-// ── Entra ID ───────────────────────────────────────────────────────────────────
-async function saveEntraConfig() {
-  var fields = {
-    'entra.mode':            document.getElementById('entra-mode').value,
-    'entra.tenant_id':       document.getElementById('entra-tenant-id').value.trim(),
-    'entra.client_id':       document.getElementById('entra-client-id').value.trim(),
-    'entra.redirect_uri':    document.getElementById('entra-redirect-uri').value.trim(),
-    'entra.allowed_domains': document.getElementById('entra-allowed-domains').value.trim(),
+// ── Portal SSO — OIDC provider registry ─────────────────────────────────────────
+var OIDC_FIELDS = ['display_name','client_id','issuer','redirect_uri','allowed_domains',
+                   'scopes','username_claim','email_claim','name_claim'];
+
+async function savePortalAuth() {
+  var body = {
+    auth_required: document.getElementById('portal-auth-required').checked,
+    ldap_enabled:  document.getElementById('portal-ldap-enabled').checked,
   };
-  var secret = document.getElementById('entra-client-secret').value;
-  if (secret) fields['entra.client_secret'] = secret;
+  var resp = await fetch('/admin/portal-auth', {
+    method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+  });
+  showBanner(resp.ok ? {ok: true, message: 'Login settings saved.'}
+                     : {ok: false, message: 'Failed to save login settings.'});
+}
 
-  var errors = [];
-  for (var key in fields) {
-    var resp = await fetch('/admin/config/' + key, {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({value: fields[key]}),
+function _oidcRedirectHint(id) {
+  return location.origin + '/portal/auth/' + (id || '<id>') + '/callback';
+}
+
+function _fillProviderCard(card, p, isNew) {
+  card.dataset.pid = isNew ? '' : p.id;
+  card.querySelector('[data-f="enabled"]').checked = !!p.enabled;
+  OIDC_FIELDS.forEach(function(f) {
+    var el = card.querySelector('[data-f="' + f + '"]');
+    if (el) el.value = p[f] || '';
+  });
+  var secretEl = card.querySelector('[data-f="client_secret"]');
+  if (secretEl) secretEl.placeholder = p.has_secret ? '(saved — leave blank to keep)' : '(required)';
+
+  var idInput = card.querySelector('[data-f="id"]');
+  idInput.value = isNew ? '' : p.id;
+  if (isNew) {
+    idInput.readOnly = false;
+    idInput.addEventListener('input', function() {
+      card.querySelector('.oidc-redirect-hint').textContent =
+        'Register this exact URI in the IdP app: ' + _oidcRedirectHint(idInput.value.trim());
     });
-    if (!resp.ok) errors.push(key);
+  } else {
+    // Existing provider: the id is immutable, so show it read-only.
+    idInput.readOnly = true;
   }
-  showBanner(errors.length === 0
-    ? {ok: true,  message: 'Entra ID settings saved.'}
-    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+  card.querySelector('.oidc-redirect-hint').textContent =
+    'Register this exact URI in the IdP app: ' + _oidcRedirectHint(isNew ? '' : p.id);
+
+  card.querySelector('[data-act="save"]').onclick   = function() { saveOidcProvider(card, isNew); };
+  card.querySelector('[data-act="test"]').onclick   = function() { testOidcProvider(card); };
+  card.querySelector('[data-act="delete"]').onclick = function() { deleteOidcProvider(card, isNew); };
 }
 
-async function testEntraConfig() {
-  await saveEntraConfig();
-  showBanner({ok: null, message: 'Testing Entra ID connection…'});
-  var resp = await fetch('/admin/config/entra/test', {method: 'POST'});
-  var data = await resp.json();
-  showBanner(data);
+function _readProviderCard(card) {
+  var body = { enabled: card.querySelector('[data-f="enabled"]').checked };
+  OIDC_FIELDS.forEach(function(f) {
+    var el = card.querySelector('[data-f="' + f + '"]');
+    if (el) body[f] = el.value.trim();
+  });
+  var secret = card.querySelector('[data-f="client_secret"]').value;
+  if (secret) body.client_secret = secret;
+  return body;
 }
+
+function _providerIdOf(card, isNew) {
+  return isNew ? (card.querySelector('[data-f="id"]').value.trim()) : card.dataset.pid;
+}
+
+async function loadOidcProviders() {
+  var container = document.getElementById('oidc-providers');
+  if (!container) return;
+  var resp = await fetch('/admin/config/oidc/providers');
+  if (!resp.ok) { container.innerHTML = '<p class="text-xs text-red-600">Failed to load providers.</p>'; return; }
+  var data = await resp.json();
+  container.innerHTML = '';
+  if (!data.providers.length) {
+    container.innerHTML = '<p class="text-xs text-muted">No identity providers configured yet. Click “Add provider”.</p>';
+    return;
+  }
+  var tpl = document.getElementById('oidc-provider-template');
+  data.providers.forEach(function(p) {
+    var card = tpl.content.firstElementChild.cloneNode(true);
+    _fillProviderCard(card, p, false);
+    container.appendChild(card);
+  });
+}
+
+function addOidcProvider() {
+  var container = document.getElementById('oidc-providers');
+  var placeholder = container.querySelector('p');
+  if (placeholder) placeholder.remove();
+  var tpl = document.getElementById('oidc-provider-template');
+  var card = tpl.content.firstElementChild.cloneNode(true);
+  _fillProviderCard(card, {enabled: true, scopes: 'openid profile email'}, true);
+  container.prepend(card);
+}
+
+async function saveOidcProvider(card, isNew) {
+  var pid = _providerIdOf(card, isNew);
+  if (!pid || !/^[a-z0-9_-]{1,40}$/.test(pid)) {
+    showBanner({ok: false, message: 'Provider ID must be a–z, 0–9, _ or - (max 40 chars).'});
+    return;
+  }
+  var resp = await fetch('/admin/config/oidc/' + encodeURIComponent(pid), {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(_readProviderCard(card)),
+  });
+  if (resp.ok) {
+    showBanner({ok: true, message: 'Provider “' + pid + '” saved.'});
+    loadOidcProviders();
+  } else {
+    var err = await resp.json().catch(function(){ return {}; });
+    showBanner({ok: false, message: 'Failed to save: ' + (err.detail || resp.status)});
+  }
+}
+
+async function testOidcProvider(card) {
+  var isNew = !card.dataset.pid;
+  var pid = _providerIdOf(card, isNew);
+  if (!pid) { showBanner({ok: false, message: 'Enter a provider ID first.'}); return; }
+  // Persist before testing so the discovery probe reads current values.
+  await saveOidcProvider(card, isNew);
+  showBanner({ok: null, message: 'Testing discovery for “' + pid + '”…'});
+  var resp = await fetch('/admin/config/oidc/' + encodeURIComponent(pid) + '/test', {method: 'POST'});
+  showBanner(await resp.json());
+}
+
+async function deleteOidcProvider(card, isNew) {
+  if (isNew) { card.remove(); return; }
+  var pid = card.dataset.pid;
+  if (!confirm('Delete identity provider “' + pid + '”? This cannot be undone.')) return;
+  var resp = await fetch('/admin/config/oidc/' + encodeURIComponent(pid), {method: 'DELETE'});
+  if (resp.ok) { showBanner({ok: true, message: 'Provider “' + pid + '” deleted.'}); loadOidcProviders(); }
+  else showBanner({ok: false, message: 'Failed to delete provider.'});
+}
+
+document.addEventListener('DOMContentLoaded', loadOidcProviders);
 
 // ── Active Directory ───────────────────────────────────────────────────────────
 async function saveAdConfig() {

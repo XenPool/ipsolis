@@ -12,21 +12,31 @@ RUN printf 'openssl_conf = openssl_init\n\n[openssl_init]\nproviders = provider_
     > /etc/ssl/openssl_legacy.cnf
 ENV OPENSSL_CONF=/etc/ssl/openssl_legacy.cnf
 
+# NOTE: build context is the REPO ROOT (see docker-compose.yml / release.yml) so
+# this image can bake the shared locales/ and scripts/ folders that live outside
+# api/. COPY paths are therefore repo-root-relative (api/…, locales/, scripts/).
+
 # Install Python dependencies
-COPY requirements.txt .
+COPY api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY app/ ./app/
+COPY api/app/ ./app/
 COPY LICENSE ./LICENSE
+
+# Portal i18n locales (served at /locales/*.json) and PowerShell seed scripts
+# (migration 0046 seeds script_modules from these on a fresh DB). Baked in so a
+# prebuilt-image install needs no repo checkout for them.
+COPY locales/ ./locales/
+COPY scripts/ ./scripts/
 
 # Version (passed from docker-compose via build arg)
 ARG APP_VERSION=0.0.0
 ENV APP_VERSION=${APP_VERSION}
 
 # Alembic (migrations)
-COPY alembic/ ./alembic/
-COPY alembic.ini .
+COPY api/alembic/ ./alembic/
+COPY api/alembic.ini .
 
 EXPOSE 8000
 

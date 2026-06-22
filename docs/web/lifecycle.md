@@ -145,8 +145,8 @@ When a user leaves the organisation, ip·Solis automatically revokes all their a
 Both paths run the same `process_leaver()` logic:
 
 1. Every active order (pending, pending-approval, scheduled, processing, provisioning, provisioned, delivered) is set to REVOKING and its deprovision runbook is dispatched
-2. Pending approvals where the leaver was the approver are superseded — so quorum logic doesn't stall
-3. Pending certification reviews assigned to the leaver are superseded — so campaigns continue without manual reassignment
+2. Pending approvals where the leaver was the approver are marked **superseded** and removed from quorum evaluation. If the remaining approvers can still meet the quorum threshold, the order proceeds automatically. If quorum can no longer be reached without the leaver's vote, the order remains in `pending-approval` and must be reassigned manually via **Admin → Orders**.
+3. Pending certification reviews assigned to the leaver are marked **superseded**. The campaign's overdue and auto-revoke logic handles the remaining unreviewed access on its normal cycle. Operators can reassign open reviews via the admin UI.
 
 The flow is **idempotent** — re-firing for the same email is harmless; already-revoked orders are no longer in the active set.
 

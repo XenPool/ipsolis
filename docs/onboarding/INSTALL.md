@@ -152,9 +152,10 @@ server {
 
 ```bash
 cd /opt/ipsolis
-docker compose pull          # download the latest images
-docker compose up -d         # start all services
-docker compose ps            # confirm everything is healthy
+docker compose pull                              # download the latest images
+docker compose up -d                             # start all services
+docker compose exec api alembic upgrade head     # apply database migrations
+docker compose ps                                # confirm everything is healthy
 ```
 
 All services should reach `healthy` within about 60 seconds.  
@@ -204,20 +205,29 @@ All settings are stored in the database and take effect immediately — no conta
 
 ## Updating to a New Version
 
+> **Pre-flight SSL check** — run this before pulling. If either file is missing,
+> the nginx container will start but serve no HTTPS traffic.
+> ```bash
+> ls -la nginx/ssl/cert.pem nginx/ssl/key.pem
+> ```
+> If missing, re-run Step 5 to restore your certificate before proceeding.
+
 ```bash
 cd /opt/ipsolis
 
 # Option A: pull latest
 docker compose pull
 docker compose up -d
+docker compose exec api alembic upgrade head
 
 # Option B: pin a specific release (edit .env first)
 #   IPSOLIS_VERSION=1.3.0
 docker compose pull
 docker compose up -d
+docker compose exec api alembic upgrade head
 ```
 
-Database migrations run automatically on api container startup.
+> **Always run `alembic upgrade head` after pulling a new image.** Migrations are not applied automatically on startup — they must be run explicitly. Alembic tracks which migrations have already been applied and skips them, so this command is always safe to re-run.
 
 ---
 
@@ -253,9 +263,9 @@ Ensure the `.lic` file is unmodified. The file contains a cryptographic
 signature — any whitespace or encoding change invalidates it.
 
 **Portal shows "Login disabled"**
-Entra ID SSO is not configured yet.  
-Go to **Admin → Settings → Authentication** and set `entra.mode = disabled`
-to open the portal with a shared anonymous identity while you configure SSO.
+Portal SSO is not configured yet.  
+Go to **Admin → Settings → Authentication** and leave **Require login** off
+to open the portal with a shared anonymous identity while you add an OIDC provider.
 
 **Database connection refused on first start**
 PostgreSQL may still be initialising. Wait 30 seconds and retry:

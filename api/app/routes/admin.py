@@ -6,6 +6,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel as _PydanticBase
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -277,33 +278,183 @@ async def test_ad_connection(db: AsyncSession = Depends(get_db)) -> dict:
         return {"ok": False, "message": str(exc)}
 
 
-@router.post("/config/entra/test", dependencies=[require_role("admin")])
-async def test_entra_connection(db: AsyncSession = Depends(get_db)) -> dict:
-    """Verifies Entra ID credentials by acquiring an app-only token (client credentials flow)."""
-    from app.utils.entra import _get_entra_config, get_msal_app
+@router.get("/config/oidc/providers", dependencies=[require_role("admin")])
+async def list_oidc_providers(db: AsyncSession = Depends(get_db)) -> dict:
+    """Returns the configured OIDC provider registry for the settings UI.
 
-    cfg = await _get_entra_config(db)
-    mode = cfg.get("entra.mode", "disabled")
+    Secrets are never returned; a boolean flag indicates whether one is set.
+    """
+    from app.utils import oidc
 
-    if mode == "disabled":
-        return {"ok": None, "message": "Entra ID mode is set to 'disabled' – no test performed."}
+    providers = await oidc.load_providers(db)
+    out = []
+    for p in providers:
+        out.append({
+            "id": p["id"],
+            "enabled": p["enabled"],
+            "display_name": p["display_name"],
+            "issuer": p["issuer"],
+            "client_id": p["client_id"],
+            "has_secret": bool(p["client_secret"]),
+            "redirect_uri": p["redirect_uri"],
+            "allowed_domains": p["allowed_domains"],
+            "scopes": p["scopes"],
+            "username_claim": p["username_claim"],
+            "email_claim": p["email_claim"],
+            "name_claim": p["name_claim"],
+        })
+    return {"providers": out}
 
-    msal_app = get_msal_app(cfg)
-    if msal_app is None:
-        return {"ok": False, "message": "Missing tenant_id, client_id, or client_secret."}
+
+@router.post("/config/oidc/{provider_id}/test", dependencies=[require_role("admin")])
+async def test_oidc_provider(provider_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Tests an OIDC provider by fetching and validating its discovery document.
+
+    A successful discovery probe proves the issuer URL is correct and the IdP is
+    reachable — the prerequisite for the login flow. (Full credential validation
+    only happens at first interactive login, since the auth-code grant needs a user.)
+    """
+    from app.utils import oidc
+
+    provider = await oidc.get_provider(db, provider_id)
+    if provider is None:
+        return {"ok": False, "message": f"No provider configured with id '{provider_id}'."}
+
+    missing = [
+        label for label, val in (
+            ("issuer", provider["issuer"]),
+            ("client_id", provider["client_id"]),
+            ("client_secret", provider["client_secret"]),
+        ) if not val
+    ]
+    if missing:
+        return {"ok": False, "message": f"Missing required field(s): {', '.join(missing)}."}
 
     try:
-        import msal
-        # Client credentials flow: acquires an app-only token to verify credentials
-        result = msal_app.acquire_token_for_client(
-            scopes=["https://graph.microsoft.com/.default"]
-        )
-        if "access_token" in result:
-            return {"ok": True, "message": "Entra ID credentials valid – app token acquired successfully."}
-        error = result.get("error_description") or result.get("error") or "Unknown error"
-        return {"ok": False, "message": f"Token acquisition failed: {error}"}
-    except Exception as exc:
+        metadata = oidc.discover(provider["issuer"])
+    except ValueError as exc:
         return {"ok": False, "message": str(exc)}
+
+    return {
+        "ok": True,
+        "message": (
+            f"Discovery OK — issuer '{metadata.get('issuer')}' reachable. "
+            f"Authorization, token and JWKS endpoints found."
+        ),
+    }
+
+
+async def _upsert_config(db: AsyncSession, key: str, value: str, is_secret: bool = False) -> None:
+    """Creates the config key if missing, otherwise updates its value in place."""
+    result = await db.execute(select(AppConfig).where(AppConfig.key == key))
+    cfg = result.scalar_one_or_none()
+    if cfg is None:
+        db.add(AppConfig(key=key, value=value, is_secret=is_secret))
+    else:
+        cfg.value = value
+        if is_secret:
+            cfg.is_secret = True
+
+
+class OidcProviderPayload(_PydanticBase):
+    enabled: bool = False
+    display_name: str = ""
+    issuer: str = ""
+    client_id: str = ""
+    client_secret: str | None = None  # blank/None → keep the stored secret
+    redirect_uri: str = ""
+    allowed_domains: str = ""
+    scopes: str = ""
+    username_claim: str = ""
+    email_claim: str = ""
+    name_claim: str = ""
+
+
+class PortalAuthPayload(_PydanticBase):
+    auth_required: bool = False
+    ldap_enabled: bool = False
+
+
+# NOTE: path is /admin/portal-auth (NOT under /admin/config/) on purpose — a single
+# segment like /config/portal-auth is shadowed by the generic PUT /config/{key} route
+# registered earlier, which parses "portal-auth" as a config key and rejects this body
+# with 422. The /config/oidc/{id} routes are safe (extra path segment).
+@router.put("/portal-auth",
+            dependencies=[require_scopes("config:write"), require_role("admin")])
+async def set_portal_auth(
+    request: Request, payload: PortalAuthPayload, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Sets the portal-wide login gate and whether on-prem LDAP login is offered."""
+    await _upsert_config(db, "portal.auth_required", "true" if payload.auth_required else "false")
+    await _upsert_config(db, "auth.ldap_enabled", "true" if payload.ldap_enabled else "false")
+    await aaudit(db, "app_config", 0, "portal_auth_updated",
+                 new={"auth_required": payload.auth_required, "ldap_enabled": payload.ldap_enabled},
+                 by=actor_by(request, "set_portal_auth"))
+    await db.commit()
+    return {"ok": True}
+
+
+@router.put("/config/oidc/{provider_id}",
+            dependencies=[require_scopes("config:write"), require_role("admin")])
+async def upsert_oidc_provider(
+    request: Request, provider_id: str, payload: OidcProviderPayload,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Creates or updates one OIDC provider in the `idp.<id>.*` registry."""
+    from app.utils.oidc import PROVIDER_ID_RE
+
+    if not PROVIDER_ID_RE.match(provider_id or ""):
+        raise HTTPException(status_code=400, detail="Invalid provider id (use a-z, 0-9, _ or -, max 40 chars).")
+
+    p = f"idp.{provider_id}."
+    plain = {
+        p + "enabled": "true" if payload.enabled else "false",
+        p + "display_name": payload.display_name.strip(),
+        p + "issuer": payload.issuer.strip().rstrip("/"),
+        p + "client_id": payload.client_id.strip(),
+        p + "redirect_uri": payload.redirect_uri.strip(),
+        p + "allowed_domains": payload.allowed_domains.strip(),
+        p + "scopes": payload.scopes.strip(),
+        p + "username_claim": payload.username_claim.strip(),
+        p + "email_claim": payload.email_claim.strip(),
+        p + "name_claim": payload.name_claim.strip(),
+    }
+    for key, value in plain.items():
+        await _upsert_config(db, key, value)
+    if payload.client_secret:
+        await _upsert_config(db, p + "client_secret", payload.client_secret, is_secret=True)
+
+    await aaudit(db, "app_config", 0, "oidc_provider_saved",
+                 new={"provider_id": provider_id, "enabled": payload.enabled, "issuer": plain[p + "issuer"]},
+                 by=actor_by(request, "upsert_oidc_provider"))
+    await db.commit()
+    logger.info("admin: saved OIDC provider id=%s enabled=%s", provider_id, payload.enabled)
+    return {"ok": True}
+
+
+@router.delete("/config/oidc/{provider_id}",
+               dependencies=[require_scopes("config:write"), require_role("admin")])
+async def delete_oidc_provider(
+    request: Request, provider_id: str, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Removes all `idp.<id>.*` rows for one provider."""
+    from app.utils.oidc import PROVIDER_ID_RE
+
+    if not PROVIDER_ID_RE.match(provider_id or ""):
+        raise HTTPException(status_code=400, detail="Invalid provider id.")
+
+    result = await db.execute(
+        select(AppConfig).where(AppConfig.key.like(f"idp.{provider_id}.%"))
+    )
+    rows = result.scalars().all()
+    for cfg in rows:
+        await db.delete(cfg)
+    await aaudit(db, "app_config", 0, "oidc_provider_deleted",
+                 old={"provider_id": provider_id, "keys_removed": len(rows)},
+                 by=actor_by(request, "delete_oidc_provider"))
+    await db.commit()
+    logger.info("admin: deleted OIDC provider id=%s (%d keys)", provider_id, len(rows))
+    return {"ok": True, "deleted": len(rows)}
 
 
 @router.post("/config/siem/test", dependencies=[require_role("admin")])
@@ -588,6 +739,36 @@ async def asset_type_logo(type_id: int, db: AsyncSession = Depends(get_db)):
     except Exception:
         raise HTTPException(status_code=422, detail="Invalid logo data")
     return Response(content=raw, media_type=mime, headers={"Cache-Control": "no-cache"})
+
+
+@router.get("/asset-type-logos", include_in_schema=False)
+async def asset_type_logos(db: AsyncSession = Depends(get_db)) -> dict:
+    """Returns the distinct tile logos already in use across asset types.
+
+    Powers the "Choose existing" logo picker so an operator can reuse a logo
+    that was uploaded for another asset type, without re-uploading the file.
+    Deduped by content; each entry lists the names of types currently using it.
+    Path is /asset-type-logos (not /asset-types/...) to avoid the
+    /asset-types/{type_id} route shadowing 'logos' as an id.
+    """
+    result = await db.execute(
+        select(AssetType.name, AssetType.logo)
+        .where(AssetType.logo.isnot(None))
+        .order_by(AssetType.name)
+    )
+    seen: dict[str, dict] = {}
+    for name, logo in result.all():
+        if not logo:
+            continue
+        entry = seen.get(logo)
+        if entry is None:
+            seen[logo] = {"data_url": logo, "used_by": [name]}
+        else:
+            entry["used_by"].append(name)
+    # Tile logos are tiny (resized to <=160x40); a soft cap guards against a
+    # pathological payload if someone has hundreds of distinct logos.
+    logos = list(seen.values())[:60]
+    return {"logos": logos, "total": len(seen)}
 
 
 @router.post(

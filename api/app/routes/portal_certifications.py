@@ -115,7 +115,7 @@ async def api_decide_review(
     if not email:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Portal anonymous mode — sign in via Entra ID to record decisions.",
+            detail="Portal anonymous mode — sign in via SSO to record decisions.",
         )
 
     review = await db.get(CertificationReview, review_id)

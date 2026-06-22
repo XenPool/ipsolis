@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="mb-4">
-  <a href="/ui/modules" class="text-sm text-muted hover:text-heading">← Module</a>
+  <a href="/ui/modules" class="text-sm text-muted hover:text-heading">← Modules</a>
 </div>
 
 <h1 class="text-lg font-semibold text-heading mb-4">
@@ -22,30 +22,40 @@
         <label class="block text-xs font-medium text-muted mb-1">Name <span class="text-red-500">*</span></label>
         <input type="text" id="mod-name" required
                value="{{ module.name if module else '' }}"
-               placeholder="z.B. Set-RDPGroup"
+               placeholder="e.g. Set-RDPGroup"
                class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
       </div>
       <div>
-        <label class="block text-xs font-medium text-muted mb-1">Beschreibung</label>
+        <label class="block text-xs font-medium text-muted mb-1">Description</label>
+        {# title shows the full text on hover (the field truncates visually);
+           oninput keeps the tooltip in sync after edits. #}
         <input type="text" id="mod-desc"
                value="{{ module.description if module and module.description else '' }}"
-               placeholder="Was macht dieses Modul?"
+               title="{{ module.description if module and module.description else '' }}"
+               oninput="this.title = this.value"
+               placeholder="What does this module do?"
                class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
       </div>
       <div>
-        <label class="block text-xs font-medium text-muted mb-1">Script-Typ</label>
-        <select id="mod-type"
-                class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
-          <option value="powershell" {% if not module or module.script_type == 'powershell' %}selected{% endif %}>PowerShell</option>
-          <option value="python" {% if module and module.script_type == 'python' %}selected{% endif %}>Python</option>
-          <option value="bash" {% if module and module.script_type == 'bash' %}selected{% endif %}>Bash</option>
-        </select>
+        <label class="block text-xs font-medium text-muted mb-1">Script type</label>
+        {# Only PowerShell is supported, so no dropdown — a hidden input keeps the
+           JS (mod-type.value) working. #}
+        <input type="hidden" id="mod-type" value="powershell">
+        <div class="flex items-center gap-2 rounded border border-token-border bg-surface-raised text-body text-sm px-3 py-2">
+          <span class="font-medium">PowerShell</span>
+          <span class="text-xs text-muted/70">7 (Core), Linux worker</span>
+        </div>
+        <p class="text-xs text-muted/70 mt-1">
+          Scripts must be <strong>PowerShell</strong> — the worker runs PowerShell 7 (Core)
+          on Linux and injects <code class="font-mono">$VARS</code> / <code class="font-mono">$PARAMS</code>.
+          Python and Bash are not currently supported.
+        </p>
       </div>
       <div class="flex items-center gap-2">
         <input type="checkbox" id="mod-active"
                {% if not module or module.is_active %}checked{% endif %}
                class="rounded border-token-border">
-        <label for="mod-active" class="text-sm text-body cursor-pointer">Aktiv</label>
+        <label for="mod-active" class="text-sm text-body cursor-pointer">Active</label>
       </div>
     </div>
 
@@ -63,9 +73,9 @@
       <div id="parse-result" class="text-xs mb-2"></div>
       <div class="space-y-1 text-xs text-muted/70 grid grid-cols-12 gap-1 mb-1 px-0.5">
         <span class="col-span-4">Name</span>
-        <span class="col-span-3">Typ</span>
-        <span class="col-span-2 text-center">Pflicht</span>
-        <span class="col-span-2">Standard</span>
+        <span class="col-span-3">Type</span>
+        <span class="col-span-2 text-center">Required</span>
+        <span class="col-span-2">Default</span>
       </div>
       <div id="param-rows" class="space-y-1">
         {% if module and module.param_schema %}
@@ -103,7 +113,7 @@
     <div>
       <button type="button" onclick="saveModule()"
               class="w-full px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
-        {% if module %}Speichern{% else %}Anlegen{% endif %} →
+        {% if module %}Save{% else %}Create{% endif %} →
       </button>
       <div id="save-result" class="mt-2"></div>
     </div>
@@ -116,12 +126,12 @@
     <div class="flex items-center justify-between bg-surface rounded border border-token-border px-3 py-2">
       <div class="flex items-center gap-2">
         <span class="text-sm text-muted font-mono" id="editor-lang-label">
-          {% if module %}{{ module.script_type | title }}{% else %}PowerShell{% endif %}
+          PowerShell
         </span>
         <span id="editor-dirty-dot" class="hidden w-2 h-2 rounded-full bg-orange-400" title="Unsaved changes"></span>
         <button onclick="editorUndo()" title="Undo (Ctrl+Z)"
                 class="px-1.5 py-0.5 rounded text-muted hover:bg-surface-raised hover:text-heading text-sm leading-none">↩</button>
-        <button onclick="editorRedo()" title="Wiederholen (Ctrl+Y)"
+        <button onclick="editorRedo()" title="Redo (Ctrl+Y)"
                 class="px-1.5 py-0.5 rounded text-muted hover:bg-surface-raised hover:text-heading text-sm leading-none">↪</button>
       </div>
       <div class="relative flex items-center gap-3">
@@ -137,7 +147,7 @@
                     class="text-muted/70 hover:text-muted text-base leading-none">×</button>
           </div>
           <div id="var-picker-params" class="border-b border-token-border">
-            <div class="px-3 py-1.5 bg-surface-raised text-xs text-muted uppercase tracking-wide font-medium">PARAMS (lokal)</div>
+            <div class="px-3 py-1.5 bg-surface-raised text-xs text-muted uppercase tracking-wide font-medium">PARAMS (local)</div>
             <div id="var-picker-params-list" class="py-1"></div>
           </div>
           <div id="var-picker-vars" class="border-b border-token-border">
@@ -145,11 +155,11 @@
             <div id="var-picker-vars-list" class="py-1 max-h-48 overflow-y-auto"></div>
           </div>
           <div id="var-picker-ctx">
-            <div class="px-3 py-1.5 bg-surface-raised text-xs text-muted uppercase tracking-wide font-medium">CTX (Runbook-Kontext)</div>
+            <div class="px-3 py-1.5 bg-surface-raised text-xs text-muted uppercase tracking-wide font-medium">CTX (runbook context)</div>
             <div id="var-picker-ctx-list" class="py-1 max-h-48 overflow-y-auto"></div>
           </div>
         </div>
-        <span class="text-xs text-muted/70">Script-Inhalt</span>
+        <span class="text-xs text-muted/70">Script content</span>
       </div>
     </div>
 
@@ -161,7 +171,7 @@
     <!-- Test runner -->
     <div class="bg-surface rounded border border-token-border p-3">
       <div class="flex items-center gap-3 mb-2">
-        <span class="text-xs font-semibold text-body">Testlauf</span>
+        <span class="text-xs font-semibold text-body">Test run</span>
         <input id="test-params-input" type="text" placeholder='{"param1": "value1"}'
                class="flex-1 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-xs font-mono px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500">
         <button onclick="runTest()"
@@ -340,10 +350,10 @@ function collectParams() {
 
 async function saveModule() {
   var name = document.getElementById('mod-name').value.trim();
-  if (!name) { alert('Name ist erforderlich'); return; }
+  if (!name) { alert('Name is required'); return; }
 
   var btn = document.querySelector('[onclick="saveModule()"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Speichern…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
 
   var payload = {
     name: name,
@@ -385,11 +395,11 @@ async function saveModule() {
   } catch (ex) {
     document.getElementById('save-result').innerHTML =
       '<div class="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">'
-      + 'Netzwerkfehler: ' + ex.message + '</div>';
+      + 'Network error: ' + ex.message + '</div>';
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = (MODULE_ID ? 'Speichern' : 'Anlegen') + ' →';
+      btn.textContent = (MODULE_ID ? 'Save' : 'Create') + ' →';
     }
   }
 }
@@ -400,7 +410,7 @@ function _renderTestResult(data) {
   var ms   = (data && data.duration_ms) ? data.duration_ms : 0;
   // Status bar
   document.getElementById('test-result-status').innerHTML =
-    (ok ? '<span class="text-green-400 font-semibold">✓ Erfolg</span>'
+    (ok ? '<span class="text-green-400 font-semibold">✓ Success</span>'
         : '<span class="text-red-400 font-semibold">✗ Error</span>')
     + '<span class="text-muted">' + ms + ' ms</span>';
 
@@ -450,7 +460,7 @@ function buildVarPicker() {
     var snippet = isPs ? ('$PARAMS.' + name) : ("PARAMS['" + name + "']");
     html += _varRow(name, snippet, 'param');
   });
-  paramsList.innerHTML = html || '<div class="px-3 py-1.5 text-muted/70 italic">Keine Parameter definiert</div>';
+  paramsList.innerHTML = html || '<div class="px-3 py-1.5 text-muted/70 italic">No parameters defined</div>';
 
   // VARS (global) — user-defined global_vars + hosting infrastructure from app_config
   var hostingVars = [
@@ -472,7 +482,7 @@ function buildVarPicker() {
     var snippet = isPs ? ("$VARS.'" + v.key + "'") : ("VARS['" + v.key + "']");
     html += _varRow(v.label, snippet, 'global');
   });
-  varsList.innerHTML = html || '<div class="px-3 py-1.5 text-muted/70 italic">Keine globalen Variablen</div>';
+  varsList.innerHTML = html || '<div class="px-3 py-1.5 text-muted/70 italic">No global variables</div>';
 
   var ctxVars = [
     'asset_name', 'asset_id', 'order_id',
@@ -517,7 +527,7 @@ document.addEventListener('click', function(evt) {
 
 // ── Test runner ─────────────────────────────────────────────────
 async function runTest() {
-  if (!MODULE_ID) { alert('Bitte zuerst speichern.'); return; }
+  if (!MODULE_ID) { alert('Please save first.'); return; }
 
   // Guard: warn if script was changed since last save
   if (editor && editor.getValue() !== _savedContent) {

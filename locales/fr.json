@@ -25,6 +25,16 @@
         "it": "Italiano"
       }
     },
+    "login": {
+      "title": "Se connecter",
+      "subtitle": "Utilisez vos identifiants Active Directory",
+      "username": "Nom d'utilisateur",
+      "password": "Mot de passe",
+      "sign_in": "Se connecter",
+      "choose_method": "Choisissez votre méthode de connexion",
+      "sign_in_with": "Se connecter avec {provider}",
+      "use_ad": "Se connecter avec Active Directory"
+    },
     "common": {
       "back_to_orders": "← Commandes",
       "back_to_my_it": "← Mon IT",

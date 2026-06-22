@@ -22,7 +22,7 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 
 ### Self-Service Portal
 - Users request assets through a clean web interface
-- Entra ID (Azure AD) single sign-on
+- Single sign-on via OpenID Connect — Entra ID, Okta, Ping, Google, Keycloak, … (any compliant IdP)
 - Order tracking with real-time status updates
 - "My IT" dashboard showing active assets with extend/modify/cancel options
 - Deputy support (order on behalf of another user)
@@ -131,7 +131,7 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 
 ### Integrations
 - **Active Directory / LDAP** -- user validation, manager lookup, group membership
-- **Microsoft Entra ID** -- SSO authentication for the portal
+- **OpenID Connect IdP** -- portal SSO via any compliant provider (Entra ID, Okta, Ping, Google, Keycloak, …)
 - **vSphere / XenServer / XCP-ng** -- VM lifecycle operations via PowerShell
 - **SCCM** -- task sequence triggers for OS deployment
 - **SMTP** -- transactional email notifications
@@ -177,7 +177,7 @@ Enterprise IT automation shouldn't require a 6-month implementation project and 
 | Scheduling | Celery Beat |
 | Database | PostgreSQL 16 (SQLAlchemy + Alembic) |
 | Frontend | HTMX + Jinja2 + Tailwind CSS |
-| Authentication | Entra ID SSO (MSAL) |
+| Portal Authentication | OIDC SSO — any compliant IdP (Entra ID, Okta, …) + on-prem LDAP |
 | VM Operations | PowerShell / PowerCLI |
 | Directory Services | Active Directory (msldap) |
 | Deployment | Docker Compose |
@@ -222,7 +222,7 @@ The repository ships two compose files. The main one is the full stack (postgres
 | Mode | Command | When |
 |---|---|---|
 | **Direct** | `docker compose up -d` | Dev. API on `http://localhost:8000/`, no proxy. |
-| **TLS-fronted** | `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` | Pre-live / prod. Nginx handles TLS using `certs/cert.pem` + `certs/key.pem`; reach the app at `https://<your-host>/`. |
+| **TLS-fronted** | `docker compose -f docker-compose.yml -f docker-compose.prelive.yml up -d` | Pre-live / prod. Nginx handles TLS using `nginx/ssl/cert.pem` + `nginx/ssl/key.pem`; reach the app at `https://<your-host>/`. |
 
 The overlay is purely additive — same database, same migrations, same image tags. Switch between modes by stopping (`down`) and starting with the alternate command.
 
@@ -236,7 +236,7 @@ Summary:
 1. Provision a Linux server with Docker
 2. Configure `.env` with secure credentials
 3. Set up SSL certificates (internal CA, mkcert, or Let's Encrypt)
-4. Start with `docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d`
+4. Start with `docker compose -f docker-compose.yml -f docker-compose.prelive.yml up --build -d`
 5. Run migrations: `docker compose exec -T api alembic upgrade head`
 6. Configure AD, SMTP, and Entra ID through the Admin UI
 
@@ -315,7 +315,7 @@ This software is designed for on-premises deployment. All data stays within your
 - Tamper-evident audit log (BEFORE-statement triggers block DELETE / UPDATE / TRUNCATE outside a documented bypass)
 - Per-classification audit retention windows (PII / PHI / PCI configurable independently of the global window)
 - Five-tier admin RBAC with per-asset-type ACL grants and separation-of-duties enforcement
-- Entra ID SSO for the portal (no password storage on the portal side)
+- OIDC SSO for the portal — any compliant IdP (no password storage on the portal side)
 - Admin password storage uses PBKDF2-SHA256 (600k iterations, OWASP-2023)
 - External secret management (HashiCorp Vault / CyberArk CCP / Azure Key Vault / AWS Secrets Manager / CyberArk Conjur) replaces plaintext credentials in `app_config`; bulk-migration tool to push existing plaintext to the chosen backend in one pass
 - All traffic encrypted via HTTPS (nginx TLS termination)

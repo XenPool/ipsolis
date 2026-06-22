@@ -114,15 +114,34 @@
         </div>
       </div>
 
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3 flex-wrap">
         <input type="file" id="at-logo-file" accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp"
                class="block text-sm text-muted
                       file:mr-3 file:py-1 file:px-3 file:rounded file:border file:border-token-border
                       file:text-xs file:font-medium file:bg-surface file:text-body hover:file:bg-surface-raised file:cursor-pointer">
+        <button type="button" onclick="openLogoLibrary()"
+                class="text-xs font-medium px-3 py-1 rounded border border-token-border bg-surface text-body hover:bg-surface-raised">
+          Choose existing
+        </button>
         <button type="button" onclick="removeAtLogo()" id="at-logo-remove-btn"
                 class="text-xs text-red-500 hover:text-red-700 {% if not (asset_type and asset_type.logo) %}hidden{% endif %}">Remove logo</button>
       </div>
       <input type="hidden" id="at-logo-data" name="logo" value="">
+
+      <!-- Logo library picker (reuse a logo already used by another asset type) -->
+      <div id="logo-library-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+           onclick="if (event.target === this) closeLogoLibrary()">
+        <div class="bg-surface rounded-lg border border-token-border shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-token-border">
+            <h3 class="text-sm font-semibold text-heading">Reuse an existing logo</h3>
+            <button type="button" onclick="closeLogoLibrary()"
+                    class="text-muted/70 hover:text-body text-lg leading-none">&times;</button>
+          </div>
+          <div id="logo-library-body" class="p-4 overflow-y-auto">
+            <p class="text-xs text-muted/70">Loading…</p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Category -->
@@ -996,6 +1015,59 @@ function removeAtLogo() {
   document.getElementById('at-logo-data').value = '__remove__';
   document.getElementById('at-logo-file').value = '';
   _showTileLogo(null);
+}
+
+// ── Logo library (reuse a logo already used by another asset type) ───────────
+function closeLogoLibrary() {
+  document.getElementById('logo-library-modal').classList.add('hidden');
+}
+
+async function openLogoLibrary() {
+  var modal = document.getElementById('logo-library-modal');
+  var body = document.getElementById('logo-library-body');
+  modal.classList.remove('hidden');
+  body.innerHTML = '<p class="text-xs text-muted/70">Loading…</p>';
+  try {
+    var resp = await fetch('/admin/asset-type-logos');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var data = await resp.json();
+    var logos = data.logos || [];
+    if (!logos.length) {
+      body.innerHTML = '<p class="text-xs text-muted/70">No logos uploaded yet. Upload one with the file picker above and it becomes reusable here.</p>';
+      return;
+    }
+    var grid = document.createElement('div');
+    grid.className = 'grid grid-cols-2 gap-2';
+    logos.forEach(function(item) {
+      var used = (item.used_by || []).join(', ');
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'flex items-center gap-2 p-2 rounded border border-token-border bg-surface-raised hover:border-blue-500 text-left';
+      btn.title = used ? ('Used by: ' + used) : '';
+      var img = document.createElement('img');
+      img.src = item.data_url;
+      img.alt = used;
+      img.className = 'w-12 h-8 object-contain shrink-0';
+      var span = document.createElement('span');
+      span.className = 'text-xs text-muted truncate';
+      span.textContent = used;
+      btn.appendChild(img);
+      btn.appendChild(span);
+      btn.addEventListener('click', function() { pickLibraryLogo(item.data_url); });
+      grid.appendChild(btn);
+    });
+    body.innerHTML = '';
+    body.appendChild(grid);
+  } catch (ex) {
+    body.innerHTML = '<p class="text-xs text-red-600">Failed to load logos: ' + ex.message + '</p>';
+  }
+}
+
+function pickLibraryLogo(dataUrl) {
+  document.getElementById('at-logo-data').value = dataUrl;
+  document.getElementById('at-logo-file').value = '';
+  _showTileLogo(dataUrl);
+  closeLogoLibrary();
 }
 
 function updateAutomationUI() {

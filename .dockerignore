@@ -1,0 +1,36 @@
+# Build context = repo root (api & worker images both build from here so they can
+# bake shared locales/ and scripts/). Keep the context small and — importantly —
+# keep secrets OUT of the images.
+
+# Secrets / state — never bake into an image (mounted at runtime instead)
+.env
+.env.*
+!.env.example
+licenses/
+backups/
+nginx/ssl/
+
+# VCS / CI / tooling
+.git/
+.github/
+.gitignore
+tools/
+
+# Docs & local notes (not needed at runtime)
+docs/
+*.md
+CHANGELOG.md
+README.md
+TASKS.md
+
+# Compose / deploy descriptors (not needed inside the image)
+docker-compose*.yml
+
+# Python / editor cruft
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+*.log
+.vscode/
+.idea/

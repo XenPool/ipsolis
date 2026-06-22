@@ -361,6 +361,123 @@ async def _msldap_check_membership(identifier: str, group_dn: str, ad_config: di
         await client.disconnect()
 
 
+def authenticate_user(username: str, password: str) -> dict:
+    """Authenticate a portal user by binding to LDAP with their own credentials.
+
+    Used by the ``onprem_ldap`` portal auth mode. The bind uses NTLM with the
+    user's own password — no service account involved for the auth step itself.
+    Attributes are fetched in the same connection after a successful bind.
+
+    Returns:
+        {"success": True, "email": str, "name": str, "sam_account": str, "upn": str}
+        {"success": False, "error": str}
+    """
+    if not username.strip() or not password:
+        return {"success": False, "error": "Username and password are required"}
+
+    ad_config = _get_ad_config()
+    if not ad_config:
+        return {"success": False, "error": "Active Directory is not configured. Set up AD via Admin > Settings > Active Directory."}
+
+    return _ldap_auth_sync(username.strip(), password, ad_config)
+
+
+def _ldap_auth_sync(username: str, password: str, ad_config: dict) -> dict:
+    """Sync wrapper — same threadpool pattern as the rest of ad_lookup."""
+    try:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(asyncio.run, _ldap_auth(username, password, ad_config))
+                return future.result(timeout=15)
+        else:
+            return asyncio.run(_ldap_auth(username, password, ad_config))
+    except Exception as e:
+        logger.error("LDAP auth failed for '%s': %s", username, e)
+        return {"success": False, "error": f"Authentication error: {e}"}
+
+
+async def _ldap_auth(username: str, password: str, ad_config: dict) -> dict:
+    """LDAP bind with the user's own credentials, then fetch identity attributes."""
+    from msldap.commons.factory import LDAPConnectionFactory
+    from urllib.parse import quote
+
+    server_host = ad_config["server"]
+    server_port = ad_config["port"]
+    base_dn = ad_config["base_dn"]
+    domain = ad_config["domain"]
+    use_ssl = ad_config.get("use_ssl", False)
+
+    # Accept DOMAIN\user, user@domain, or bare username
+    if "@" in username:
+        sam = username.split("@")[0]
+    elif "\\" in username:
+        sam = username.split("\\")[-1]
+    else:
+        sam = username
+
+    scheme = "ldaps+ntlm-password" if use_ssl else "ldap+ntlm-password"
+    user_escaped = quote(f"{domain}\\{sam}" if domain else sam, safe="")
+    pass_escaped = quote(password, safe="")
+    url = f"{scheme}://{user_escaped}:{pass_escaped}@{server_host}:{server_port}"
+
+    factory = LDAPConnectionFactory.from_url(url)
+    client = factory.get_client()
+
+    _AUTH_FAIL_KEYWORDS = ("invalid credentials", "logon failure", "unwilling", "wrong password", "52e", "525", "not bound")
+
+    try:
+        await client.connect()
+    except Exception as e:
+        err_lower = str(e).lower()
+        if any(k in err_lower for k in _AUTH_FAIL_KEYWORDS):
+            return {"success": False, "error": "Invalid username or password"}
+        return {"success": False, "error": f"LDAP connection failed: {e}"}
+
+    try:
+        ldap_filter = f"(sAMAccountName={sam})"
+        attrs = ["mail", "displayName", "sAMAccountName", "userPrincipalName"]
+        found = None
+        async for entry, err in client.pagedsearch(ldap_filter, attrs, tree=base_dn):
+            if err:
+                err_lower = str(err).lower()
+                if any(k in err_lower for k in _AUTH_FAIL_KEYWORDS):
+                    return {"success": False, "error": "Invalid username or password"}
+                return {"success": False, "error": str(err)}
+            found = entry["attributes"]
+            break
+
+        if not found:
+            return {"success": False, "error": "User account not found in directory"}
+
+        def _attr(key):
+            v = found.get(key)
+            if isinstance(v, list):
+                v = v[0] if v else None
+            if v is None:
+                return None
+            if isinstance(v, bytes):
+                return v.decode("utf-8", errors="replace")
+            return str(v)
+
+        upn = _attr("userPrincipalName") or ""
+        email = _attr("mail") or upn or (f"{sam}@{domain}" if domain else sam)
+        return {
+            "success": True,
+            "email": email,
+            "name": _attr("displayName") or sam,
+            "sam_account": _attr("sAMAccountName") or sam,
+            "upn": upn,
+        }
+    finally:
+        await client.disconnect()
+
+
 def _msldap_lookup_sync(identifier: str, ad_config: dict) -> dict:
     """Synchronous wrapper around the async msldap lookup."""
     try:

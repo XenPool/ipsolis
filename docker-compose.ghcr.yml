@@ -1,0 +1,189 @@
+# Prebuilt-image deployment -- pulls the published GHCR images instead of
+# building from source. Faster, reproducible, version-pinned installs.
+#
+# This is a SELF-CONTAINED compose file (not an overlay): a `-f` overlay cannot
+# remove the `build:` keys from docker-compose.yml, so the prebuilt-image setup
+# is its own file.
+#
+# Usage:
+#   cp .env.example .env && edit .env          # passwords, secrets, admin key
+#   export IPSOLIS_VERSION=0.6.9               # pin a release (or leave unset for :latest)
+#   docker compose -f docker-compose.ghcr.yml pull
+#   docker compose -f docker-compose.ghcr.yml up -d
+#
+# Add TLS / nginx for production by layering the prelive overlay on top
+# (it only overrides volumes/command and adds nginx -- it inherits these images):
+#   docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml up -d
+#
+# Images are PUBLIC (no registry login needed):
+#   ghcr.io/xenpool/ipsolis-api:<version>      (api -- FastAPI dispatcher + REST + Admin UI)
+#   ghcr.io/xenpool/ipsolis-worker:<version>   (worker/beat/flower -- Celery)
+# Commercial use requires a license (see LICENSE).
+
+services:
+
+  # ─────────────────────────────────────────────────────────────────
+  # PostgreSQL
+  # ─────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: ipsolis-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ipsolis}
+      POSTGRES_USER: ${POSTGRES_USER:-xpuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-xpuser} -d ${POSTGRES_DB:-ipsolis}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ─────────────────────────────────────────────────────────────────
+  # Redis (Celery Broker + Backend)
+  # ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ipsolis-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ─────────────────────────────────────────────────────────────────
+  # FastAPI – Dispatcher + REST API (prebuilt GHCR image)
+  # ─────────────────────────────────────────────────────────────────
+  api:
+    image: ghcr.io/xenpool/ipsolis-api:${IPSOLIS_VERSION:-latest}
+    container_name: ipsolis-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-xpuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ipsolis}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    ports:
+      - "8000:8000"
+    volumes:
+      # Only runtime state/secrets are mounted. locales/ + scripts/ are BAKED into
+      # the image (and VERSION falls back to the baked APP_VERSION env), so a
+      # prebuilt install needs no repo copy of them.
+      #   ⚠️ Baking landed AFTER v0.6.9. If you pin IPSOLIS_VERSION<=0.6.9, also add:
+      #       - ./scripts:/app/scripts
+      #       - ./locales:/app/locales:ro
+      - ./backups:/app/backups      # Local DB backups (shared with worker) — runtime state
+      - ./licenses:/app/license     # Signed .lic file (read-write) — secret, never baked
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ─────────────────────────────────────────────────────────────────
+  # Celery Worker (prebuilt GHCR image)
+  # ─────────────────────────────────────────────────────────────────
+  worker:
+    image: ghcr.io/xenpool/ipsolis-worker:${IPSOLIS_VERSION:-latest}
+    container_name: ipsolis-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-xpuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ipsolis}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      # scripts/ is baked into the image (see the api service note). For a pinned
+      # IPSOLIS_VERSION<=0.6.9, add: - ./scripts:/app/scripts:ro
+      - ./backups:/app/backups             # Local DB backups (shared with api)
+      - ./licenses:/app/license:ro         # Signed .lic file (read-only)
+      - ps_user_modules:/root/.local/share/powershell/Modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      celery -A tasks worker
+      --loglevel=info
+      --pool=prefork
+      --concurrency=4
+      --queues=default,provision,reclaim,notifications
+    healthcheck:
+      test: ["CMD", "celery", "-A", "tasks", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ─────────────────────────────────────────────────────────────────
+  # Celery Beat – Scheduler (prebuilt GHCR image)
+  # ─────────────────────────────────────────────────────────────────
+  beat:
+    image: ghcr.io/xenpool/ipsolis-worker:${IPSOLIS_VERSION:-latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-xpuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ipsolis}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    volumes:
+      - ./licenses:/app/license:ro         # Signed .lic file (read-only)
+      - ps_user_modules:/root/.local/share/powershell/Modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # RedBeatScheduler stores the schedule in Redis (no file volume needed)
+    # and serialises ticks across replicas via a Lua-script distributed lock.
+    command: >
+      celery -A tasks beat
+      --loglevel=info
+      --scheduler redbeat.RedBeatScheduler
+
+  # ─────────────────────────────────────────────────────────────────
+  # Flower – Celery Monitoring UI (prebuilt GHCR image)
+  # ─────────────────────────────────────────────────────────────────
+  flower:
+    image: ghcr.io/xenpool/ipsolis-worker:${IPSOLIS_VERSION:-latest}
+    container_name: ipsolis-flower
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-xpuser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ipsolis}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      FLOWER_BASIC_AUTH: ${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+    command: >
+      celery -A tasks flower
+      --port=5555
+      --broker=redis://redis:6379/0
+
+volumes:
+  postgres_data:
+  redis_data:
+  ps_user_modules:

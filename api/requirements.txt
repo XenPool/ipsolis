@@ -28,7 +28,11 @@ aiofiles==24.1.0
 # Active Directory / LDAP (msldap supports NTLM signing required by modern Windows Server)
 msldap
 
-# Entra ID / Azure AD SSO (portal authentication)
+# Portal SSO — generic OIDC (any compliant IdP: Entra, Okta, Ping, Google, Keycloak, …)
+# PyJWT[crypto] validates ID-token signatures against the provider JWKS.
+PyJWT[crypto]>=2.9.0
+# msal retained only for the legacy Entra client-credentials test path; the portal
+# login/callback flow no longer depends on it (generic OIDC via httpx + PyJWT).
 msal>=1.31.0
 itsdangerous>=2.2.0   # required by starlette SessionMiddleware
 
