@@ -91,9 +91,30 @@ sudo git clone https://github.com/XenPool/ipsolis.git ipsolis
 cd ipsolis
 ```
 
-The Docker images (`ghcr.io/xenpool/ipsolis-api` and
-`ghcr.io/xenpool/ipsolis-worker`) are public and pulled automatically when
-you start the stack.
+**Two ways to run the stack:**
+
+- **Build from source (default):** `docker-compose.yml` compiles the images locally
+  (`docker compose up --build`). Slower first run, no version pinning.
+- **Pull prebuilt images (faster, version-pinned):** use `docker-compose.ghcr.yml`, which
+  pulls the public images `ghcr.io/xenpool/ipsolis-api` and `…-worker` instead of building:
+  ```bash
+  export IPSOLIS_VERSION=0.6.9        # pin a release, or omit for :latest
+  docker compose -f docker-compose.ghcr.yml pull
+  docker compose -f docker-compose.ghcr.yml up -d
+  # production (TLS/nginx): add the prelive overlay
+  docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml up -d
+  ```
+  The images are **public** — no `docker login` needed. `locales/` and `scripts/` are **baked
+  into images built after v0.6.9**, so you only need `.env` (and `nginx/` if you add TLS) — not
+  a full repo checkout. (Pinning `IPSOLIS_VERSION<=0.6.9`? Re-add their bind-mounts — see the
+  notes in `docker-compose.ghcr.yml`.)
+
+> **Adoption / pull counts:** now that the packages are public, GHCR download counts are the
+> best privacy-respecting proxy for real installs. Read them at
+> `https://github.com/orgs/XenPool/packages/container/package/ipsolis-api` (and `…-worker`),
+> or via the API: `gh api /orgs/XenPool/packages/container/ipsolis-api`. Note pulls ≠ running
+> deployments (CI/mirrors/re-pulls inflate the number); commercial installs are tracked
+> precisely via license activation.
 
 > **Licensing:** ip·Solis is free for non-commercial and evaluation use.
 > Commercial use requires a license — see [LICENSE](../LICENSE) and

@@ -71,7 +71,8 @@ jobs:
       - name: Build & push API image
         uses: docker/build-push-action@v6
         with:
-          context: ./api
+          # Context = repo root so the image can bake shared locales/ + scripts/
+          context: .
           file: ./api/Dockerfile
           push: true
           platforms: linux/amd64
@@ -85,7 +86,8 @@ jobs:
       - name: Build & push Worker image
         uses: docker/build-push-action@v6
         with:
-          context: ./worker
+          # Context = repo root so the image can bake shared scripts/
+          context: .
           file: ./worker/Dockerfile
           push: true
           platforms: linux/amd64

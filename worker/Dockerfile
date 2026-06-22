@@ -37,12 +37,20 @@ RUN printf 'openssl_conf = openssl_init\n\n[openssl_init]\nproviders = provider_
     > /etc/ssl/openssl_legacy.cnf
 ENV OPENSSL_CONF=/etc/ssl/openssl_legacy.cnf
 
+# NOTE: build context is the REPO ROOT (see docker-compose.yml / release.yml) so
+# this image can bake the shared scripts/ folder that lives outside worker/.
+# COPY paths are therefore repo-root-relative (worker/…, scripts/).
+
 # Install Python dependencies
-COPY requirements.txt .
+COPY worker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy worker code
-COPY tasks/ ./tasks/
+COPY worker/tasks/ ./tasks/
+
+# PowerShell scripts (read at runtime by the dynamic/standalone runners). Baked in
+# so a prebuilt-image install needs no repo checkout for them.
+COPY scripts/ ./scripts/
 
 EXPOSE 5555
 
