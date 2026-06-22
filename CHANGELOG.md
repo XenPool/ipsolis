@@ -14,17 +14,35 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.10] — 2026-06-22
+
 ### Added
 - **Provider-agnostic portal SSO (generic OIDC).** The self-service portal now authenticates users against any standards-compliant OpenID Connect identity provider — Entra ID, Okta, Ping, Google, Keycloak, Authentik, Zitadel, … — through a single code path. Each provider self-configures from its issuer URL via the discovery document (`<issuer>/.well-known/openid-configuration`); adding an IdP is a config entry, not a vendor integration. New helper `api/app/utils/oidc.py` validates ID-token signatures against the provider JWKS (PyJWT) plus iss/aud/exp and the OIDC nonce.
 - **OIDC provider registry.** Providers are stored in `app_config` under `idp.<id>.*` (unlimited providers, stable URL-safe ids). Admin → Settings → Authentication gains an add/edit/delete provider UI with a **Test** button that runs a discovery probe. New endpoints: `GET /admin/config/oidc/providers`, `PUT/DELETE /admin/config/oidc/{provider_id}`, `POST /admin/config/oidc/{provider_id}/test`, `PUT /admin/portal-auth`.
-- **Login method picker.** When more than one login method is enabled the portal shows a chooser at `/portal/login`; with exactly one it redirects straight to it. On-prem AD/LDAP username+password login can be offered alongside OIDC (`auth.ldap_enabled`).
+- **Login method picker.** When more than one login method is enabled the portal shows a chooser at `/portal/login` (fully localised, 5 locales); with exactly one it redirects straight to it.
+- **On-prem LDAP portal login.** Username/password login against on-prem AD/LDAP, offered alongside OIDC via `auth.ldap_enabled` (folds in the earlier short-lived `onprem_ldap` mode).
+- **Reuse existing tile logos.** The asset-definition form gains a "Choose existing" logo picker that reuses any logo already attached to another asset type (deduped), no re-upload. New endpoint `GET /admin/asset-type-logos`.
+- **Prebuilt-image install (GHCR).** New `docker-compose.ghcr.yml` pulls the public `ghcr.io/xenpool/ipsolis-{api,worker}` images instead of building — faster, version-pinned installs (`IPSOLIS_VERSION`). `locales/` and `scripts/` are now baked into the images (root build context + `.dockerignore`) so a prebuilt install needs no repo checkout of them.
 
 ### Changed
 - **Parametric OIDC callback.** Portal callback is now `/portal/auth/{provider_id}/callback` (was the Entra-only `/portal/auth/callback`). Logout is generic RP-initiated logout via each provider's `end_session_endpoint`.
-- **Portal auth gate.** Replaced the Entra-specific `entra.mode` (`disabled`/`entra_only`/`onprem_ldap`) with `portal.auth_required` (login on/off) + per-provider `idp.<id>.enabled` + `auth.ldap_enabled`. Service-health probe `entra` renamed to `sso` (probes discovery for every enabled provider). SAML 2.0 remains out of scope (tracked as a separate task).
+- **Portal auth gate.** Replaced the Entra-specific `entra.mode` with `portal.auth_required` (login on/off) + per-provider `idp.<id>.enabled` + `auth.ldap_enabled`. Migration `0003` seeds the toggles and migrates any existing `entra.*` config into `idp.entra.*`. Service-health probe `entra` renamed to `sso` (probes discovery for every enabled provider). SAML 2.0 remains out of scope (separate task).
+- **Admin sidebar layout.** Audit Log and API Tokens moved into the compact footer section; theme toggle + signed-in user moved to a sticky top-right header — frees vertical space so the nav no longer needs an internal scrollbar.
+- **Script modules are PowerShell-only.** The Script-type dropdown is removed (Python/Bash were never functional — the worker injects a PowerShell-only `$VARS`/`$PARAMS` preamble); the API coerces `script_type` to `powershell`. Module + runbook editors are now English-only.
+
+### Fixed
+- **Login-settings save returned 422.** `PUT /admin/config/portal-auth` was shadowed by the generic `/config/{key}` route (parsed as a config key, rejected the body as missing `value`). Moved to `PUT /admin/portal-auth`.
+- **Portal i18n on prelive.** Locales are now baked into the api image, so prelive's `volumes: []` ("baked code") no longer leaves `/app/locales` empty (i18n had silently fallen back to English).
+- **nginx config + SSL paths.** Mount `nginx.conf` to `conf.d/default.conf` (not the main `nginx.conf`); unified the SSL cert path to `nginx/ssl/` across all compose files and docs.
+- **Docs:** corrected all "`alembic upgrade head` is automatic" references (it is not); wrapped long `docker compose` commands; added the first-install alembic step + an SSL pre-flight to the update section.
 
 ### Removed
-- **Entra-only MSAL login path.** `api/app/utils/entra.py` and the `entra.*` config keys are retired; the generic OIDC path supersedes them (no MSAL-only feature was in use). `msal` is retained only for the legacy Entra credential test and may be dropped later.
+- **Entra-only MSAL login path.** `api/app/utils/entra.py` and the `entra.*` config keys are retired; the generic OIDC path supersedes them (no MSAL-only feature was in use). `msal` is retained only for the legacy Entra credential test.
+- **`entra_with_onprem` auth mode.** Removed entirely (never fully implemented; no production deployments).
+
+### CI / Build
+- Build images from the **repo-root context** so shared `locales/`+`scripts/` can be baked; added `.dockerignore` to keep secrets (`.env`, `licenses/`, `backups/`, `nginx/ssl`) and `.git` out of the images.
+- GHCR packages made **public** (anonymous pull); `actions/checkout` v4 → v5 (Node 20 deprecation).
 
 ## [0.6.9] — 2026-06-14
 
