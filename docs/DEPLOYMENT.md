@@ -83,7 +83,7 @@ Inbound: ports **80** and **443** must be reachable from your users' browsers.
 > until explicitly removed. For a clean first install, ensure no old volumes exist.
 > See [Clean Reset (Test Environments)](#14-clean-reset-test-environments).
 
-Clone the repository and pull the images — no authentication required:
+Clone the repository — no authentication required:
 
 ```bash
 cd /opt
@@ -91,30 +91,12 @@ sudo git clone https://github.com/XenPool/ipsolis.git ipsolis
 cd ipsolis
 ```
 
-**Two ways to run the stack:**
-
-- **Build from source (default):** `docker-compose.yml` compiles the images locally
-  (`docker compose up --build`). Slower first run, no version pinning.
-- **Pull prebuilt images (faster, version-pinned):** use `docker-compose.ghcr.yml`, which
-  pulls the public images `ghcr.io/xenpool/ipsolis-api` and `…-worker` instead of building:
-  ```bash
-  export IPSOLIS_VERSION=0.6.9        # pin a release, or omit for :latest
-  docker compose -f docker-compose.ghcr.yml pull
-  docker compose -f docker-compose.ghcr.yml up -d
-  # production (TLS/nginx): add the prelive overlay
-  docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml up -d
-  ```
-  The images are **public** — no `docker login` needed. `locales/` and `scripts/` are **baked
-  into images built after v0.6.9**, so you only need `.env` (and `nginx/` if you add TLS) — not
-  a full repo checkout. (Pinning `IPSOLIS_VERSION<=0.6.9`? Re-add their bind-mounts — see the
-  notes in `docker-compose.ghcr.yml`.)
-
-> **Adoption / pull counts:** now that the packages are public, GHCR download counts are the
-> best privacy-respecting proxy for real installs. Read them at
-> `https://github.com/orgs/XenPool/packages/container/package/ipsolis-api` (and `…-worker`),
-> or via the API: `gh api /orgs/XenPool/packages/container/ipsolis-api`. Note pulls ≠ running
-> deployments (CI/mirrors/re-pulls inflate the number); commercial installs are tracked
-> precisely via license activation.
+The recommended way to run the stack is to **pull the prebuilt, version-pinned images**
+from GHCR via `docker-compose.ghcr.yml` (`ghcr.io/xenpool/ipsolis-api` and `…-worker`).
+The images are **public** — no `docker login` needed — and `locales/` + `scripts/` are
+**baked into images built after v0.6.9**, so the clone only provides the compose files,
+`.env`, and `nginx/` (for TLS). The actual pull + start commands are in
+[Section 6](#6-start-the-stack).
 
 > **Licensing:** ip·Solis is free for non-commercial and evaluation use.
 > Commercial use requires a license — see [LICENSE](../LICENSE) and
@@ -165,7 +147,7 @@ If your server is only accessible within your corporate network, use [mkcert](ht
 # Ubuntu/Debian:
 sudo apt install -y libnss3-tools
 sudo curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
-chmod +x mkcert-v*-linux-amd64
+sudo chmod +x mkcert-v*-linux-amd64
 sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
 
 # Install the local CA into your system trust store
@@ -248,10 +230,11 @@ echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx ngi
 
 ### Configure nginx
 
-The repository already ships a ready-to-use `nginx/nginx.conf` with the placeholder `YOUR_HOSTNAME.YOUR_COMPANY.COM`. Replace it with your actual FQDN (`sed` handles both occurrences in one pass):
+The repository already ships a ready-to-use `nginx/nginx.conf` with the placeholder `YOUR_HOSTNAME.YOUR_COMPANY.COM`. Replace it with your actual FQDN — the same hostname you used for the certificate above (`sed` handles both occurrences in one pass):
 
 ```bash
-sudo sed -i 's/YOUR_HOSTNAME.YOUR_COMPANY.COM/ipsolis.acme.com/g' nginx/nginx.conf
+# ← replace ipsolis.example.com with your actual FQDN
+sudo sed -i 's/YOUR_HOSTNAME.YOUR_COMPANY.COM/ipsolis.example.com/g' nginx/nginx.conf
 ```
 
 The file will look like this afterwards (for reference):
@@ -303,19 +286,36 @@ The overlay adds nginx for SSL termination and removes the dev bind-mounts from
 
 ## 6. Start the Stack
 
+Pull the public GHCR images, then run the migration + verify steps. Setting
+`COMPOSE_FILE` makes every later `docker compose` command (exec, ps, logs, down)
+inherit the right overlays without repeating `-f`.
+
+The images ship with `locales/`+`scripts/` baked in (v0.6.10+). Choose the image tag based
+on your environment:
+
+- **Production:** **pin a specific release** with `IPSOLIS_VERSION` so an unplanned `docker
+  compose pull` can never swap in an untested build. Bump it deliberately when you upgrade
+  (see [Section 11](#11-updating-to-a-new-version)).
+- **Pre-live / test / dev:** leave it unset to track `:latest` and always get the newest build.
+
 ```bash
 cd /opt/ipsolis
 
-# Build and start all services
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.prelive.yml \
-  up --build -d
+# Production — pin a tested release:
+export IPSOLIS_VERSION=0.6.10
 
-# Run database migrations
-docker compose exec -T api alembic upgrade head
+# Pre-live / test — track latest (leave IPSOLIS_VERSION unset):
+# (nothing to export)
 
-# Verify all containers are running
+export COMPOSE_FILE=docker-compose.ghcr.yml:docker-compose.prelive.yml
+docker compose pull
+docker compose up -d
+```
+
+**Then — run migrations and verify:**
+
+```bash
+docker compose exec -T api alembic upgrade head   # uses $COMPOSE_FILE set above
 docker compose ps
 ```
 
@@ -652,28 +652,19 @@ docker image prune -f
 > ```
 > If missing, regenerate the certificate (see section 4) before proceeding.
 
+Pull the new images. **Production:** bump `IPSOLIS_VERSION` to the new tested release.
+**Pre-live / test:** leave it unset to pull the latest build.
+
 ```bash
 cd /opt/ipsolis
-
-# Pull the latest code
-git pull origin main
-
-# Rebuild and restart
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.prelive.yml \
-  up --build -d
-
-# Run any new database migrations
-docker compose exec -T api alembic upgrade head
-
-# Restart nginx to pick up new container IPs and any config changes
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.prelive.yml \
-  restart nginx
-
-# Verify health
+git pull origin main                 # refresh compose files / nginx.conf / docs
+export IPSOLIS_VERSION=0.6.10         # production: set to the release you want
+                                     # pre-live/test: leave unset to track :latest
+export COMPOSE_FILE=docker-compose.ghcr.yml:docker-compose.prelive.yml
+docker compose pull                   # fetch the new images
+docker compose up -d                  # recreate changed containers (no build)
+docker compose exec -T api alembic upgrade head   # apply any new migrations
+docker compose restart nginx          # pick up new container IPs / config
 curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health | python3 -m json.tool
 ```
 
@@ -694,7 +685,7 @@ snapshot is fresh when an unexpected regression appears.
 ### Beat HA failover during the restart
 
 If you run multiple Beat replicas (`--scale beat=N`), `docker compose
-up --build -d` rolls the containers one at a time and the leader lock
+up -d` rolls the containers one at a time and the leader lock
 hands over to the surviving replica within ~13 s.
 For single-Beat installs there's a brief gap during the restart
 where periodic tasks aren't running — usually invisible since cadences
@@ -740,7 +731,7 @@ the load balancer.
 
 ```bash
 # Single-host: bump the api replica count via compose
-docker compose -f docker-compose.yml -f docker-compose.prelive.yml \
+docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml \
   up -d --scale api=3
 
 # Verify each replica is reachable through the load balancer
@@ -768,13 +759,13 @@ done
 **Rolling restart during upgrades**: the upgrade flow in section 11
 stops and restarts every replica together, which is fine for small
 fleets where ~30s of API downtime is acceptable. For zero-downtime
-rolls, fold the `up --build -d` step into a per-replica loop:
+rolls, fold the `up -d` step into a per-replica loop:
 
 ```bash
 for i in 1 2 3; do
   docker compose stop api-$i
-  docker compose -f docker-compose.yml -f docker-compose.prelive.yml \
-    up --build -d --no-deps api-$i
+  docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml \
+    up -d --no-deps api-$i
   # Wait for the new container to pass health
   until curl -fsk http://localhost/health > /dev/null 2>&1; do
     sleep 2
@@ -812,7 +803,7 @@ scale-up; the worker code itself doesn't change.
 **Scaling command** (single-host, all queues on each replica):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prelive.yml \
+docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml \
   up -d --scale worker=3
 ```
 
@@ -848,7 +839,7 @@ replicated for HA:
 
 ```bash
 docker compose \
-  -f docker-compose.yml \
+  -f docker-compose.ghcr.yml \
   -f docker-compose.prelive.yml \
   up -d --scale beat=2
 ```
@@ -896,7 +887,7 @@ Nginx may have cached the old container IP. Restart the container
 
 ```bash
 docker compose \
-  -f docker-compose.yml \
+  -f docker-compose.ghcr.yml \
   -f docker-compose.prelive.yml \
   restart nginx
 ```
@@ -961,7 +952,7 @@ directory. For a fully clean reinstall:
 # 1. Stop the stack and delete volumes
 cd /opt/ipsolis
 docker compose \
-  -f docker-compose.yml \
+  -f docker-compose.ghcr.yml \
   -f docker-compose.prelive.yml \
   down -v
 
@@ -969,7 +960,7 @@ docker compose \
 cd /opt
 sudo rm -rf ipsolis
 
-# 3. Reinstall (continue from section 2)
+# 3. Reinstall (continue from section 2), then start the stack via section 6
 sudo git clone https://github.com/XenPool/ipsolis.git ipsolis
 cd ipsolis
 ```
