@@ -9,23 +9,30 @@ DEFINITIONS
 "Software" means the ip-Solis source code, Docker images, documentation,
 and all associated files in this repository.
 
-"Non-Commercial Use" means use solely for personal, educational, internal
-research, or non-profit purposes where no revenue, fees, or commercial
-benefit are derived directly or indirectly from the Software.
+"Free Use" means use of the Software without a license file, limited to:
+(i) purely private use by natural persons outside any commercial,
+professional, governmental, or other organizational activity;
+(ii) time-limited evaluation for up to 30 days; and (iii) non-productive
+use for research and teaching purposes at state-recognized educational
+and research institutions.
 
-"Commercial Use" means any use of the Software in a production environment
-by a for-profit organization, any use that generates revenue, or any use
-in providing services to paying customers -- regardless of whether the
-Software itself is sold.
+"Commercial Use" means any use of the Software beyond Free Use. In
+particular, any productive or operational use of the Software in the
+context of a commercial, freelance, governmental, or other organizational
+activity is Commercial Use -- irrespective of any intention to generate
+revenue or profit. This expressly includes use by legal entities under
+public law (e.g. cities, municipalities, public authorities, and
+public-law corporations and institutions) as well as by tax-privileged
+or charitable organizations.
 
 GRANT OF RIGHTS
 
 Subject to the terms below, XenPool GmbH grants you a worldwide,
 non-exclusive, non-transferable license to:
 
-1. Use, copy, and modify the Software for Non-Commercial Use.
-2. Deploy the Software internally for evaluation purposes for up to
-   30 days without a license key.
+1. Use, copy, and modify the Software for Free Use.
+2. Evaluate the Software in any environment for up to 30 days without a
+   license key.
 
 COMMERCIAL USE REQUIRES A LICENSE
 
@@ -45,7 +52,7 @@ RESTRICTIONS
 
 Without a valid commercial license you may not:
 
-1. Use the Software for Commercial Use beyond the 30-day evaluation period.
+1. Use the Software for Commercial Use.
 2. Remove or alter any copyright, trademark, or license notices.
 3. Sublicense, sell, rent, or distribute the Software to third parties
    for commercial purposes.
@@ -53,7 +60,7 @@ Without a valid commercial license you may not:
 
 MODIFICATIONS AND CONTRIBUTIONS
 
-You may modify the Software for your own Non-Commercial Use. Modified
+You may modify the Software for your own Free Use. Modified
 versions may not be distributed publicly or used commercially without
 a separate written agreement with XenPool GmbH.
 
@@ -91,25 +98,30 @@ DEFINITIONEN
 „Software" bezeichnet den ip·Solis-Quellcode, Docker-Images, Dokumentation
 und alle zugehörigen Dateien in diesem Repository.
 
-„Nicht-kommerzieller Gebrauch" bezeichnet die ausschließliche Nutzung für
-persönliche, bildungsbezogene, interne Forschungs- oder gemeinnützige Zwecke,
-bei denen aus der Software weder direkt noch indirekt Einnahmen, Gebühren oder
-sonstiger wirtschaftlicher Nutzen erzielt werden.
+„Kostenfreier Gebrauch" bezeichnet die Nutzung der Software ohne Lizenzdatei,
+beschränkt auf: (i) die rein private Nutzung durch natürliche Personen außerhalb
+jeder gewerblichen, beruflichen, behördlichen oder sonstigen organisatorischen
+Tätigkeit, (ii) die zeitlich begrenzte Evaluierung für bis zu 30 Tage sowie
+(iii) die nicht-produktive Nutzung zu Forschungs- und Lehrzwecken an staatlich
+anerkannten Bildungs- und Forschungseinrichtungen.
 
-„Kommerzieller Gebrauch" bezeichnet jede Nutzung der Software in einer
-Produktionsumgebung durch eine gewinnorientierte Organisation, jede
-umsatzgenerierende Nutzung oder jede Nutzung zur Erbringung von Leistungen
-gegenüber zahlenden Kunden — unabhängig davon, ob die Software selbst
-verkauft wird.
+„Kommerzieller Gebrauch" bezeichnet jede über den kostenfreien Gebrauch
+hinausgehende Nutzung. Kommerziell ist insbesondere jeder produktive oder
+betriebliche Einsatz der Software im Rahmen einer gewerblichen, freiberuflichen,
+behördlichen oder sonstigen organisatorischen Tätigkeit — unabhängig von einer
+Gewinnerzielungsabsicht. Dies umfasst ausdrücklich auch die Nutzung durch
+juristische Personen des öffentlichen Rechts (z. B. Städte, Gemeinden, Behörden,
+Körperschaften und Anstalten des öffentlichen Rechts) sowie durch
+steuerbegünstigte oder gemeinnützige Körperschaften.
 
 RECHTEEINRÄUMUNG
 
 Vorbehaltlich der nachstehenden Bedingungen räumt XenPool GmbH Ihnen eine
 weltweite, nicht-exklusive, nicht übertragbare Lizenz ein zu:
 
-1. Nutzung, Vervielfältigung und Modifikation der Software für
-   nicht-kommerziellen Gebrauch.
-2. Internem Einsatz der Software zu Evaluierungszwecken für bis zu
+1. Nutzung, Vervielfältigung und Modifikation der Software für den
+   kostenfreien Gebrauch.
+2. Evaluierung der Software in beliebiger Umgebung für bis zu
    30 Tage ohne Lizenzschlüssel.
 
 KOMMERZIELLER GEBRAUCH ERFORDERT EINE LIZENZ
@@ -131,8 +143,7 @@ EINSCHRÄNKUNGEN
 
 Ohne gültige kommerzielle Lizenz ist es Ihnen nicht gestattet:
 
-1. Die Software über den 30-tägigen Evaluierungszeitraum hinaus kommerziell
-   zu nutzen.
+1. Die Software kommerziell zu nutzen.
 2. Urheber-, Marken- oder Lizenzhinweise zu entfernen oder zu verändern.
 3. Die Software Dritten für kommerzielle Zwecke zu unterlizenzieren,
    zu verkaufen, zu vermieten oder weiterzugeben.
@@ -141,7 +152,7 @@ Ohne gültige kommerzielle Lizenz ist es Ihnen nicht gestattet:
 
 MODIFIKATIONEN UND BEITRÄGE
 
-Sie dürfen die Software für Ihren eigenen nicht-kommerziellen Gebrauch
+Sie dürfen die Software für Ihren eigenen kostenfreien Gebrauch
 modifizieren. Modifizierte Versionen dürfen ohne gesonderte schriftliche
 Vereinbarung mit XenPool GmbH weder öffentlich verbreitet noch kommerziell
 genutzt werden.
