@@ -14,6 +14,11 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.12] — 2026-06-24
+
+### Changed
+- Aligned and clarified the license wording across the documentation, the bundled `LICENSE` copies, and the Admin UI so they are consistent with the Terms.
+
 ## [0.6.11] — 2026-06-23
 
 ### Changed

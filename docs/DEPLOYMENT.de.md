@@ -99,9 +99,10 @@ in Images, die nach v0.6.9 gebaut wurden, **eingebacken**, sodass der Klon nur d
 `.env` und `nginx/` (für TLS) bereitstellt. Die eigentlichen Pull- + Start-Befehle finden Sie in
 [Abschnitt 6](#6-stack-starten).
 
-> **Lizenzierung:** ip·Solis ist für nicht-kommerzielle und Evaluierungszwecke kostenlos.
-> Kommerzielle Nutzung erfordert eine Lizenz — siehe [LICENSE](../LICENSE) und
-> kontaktieren Sie **sales@xenpool.de** zum Erwerb.
+> **Lizenzierung:** ip·Solis ist für die private Nutzung und die 30-tägige Evaluierung
+> kostenlos. Jede produktive oder organisatorische Nutzung — einschließlich öffentlicher
+> Hand und gemeinnütziger Organisationen — erfordert eine kommerzielle Lizenz. Siehe
+> [LICENSE](../LICENSE) und kontaktieren Sie **sales@xenpool.de** zum Erwerb.
 
 ---
 
@@ -397,8 +398,9 @@ gemeinsame Schlüssel wird nur aus Gründen der Abwärtskompatibilität beibehal
 
 ### Lizenz installieren
 
-Für Evaluierungs- und nicht-kommerzielle Nutzung ist keine Lizenzdatei erforderlich. Für kommerzielle
-Deployments liefert XenPool nach dem Kauf eine signierte `.lic`-Datei.
+Für die private Nutzung und die 30-tägige Evaluierung ist keine Lizenzdatei erforderlich. Jedes
+produktive oder organisatorische Deployment — einschließlich öffentlicher Hand und gemeinnütziger
+Nutzung — erfordert eine kommerzielle Lizenz; XenPool liefert nach dem Kauf eine signierte `.lic`-Datei.
 
 Installieren Sie sie über die Admin-UI:
 

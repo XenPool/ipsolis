@@ -8,9 +8,9 @@ Give your users a self-service portal to request, extend, and return IT assets (
 
 ip·Solis is source-available under the **XenPool Commercial Source License v1.0**.
 
-- **Non-commercial use** (personal, educational, internal research, non-profit) — free, no license key required.
+- **Free use** — purely private use by individuals outside any commercial, professional, governmental or organizational activity, plus non-productive research/teaching at state-recognized educational institutions. No license key required.
 - **Evaluation** — 30 days free in any environment, no license key required.
-- **Commercial use** — requires a valid license purchased from XenPool GmbH. Contact **sales@xenpool.de**.
+- **Commercial use** — any productive or operational use in a commercial, freelance, governmental or other organizational context requires a valid license purchased from XenPool GmbH — **regardless of profit intent, and including public-sector bodies and non-profit / charitable organizations**. Contact **sales@xenpool.de**.
 
 All features ship in a single image. There is no feature-limited free tier.
 
@@ -370,8 +370,9 @@ Operators are responsible for maintaining their own records of processing activi
 ## License
 
 ip·Solis is source-available under the **XenPool Commercial Source License v1.0** — see
-the [Licensing](#licensing) section above for the summary (free for non-commercial use and
-30-day evaluation; commercial use requires a purchased license).
+the [Licensing](#licensing) section above for the summary (free for private and 30-day
+evaluation use; any organizational, public-sector or non-profit production use requires a
+purchased license).
 
 See [LICENSE](LICENSE) for the full license text. For commercial licensing, contact
 **sales@xenpool.de**.

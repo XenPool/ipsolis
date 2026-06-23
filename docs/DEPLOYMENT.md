@@ -98,8 +98,9 @@ The images are **public** — no `docker login` needed — and `locales/` + `scr
 `.env`, and `nginx/` (for TLS). The actual pull + start commands are in
 [Section 6](#6-start-the-stack).
 
-> **Licensing:** ip·Solis is free for non-commercial and evaluation use.
-> Commercial use requires a license — see [LICENSE](../LICENSE) and
+> **Licensing:** ip·Solis is free for private and 30-day evaluation use. Any
+> productive or organizational use — including public-sector bodies and non-profit
+> organizations — requires a commercial license. See [LICENSE](../LICENSE) and
 > contact **sales@xenpool.de** to purchase.
 
 ---
@@ -396,8 +397,9 @@ shared key is kept for back-compat only.
 
 ### Install Your License
 
-Evaluation and non-commercial use require no license file. For commercial
-deployments, XenPool delivers a signed `.lic` file after purchase.
+Private use and 30-day evaluation require no license file. Any productive or
+organizational deployment — including public-sector and non-profit use — requires
+a commercial license; XenPool delivers a signed `.lic` file after purchase.
 
 Install it through the Admin UI:
 
