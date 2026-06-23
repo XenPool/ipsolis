@@ -14,6 +14,16 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.11] — 2026-06-23
+
+### Changed
+- **Deployment guide is now prebuilt-image (GHCR) only.** `docs/DEPLOYMENT.md` documents a single supported install path — pulling the public `ghcr.io/xenpool/ipsolis-{api,worker}` images — and drops the build-from-source variant throughout (start, update, HA, troubleshooting, clean reset). The image tag now defaults to `:latest`, with per-environment guidance: pin `IPSOLIS_VERSION` in production, track `:latest` in pre-live / test.
+- **License module docstring clarified.** `max_users` / `max_asset_types` are parsed for display only and are **not** enforced at runtime (no feature/usage gating — all features ship in every edition). Corrected the misleading "enforces …" wording in `api/app/utils/license.py` and the byte-identical worker copy.
+
+### Fixed
+- **License documentation corrected.** The README's License section incorrectly claimed AGPL-3.0 / a "dual-licensed open core". ip·Solis is in fact source-available under the **XenPool Commercial Source License v1.0** (free for non-commercial use + 30-day evaluation; commercial use requires a purchased license). Removed all AGPL references and aligned "open-source" wording to "source-available".
+- **Deployment guide:** `sudo chmod +x` for the mkcert binary (it is downloaded as root via `sudo curl`, so the non-sudo `chmod` failed with "Operation not permitted"); replaced the misleading `acme.com` example hostname with `example.com`.
+
 ## [0.6.10] — 2026-06-22
 
 ### Added
