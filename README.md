@@ -1,6 +1,6 @@
 # ip·Solis
 
-Open-source platform for IT asset lifecycle automation. Built for on-premises datacenters, replacing expensive commercial tools.
+Source-available platform for IT asset lifecycle automation. Built for on-premises datacenters, replacing expensive commercial tools.
 
 Give your users a self-service portal to request, extend, and return IT assets (VDIs, application access, infrastructure resources) while your IT team keeps full control through configurable approval workflows, runbooks, and audit trails.
 
@@ -369,16 +369,16 @@ Operators are responsible for maintaining their own records of processing activi
 
 ## License
 
-This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+ip·Solis is source-available under the **XenPool Commercial Source License v1.0** — see
+the [Licensing](#licensing) section above for the summary (free for non-commercial use and
+30-day evaluation; commercial use requires a purchased license).
 
-You are free to use, modify, and distribute this software. If you run a modified version as a network service, you must make the source code available to your users.
+See [LICENSE](LICENSE) for the full license text. For commercial licensing, contact
+**sales@xenpool.de**.
 
-For commercial licensing options (e.g., proprietary use without AGPL obligations), contact: **sales@xenpool.de**
-
-See [LICENSE](LICENSE) for the full license text.
-
-This project uses open-source components under MIT, BSD, and Apache-2.0 licenses.
-See [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) for the complete list.
+This project bundles third-party open-source components under their own licenses (MIT, BSD,
+Apache-2.0, LGPL, and others). See [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) for the
+complete list.
 
 ## Contributing
 
