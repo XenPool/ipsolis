@@ -1,6 +1,6 @@
 # ip·Solis -- Produktions-Deployment-Leitfaden
 
-Diese Anleitung führt durch die Einrichtung der ip·Solis-Plattform auf einem neuen On-Premises-Server. Vorkenntnisse des Quellcodes sind nicht erforderlich.
+Dieser Leitfaden führt Sie durch die Einrichtung der ip·Solis-Plattform auf einem frischen On-Premises-Server. Vorkenntnisse über die Codebasis sind nicht erforderlich.
 
 ---
 
@@ -9,17 +9,18 @@ Diese Anleitung führt durch die Einrichtung der ip·Solis-Plattform auf einem n
 1. [Voraussetzungen](#1-voraussetzungen)
 2. [Software beziehen](#2-software-beziehen)
 3. [Umgebungsvariablen konfigurieren](#3-umgebungsvariablen-konfigurieren)
-4. [SSL / TLS-Zertifikat einrichten](#4-ssl--tls-zertifikat-einrichten)
+4. [SSL-/TLS-Zertifikat einrichten](#4-ssl--tls-zertifikat-einrichten)
 5. [Produktions-Compose-Overlay erstellen](#5-produktions-compose-overlay-erstellen)
 6. [Stack starten](#6-stack-starten)
-7. [Ersteinrichtung Administrator](#7-ersteinrichtung-administrator)
-8. [Entra ID SSO (Portal-Authentifizierung)](#8-entra-id-sso-portal-authentifizierung)
-9. [Deployment überprüfen](#9-deployment-überprüfen)
+7. [Initiale Admin-Einrichtung](#7-initiale-admin-einrichtung)
+   - [Lizenz installieren (Pro)](#lizenz-installieren-pro)
+8. [Portal-SSO — OpenID Connect (Portal-Authentifizierung)](#8-portal-sso--openid-connect-portal-authentifizierung)
+9. [Deployment verifizieren](#9-deployment-verifizieren)
 10. [Backup & Wartung](#10-backup--wartung)
-11. [Update auf neue Version](#11-update-auf-neue-version)
-12. [Hochverfügbarkeit](#12-hochverfügbarkeit)
+11. [Aktualisierung auf eine neue Version](#11-aktualisierung-auf-eine-neue-version)
+12. [Hochverfügbare Deployments](#12-hochverfügbare-deployments)
 13. [Fehlerbehebung](#13-fehlerbehebung)
-14. [Sauberer Neustart (Testumgebungen)](#14-sauberer-neustart-testumgebungen)
+14. [Sauberes Zurücksetzen (Testumgebungen)](#14-sauberes-zurücksetzen-testumgebungen)
 
 ---
 
@@ -27,63 +28,63 @@ Diese Anleitung führt durch die Einrichtung der ip·Solis-Plattform auf einem n
 
 ## 1. Voraussetzungen
 
-### Serveranforderungen
+### Server-Anforderungen
 
 | Komponente | Minimum | Empfohlen |
-|---|---|---|
+|-----------|---------|-------------|
 | Betriebssystem | Linux (Debian/Ubuntu empfohlen) | Ubuntu 22.04 LTS oder neuer |
 | CPU | 2 Kerne | 4 Kerne |
 | RAM | 4 GB | 8 GB |
-| Festplatte | 20 GB | 50 GB (abhängig von der Anzahl verwalteter Assets) |
+| Festplatte | 20 GB | 50 GB (abhängig von der Anzahl der verwalteten Assets) |
 
 ### Software
 
-Vor der Installation folgendes einrichten:
+Installieren Sie Folgendes, bevor Sie fortfahren:
 
 - **Docker Engine** >= 24.0 -- [Docker installieren](https://docs.docker.com/engine/install/)
-- **Docker Compose** >= 2.20 (im Docker Engine-Paket enthalten)
+- **Docker Compose** >= 2.20 (in Docker Engine enthalten)
 - **Git** -- zum Klonen des Repositorys
 
-Nach der Docker-Installation den Deployment-User der `docker`-Gruppe hinzufügen,
-damit `docker compose`-Befehle ohne `sudo` ausgeführt werden können:
+Fügen Sie nach der Docker-Installation den Deployment-Benutzer zur `docker`-Gruppe hinzu, damit
+`docker compose`-Befehle ohne `sudo` funktionieren:
 
 ```bash
 sudo usermod -aG docker $USER
-# Anschließend ab- und wieder anmelden (oder: newgrp docker)
+# Then log out and back in (or: newgrp docker)
 ```
 
-Installation überprüfen:
+Überprüfen Sie Ihre Installation:
 
 ```bash
-docker --version        # Docker version 24.x oder höher
-docker compose version  # Docker Compose version v2.20 oder höher
+docker --version        # Docker version 24.x or higher
+docker compose version  # Docker Compose version v2.20 or higher
 git --version
 ```
 
-### Netzwerkanforderungen
+### Netzwerk-Anforderungen
 
 Der Server benötigt ausgehenden Zugriff auf:
 
 | Ziel | Zweck |
-|---|---|
-| Active Directory / LDAP-Server (Port 389 oder 636) | Benutzervalidierung, Vorgesetztensuche, Gruppenmitgliedschaft |
-| SMTP-Relay | E-Mail-Benachrichtigungen |
-| vSphere / XenServer (falls verwendet) | VM-Lifecycle-Automatisierung |
-| SCCM-Server (falls verwendet) | Tasksequenz-Trigger |
+|-------------|---------|
+| Ihr Active Directory / LDAP-Server (Port 389 oder 636) | Benutzervalidierung, Manager-Lookup, Gruppenmitgliedschaft |
+| Ihr SMTP-Relay | E-Mail-Benachrichtigungen |
+| vSphere / XenServer (falls zutreffend) | VM-Lifecycle-Automatisierung |
+| SCCM-Server (falls zutreffend) | Auslösen von Task-Sequenzen |
 
-Eingehend: Die Ports **80** und **443** müssen von den Browsern der Nutzer erreichbar sein.
+Eingehend: Die Ports **80** und **443** müssen von den Browsern Ihrer Benutzer erreichbar sein.
 
 ---
 
 ## 2. Software beziehen
 
-> **Frische Umgebung empfohlen:** Docker-Volumes (Datenbankdaten) überleben ein
+> **Frische Umgebung empfohlen:** Docker-Volumes (Datenbankdaten) überstehen
 > `rm -rf /opt/ipsolis` — sie liegen unter `/var/lib/docker/volumes/` und bleiben
-> erhalten, bis sie explizit gelöscht werden. Für eine saubere Erstinstallation
-> sicherstellen, dass keine alten Volumes vorhanden sind. Anleitung:
-> [Sauberer Neustart (Testumgebungen)](#14-sauberer-neustart-testumgebungen).
+> bestehen, bis sie explizit entfernt werden. Stellen Sie für eine saubere Erstinstallation
+> sicher, dass keine alten Volumes existieren.
+> Siehe [Sauberes Zurücksetzen (Testumgebungen)](#14-sauberes-zurücksetzen-testumgebungen).
 
-Repository klonen und Images beziehen — keine Authentifizierung erforderlich:
+Repository klonen — keine Authentifizierung erforderlich:
 
 ```bash
 cd /opt
@@ -91,86 +92,89 @@ sudo git clone https://github.com/XenPool/ipsolis.git ipsolis
 cd ipsolis
 ```
 
-Die Docker-Images (`ghcr.io/xenpool/ipsolis-api` und `ghcr.io/xenpool/ipsolis-worker`) sind öffentlich und werden beim Start des Stacks automatisch heruntergeladen.
+Der empfohlene Weg, den Stack zu betreiben, ist das **Pullen der vorgefertigten, versionsfixierten Images**
+von GHCR über `docker-compose.ghcr.yml` (`ghcr.io/xenpool/ipsolis-api` und `…-worker`).
+Die Images sind **öffentlich** — kein `docker login` nötig — und `locales/` + `scripts/` sind
+in Images, die nach v0.6.9 gebaut wurden, **eingebacken**, sodass der Klon nur die Compose-Dateien,
+`.env` und `nginx/` (für TLS) bereitstellt. Die eigentlichen Pull- + Start-Befehle finden Sie in
+[Abschnitt 6](#6-stack-starten).
 
-> **Lizenzierung:** ip·Solis ist für nicht-kommerzielle Nutzung und Evaluierung kostenlos.
-> Für kommerzielle Nutzung ist eine Lizenz erforderlich — siehe [LICENSE](../LICENSE) und
-> Kontakt **sales@xenpool.de** für den Kauf.
+> **Lizenzierung:** ip·Solis ist für nicht-kommerzielle und Evaluierungszwecke kostenlos.
+> Kommerzielle Nutzung erfordert eine Lizenz — siehe [LICENSE](../LICENSE) und
+> kontaktieren Sie **sales@xenpool.de** zum Erwerb.
 
 ---
 
 ## 3. Umgebungsvariablen konfigurieren
 
-Beispieldatei kopieren und bearbeiten:
+Kopieren Sie die Beispieldatei und bearbeiten Sie sie:
 
 ```bash
 sudo cp .env.example .env
 sudo nano .env
 ```
 
-### Pflichtfelder
+### Zwingend zu ändernde Einstellungen
 
 ```ini
-# Sichere Datenbankzugangsdaten
-POSTGRES_PASSWORD=<sicheres-passwort-generieren>
+# Secure database credentials
+POSTGRES_PASSWORD=<generate-a-strong-password>
 
-# Sichere API-Secrets -- zufällige Zeichenketten mit mindestens 32 Zeichen
-API_SECRET_KEY=<zufallszeichenkette-min-32-zeichen>
-WEBHOOK_SECRET_TOKEN=<zufallszeichenkette>
-ADMIN_API_KEY=<zufallszeichenkette-min-32-zeichen>
+# Secure API secrets -- use random strings of 32+ characters
+API_SECRET_KEY=<random-string-min-32-chars>
+WEBHOOK_SECRET_TOKEN=<random-string>
+ADMIN_API_KEY=<random-string-min-32-chars>
 
-# CORS -- auf die Produktionsdomain setzen  ← YOUR_HOSTNAME.YOUR_COMPANY.COM ersetzen
+# CORS -- set to your production domain  ← replace YOUR_HOSTNAME.YOUR_COMPANY.COM
 CORS_ORIGINS=https://YOUR_HOSTNAME.YOUR_COMPANY.COM
-FLOWER_PASSWORD=<sicheres-passwort>
+FLOWER_PASSWORD=<strong-password>
 ```
 
-> **Tipp**: Sichere Passwörter generieren mit:
+> **Tipp**: Sichere Passwörter generieren Sie mit:
 > ```bash
 > openssl rand -base64 32
 > ```
 
----
+## 4. SSL-/TLS-Zertifikat einrichten
 
-## 4. SSL / TLS-Zertifikat einrichten
+Die Plattform läuft hinter einem nginx-Reverse-Proxy, der SSL terminiert. Sie benötigen ein TLS-Zertifikat und einen privaten Schlüssel.
 
-Die Plattform läuft hinter einem nginx-Reverse-Proxy, der SSL terminiert. Ein TLS-Zertifikat und ein privater Schlüssel werden benötigt.
+### Option A: Internes / selbstsigniertes Zertifikat (Intranet)
 
-### Option A: Internes / selbst-signiertes Zertifikat (Intranet)
-
-Wenn der Server nur im Unternehmensnetzwerk erreichbar ist, [mkcert](https://github.com/FiloSottile/mkcert) für ein vertrauenswürdiges Zertifikat verwenden:
+Wenn Ihr Server nur innerhalb Ihres Unternehmensnetzwerks erreichbar ist, verwenden Sie [mkcert](https://github.com/FiloSottile/mkcert), um ein vertrauenswürdiges Zertifikat zu generieren:
 
 ```bash
-# mkcert installieren (einmalig)
+# Install mkcert (one-time)
 # Ubuntu/Debian:
 sudo apt install -y libnss3-tools
 sudo curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
 sudo chmod +x mkcert-v*-linux-amd64
 sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
 
-# Lokale CA in den System-Trust-Store installieren
+# Install the local CA into your system trust store
 sudo mkcert -install
 
-# Zertifikat für den Hostnamen generieren  ← YOUR_HOSTNAME.YOUR_COMPANY.COM ersetzen
+# Generate the certificate for your hostname  ← replace YOUR_HOSTNAME.YOUR_COMPANY.COM
 sudo mkdir -p nginx/ssl
 sudo mkcert -cert-file nginx/ssl/cert.pem -key-file nginx/ssl/key.pem YOUR_HOSTNAME.YOUR_COMPANY.COM
 ```
 
-> **Wichtig**: Damit Browser auf anderen Rechnern diesem Zertifikat vertrauen, muss die
-> Root-CA (`mkcert -CAROOT` zeigt den Pfad) via Gruppenrichtlinie oder den
-> unternehmensinternen CA-Trust-Store auf die Client-Rechner verteilt werden.
+> **Wichtig**: Damit Browser auf anderen Rechnern diesem Zertifikat vertrauen, müssen Sie
+> die Root-CA (`mkcert -CAROOT` zeigt den Pfad) über
+> Gruppenrichtlinien oder Ihren Enterprise-CA-Trust-Store an die Client-Rechner verteilen.
 
-**Stammzertifikat auf Windows-Client installieren:**
+**Root-CA auf einem Windows-Client installieren:**
 
 ```bash
-# Auf dem Server — Stammzertifikat für den Download bereitstellen
+# On the server — make the root CA available for download
 sudo cp $(sudo mkcert -CAROOT)/rootCA.pem /tmp/ipsolis-rootCA.pem
 sudo chmod 644 /tmp/ipsolis-rootCA.pem
 ```
 
-Datei auf den Windows-Laptop kopieren (SCP, USB o. ä.), dann:
+Kopieren Sie die Datei auf Ihren Windows-Laptop (SCP, USB usw.), dann:
 
 **Option 1 — per Doppelklick:**
-1. Datei in `ipsolis-rootCA.crt` umbenennen
+1. Datei umbenennen in `ipsolis-rootCA.crt`
 2. Doppelklick → **Zertifikat installieren**
 3. **Lokaler Computer** → **Vertrauenswürdige Stammzertifizierungsstellen**
 4. Browser neu starten
@@ -180,13 +184,13 @@ Datei auf den Windows-Laptop kopieren (SCP, USB o. ä.), dann:
 certutil -addstore -f "ROOT" ipsolis-rootCA.crt
 ```
 
-Nach der Installation vertrauen Chrome, Edge und Firefox (mit Windows-Trust-Store) dem Zertifikat ohne Warnung.
+Nach der Installation vertrauen Chrome, Edge und Firefox (unter Verwendung des Windows-Trust-Stores) dem Zertifikat ohne Warnungen.
 
-### Option B: Zertifikat der internen CA (Empfohlen für Produktion)
+### Option B: Zertifikat von Ihrer Enterprise-CA (für Produktion empfohlen)
 
-Wenn die Organisation eine interne Zertifizierungsstelle betreibt (z. B. Active Directory Certificate Services):
+Wenn Ihre Organisation eine interne Zertifizierungsstelle betreibt (z. B. Active Directory Certificate Services):
 
-1. CSR auf dem Server erzeugen: *(YOUR_HOSTNAME.YOUR_COMPANY.COM ersetzen)*
+1. Erzeugen Sie einen CSR auf dem Server: *(ersetzen Sie YOUR_HOSTNAME.YOUR_COMPANY.COM)*
    ```bash
    sudo mkdir -p nginx/ssl
    sudo openssl req -new -newkey rsa:2048 -nodes \
@@ -194,22 +198,22 @@ Wenn die Organisation eine interne Zertifizierungsstelle betreibt (z. B. Active 
      -out nginx/ssl/server.csr \
      -subj "/CN=YOUR_HOSTNAME.YOUR_COMPANY.COM"
    ```
-2. `nginx/ssl/server.csr` bei der CA einreichen und das signierte Zertifikat erhalten.
-3. Das signierte Zertifikat als `nginx/ssl/cert.pem` speichern.
-4. Falls die CA ein Zwischen-/Kettenzertifikat liefert, an `cert.pem` anhängen:
+2. Reichen Sie `nginx/ssl/server.csr` bei Ihrer CA ein und beziehen Sie das signierte Zertifikat.
+3. Speichern Sie das signierte Zertifikat als `nginx/ssl/cert.pem`.
+4. Falls Ihre CA ein Zwischen-/Chain-Zertifikat bereitstellt, hängen Sie es an `cert.pem` an:
    ```bash
-   cat signiertes-zertifikat.pem zwischen-ca.pem | sudo tee nginx/ssl/cert.pem > /dev/null
+   cat signed-cert.pem intermediate-ca.pem | sudo tee nginx/ssl/cert.pem > /dev/null
    ```
 
 ### Option C: Let's Encrypt (öffentlich erreichbare Server)
 
-Wenn der Server öffentlich zugänglich ist, können kostenlose Zertifikate von Let's Encrypt genutzt werden:
+Wenn Ihr Server öffentlich erreichbar ist, können Sie kostenlose Zertifikate von Let's Encrypt verwenden:
 
 ```bash
 sudo apt install -y certbot
-sudo certbot certonly --standalone -d YOUR_HOSTNAME.YOUR_COMPANY.COM  # ← ersetzen
+sudo certbot certonly --standalone -d YOUR_HOSTNAME.YOUR_COMPANY.COM  # ← replace
 
-# Symlinks in das ssl-Verzeichnis
+# Symlink into the ssl directory
 sudo mkdir -p nginx/ssl
 sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/fullchain.pem nginx/ssl/cert.pem
 sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/privkey.pem nginx/ssl/key.pem
@@ -218,22 +222,23 @@ sudo ln -sf /etc/letsencrypt/live/YOUR_HOSTNAME.YOUR_COMPANY.COM/privkey.pem ngi
 #### Automatische Erneuerung einrichten (nur Option C)
 
 ```bash
-# Erneuerung testen
+# Test renewal
 sudo certbot renew --dry-run
 
-# Cron-Job zum Neuladen von nginx nach der Erneuerung
+# Add a cron job to reload nginx after renewal
 echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx nginx -s reload'" | sudo crontab -
 ```
 
 ### nginx konfigurieren
 
-Das Repository enthält bereits eine fertige `nginx/nginx.conf` mit dem Platzhalter `YOUR_HOSTNAME.YOUR_COMPANY.COM`. Den Platzhalter durch den tatsächlichen FQDN ersetzen (`sed` ersetzt beide Vorkommen in einem Schritt):
+Das Repository liefert bereits eine einsatzbereite `nginx/nginx.conf` mit dem Platzhalter `YOUR_HOSTNAME.YOUR_COMPANY.COM`. Ersetzen Sie ihn durch Ihren tatsächlichen FQDN — denselben Hostnamen, den Sie oben für das Zertifikat verwendet haben (`sed` behandelt beide Vorkommen in einem Durchgang):
 
 ```bash
-sudo sed -i 's/YOUR_HOSTNAME.YOUR_COMPANY.COM/ipsolis.firma.de/g' nginx/nginx.conf
+# ← replace ipsolis.example.com with your actual FQDN
+sudo sed -i 's/YOUR_HOSTNAME.YOUR_COMPANY.COM/ipsolis.example.com/g' nginx/nginx.conf
 ```
 
-Die Datei sieht danach so aus (zur Kontrolle):
+Die Datei sieht danach so aus (zur Referenz):
 
 ```nginx
 server {
@@ -253,7 +258,7 @@ server {
 
     client_max_body_size 2g;
 
-    # WebSocket / HTMX-Unterstützung
+    # WebSocket / HTMX support
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
@@ -268,37 +273,54 @@ server {
 }
 ```
 
-> Den tatsächlichen Hostnamen auch im Zertifikatsgenerierungsschritt (Option A/B/C) verwenden.
+> Verwenden Sie denselben Hostnamen im Schritt zur Zertifikatserzeugung (Option A/B/C oben).
 
 ---
 
-## 5. Produktions-Compose-Overlay
+## 5. Produktions-Compose-Overlay erstellen
 
-`docker-compose.prelive.yml` liegt bereits im Repository und muss nicht angelegt werden.
-Das Overlay fügt nginx für die SSL-Terminierung hinzu und entfernt die Dev-Bind-Mounts
-aus `api` und `worker`. Kein weiterer Schritt nötig.
+`docker-compose.prelive.yml` ist bereits im Repository enthalten — keine Aktion erforderlich.
+Das Overlay fügt nginx für die SSL-Terminierung hinzu und entfernt die Dev-Bind-Mounts von
+`api` und `worker`.
 
 ---
 
 ## 6. Stack starten
 
+Pullen Sie die öffentlichen GHCR-Images und führen Sie dann die Migrations- + Verifizierungsschritte aus. Das Setzen von
+`COMPOSE_FILE` sorgt dafür, dass jeder spätere `docker compose`-Befehl (exec, ps, logs, down)
+die richtigen Overlays erbt, ohne `-f` wiederholen zu müssen.
+
+Die Images werden mit eingebackenem `locales/`+`scripts/` ausgeliefert (v0.6.10+). Wählen Sie das Image-Tag basierend
+auf Ihrer Umgebung:
+
+- **Produktion:** **fixieren Sie ein bestimmtes Release** mit `IPSOLIS_VERSION`, damit ein ungeplantes `docker
+  compose pull` niemals einen ungetesteten Build einspielen kann. Erhöhen Sie es bewusst beim Upgrade
+  (siehe [Abschnitt 11](#11-aktualisierung-auf-eine-neue-version)).
+- **Pre-live / Test / Dev:** lassen Sie es unbesetzt, um `:latest` zu verfolgen und immer den neuesten Build zu erhalten.
+
 ```bash
 cd /opt/ipsolis
 
-# Alle Dienste bauen und starten
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.prelive.yml \
-  up --build -d
+# Production — pin a tested release:
+export IPSOLIS_VERSION=0.6.10
 
-# Datenbankmigrationen ausführen
-docker compose exec -T api alembic upgrade head
+# Pre-live / test — track latest (leave IPSOLIS_VERSION unset):
+# (nothing to export)
 
-# Prüfen ob alle Container laufen
+export COMPOSE_FILE=docker-compose.ghcr.yml:docker-compose.prelive.yml
+docker compose pull
+docker compose up -d
+```
+
+**Dann — Migrationen ausführen und verifizieren:**
+
+```bash
+docker compose exec -T api alembic upgrade head   # uses $COMPOSE_FILE set above
 docker compose ps
 ```
 
-Erwartete Ausgabe -- alle Dienste sollten `Up (healthy)` zeigen:
+Erwartete Ausgabe -- alle Dienste sollten `Up (healthy)` anzeigen:
 
 ```
 NAME             STATUS
@@ -306,255 +328,282 @@ ipsolis-postgres      Up (healthy)
 ipsolis-redis         Up (healthy)
 ipsolis-api           Up (healthy)
 ipsolis-worker        Up (healthy)
-ipsolis-beat-1        Up
+ipsolis-beat-1   Up
 ipsolis-nginx         Up
 ```
 
-Anwendung überprüfen:
+Anwendung verifizieren:
 
 ```bash
-# Direkter API-Health-Check
+# Direct API health check
 curl -f http://localhost:8000/health | python3 -m json.tool
 
-# Über nginx (HTTPS)
+# Through nginx (HTTPS)
 curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health | python3 -m json.tool
 ```
 
 ---
 
-## 7. Ersteinrichtung Administrator
+## 7. Initiale Admin-Einrichtung
 
-### Erstes Admin-Konto (RBAC)
+### Admin-Konto beim Erststart (RBAC)
 
-**https://YOUR_HOSTNAME.YOUR_COMPANY.COM/ui/** im Browser öffnen. Beim allerersten Aufruf
-(wenn `admin_users` leer ist) zeigt die Login-Seite ein **„Ersten Administrator anlegen"**-Formular
-anstelle des normalen Anmeldeformulars. Folgende Felder ausfüllen:
+Öffnen Sie **https://YOUR_HOSTNAME.YOUR_COMPANY.COM/ui/** in Ihrem Browser. Beim
+allerersten Besuch (wenn `admin_users` leer ist) zeigt die Anmeldeseite
+ein Formular **"Ersten Administrator erstellen"** statt des
+normalen Anmeldeformulars. Füllen Sie aus:
 
 | Feld | Hinweise |
 |---|---|
-| Benutzername | 3–128 Zeichen, erlaubt: `[a-zA-Z0-9._@-]+`. Wird beim Speichern kleingeschrieben. |
-| Passwort | Mindestens 12 Zeichen. PBKDF2-SHA256 / 600k Iterationen (OWASP-2023). |
+| Benutzername | 3–128 Zeichen, erlaubt: `[a-zA-Z0-9._@-]+`. Wird beim Schreiben kleingeschrieben. |
+| Passwort | ≥ 12 Zeichen. PBKDF2-SHA256 / 600k Iterationen (OWASP-2023). |
 | Passwort bestätigen | Muss übereinstimmen. |
 
-Das Absenden erstellt den ersten **Superadmin** und meldet ihn direkt an.
-Dieser Vorgang ist idempotent gegenüber Race-Conditions -- wenn zwei Operatoren gleichzeitig
-das Formular abschicken, gewinnt nur einer; der andere erhält die Meldung, das Anmeldeformular
-zu verwenden.
+Das Absenden erstellt den ersten **superadmin** und meldet Sie automatisch an.
+Dies ist idempotent gegenüber Race-Conditions — wenn zwei Operatoren das Formular
+gleichzeitig absenden, gewinnt nur einer; der andere erhält die Meldung, das
+"Anmeldeformular zu verwenden".
 
-Nach dem ersten Superadmin wechselt das Formular auf die reguläre Benutzername/Passwort-Anmeldung.
+Sobald der erste superadmin existiert, wechselt das Formular zur regulären
+Anmeldung mit Benutzername + Passwort.
 
-### Weitere Admin-Benutzer anlegen
+### Weitere Admin-Benutzer hinzufügen
 
-Nach der Anmeldung zu **Admin-Benutzer** in der linken Navigation navigieren (nur Superadmin).
-Pro-Benutzer-Konten in der jeweils passenden Rolle anlegen:
+Navigieren Sie nach der Anmeldung in der linken Navigation zu **Admin-Benutzer**
+(nur superadmin). Erstellen Sie benutzerspezifische Konten in der für jeden
+Operator passenden Rolle:
 
 ```
 superadmin > admin > approver > auditor > helpdesk
 ```
 
-Die vollständige Rollenhierarchie, Asset-Typ-spezifische ACL-Berechtigungen, Funktionstrennung
-und Passwortrichtlinien sind in der Admin-Oberfläche unter Einstellungen → Zugangskontrolle konfigurierbar.
+Die vollständige Rollenhierarchie, ACL-Vergaben pro Asset-Typ, die Durchsetzung der
+Funktionstrennung und die Optionen für die Passwortrichtlinie sind in der Admin-UI
+unter Einstellungen → Zugriffssteuerung konfigurierbar.
 
-### Legacy-Fallback `ADMIN_API_KEY`
+### Legacy-`ADMIN_API_KEY`-Fallback
 
-Der `ADMIN_API_KEY` aus `.env` authentifiziert weiterhin als **virtueller Superadmin**,
-auch nach der Ersteinrichtung -- damit bestehende Skripte / `X-Admin-Key`-Header beim Update
-nicht brechen. Verwendung auf der Login-Seite: **Benutzername** leer lassen, den Key als
-**Passwort** eingeben. Das Audit-Log zeigt `admin:legacy_key` als Attribution, damit
-Prüfer den Fallback-Pfad erkennen.
+Der `ADMIN_API_KEY` aus `.env` authentifiziert auch nach der Ersteinrichtung
+weiterhin als **virtueller superadmin**, sodass bestehende
+Skripte / `X-Admin-Key`-Header beim Upgrade nicht brechen. Um ihn
+auf der Anmeldeseite zu verwenden: lassen Sie **Benutzername** leer und fügen Sie den Schlüssel in
+**Passwort** ein. Die Audit-Zuordnung erscheint als `admin:legacy_key`, sodass
+Auditoren erkennen können, wann der Fallback-Pfad verwendet wurde.
 
-Für neue Integrationen werden **per-Integration-API-Tokens** empfohlen (Admin-Oberfläche
-→ *API-Tokens*) -- benannte, ablaufende, widerrufliche Bearer-Tokens mit optionaler
-Rollenbindung und Berechtigungseinschränkung. Der Legacy-Shared-Key bleibt nur für
-Rückwärtskompatibilität.
+Für neue Integrationen sind **Integrationsspezifische API-Tokens** (Admin-UI
+→ *API-Tokens*) vorzuziehen — benannte, ablaufende, widerrufbare Bearer-Tokens mit
+optionaler Rollenbindung und eingeschränkten Berechtigungen. Der alte einzelne
+gemeinsame Schlüssel wird nur aus Gründen der Abwärtskompatibilität beibehalten.
 
 ### Lizenz installieren
 
-Für Evaluierung und nicht-kommerzielle Nutzung ist keine Lizenzdatei erforderlich. Für kommerzielle
-Deployments stellt XenPool nach dem Kauf eine signierte `.lic`-Datei bereit.
+Für Evaluierungs- und nicht-kommerzielle Nutzung ist keine Lizenzdatei erforderlich. Für kommerzielle
+Deployments liefert XenPool nach dem Kauf eine signierte `.lic`-Datei.
 
-Installation über die Admin-Oberfläche:
+Installieren Sie sie über die Admin-UI:
 
-1. Zu **Admin → Lizenz** navigieren (oder `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/ui/license` öffnen).
-2. **Lizenz hochladen** klicken und die `ipsolis.lic`-Datei auswählen.
-3. Die Seite lädt mit Lizenznehmername und Ablaufdatum neu -- kein Neustart erforderlich.
+1. Navigieren Sie zu **Admin → Lizenz** (oder öffnen Sie
+   `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/ui/license`).
+2. Klicken Sie auf **Lizenz hochladen** und wählen Sie Ihre `ipsolis.lic`-Datei aus.
+3. Die Seite lädt neu und zeigt Lizenznehmer-Name und Ablaufdatum an — kein Neustart erforderlich.
 
-**Kulanzfrist**: Bei Ablauf einer Lizenz gilt eine 30-tägige Kulanzfrist, bevor der Status
-auf „nicht lizenziert" zurückfällt. Die Admin-Oberfläche zeigt ein Warnbanner und der tägliche
-Health-Alert-E-Mail wird während dieser Zeit täglich versandt.
+**Kulanzfrist**: Wenn eine Lizenz abläuft, gilt eine 30-tägige Kulanzfrist,
+bevor der Lizenzstatus auf unlizenziert zurückfällt. Die Admin-UI zeigt einen
+bernsteinfarbenen Warnbanner an, und die tägliche Health-Alert-E-Mail wird während
+des gesamten Zeitfensters jeden Tag ausgelöst.
 
-**Überschreiben**: Eine neue `.lic` kann jederzeit hochgeladen werden, um zu verlängern.
-Die alte Datei wird ersetzt; der Lizenz-Cache wird beim nächsten Request aktualisiert
-(mtime-basiert, kein Downtime).
+**Überschreiben**: Laden Sie jederzeit eine neue `.lic` hoch, um zu erneuern. Die alte Datei
+wird an Ort und Stelle ersetzt; der Lizenz-Cache aktualisiert sich bei der nächsten Anfrage
+(mtime-basiert, ohne Ausfallzeit).
 
-**Umgebungsvariablen-Override** (Air-Gap / automatisierte Deployments): Die `.lic`-Datei in
-den Container an einem alternativen Pfad einbinden und setzen:
+**Umgebungsvariablen-Override** (Air-Gapped / automatisierte Deployments): Mounten Sie die
+`.lic`-Datei in den Container an einem alternativen Pfad und setzen Sie:
 
 ```bash
 IPSOLIS_LICENSE_PATH=/run/secrets/ipsolis.lic
 ```
 
-Der Standardpfad ist `/app/license/ipsolis.lic` (innerhalb des `ipsolis-api`-Containers).
-Docker-Secrets oder ein Bind-Mount funktionieren beides.
+Der Standardpfad ist `/app/license/ipsolis.lic` (innerhalb des `ipsolis-api`-
+Containers). Sowohl Docker-Secrets als auch ein Bind-Mount funktionieren.
 
-### Konfigurationscheckliste
+### Konfigurations-Checkliste
 
-Die In-App-Setup-Checkliste (Dashboard → **Setup checklist**) führt durch alle
-erforderlichen Schritte. Die Reihenfolge hier entspricht der Checkliste:
+Die anwendungsinterne **Setup-Checkliste** im Dashboard führt Sie durch alle erforderlichen Schritte.
+Die folgende Reihenfolge entspricht der Checkliste:
 
-#### 1. Anwendungstitel und Logo setzen *(Essential)*
+#### 1. Anwendungstitel und Logo festlegen *(Essenziell)*
 
-Zu **Admin > Einstellungen → Allgemein** navigieren:
+Navigieren Sie zu **Admin > Einstellungen → Allgemein**:
 
 | Einstellung | Beschreibung |
-|---|---|
-| `app.title` | Anwendungsname im Portal und in E-Mails (Standard: `ip·Solis`) |
+|---------|-------------|
+| `app.title` | Im Portal und in E-Mails angezeigter Anwendungsname (Standard: `ip·Solis`) |
 | `app.logo` | Logo-Upload (PNG/SVG empfohlen) |
 
-#### 2. SMTP konfigurieren *(Essential)*
+#### 2. SMTP konfigurieren *(Essenziell)*
 
-Zu **Admin > Einstellungen → E-Mail** navigieren:
+Navigieren Sie zu **Admin > Einstellungen → E-Mail**:
 
 | Einstellung | Beschreibung | Beispiel |
-|---|---|---|
-| `smtp.host` | SMTP-Relay-Hostname | `smtp.ihreunternehmen.de` |
+|---------|-------------|---------|
+| `smtp.host` | Hostname des SMTP-Relays | `smtp.yourcompany.com` |
 | `smtp.port` | SMTP-Port | `587` |
-| `smtp.user` | SMTP-Benutzername (falls Auth erforderlich) | `selfservice@ihreunternehmen.de` |
-| `smtp.password` | SMTP-Passwort | *(als Secret markiert)* |
+| `smtp.user` | SMTP-Benutzername (falls Auth erforderlich) | `selfservice@yourcompany.com` |
+| `smtp.password` | SMTP-Passwort | *(als geheim markiert)* |
 | `smtp.tls` | STARTTLS verwenden | `true` |
-| `smtp.from` | Absender-E-Mail-Adresse | `noreply@ihreunternehmen.de` |
-| `smtp.from_name` | Absender-Anzeigename | `ip·Solis` |
+| `smtp.from` | Absender-E-Mail-Adresse | `noreply@yourcompany.com` |
+| `smtp.from_name` | Anzeigename des Absenders | `ip·Solis` |
 
-Zu **Admin > E-Mail-Vorlagen** navigieren, um Benachrichtigungstexte anzupassen.
+Navigieren Sie zu **Admin > E-Mail-Vorlagen**, um den Text der Benachrichtigungs-E-Mails anzupassen.
 
-#### 3. Active Directory verbinden *(Essential)*
+#### 3. Mit Active Directory verbinden *(Essenziell)*
 
-Zu **Admin > Einstellungen → Active Directory** navigieren:
+Navigieren Sie zu **Admin > Einstellungen → Active Directory**:
 
 | Einstellung | Beschreibung | Beispiel |
-|---|---|---|
-| `ad.server` | AD-Domänencontroller-Hostname oder IP | `dc01.ihreunternehmen.de` |
+|---------|-------------|---------|
+| `ad.server` | Hostname oder IP des AD-Domänencontrollers | `dc01.yourcompany.com` |
 | `ad.port` | LDAP-Port | `389` (oder `636` für LDAPS) |
-| `ad.base_dn` | Such-Base-DN | `DC=ihreunternehmen,DC=de` |
-| `ad.domain` | NetBIOS-Domänenname | `IHREUNTERNEHMEN` |
+| `ad.base_dn` | Such-Basis-DN | `DC=yourcompany,DC=com` |
+| `ad.domain` | NetBIOS-Domänenname | `YOURCOMPANY` |
 | `ad.username` | Dienstkonto (sAMAccountName) | `svc-selfservice` |
-| `ad.password` | Dienstkonto-Passwort | *(als Secret markiert)* |
+| `ad.password` | Passwort des Dienstkontos | *(als geheim markiert)* |
 | `ad.use_ssl` | LDAPS verwenden | `true` oder `false` |
 
-> Die erforderlichen AD-Berechtigungen hängen von den eingesetzten Modulen und
-> Runbook-Schritten ab. Als Ausgangspunkt werden benötigt:
-> - **Lesen** auf Benutzerobjekte (Attribute: `mail`, `displayName`, `sAMAccountName`,
+> Die erforderlichen AD-Berechtigungen hängen von den verwendeten Modulen und Runbook-Schritten ab.
+> Als Basis:
+> - **Lesen** auf Benutzerobjekten (Attribute: `mail`, `displayName`, `sAMAccountName`,
 >   `userPrincipalName`, `manager`, `memberOf`, `distinguishedName`)
-> - **Schreiben auf `member`** an Gruppenobjekten — für AD-gruppenbasierte Zugriffszuweisung
+> - **Schreiben `member`** auf Gruppenobjekten — erforderlich für die AD-gruppenbasierte Zugriffsvergabe
 >
-> Weitergehende Berechtigungen (z. B. auf Computerobjekte, OUs oder andere Attribute)
-> sind je nach verwendeten Runbooks und Modulen zusätzlich erforderlich.
+> Je nach den eingesetzten Runbooks und Modulen können zusätzliche Berechtigungen (z. B. auf
+> Computerobjekten, OUs oder anderen Attributen) erforderlich sein.
 
-#### 4. Portal-SSO via Entra ID aktivieren *(Essential)*
+#### 4. Portal-SSO (OIDC) aktivieren *(Essenziell)*
 
-Siehe [Sektion 8](#8-entra-id-sso-portal-authentifizierung) für die vollständige
-Entra-ID-Einrichtung.
+Siehe [Abschnitt 8](#8-portal-sso--openid-connect-portal-authentifizierung) für die vollständige Einrichtung
+(Entra ID, Okta und jeder andere OIDC-Anbieter).
 
-#### 5. Ersten Asset-Typ anlegen *(Essential)*
+#### 5. Ersten Asset-Typ erstellen *(Essenziell)*
 
-1. Zu **Admin > Asset-Typen > Neu** navigieren
-2. Name, Beschreibung und Kategorie ausfüllen
-3. Automatisierungsstrategie konfigurieren (Gruppenzugriff, Runbook oder Zusammengesetzt)
-4. Bei Bedarf Genehmigungsanforderungen setzen
-5. Optional Zugriff mit einer Gruppe für berechtigte Antragsteller einschränken
+1. Gehen Sie zu **Admin > Asset-Typen > Neu**
+2. Tragen Sie Name, Beschreibung und Kategorie ein
+3. Konfigurieren Sie die Automatisierungsstrategie (Gruppenzugriff, Runbook oder Composite)
+4. Legen Sie bei Bedarf Genehmigungsanforderungen fest
+5. Beschränken Sie den Zugriff optional mit einer Gruppen-DN für berechtigte Antragsteller
 6. Speichern
 
-#### 6. Assets zum Pool hinzufügen *(Essential)*
+#### 6. Mindestens ein Asset zum Pool hinzufügen *(Essenziell)*
 
-Zu **Admin > Asset-Pool > Neu** navigieren und mindestens ein Asset anlegen.
+Gehen Sie zu **Admin > Asset-Pool > Neu** und fügen Sie mindestens ein Asset hinzu.
 
-> Für reine `capacity_pooled`-Asset-Typen (Kontingent ohne dedizierte Instanz) kann
-> dieser Schritt übersprungen werden.
+> Für reine `capacity_pooled`-Asset-Typen (Kontingent ohne dedizierte Instanzen) kann dieser
+> Schritt übersprungen werden.
 
 #### Runbooks einrichten *(falls zutreffend)*
 
-ip·Solis wird mit einem vollständigen Beispiel-Runbook ausgeliefert:
-**„Virtual Machine Recycler"** — ein Standalone-Runbook, das alle erforderlichen
-Skript-Module (XenServer/XCP-ng, SCCM, Active Directory) bereits enthält und als
-Vorlage für eigene Automatisierungen genutzt werden kann.
+ip·Solis wird mit einem vollständig konfigurierten Beispiel-Runbook ausgeliefert:
+**"Virtual Machine Recycler"** — ein eigenständiges Runbook, das alle erforderlichen
+Skript-Module (XenServer/XCP-ng, SCCM, Active Directory) enthält und als
+Vorlage für Ihre eigene Automatisierung dienen kann.
 
-Das Runbook ist unter **Admin > Runbooks** zu finden und kann dort direkt
-inspiziert, kopiert oder angepasst werden.
+Sie finden es unter **Admin > Runbooks**, um es zu inspizieren, zu kopieren oder anzupassen.
 
-Eigene Runbooks für Asset-Typen anlegen:
+So erstellen Sie Asset-Typ-Runbooks:
 
-1. Zu **Admin > Runbooks > Neu** navigieren
-2. Schritte definieren (PowerShell-Module oder eingebaute Module)
-3. Das Runbook mit einem Asset-Typ verknüpfen
+1. Gehen Sie zu **Admin > Runbooks > Neu**
+2. Definieren Sie die Schritte (PowerShell-Module oder integrierte Module)
+3. Verknüpfen Sie das Runbook mit einem Asset-Typ
 
-Beliebig viele eigene Runbooks mit individuellen Schritt-Kombinationen sind möglich.
+Es kann eine beliebige Anzahl benutzerdefinierter Runbooks mit jeder Kombination von Schritten erstellt werden.
 
-#### Empfohlene weitere Schritte *(Recommended)*
+#### Empfohlene nächste Schritte
 
-- **Microsoft Teams Genehmigungskarten**: Zu **Admin > Einstellungen → E-Mail** navigieren
-  und Teams-Webhook-URL hinterlegen — Genehmiger erhalten eine Adaptive Card mit
-  Ein-Klick-Freigabelink zusätzlich zur E-Mail.
-- **Audit-Log an SIEM streamen**: Unter **Admin > Einstellungen → Compliance** Splunk-HEC-
-  oder Webhook-Endpunkt konfigurieren.
-- **Per-Integration-API-Token ausstellen**: Unter **Admin > API-Tokens** benannte,
-  widerrufliche Bearer-Tokens für ServiceNow, Skripte oder Prometheus erstellen —
-  ersetzt den geteilten `X-Admin-Key`.
+- **Microsoft-Teams-Genehmigungskarten**: Gehen Sie zu **Admin > Einstellungen → E-Mail** und fügen Sie eine
+  Teams-Webhook-URL hinzu — Genehmiger erhalten zusätzlich zur E-Mail eine Adaptive Card mit einem
+  Ein-Klick-Prüflink.
+- **Audit-Log an SIEM streamen**: Konfigurieren Sie einen Splunk-HEC- oder Webhook-Endpunkt unter
+  **Admin > Einstellungen → Compliance**.
+- **Integrationsspezifische API-Tokens ausstellen**: Gehen Sie zu **Admin > API-Tokens**, um benannte,
+  widerrufbare Bearer-Tokens für ServiceNow, Skripte oder Prometheus zu erstellen — ersetzt den
+  gemeinsamen `X-Admin-Key`.
 
-> **Nach einem DB-Restore:** Die `api_tokens`-Tabelle wird mit wiederhergestellt.
-> Unter **Admin > API-Tokens** alle Tokens prüfen — alte oder nicht mehr benötigte
-> Tokens widerrufen und nur neue, dedizierte Tokens für aktive Integrationen ausstellen.
-
----
-
-## 8. Entra ID SSO (Portal-Authentifizierung)
-
-Das Self-Service-Portal unterstützt Microsoft Entra ID (Azure AD) für Single Sign-On.
-
-### App in Entra ID registrieren
-
-1. Im [Azure-Portal](https://portal.azure.com) zu **App-Registrierungen** > **Neue Registrierung**
-2. Name: `ip·Solis`
-3. Umleitungs-URI: `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/portal/auth/callback` (Web)
-4. **Anwendungs-ID (Client)** und **Verzeichnis-ID (Mandant)** notieren
-5. Unter **Zertifikate & Geheimnisse** ein neues Client-Secret erstellen
-
-### In Admin-Oberfläche konfigurieren
-
-Zu **Admin > Einstellungen** navigieren und einstellen:
-
-| Einstellung | Beschreibung |
-|---|---|
-| `entra.mode` | `entra_only` (Entra-ID-Anmeldung erforderlich) oder `entra_with_onprem` (Entra ID + On-Premises-LDAP-Prüfung) |
-| `entra.client_id` | Anwendungs-ID (Client) |
-| `entra.client_secret` | Client-Secret-Wert *(als Secret markiert)* |
-| `entra.tenant_id` | Verzeichnis-ID (Mandant) |
-| `entra.redirect_uri` | `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/portal/auth/callback` *(ersetzen)* |
-| `entra.allowed_domains` | Kommagetrennte Liste erlaubter E-Mail-Domänen, z. B. `ihreunternehmen.de` |
-
-Die Schaltfläche **Entra-Verbindung testen** zur Überprüfung der Konfiguration verwenden.
-
-> Wenn `entra.mode` auf `disabled` gesetzt ist, ist das Portal für jeden im Netzwerk
-> mit einer gemeinsamen anonymen Identität offen -- jeder Besucher sieht dieselben Bestellungen
-> und kann damit interagieren. Dies nur für Demo- / Air-Gap-Lab-Deployments verwenden.
-> Für Mehrbenutzer-Produktion `entra.mode = entra_only` setzen.
+> **Nach einer DB-Wiederherstellung:** Die Tabelle `api_tokens` wird zusammen mit der Datenbank wiederhergestellt.
+> Überprüfen Sie alle Tokens unter **Admin > API-Tokens** — widerrufen Sie alle alten oder ungenutzten Tokens
+> und stellen Sie neue, dedizierte Tokens nur für aktive Integrationen aus.
 
 ---
 
-## 9. Deployment überprüfen
+## 8. Portal-SSO — OpenID Connect (Portal-Authentifizierung)
 
-Diese Checkliste durcharbeiten, um die korrekte Funktion zu bestätigen:
+Das Self-Service-Portal authentifiziert Endbenutzer über **generisches OpenID Connect (OIDC)**.
+Jeder standardkonforme Identity-Provider funktioniert über einen einzigen Codepfad — Entra ID,
+Okta, Ping, Google Workspace, Keycloak, Authentik, Zitadel, … — da sich jeder Anbieter
+über seine **Issuer-URL** anhand des Discovery-Dokuments selbst konfiguriert
+(`<issuer>/.well-known/openid-configuration`). Das Hinzufügen eines neuen IdP ist ein Konfigurationseintrag, keine
+Codeänderung. Eine On-Prem-AD/LDAP-Anmeldung mit Benutzername + Passwort kann neben OIDC angeboten werden.
 
-- [ ] **HTTPS**: `https://YOUR_HOSTNAME.YOUR_COMPANY.COM` lädt mit gültigem Zertifikat
-- [ ] **Admin-Oberfläche**: `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/ui/` erreichbar
-- [ ] **Ersteinrichtung**: Admin-Login zeigt „Ersten Administrator anlegen"-Formular (oder bei vorhandenem Konto das reguläre Anmeldeformular ohne Fehler)
-- [ ] **Setup-Checkliste**: Dashboard zeigt die In-App-Setup-Checkliste; grundlegende Punkte nach Konfiguration abhaken
-- [ ] **Portal-Anmeldung**: Benutzer können sich per Entra ID SSO anmelden
-- [ ] **AD-Suche**: Im Bestellformular werden Benutzer in Stellvertreter-, RDP- und Admin-Feldern korrekt aufgelöst
-- [ ] **E-Mail**: Testbestellung einreichen und Eingang der Benachrichtigungs-E-Mail bestätigen
+### In der Admin-UI konfigurieren
+
+Navigieren Sie zu **Admin → Einstellungen → Authentifizierung**:
+
+1. **Anmeldung zum Zugriff auf das Portal erforderlich** — für den Mehrbenutzerbetrieb in der Produktion aktivieren.
+   (Aus = Portal mit gemeinsamer anonymer Identität offen; nur für Demo- / Air-Gapped-Labs.)
+2. *(optional)* **Zusätzlich On-Prem-AD-/LDAP-Anmeldung anbieten** — verwendet das auf derselben Seite
+   konfigurierte LDAP-Dienstkonto.
+3. Klicken Sie unter **OIDC-Anbieter** auf **+ Anbieter hinzufügen** und füllen Sie aus:
+
+| Feld | Beschreibung |
+|-------|-------------|
+| Anbieter-ID | Stabiler URL-sicherer Slug (`a–z 0–9 _ -`), z. B. `entra`, `okta`. Erscheint in der Callback-URL und **kann später nicht geändert werden**. |
+| Anzeigename | Button-Beschriftung auf der Anmeldeseite, z. B. `Entra ID`. |
+| Issuer-URL | Der OIDC-Issuer (Discovery wird daraus abgeleitet). Siehe Rezepte unten. |
+| Client-ID | Anwendungs-/Client-ID aus der App-Registrierung des IdP. |
+| Client-Secret | Confidential-Client-Secret *(verschlüsselt gespeichert; unterstützt `vault://…` / `ccp://…`-Referenzen)*. |
+| Redirect-URI | Leer lassen, um `https://YOUR_HOST/portal/auth/<provider-id>/callback` automatisch abzuleiten, oder einen expliziten Wert setzen. Registrieren Sie **genau diese URI** in der IdP-App. |
+| Erlaubte Domains | *(optional)* kommagetrennte Allow-Liste von UPN-/E-Mail-Domains. Leer = beliebige erlauben. |
+| *Erweitert* | Scopes (Standard `openid profile email`) und Claim-Mapping (username/email/name). |
+
+Klicken Sie auf **Test**, um eine Discovery-Probe auszuführen (bestätigt, dass der Issuer erreichbar ist und die
+Authorization-/Token-/JWKS-Endpunkte aufgelöst werden), dann auf **Speichern**.
+
+> Wenn **mehr als eine** Anmeldemethode aktiviert ist, zeigt das Portal unter
+> `/portal/login` eine Auswahl; bei genau einer leitet es direkt dorthin weiter.
+
+#### Rezept — Microsoft Entra ID (Azure AD)
+
+1. [Azure Portal](https://portal.azure.com) → **App-Registrierungen** → **Neue Registrierung**.
+2. Redirect-URI (Web): `https://YOUR_HOST/portal/auth/entra/callback`.
+3. Kopieren Sie die **Anwendungs-(Client-)ID** und die **Verzeichnis-(Tenant-)ID**; erstellen Sie ein Client-
+   Secret unter **Zertifikate & Geheimnisse**.
+4. In ip·Solis: Anbieter-ID `entra`, Issuer-URL
+   `https://login.microsoftonline.com/<tenant-id>/v2.0`, plus Client-ID/-Secret.
+
+#### Rezept — Okta
+
+1. Okta Admin → **Applications** → **Create App Integration** → **OIDC / Web Application**.
+2. Sign-in-Redirect-URI: `https://YOUR_HOST/portal/auth/okta/callback`.
+3. Kopieren Sie die **Client-ID** und das **Client-Secret**.
+4. In ip·Solis: Anbieter-ID `okta`, Issuer-URL `https://<your-org>.okta.com`
+   (oder den Issuer Ihres benutzerdefinierten Authorization-Servers), plus Client-ID/-Secret.
+
+---
+
+## 9. Deployment verifizieren
+
+Arbeiten Sie diese Checkliste ab, um zu bestätigen, dass alles funktioniert:
+
+- [ ] **HTTPS**: `https://YOUR_HOSTNAME.YOUR_COMPANY.COM` lädt mit einem gültigen Zertifikat
+- [ ] **Admin-UI**: `https://YOUR_HOSTNAME.YOUR_COMPANY.COM/ui/` ist erreichbar
+- [ ] **Ersteinrichtung**: Der Aufruf der Admin-Anmeldung zeigt das Formular "Ersten Administrator erstellen" (oder, falls bereits erledigt, das reguläre Anmeldeformular ohne Fehler)
+- [ ] **Setup-Checkliste**: Das Dashboard zeigt die anwendungsinterne Setup-Checkliste; haken Sie essenzielle Punkte ab, während Sie sie konfigurieren
+- [ ] **Portal-Anmeldung**: Benutzer können sich über einen OIDC-Anbieter (Entra ID, Okta, …) anmelden — der Discovery-**Test** besteht und eine echte Anmeldung wird abgeschlossen
+- [ ] **AD-Lookup**: Im Bestellformular werden bei der Benutzervalidierung (Vertreter-, RDP-, Admin-Felder) Namen aufgelöst
+- [ ] **E-Mail**: Eine Testbestellung absenden und bestätigen, dass die Benachrichtigungs-E-Mail ankommt
 - [ ] **Health-Check**: `curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health` gibt `{"status": "ok"}` zurück
-- [ ] *(optional)* **API-Tokens**: Per-Integration-Token für Automatisierungen ausstellen, die bisher `X-Admin-Key` verwenden
-- [ ] *(optional)* **SIEM-Streaming**: Unter *Einstellungen → Compliance* konfigurieren, falls Splunk / Sentinel / generischer Webhook-Empfänger vorhanden
-- [ ] *(optional)* **Prometheus**: `/metrics` von der Monitoring-Lösung abfragen; das Dashboard liegt unter [docs/grafana/](grafana/)
+- [ ] *(optional)* **API-Tokens**: Stellen Sie ein integrationsspezifisches Token für jede Automatisierung aus, die zuvor `X-Admin-Key` verwendet hat
+- [ ] *(optional)* **SIEM-Streaming**: Unter *Einstellungen → Compliance* konfigurieren, falls Sie Splunk / Sentinel / einen generischen Webhook-Empfänger haben
+- [ ] *(optional)* **Prometheus**: `/metrics` aus Ihrem Monitoring scrapen; das Dashboard wird in [docs/grafana/](grafana/) ausgeliefert
 
 ---
 
@@ -562,13 +611,13 @@ Diese Checkliste durcharbeiten, um die korrekte Funktion zu bestätigen:
 
 ### Datenbank-Backup
 
-Die PostgreSQL-Daten liegen in einem Docker-Volume (`postgres_data`). Regelmäßige Sicherungen durchführen:
+Die PostgreSQL-Daten werden in einem Docker-Volume (`postgres_data`) gespeichert. Sichern Sie es regelmäßig:
 
 ```bash
-# Datenbank dumpen
+# Dump the database
 docker compose exec -T postgres pg_dump -U xpuser ipsolis > backup_$(date +%Y%m%d).sql
 
-# Aus Backup wiederherstellen
+# Restore from backup
 cat backup_20260414.sql | docker compose exec -T postgres psql -U xpuser ipsolis
 ```
 
@@ -577,17 +626,17 @@ cat backup_20260414.sql | docker compose exec -T postgres psql -U xpuser ipsolis
 Container-Logs anzeigen:
 
 ```bash
-# Alle Dienste
+# All services
 docker compose logs --tail=50
 
-# Einzelner Dienst
-docker compose logs api --tail=100 -f    # Follow-Modus
+# Specific service
+docker compose logs api --tail=100 -f    # follow mode
 docker compose logs worker --tail=100
 ```
 
 ### Festplattenbereinigung
 
-Alte Docker-Images regelmäßig entfernen:
+Entfernen Sie regelmäßig alte Docker-Images:
 
 ```bash
 docker image prune -f
@@ -595,173 +644,177 @@ docker image prune -f
 
 ---
 
-## 11. Update auf neue Version
+## 11. Aktualisierung auf eine neue Version
 
-> **SSL-Vorprüfung** — vor dem Pull ausführen. Fehlt eine der Dateien,
-> startet der nginx-Container, liefert aber kein HTTPS.
+> **Pre-Flight-SSL-Prüfung** — führen Sie dies vor dem Pullen aus. Wenn eine der Dateien fehlt,
+> startet der nginx-Container zwar, liefert aber keinen HTTPS-Verkehr.
 > ```bash
 > ls -la nginx/ssl/cert.pem nginx/ssl/key.pem
 > ```
-> Falls Dateien fehlen, Zertifikat zuerst neu erstellen (siehe Abschnitt 4).
+> Falls sie fehlen, erzeugen Sie das Zertifikat neu (siehe Abschnitt 4), bevor Sie fortfahren.
+
+Pullen Sie die neuen Images. **Produktion:** Erhöhen Sie `IPSOLIS_VERSION` auf das neue getestete Release.
+**Pre-live / Test:** Lassen Sie es unbesetzt, um den neuesten Build zu pullen.
 
 ```bash
 cd /opt/ipsolis
-
-# Neuesten Code holen
-git pull origin main
-
-# Neu bauen und starten
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.prelive.yml \
-  up --build -d
-
-# Neue Datenbankmigrationen ausführen
-docker compose exec -T api alembic upgrade head
-
-# nginx neu starten, um neue Container-IPs und ggf. geänderte Konfiguration zu übernehmen
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.prelive.yml \
-  restart nginx
-
-# Gesundheit prüfen
+git pull origin main                 # refresh compose files / nginx.conf / docs
+export IPSOLIS_VERSION=0.6.10         # production: set to the release you want
+                                     # pre-live/test: leave unset to track :latest
+export COMPOSE_FILE=docker-compose.ghcr.yml:docker-compose.prelive.yml
+docker compose pull                   # fetch the new images
+docker compose up -d                  # recreate changed containers (no build)
+docker compose exec -T api alembic upgrade head   # apply any new migrations
+docker compose restart nginx          # pick up new container IPs / config
 curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health | python3 -m json.tool
 ```
 
-> Migrationen können mehrfach ausgeführt werden -- Alembic verfolgt, welche bereits
-> angewendet wurden, und überspringt diese. Jede Feature-Version bringt in der Regel
-> eine eigene Migration mit; `api/alembic/versions/` zwischen Updates auf Änderungen
-> prüfen, und `docker compose exec api alembic history` zeigt die Migrationshistorie.
+> Migrationen können gefahrlos mehrfach ausgeführt werden -- Alembic verfolgt, welche
+> bereits angewendet wurden, und überspringt diese. Jede Feature-Einheit liefert
+> typischerweise ihre eigene Migration; prüfen Sie zwischen Upgrades
+> `api/alembic/versions/` auf den Changeset und `docker compose exec api alembic
+> history`, um die Kette zu sehen.
 
-### Backup vor dem Update
+### Vor dem Upgrade sichern
 
-Immer zuerst die Datenbank sichern -- `pg_dump` aus dem Postgres-Container,
-oder die In-App-Funktion **Wartung → Backups** (Admin-Oberfläche) verwenden,
-die einen zeitgestempelten SQL-Dump in das eingebundene `./backups/`-Verzeichnis schreibt.
-Im selben Bereich einen täglichen Backup-Zeitplan konfigurieren, damit bei
-einem unerwarteten Rückschritt eine frische Sicherung verfügbar ist.
+Erstellen Sie immer zuerst einen Snapshot der Datenbank — `pg_dump` aus dem Postgres-
+Container, oder verwenden Sie die anwendungsinterne Seite **Wartung → Backups** (Admin-UI),
+die einen zeitgestempelten SQL-Dump in das per Bind-Mount eingebundene Verzeichnis `./backups/`
+schreibt. Konfigurieren Sie in derselben UI einen täglichen Backup-Zeitplan, sodass der
+Snapshot aktuell ist, wenn eine unerwartete Regression auftritt.
 
 ### Beat-HA-Failover während des Neustarts
 
-Bei mehreren Beat-Replikas (`--scale beat=N`) rollt `docker compose up --build -d`
-die Container nacheinander und die Leader-Sperre wechselt innerhalb von ~13 s auf
-die verbleibende Replika über.
-Bei Einzelinstallationen gibt es eine kurze Lücke während des Neustarts, in der
-periodische Tasks nicht laufen -- in der Regel nicht merklich, da Intervalle
-Minuten / Stunden betragen.
+Wenn Sie mehrere Beat-Replicas (`--scale beat=N`) betreiben, rollt `docker compose
+up -d` die Container nacheinander aus, und der Leader-Lock geht
+innerhalb von ~13 s an die überlebende Replica über.
+Bei Single-Beat-Installationen gibt es während des Neustarts eine kurze Lücke,
+in der periodische Tasks nicht laufen — meist unsichtbar, da die Kadenzen
+in Minuten / Stunden liegen.
 
 ---
 
-## 12. Hochverfügbarkeit
+## 12. Hochverfügbare Deployments
 
-ip·Solis skaliert horizontal auf API- und Worker-Ebene. Der Beat-Scheduler unterstützt
-Multi-Replika-HA über celery-redbeat. Dieser Abschnitt beschreibt die beiden getesteten
-Skalierungsszenarien: API-Replikas und Worker-Replikas.
+ip·Solis skaliert horizontal auf der API- und Worker-Ebene. Der Beat-Scheduler
+unterstützt Multi-Replica-HA über celery-redbeat. Dieser Abschnitt behandelt die beiden
+getesteten Skalierungsszenarien: API-Replicas und Worker-Replicas.
 
-### 12.1 Multi-Replika-API
+### 12.1 Multi-Replica-API
 
-Die API ist **zustandslos** ausgelegt -- jede Replika bearbeitet jeden Request gleich,
-Sticky-Session-Affinität am Load Balancer ist nicht erforderlich.
+Die API ist **per Design zustandslos** — jede Replica behandelt jede
+Anfrage gleichwertig, und es besteht kein Bedarf an Sticky-Session-Affinität am
+Load Balancer.
 
 **Was sie zustandslos macht**:
 
-* Sessions verwenden Starletttes
+* Sessions verwenden Starlettes
   [`SessionMiddleware`](https://www.starlette.io/middleware/#sessionmiddleware)
-  im Cookie-Signing-Modus (`api/app/main.py`): Die gesamte Session-Nutzlast (Admin-User-ID, Rolle, CSRF-Token)
-  liegt im `xp_session`-Cookie selbst, signiert mit `API_SECRET_KEY`. Keine serverseitige Session-Tabelle.
-* Tokenisierte URLs (`/approve/<token>`, `/portal/certifications/review/<token>` usw.)
-  sind HMAC-signiert mit demselben `API_SECRET_KEY` und nur verifizierend. Keine Replay-Tabelle.
-* Jeder Request-Zustand liegt in Postgres oder Redis -- beides replika-übergreifend geteilt.
+  im Cookie-signierten Modus (`api/app/main.py`): Die gesamte Session-
+  Payload (Admin-Benutzer-ID, Rolle, CSRF-Token) liegt im
+  `xp_session`-Cookie selbst, signiert mit `API_SECRET_KEY`. Keine
+  serverseitige Session-Tabelle.
+* Tokenisierte URLs (`/approve/<token>`,
+  `/portal/certifications/review/<token>` usw.) sind mit demselben
+  `API_SECRET_KEY` HMAC-signiert und nur verifizierend. Keine Replay-Tabelle.
+* Sämtlicher Anfragezustand liegt in Postgres oder Redis — beide über
+  Replicas hinweg gemeinsam genutzt.
 
-**Was jede Replika teilen MUSS**:
+**Was jede Replica gemeinsam nutzen MUSS**:
 
 | Was | Warum | Wie |
 |---|---|---|
-| `API_SECRET_KEY` | Signiert Session-Cookies + Approval-Tokens. Verschiedene Keys pro Replika = Clients sehen "Session ungültig" / "Approval-Link abgelaufen" in der Hälfte der Fälle. | In `.env` fixieren; via `env_file:` in Compose laden, damit jede Replika dieselbe Datei liest. |
-| `DATABASE_URL` / `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` | Gemeinsames Postgres + Redis Backplane. | Wie oben. |
-| Gemeinsame Filesystem-Mounts | `licenses/`, `scripts/`, `backups/` sind bind-gemountet; Replikas, die dieselben Pfade lesen, müssen denselben Inhalt sehen. Auf einem Single-Host automatisch. Auf mehreren Hosts NFS / GlusterFS / einen gemeinsamen Volume-Treiber verwenden -- oder den Inhalt in S3-kompatiblen Objektspeicher migrieren. | Single-Host-Deployments benötigen keine zusätzliche Infrastruktur. |
+| `API_SECRET_KEY` | Signiert Session-Cookies + Genehmigungstokens. Unterschiedliche Schlüssel pro Replica = Clients sehen die Hälfte der Zeit "Session ungültig" / "Genehmigungslink abgelaufen". | In `.env` fixieren; über `env_file:` in Compose laden, sodass jede Replica dieselbe Datei liest. |
+| `DATABASE_URL` / `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` | Gemeinsame Postgres- + Redis-Backplane. | Wie oben. |
+| Gemeinsame Dateisystem-Mounts | `licenses/`, `scripts/`, `backups/` sind per Bind-Mount eingebunden; Replicas, die dieselben Pfade lesen, müssen denselben Inhalt sehen. Auf einem einzelnen Host geschieht das automatisch. Auf mehreren Hosts verwenden Sie NFS / GlusterFS / einen gemeinsamen Volume-Treiber — oder migrieren Sie den relevanten Inhalt in S3-kompatiblen Objektspeicher (eine zurückgestellte Einheit). | Single-Host-Deployments benötigen keine zusätzliche Verkabelung. |
 
 **Skalierungsbefehle**:
 
 ```bash
-# Single-Host: API-Replika-Anzahl via Compose erhöhen
-docker compose -f docker-compose.yml -f docker-compose.prelive.yml \
+# Single-host: bump the api replica count via compose
+docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml \
   up -d --scale api=3
 
-# Jede Replika über den Load Balancer prüfen
+# Verify each replica is reachable through the load balancer
 for i in 1 2 3; do
   curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health \
     -H 'X-Replica-Probe: '$i
 done
 ```
 
-**Load-Balancer-Konfigurationshinweise**:
+**Hinweise zur Load-Balancer-Konfiguration**:
 
-* **Kein Sticky Session erforderlich.** Round-Robin oder Least-Connections ist ausreichend.
-* **Health-Check**: `GET /health` (unauthentifiziert). Gibt `{status: ok | degraded}` zurück,
-  aggregiert Datenbank-, Redis- und Beat-Liveness. Der Endpunkt ist schnell (ein Redis-Ping +
-  ein DB SELECT 1), daher ist ein LB-Checkintervall von 5–10 s sinnvoll.
-* **TLS-Terminierung**: Am Load Balancer belassen (oder beim bestehenden nginx-Sidecar aus Abschnitt 5).
-  Replikas bearbeiten intern Plain-HTTP; das `https_only=True`-Flag auf `SessionMiddleware`
-  sichert das `Secure`-Bit des Cookies unabhängig davon, wo TLS terminiert.
+* **Keine Sticky Sessions erforderlich**. Round-Robin oder Least-Connections
+  ist in Ordnung.
+* **Health-Check**: `GET /health` (unauthentifiziert). Gibt
+  `{status: ok | degraded}` zurück und aggregiert die Liveness von Datenbank, Redis und Beat.
+  Der Endpunkt ist schnell (ein Redis-Ping + ein
+  DB SELECT 1), sodass ein LB-Prüfintervall von 5–10 s sicher ist.
+* **TLS-Terminierung**: am Load Balancer belassen (oder am bestehenden
+  nginx-Sidecar aus Abschnitt 5). Die Replicas liefern intern reines HTTP;
+  das Flag
+  [`https_only=True`](https://www.starlette.io/middleware/#sessionmiddleware)
+  an der `SessionMiddleware` schützt das `Secure`-Bit des Cookies,
+  unabhängig davon, wo TLS terminiert wird.
 
-**Rolling-Restart beim Update**: Der Update-Ablauf in Abschnitt 11 stoppt und startet alle
-Replikas gemeinsam -- bei kleinen Flotten mit ~30 s API-Downtime akzeptabel. Für Zero-Downtime-
-Rollouts den `up --build -d`-Schritt in eine Per-Replika-Schleife umwandeln:
+**Rollender Neustart während Upgrades**: Der Upgrade-Ablauf in Abschnitt 11
+stoppt und startet jede Replica gemeinsam, was für kleine Flotten in Ordnung ist,
+bei denen ~30 s API-Ausfallzeit akzeptabel sind. Für Rolls ohne Ausfallzeit
+falten Sie den `up -d`-Schritt in eine Schleife pro Replica:
 
 ```bash
 for i in 1 2 3; do
   docker compose stop api-$i
-  docker compose -f docker-compose.yml -f docker-compose.prelive.yml \
-    up --build -d --no-deps api-$i
-  # Warten bis der neue Container den Health-Check besteht
+  docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml \
+    up -d --no-deps api-$i
+  # Wait for the new container to pass health
   until curl -fsk http://localhost/health > /dev/null 2>&1; do
     sleep 2
   done
 done
 ```
 
-Dies setzt einen LB voraus, der einen Backend-Server gleichzeitig drainieren kann; beim
-Standard-Round-Robin nginx-Upstream gehen In-Flight-Requests der neustartenden Replika verloren.
-Die Drain-Logik liegt in der Verantwortung des Load Balancers.
+Dies erfordert einen LB, der ein Backend nach dem anderen drainen kann; beim
+standardmäßigen Round-Robin-nginx-Upstream gehen In-Flight-Anfragen auf der
+neu startenden Replica verloren. Die Drain-Logik liegt in der Verantwortung Ihres LB.
 
-### 12.2 Multi-Replika-Worker
+### 12.2 Multi-Replica-Worker
 
-Celery-Worker sind zustandslose Consumer -- sie lesen aus den benannten Redis-Queues und
-verarbeiten Tasks. Weitere Worker hinzuzufügen ist ein einzeiliges Scale-Up; der Worker-Code
-selbst ändert sich nicht.
+Celery-Worker sind zustandslose Consumer — sie ziehen aus den benannten
+Redis-Queues und verarbeiten Tasks. Das Hinzufügen weiterer Worker ist ein einzeiliges
+Scale-up; der Worker-Code selbst ändert sich nicht.
 
 **Queue-Topologie** (definiert in `worker/tasks/__init__.py`):
 
-| Queue | Tasks | Warum separate Queue |
+| Queue | Tasks | Warum eine separate Queue |
 |---|---|---|
-| `provision` | Bestellworkflows (`dynamic_runner`, `standalone_runner`, `ps_module_installer`, `sccm_probe`) -- alles, was AD / SCCM / vSphere / XenServer berührt. | Provisionierungsschritte führen PowerShell aus (~5–60 s/Schritt) und halten Verbindungen zu externen Systemen. Isolation verhindert, dass ein langsamer vSphere-Aufruf schnelle Haushaltstasks blockiert. |
-| `notifications` | E-Mail-Versand, Teams-Card-Zustellung, Approval-Reminder, Zertifizierungs-Reminder, Kostenbenachrichtigungen. | I/O-gebunden, latenzempfindlich (ein hängender SMTP-Server soll sich nicht hinter einem 30-s-SCCM-Probe einreihen). |
-| `default` | Audit-Retention-Bereinigung, SIEM-Streaming, Lizenzprüfung, Update-Checker, Kostenbericht-Snapshot, DB-Backup, API-Token-Bereinigung. | Hintergrund-Housekeeping. Hauptsächlich cron-gesteuert, niedrige Frequenz. |
-| `reclaim` | Asset-Ablauf-Prüfungen (`check_expiring_assets`). | Stündlicher Beat-Task; klein, aber isoliert, damit der stündliche Tick nicht mit Bestellworkflows um einen Worker-Slot konkurriert. |
+| `provision` | Order-Workflows (`dynamic_runner`, `standalone_runner`, `ps_module_installer`, `sccm_probe`) — alles, was AD / SCCM / vSphere / XenServer berührt. | Provisionierungsschritte rufen PowerShell auf (~5–60 s/Schritt) und halten Verbindungen zu externen Systemen. Sie zu isolieren verhindert, dass ein langsamer vSphere-Aufruf schnelle Housekeeping-Tasks blockiert. |
+| `notifications` | E-Mail-Versand, Teams-Kartenzustellung, Genehmigungserinnerungen, Zertifizierungserinnerungen, Kostenalarme. | I/O-gebunden, latenzempfindlich (ein hängender SMTP-Server sollte sich nicht hinter einer 30-s-SCCM-Probe stauen). |
+| `default` | Audit-Retention-Prune, SIEM-Streaming, Lizenzprüfung, Update-Checker, Kostenbericht-Snapshot, DB-Backup, **API-Token-Purge**. | Hintergrund-Housekeeping. Größtenteils cron-gesteuert, niederfrequent. |
+| `reclaim` | Asset-Ablaufprüfungen (`check_expiring_assets`). | Stündlicher Beat-Task; klein, aber isoliert, sodass der stündliche Tick nicht mit Order-Workflows um einen Worker-Slot konkurriert. |
 
-**Dimensionsempfehlungen** (Parallelität pro Queue × Replika-Anzahl):
+**Dimensionierungsempfehlungen** (Concurrency pro Queue × Replica-Anzahl):
 
 | Pool-Größe | Empfohlene Konfiguration | Begründung |
 |---|---|---|
-| Lab / Einzelteam (≤50 Benutzer) | 1 Worker-Replika, `--concurrency=4 -Q provision,notifications,default,reclaim` | Alle Queues in einem Prozess; Parallelität 4 reicht für typisch 1–2 Bestellungen/Stunde. |
-| Mittel (≤500 Benutzer, ≤20 Bestellungen/Stunde) | 2 Worker-Replikas nach Queue aufgeteilt: Replika A `-Q provision --concurrency=4`, Replika B `-Q notifications,default,reclaim --concurrency=2` | Provisionierungslatenz bleibt durch Replika A begrenzt; Replika B erledigt Housekeeping + Erinnerungen ohne Head-of-Line-Blocking. |
-| Groß (≥500 Benutzer, ≥50 Bestellungen/Stunde, regulierte SLAs) | 3+ Worker-Replikas: dedizierte `provision`-Worker (`--concurrency=8` × 2 Replikas), eine `notifications`-Replika (`--concurrency=4`), eine `default,reclaim`-Replika (`--concurrency=2`) | Per-Queue-Skalierung passt zur tatsächlichen Lastform. |
+| Lab / Einzelteam (≤50 Benutzer) | 1 Worker-Replica, `--concurrency=4 -Q provision,notifications,default,reclaim` | Alle Queues auf einem Prozess; Concurrency 4 reicht für die typischen 1–2 Bestellungen/Stunde völlig aus. |
+| Mittel (≤500 Benutzer, ≤20 Bestellungen/Stunde) | 2 Worker-Replicas, nach Queue aufgeteilt: Replica A `-Q provision --concurrency=4`, Replica B `-Q notifications,default,reclaim --concurrency=2` | Die Provisionierungslatenz bleibt durch Replica A begrenzt; Replica B übernimmt Housekeeping + Erinnerungen ohne Head-of-Line-Blocking der Queue. |
+| Groß (≥500 Benutzer, ≥50 Bestellungen/Stunde, regulierte SLAs) | 3+ Worker-Replicas: dedizierte `provision`-Worker (`--concurrency=8` × 2 Replicas), eine `notifications`-Replica (`--concurrency=4`), eine `default,reclaim`-Replica (`--concurrency=2`) | Die Skalierung pro Queue passt zur tatsächlichen Lastform. |
 
-**Skalierungsbefehl** (Single-Host, alle Queues auf jeder Replika):
+**Skalierungsbefehl** (Single-Host, alle Queues auf jeder Replica):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prelive.yml \
+docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml \
   up -d --scale worker=3
 ```
 
-**Dedizierte Replikas pro Queue** erfordern entweder separate Compose-Service-Definitionen
-(z. B. `worker-provision`, `worker-notifications`) mit jeweils eigenem `command:` zum
-Überschreiben der Standard-Queue-Liste, oder ein Runtime-`command:`-Override:
+**Dedizierte Replicas pro Queue** erfordern entweder separate Compose-
+Service-Definitionen (z. B. `worker-provision`, `worker-notifications`),
+jeweils mit eigenem `command:`, das die Standard-Queue-Liste überschreibt, oder
+ein Laufzeit-`command:`-Override:
 
 ```yaml
-# docker-compose.prelive.yml — Queue-Aufteilung
+# docker-compose.prelive.yml — per-queue split
 services:
   worker-provision:
     image: ipsolis-worker
@@ -782,35 +835,37 @@ services:
     env_file: .env
 ```
 
-**Beat-Skalierung**: Der Beat-Container hat keinen festen `container_name`, damit er
-repliziert werden kann. Für HA-Setups mit mehreren Beat-Instanzen:
+**Beat-Skalierung**: Der Beat-Container hat keinen festen `container_name`, sodass er
+für HA repliziert werden kann:
 
 ```bash
 docker compose \
-  -f docker-compose.yml \
+  -f docker-compose.ghcr.yml \
   -f docker-compose.prelive.yml \
   up -d --scale beat=2
 ```
 
-> **Hinweis**: Celery Beat ist ein Singleton-Scheduler. Mehrere Beat-Replikas sind nur
-> in Kombination mit `django-celery-beat` oder `celery-redbeat` (bereits konfiguriert)
-> sinnvoll — redbeat verhindert doppelte Task-Auslösung per Redis-Lock.
+> **Hinweis**: Celery Beat ist ein Singleton-Scheduler. Mehrere Beat-Replicas sind nur dann
+> sinnvoll, wenn ein verteiltes Lock-Backend vorhanden ist — `celery-redbeat` (bereits konfiguriert) verwendet
+> Redis-Locks, um doppeltes Auslösen von Tasks zu verhindern.
 
-**Liveness**: Jeder Worker registriert sich beim Start via Celery-Mingle; ein frischer
-Worker ist innerhalb weniger Sekunden für Beat / andere Worker sichtbar. Kein separater
-Health-Check nötig -- wenn der Worker-Container `Up` ist, konsumiert er.
+**Liveness**: Jeder Worker registriert sich beim Mingle-on-Startup von Celery,
+was bedeutet, dass ein frischer Worker innerhalb weniger Sekunden für Beat / andere Worker
+sichtbar ist. Es gibt keinen separaten Health-Check zu verdrahten — wenn
+der Worker-Container `Up` ist, konsumiert er.
 
-**Sichtbarkeit**: Flower (der bestehende `flower`-Dienst in der Dev-Compose; siehe
-`docker-compose.yml`) zeigt Live-Worker-Registrierung, Queue-Tiefe und task-genaue
-Dauern. Für Produktion mit derselben nginx-Auth wie die Admin-Oberfläche schützen;
-Flower hat keine eingebaute Authentifizierung außer HTTP-Basic.
+**Sichtbarkeit**: Flower (der bestehende `flower`-Dienst im Dev-
+Compose; siehe `docker-compose.yml`) zeigt die Live-Worker-Registrierung,
+die Queue-Tiefe und die Dauer-Aufschlüsselung pro Task. Setzen Sie ihm für die Produktion
+dieselbe nginx-Authentifizierung wie der Admin-UI vor; Flower hat keine
+eingebaute Authentifizierung über HTTP Basic hinaus.
 
 ### 12.3 Postgres-Hochverfügbarkeit
 
-Postgres-HA (Streaming Replication, pgBackRest, Patroni) ist architektonisch möglich,
-da ip·Solis Single-Primary arbeitet und jeder Connection-String-Wechsel nur eine
-`.env`-Änderung + Neustart erfordert. Eine geprüfte Schritt-für-Schritt-Anleitung
-ist in dieser Version noch nicht enthalten.
+Postgres-HA (Streaming-Replikation, pgBackRest, Patroni) ist architektonisch
+möglich — ip·Solis ist Single-Primary, und jeder Wechsel der Connection-String erfordert
+lediglich eine Änderung an `.env` und einen Neustart. Eine validierte Schritt-für-Schritt-Anleitung ist in
+dieser Version nicht enthalten.
 
 ---
 
@@ -819,64 +874,64 @@ ist in dieser Version noch nicht enthalten.
 ### Container startet nicht
 
 ```bash
-# Container-Status und Exit-Codes prüfen
+# Check container status and exit codes
 docker compose ps -a
 
-# Logs des fehlerhaften Dienstes prüfen
-docker compose logs <dienstname> --tail=50
+# Check logs for the failing service
+docker compose logs <service-name> --tail=50
 ```
 
-### Health-Check schlägt durch nginx fehl, aber API ist gesund
+### Health-Check schlägt über nginx fehl, aber API ist gesund
 
-Nginx hat möglicherweise die alte Container-IP gecacht. Container neu starten
-(nicht nur `nginx -s reload` — Docker bind-mounts behalten sonst den alten Inode):
+Nginx hat möglicherweise die alte Container-IP zwischengespeichert. Starten Sie den Container neu
+(nicht nur `nginx -s reload` — Docker-Bind-Mounts behalten sonst den alten Inode):
 
 ```bash
 docker compose \
-  -f docker-compose.yml \
+  -f docker-compose.ghcr.yml \
   -f docker-compose.prelive.yml \
   restart nginx
 ```
 
-### Datenbankverbindungsfehler
+### Datenbank-Verbindungsfehler
 
 ```bash
-# Prüfen ob postgres läuft
+# Check if postgres is running
 docker compose exec postgres pg_isready -U xpuser
 
-# Verbindung vom API-Container testen
+# Verify the connection from the API container
 docker compose exec api python -c "
 from sqlalchemy import create_engine, text
-e = create_engine('postgresql://xpuser:<passwort>@postgres:5432/ipsolis')
+e = create_engine('postgresql://xpuser:<password>@postgres:5432/ipsolis')
 with e.connect() as c: print(c.execute(text('SELECT 1')).scalar())
 "
 ```
 
-### AD / LDAP-Verbindungsprobleme
+### AD-/LDAP-Verbindungsprobleme
 
-1. Netzwerkkonnektivität aus dem Container prüfen:
+1. Überprüfen Sie die Netzwerkverbindung vom Container aus:
    ```bash
-   docker compose exec api curl -v telnet://dc01.ihreunternehmen.de:389
+   docker compose exec api curl -v telnet://dc01.yourcompany.com:389
    ```
-2. AD-Einstellungen unter Admin > Einstellungen prüfen
-3. API-Logs auf LDAP-Fehler durchsuchen:
+2. Prüfen Sie die AD-Einstellungen unter Admin > Einstellungen
+3. Prüfen Sie die API-Logs auf LDAP-Fehler:
    ```bash
    docker compose logs api 2>&1 | grep -i "ldap\|ad_lookup"
    ```
 
-### E-Mails werden nicht gesendet
+### E-Mails werden nicht versendet
 
-1. SMTP-Einstellungen unter Admin > Einstellungen prüfen
-2. Worker-Logs auf SMTP-Fehler prüfen:
+1. Überprüfen Sie die SMTP-Einstellungen unter Admin > Einstellungen
+2. Prüfen Sie die Worker-Logs auf SMTP-Fehler:
    ```bash
    docker compose logs worker 2>&1 | grep -i "smtp\|mail\|notification"
    ```
-3. Erreichbarkeit des SMTP-Relays prüfen:
+3. Stellen Sie sicher, dass der Server das SMTP-Relay erreichen kann:
    ```bash
-   docker compose exec api curl -v telnet://smtp.ihreunternehmen.de:587
+   docker compose exec api curl -v telnet://smtp.yourcompany.com:587
    ```
 
-### Zugriff verweigert auf ssl-Verzeichnis
+### Zugriff auf SSL-Verzeichnis verweigert
 
 ```bash
 sudo chmod 644 nginx/ssl/cert.pem
@@ -885,31 +940,31 @@ sudo chmod 600 nginx/ssl/key.pem
 
 ---
 
-## 14. Sauberer Neustart (Testumgebungen)
+## 14. Sauberes Zurücksetzen (Testumgebungen)
 
-> **Nur für Test- und Staging-Umgebungen.** Dieser Abschnitt löscht alle Daten
-> unwiderruflich. Niemals auf einer Produktionsinstanz ausführen.
+> **Nur Test- und Staging-Umgebungen.** Dieser Abschnitt zerstört dauerhaft alle
+> Daten. Niemals auf einer Produktionsinstanz ausführen.
 
-Docker-Volumes (Datenbankdaten, Redis-Daten) überleben ein `rm -rf /opt/ipsolis`,
-da sie unter `/var/lib/docker/volumes/` gespeichert sind — unabhängig vom
-Repository-Verzeichnis. Für eine vollständig saubere Neuinstallation:
+Docker-Volumes (Datenbankdaten, Redis-Daten) überstehen `rm -rf /opt/ipsolis`, da
+sie unter `/var/lib/docker/volumes/` gespeichert sind — unabhängig vom Repository-
+Verzeichnis. Für eine vollständig saubere Neuinstallation:
 
 ```bash
-# 1. Stack stoppen und Volumes löschen
+# 1. Stop the stack and delete volumes
 cd /opt/ipsolis
 docker compose \
-  -f docker-compose.yml \
+  -f docker-compose.ghcr.yml \
   -f docker-compose.prelive.yml \
   down -v
 
-# 2. Repository-Verzeichnis löschen
+# 2. Remove the repository directory
 cd /opt
 sudo rm -rf ipsolis
 
-# 3. Neu installieren (ab Abschnitt 2)
+# 3. Reinstall (continue from section 2), then start the stack via section 6
 sudo git clone https://github.com/XenPool/ipsolis.git ipsolis
 cd ipsolis
 ```
 
-Nach diesem Reset enthält die Datenbank keine Benutzer, keine Konfiguration und
-keine Assets — die Ersteinrichtung (Abschnitt 7) muss erneut durchgeführt werden.
+Nach diesem Zurücksetzen enthält die Datenbank keine Benutzer, keine Konfiguration und keine Assets —
+die Ersteinrichtung (Abschnitt 7) muss erneut durchgeführt werden.
