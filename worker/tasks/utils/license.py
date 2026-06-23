@@ -1,10 +1,12 @@
-"""Ipsolis license module — expiry, user limits, and grace period.
+"""Ipsolis license module — expiry, grace period, and license metadata.
 
 Offline, trust-based license system:
 - Reads a signed JSON license file at ``/app/license/ipsolis.lic``
 - Verifies the signature against the multi-key trust list in ``tasks.license``
-- Checks expiry and enforces ``max_users`` / ``max_asset_types`` limits
-- Applies a 30-day grace period after expiry before reverting to evaluation mode
+- Checks expiry and applies a 30-day grace period before reverting to evaluation mode
+- Parses ``max_users`` / ``max_asset_types`` for display only — these limits are
+  NOT enforced at runtime (no feature/usage gating; all features ship in every
+  edition). The license is a compliance artifact, not a technical gate.
 - Caches the result in a process-local variable
 
 Missing file or any validation failure silently falls back to evaluation mode.
