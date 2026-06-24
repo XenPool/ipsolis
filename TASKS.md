@@ -55,56 +55,6 @@ commands until every reference is updated.
 
 ---
 
-### [open] Publish prebuilt Docker images to GHCR (ghcr.io) via CI
-
-**Problem:** ip·Solis ships only as source — installs run `docker compose up --build`,
-which compiles locally (slow first run, no version pinning) and gives **no visibility
-into adoption**. GitHub git-clone counts are inflated by our own CI (the `ipsolis-web`
-build pulls docs from this repo on every deploy) and never reveal *who* cloned, so they
-are a poor proxy for real installations.
-
-**Proposed solution:** Publish prebuilt images to **GitHub Container Registry**
-(`ghcr.io/xenpool/ipsolis-*`) from a GitHub Actions workflow on release tags
-(`v*.*.*`), and add a compose overlay that **pulls** the published image instead of
-building. GHCR exposes **per-package pull counts** → the closest privacy-respecting
-signal for actual downloads/installations.
-
-**Why this approach:**
-- Pull counts beat clone counts as an install proxy (clones polluted by CI; GitHub hides cloner identity by design).
-- Faster, reproducible installs (no local build); version-pinned images.
-- `ghcr.io` is free for public images, uses `GITHUB_TOKEN`, no extra registry account.
-- Reuses the existing Dockerfile(s) (Community / Pro tiers).
-
-**Implementation slices:**
-- [x] GitHub Actions workflow: build + push images to `ghcr.io` on `v*.*.*` tags (+ `:latest`)
-      via `docker/build-push-action` — `release.yml` (api + worker, VERSION-match guard,
-      GitHub Release, web dispatch). ⚠️ currently **single-arch `linux/amd64`** — multi-arch
-      (arm64) still open.
-- [ ] ~~Tag both tier images (community / pro)~~ — N/A: tiers consolidated to one
-      `api/Dockerfile` + one `worker/Dockerfile`. Revisit only if tiers are re-split.
-- [x] Make the GHCR package **public** — done (2026-06-21): `ghcr.io/xenpool/ipsolis-{api,worker}`
-      now return **HTTP 200** to anonymous pulls, so `docker-compose.ghcr.yml` works without
-      `docker login`. Image usage referenced in `docs/DEPLOYMENT.md` + `INSTALL.md`.
-- [x] Add `docker-compose.ghcr.yml` to pull `ghcr.io/xenpool/ipsolis-{api,worker}:<tag>`
-      instead of `build:` — self-contained file, pinnable via `IPSOLIS_VERSION` (default
-      `:latest`); layer `docker-compose.prelive.yml` for nginx/TLS.
-      ⚠️ Images bake only app code + alembic, **not** `locales/`/`scripts/`, so those are
-      still bind-mounted → consider baking them in the Dockerfiles for clone-free installs.
-- [x] (optional) Document where to read pull counts (package page / API) for adoption tracking
-      — written up in `docs/internal/metrics.md` (local-only, gitignored maintainer note).
-
-**Still open here:** multi-arch (arm64) build; bake `locales/`+`scripts/` into images for
-truly clone-free installs. (GHCR public flip ✅ done; pull-count tracking note ✅ done.)
-
-**Related (deeper signal, separate task):** an opt-in, anonymous update-checker
-phone-home would be the only way to count *actually running* deployments (GHCR pulls
-still ≠ live installs). Commercial installs are already known via license activation.
-
----
-
----
-
-
 ### [open] Cloud group management via Microsoft Graph — future
 Extend `target_executor` to manage Entra cloud-only security groups for asset types
 that define `{"type": "entra_group", "group_id": "..."}` targets. Requires
@@ -181,6 +131,7 @@ All items below are shipped. Detailed implementation notes live in git history.
 
 | Area | Shipped | Notes |
 |------|---------|-------|
+| GHCR prebuilt images | 2026-06 | CI build+push to ghcr.io on `v*.*.*` tags, public packages, `docker-compose.ghcr.yml`, `locales/`+`scripts/` baked into images, pull-count note (`docs/internal/metrics.md`); multi-arch arm64 intentionally skipped (amd64-only — on-prem is amd64) |
 | Admin RBAC (slices 1–4) | 2026-04-26/27 | Per-user accounts, 5-tier role ladder, ACLs, SoD, lockout, password rotation |
 | External secret management | 2026-04-26/30 | Vault, CCP, Azure KV, AWS SM, Conjur; AppRole/JWT; AssumeRole; migration tool |
 | API tokens with scopes | 2026-04-26 | Bearer auth, 14-scope catalog, ServiceNow webhook, hard-delete purge |
