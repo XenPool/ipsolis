@@ -18,7 +18,7 @@ Dieser Leitfaden führt Sie durch die Einrichtung der ip·Solis-Plattform auf ei
 9. [Deployment verifizieren](#9-deployment-verifizieren)
 10. [Backup & Wartung](#10-backup--wartung)
 11. [Aktualisierung auf eine neue Version](#11-aktualisierung-auf-eine-neue-version)
-12. [Hochverfügbare Deployments](#12-hochverfügbare-deployments)
+12. [Hochverfügbare Deployments (optional)](#12-hochverfügbare-deployments-optional)
 13. [Fehlerbehebung](#13-fehlerbehebung)
 14. [Sauberes Zurücksetzen (Testumgebungen)](#14-sauberes-zurücksetzen-testumgebungen)
 
@@ -89,14 +89,12 @@ Repository klonen — keine Authentifizierung erforderlich:
 ```bash
 cd /opt
 sudo git clone https://github.com/XenPool/ipsolis.git ipsolis
+sudo chown -R $USER:$USER ipsolis    # Repo dem User zuweisen, damit git pull / docker compose ohne sudo laufen
 cd ipsolis
 ```
 
-Der empfohlene Weg, den Stack zu betreiben, ist das **Pullen der vorgefertigten, versionsfixierten Images**
-von GHCR über `docker-compose.ghcr.yml` (`ghcr.io/xenpool/ipsolis-api` und `…-worker`).
-Die Images sind **öffentlich** — kein `docker login` nötig — und `locales/` + `scripts/` sind
-in Images, die nach v0.6.9 gebaut wurden, **eingebacken**, sodass der Klon nur die Compose-Dateien,
-`.env` und `nginx/` (für TLS) bereitstellt. Die eigentlichen Pull- + Start-Befehle finden Sie in
+ip·Solis wird als fertiges Docker-Image bereitgestellt — Sie müssen nichts selbst bauen. Die
+Images sind öffentlich (kein `docker login` nötig). Die Pull- und Start-Befehle folgen in
 [Abschnitt 6](#6-stack-starten).
 
 > **Lizenzierung:** ip·Solis ist für die private Nutzung und die 30-tägige Evaluierung
@@ -111,8 +109,8 @@ in Images, die nach v0.6.9 gebaut wurden, **eingebacken**, sodass der Klon nur d
 Kopieren Sie die Beispieldatei und bearbeiten Sie sie:
 
 ```bash
-sudo cp .env.example .env
-sudo nano .env
+cp .env.example .env
+nano .env
 ```
 
 ### Zwingend zu ändernde Einstellungen
@@ -135,6 +133,15 @@ FLOWER_PASSWORD=<strong-password>
 > ```bash
 > openssl rand -base64 32
 > ```
+
+> **`.env`-Datei absichern**: Sie speichert Secrets im Klartext — beschränken Sie daher den Zugriff:
+> ```bash
+> chmod 600 .env
+> ```
+> Behandeln Sie `ADMIN_API_KEY` als Bootstrap-Zugang. Legen Sie nach der Ersteinrichtung
+> RBAC-Admin-Konten an und stellen Sie Per-Integration-API-Tokens aus (Admin → API-Tokens) —
+> diese werden gehasht gespeichert, sind scoped, ablaufend und widerrufbar und sind der
+> bevorzugte Weg, Automatisierungen zu authentifizieren.
 
 ## 4. SSL-/TLS-Zertifikat einrichten
 
@@ -304,11 +311,12 @@ auf Ihrer Umgebung:
 cd /opt/ipsolis
 
 # Production — pin a tested release:
-export IPSOLIS_VERSION=0.6.10
+export IPSOLIS_VERSION=x.x.x   # e.g. 0.6.12
 
 # Pre-live / test — track latest (leave IPSOLIS_VERSION unset):
 # (nothing to export)
 
+# docker-compose.prelive.yml ist das Produktions-Overlay (TLS/nginx) — der Name ist historisch, auch für Produktion verwenden
 export COMPOSE_FILE=docker-compose.ghcr.yml:docker-compose.prelive.yml
 docker compose pull
 docker compose up -d
@@ -648,9 +656,18 @@ docker image prune -f
 
 ## 11. Aktualisierung auf eine neue Version
 
+### Vor dem Upgrade sichern
+
+Erstellen Sie immer zuerst einen Snapshot der Datenbank — `pg_dump` aus dem Postgres-
+Container, oder verwenden Sie die anwendungsinterne Seite **Wartung → Backups** (Admin-UI),
+die einen zeitgestempelten SQL-Dump in das per Bind-Mount eingebundene Verzeichnis `./backups/`
+schreibt. Konfigurieren Sie in derselben UI einen täglichen Backup-Zeitplan, sodass der
+Snapshot aktuell ist, wenn eine unerwartete Regression auftritt.
+
 > **Pre-Flight-SSL-Prüfung** — führen Sie dies vor dem Pullen aus. Wenn eine der Dateien fehlt,
 > startet der nginx-Container zwar, liefert aber keinen HTTPS-Verkehr.
 > ```bash
+> cd /opt/ipsolis
 > ls -la nginx/ssl/cert.pem nginx/ssl/key.pem
 > ```
 > Falls sie fehlen, erzeugen Sie das Zertifikat neu (siehe Abschnitt 4), bevor Sie fortfahren.
@@ -660,9 +677,10 @@ Pullen Sie die neuen Images. **Produktion:** Erhöhen Sie `IPSOLIS_VERSION` auf 
 
 ```bash
 cd /opt/ipsolis
-git pull origin main                 # refresh compose files / nginx.conf / docs
-export IPSOLIS_VERSION=0.6.10         # production: set to the release you want
-                                     # pre-live/test: leave unset to track :latest
+git pull origin main                  # refresh compose files / nginx.conf / docs
+export IPSOLIS_VERSION=x.x.x          # production: set to the release you want (e.g. 0.6.12)
+                                      # pre-live/test: leave unset to track :latest
+# docker-compose.prelive.yml ist das Produktions-Overlay (TLS/nginx) — der Name ist historisch, auch für Produktion verwenden
 export COMPOSE_FILE=docker-compose.ghcr.yml:docker-compose.prelive.yml
 docker compose pull                   # fetch the new images
 docker compose up -d                  # recreate changed containers (no build)
@@ -677,14 +695,6 @@ curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health | python3 -m json.tool
 > `api/alembic/versions/` auf den Changeset und `docker compose exec api alembic
 > history`, um die Kette zu sehen.
 
-### Vor dem Upgrade sichern
-
-Erstellen Sie immer zuerst einen Snapshot der Datenbank — `pg_dump` aus dem Postgres-
-Container, oder verwenden Sie die anwendungsinterne Seite **Wartung → Backups** (Admin-UI),
-die einen zeitgestempelten SQL-Dump in das per Bind-Mount eingebundene Verzeichnis `./backups/`
-schreibt. Konfigurieren Sie in derselben UI einen täglichen Backup-Zeitplan, sodass der
-Snapshot aktuell ist, wenn eine unerwartete Regression auftritt.
-
 ### Beat-HA-Failover während des Neustarts
 
 Wenn Sie mehrere Beat-Replicas (`--scale beat=N`) betreiben, rollt `docker compose
@@ -696,7 +706,15 @@ in Minuten / Stunden liegen.
 
 ---
 
-## 12. Hochverfügbare Deployments
+## 12. Hochverfügbare Deployments (optional)
+
+> **Optional — die meisten Deployments brauchen das nicht.** Eine Einzelinstanz von ip·Solis
+> (die Standardeinrichtung aus den Abschnitten 1–7) ist für die große Mehrheit der
+> Installationen die richtige Wahl. Ein kurzer Ausfall — z. B. während eines Upgrade-Neustarts
+> — ist selten kritisch: laufende Vorgänge werden fortgesetzt und geplante Tasks laufen in
+> Minuten-/Stunden-Kadenzen. Ziehen Sie die folgenden Muster nur in Betracht, wenn Sie eine
+> konkrete Verfügbarkeitsanforderung (z. B. ein SLA) haben oder auf sehr hohe Auftragsvolumina
+> skalieren. Andernfalls können Sie diesen Abschnitt bedenkenlos überspringen.
 
 ip·Solis skaliert horizontal auf der API- und Worker-Ebene. Der Beat-Scheduler
 unterstützt Multi-Replica-HA über celery-redbeat. Dieser Abschnitt behandelt die beiden
@@ -965,6 +983,7 @@ sudo rm -rf ipsolis
 
 # 3. Reinstall (continue from section 2), then start the stack via section 6
 sudo git clone https://github.com/XenPool/ipsolis.git ipsolis
+sudo chown -R $USER:$USER ipsolis
 cd ipsolis
 ```
 
