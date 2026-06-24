@@ -90,10 +90,11 @@ signal for actual downloads/installations.
       `:latest`); layer `docker-compose.prelive.yml` for nginx/TLS.
       ⚠️ Images bake only app code + alembic, **not** `locales/`/`scripts/`, so those are
       still bind-mounted → consider baking them in the Dockerfiles for clone-free installs.
-- [ ] (optional) Document where to read pull counts (package page / API) for adoption tracking
+- [x] (optional) Document where to read pull counts (package page / API) for adoption tracking
+      — written up in `docs/internal/metrics.md` (local-only, gitignored maintainer note).
 
 **Still open here:** multi-arch (arm64) build; bake `locales/`+`scripts/` into images for
-truly clone-free installs; pull-count tracking note. (GHCR public flip ✅ done.)
+truly clone-free installs. (GHCR public flip ✅ done; pull-count tracking note ✅ done.)
 
 **Related (deeper signal, separate task):** an opt-in, anonymous update-checker
 phone-home would be the only way to count *actually running* deployments (GHCR pulls
