@@ -221,7 +221,7 @@ docker compose up -d
 docker compose exec api alembic upgrade head
 
 # Option B: pin a specific release (edit .env first)
-#   IPSOLIS_VERSION=1.3.0
+#   IPSOLIS_VERSION=x.x.x   # e.g. 0.6.12
 docker compose pull
 docker compose up -d
 docker compose exec api alembic upgrade head
