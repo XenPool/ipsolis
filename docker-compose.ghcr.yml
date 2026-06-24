@@ -7,7 +7,7 @@
 #
 # Usage:
 #   cp .env.example .env && edit .env          # passwords, secrets, admin key
-#   export IPSOLIS_VERSION=0.6.9               # pin a release (or leave unset for :latest)
+#   export IPSOLIS_VERSION=x.x.x               # pin a release, e.g. 0.6.12 (or leave unset for :latest)
 #   docker compose -f docker-compose.ghcr.yml pull
 #   docker compose -f docker-compose.ghcr.yml up -d
 #
