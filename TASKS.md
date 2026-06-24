@@ -6,6 +6,23 @@ Format: `[open]` / `[done]` / `[blocked]`. Add new tasks at the top of their sec
 
 ## Open Tasks
 
+### [open] SCIM provisioning (joiner/mover/leaver → asset lifecycle)
+
+Extend SCIM 2.0 beyond the current **leaver-focused** subset (already shipped) to full
+**joiner/mover/leaver** provisioning that drives the asset lifecycle — a drop-in target for
+Okta / SailPoint / Ping provisioning workflows. Higher strategic value than SAML. Split out of
+the provider-agnostic SSO task on 2026-06-24.
+
+**Scope / related:**
+- Builds on the existing `/scim/v2/*` endpoint (ServiceProviderConfig, ResourceTypes, Schemas,
+  Users CRUD; DELETE / PATCH `active=false` already trigger the leaver flow).
+- Pulls in the deferred "HR feed + SCIM slice 2": full SCIM filter grammar, `/Groups` shim,
+  bulk operations.
+- Joiner/mover → asset lifecycle mapping is the new design work (how SCIM create/update maps to
+  asset orders / access grants).
+
+---
+
 ### [open] Rename `docker-compose.prelive.yml` → `docker-compose.prod.yml` (production overlay naming)
 
 **Problem:** The non-dev compose overlay is named `docker-compose.prelive.yml`, but it is in
@@ -62,75 +79,13 @@ Microsoft Graph API integration (separate sprint).
 
 ---
 
-### [open] Provider-agnostic SSO (generic OIDC) — Entra + any compliant IdP
-De-couple portal SSO from Entra-specific assumptions and support any standards-
-compliant OIDC IdP (Okta, Ping, Google, Keycloak, Authentik, Zitadel) via a single
-generic code path. "Okta support" then = a config entry, not a vendor integration.
-Estimated effort: ~4 days (no backward-compat burden — no customers yet).
-
-**Context:** All target IdPs speak standard OIDC. Using the IdP's discovery document
-(`.well-known/openid-configuration`) lets each provider self-configure from just an
-issuer URL + client credentials — no per-vendor code. Scope is OIDC-first; SAML 2.0
-is a separate future task (relevant mainly as an enterprise-procurement checkbox).
-No existing deployments → design the config schema correctly from the start, no
-`entra.*` legacy to carry, no migration path required.
-
-**⚠️ Process note (agent handoff):** Resolve the open design decisions below BEFORE
-starting any implementation slice. Do not let the agent jump straight into `oidc.py`.
-
-**Design decisions:**
-- [x] Entra handling: FOLD INTO the generic provider model — single code path, no
-      special case. (Decided: no backward-compat reason to keep a parallel MSAL path.)
-      → MSAL audit (2026-06-20): only standard OIDC calls in use (authorize URL, code
-        exchange, client-credentials test, manual logout URL). No token cache / OBO /
-        Graph / device-code / cert auth. Nothing MSAL-only is dropped. Only Entra-specific
-        nuance to preserve: `preferred_username`→UPN claim mapping → becomes a per-provider
-        claim-mapping config.
-- [x] IDP routing strategy: **picker at `/portal/login`, auto-skipped when exactly one
-      provider is enabled** (single-IdP UX unchanged). Domain-based home-realm routing is a
-      later optional per-provider enhancement, not built now.
-- [x] Config shape: **provider registry `idp.<id>.*`** in `app_config` (N providers, stable
-      ids, matches parametric callback). Portal auth gate moves from `entra.mode` to
-      `portal.auth_required` + per-provider `idp.<id>.enabled`.
-- [x] SAML 2.0: **out of scope** — OIDC-first. All target IdPs speak OIDC. SAML recorded as
-      a separate future task (enterprise-procurement checkbox, no current technical need).
-
-**Implementation slices:** _(code-complete 2026-06-20 — pending operator local test/build)_
-- [x] Generic OIDC helper consuming discovery doc (`api/app/utils/oidc.py`) — JWKS
-      ID-token signature validation + nonce via PyJWT[crypto] (added to requirements)
-- [x] Provider-registry config schema (`idp.<id>.*` in `app_config`) + `portal.auth_required`
-      gate + `auth.ldap_enabled`
-- [x] Parametric callback endpoint `/portal/auth/{provider_id}/callback`
-- [x] Generic RP-initiated logout via provider `end_session_endpoint`
-- [x] Admin UI: add/edit/delete OIDC provider + "Test connection" (discovery probe);
-      endpoints `GET /admin/config/oidc/providers`, `PUT/DELETE /admin/config/oidc/{id}`,
-      `POST /admin/config/oidc/{id}/test`, `PUT /admin/portal-auth`
-- [x] Portal auth gate made provider-agnostic (`portal.py` → `oidc.auth_required`);
-      login picker auto-skips to the single enabled method
-- [x] Retired `entra.py` + `entra.*` keys; health probe `entra`→`sso`; setup checklist updated
-
-**Documentation updates:**
-- [x] SSO setup guide rewritten provider-agnostic with Entra + Okta recipe blocks (`docs/DEPLOYMENT.md` §8)
-- [x] Parametric callback documented (redirect-URI guidance in §8; auto-exposed in Swagger)
-- [x] README / datasheet / CLAUDE.md lines updated to "SSO via OIDC — Entra ID, Okta, …"
-- [x] Admin UI in-app help text for the new provider settings section
-- [x] CHANGELOG `[Unreleased]` entry (Added/Changed/Removed); 5-locale i18n keys added
-
-**Out of scope (separate future tasks):**
-- SAML 2.0 SSO — split out of this task on 2026-06-20 (OIDC-first decision). Enterprise-
-  procurement checkbox; no current target IdP requires it. Needs metadata exchange +
-  signed-assertion validation (`python3-saml`), a different code path from OIDC.
-- Okta-specific OIN listing / certified app — defer until a paying enterprise requires it
-- SCIM provisioning (joiner/mover/leaver → asset lifecycle) — higher strategic value, own task
-
-------
-
 ## Done — Summary
 
 All items below are shipped. Detailed implementation notes live in git history.
 
 | Area | Shipped | Notes |
 |------|---------|-------|
+| Provider-agnostic SSO (generic OIDC) | 2026-06-20 | Any compliant IdP via discovery doc (Entra, Okta, Ping, Google, Keycloak…); provider registry `idp.<id>.*`, parametric callback `/portal/auth/{id}/callback`, login picker, RP-initiated logout; retired `entra.py`/MSAL path; on-prem LDAP alongside. **Deferred:** SAML 2.0 + Okta OIN listing; SCIM provisioning is its own open task |
 | GHCR prebuilt images | 2026-06 | CI build+push to ghcr.io on `v*.*.*` tags, public packages, `docker-compose.ghcr.yml`, `locales/`+`scripts/` baked into images, pull-count note (`docs/internal/metrics.md`); multi-arch arm64 intentionally skipped (amd64-only — on-prem is amd64) |
 | Admin RBAC (slices 1–4) | 2026-04-26/27 | Per-user accounts, 5-tier role ladder, ACLs, SoD, lockout, password rotation |
 | External secret management | 2026-04-26/30 | Vault, CCP, Azure KV, AWS SM, Conjur; AppRole/JWT; AssumeRole; migration tool |
