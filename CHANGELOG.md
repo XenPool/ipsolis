@@ -14,6 +14,9 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+### Changed
+- **Production overlay renamed:** `docker-compose.prelive.yml` → `docker-compose.prod.yml` to match its actual role (the TLS/nginx production overlay; the old `prelive` name was historical and misled operators). All references updated — CI (`deploy-prelive.yml`), `docker-compose.ghcr.yml` usage comments, `tools/install/bootstrap-certs.sh`, `README.md`, and `docs/DEPLOYMENT.md`/`.de.md` (the `COMPOSE_FILE` examples now use `docker-compose.prod.yml` and the interim "historical name" clarifying comments are removed). The prelive *environment* and its deploy workflow keep their names — only the overlay file was renamed. **Operator action:** hosts that pin the overlay via `COMPOSE_FILE` (e.g. LinPre1/LinPre3) must update the filename; there is no back-compat alias.
+
 ## [0.6.12] — 2026-06-24
 
 ### Changed
