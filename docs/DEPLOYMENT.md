@@ -146,6 +146,8 @@ FLOWER_PASSWORD=<strong-password>
 
 The platform runs behind an nginx reverse proxy that terminates SSL. You need a TLS certificate and private key.
 
+> **Choose one** of the three options below (A, B, **or** C) — they are mutually exclusive alternatives, depending on how your server is reached. After you have a `cert.pem` + `key.pem` in `nginx/ssl/`, continue with [**Configure nginx**](#configure-nginx) — that step is required for all options.
+
 ### Option A: Internal / Self-Signed Certificate (Intranet)
 
 If your server is only accessible within your corporate network, use [mkcert](https://github.com/FiloSottile/mkcert) to generate a trusted certificate:
@@ -238,6 +240,9 @@ echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx ngi
 
 ### Configure nginx
 
+> **End of the certificate options.** Whichever option (A, B, or C) you chose
+> above, continue here — the following steps apply to **all** setups.
+
 The repository already ships a ready-to-use `nginx/nginx.conf` with the placeholder `YOUR_HOSTNAME.YOUR_COMPANY.COM`. Replace it with your actual FQDN — the same hostname you used for the certificate above (`sed` handles both occurrences in one pass):
 
 ```bash
@@ -294,17 +299,16 @@ The overlay adds nginx for SSL termination and removes the dev bind-mounts from
 
 ## 6. Start the Stack
 
-Pull the public GHCR images, then run the migration + verify steps. Setting
-`COMPOSE_FILE` makes every later `docker compose` command (exec, ps, logs, down)
-inherit the right overlays without repeating `-f`.
+Pull the prebuilt images and start the stack. Setting `COMPOSE_FILE` once means
+every later `docker compose` command (exec, ps, logs, down) uses the right files
+automatically — no need to repeat `-f`.
 
-The images ship with `locales/`+`scripts/` baked in (v0.6.10+). Choose the image tag based
-on your environment:
+Pick which version to run:
 
-- **Production:** **pin a specific release** with `IPSOLIS_VERSION` so an unplanned `docker
-  compose pull` can never swap in an untested build. Bump it deliberately when you upgrade
+- **Production:** set `IPSOLIS_VERSION` to a specific release so the running
+  system never changes unexpectedly. Raise it when you want to upgrade
   (see [Section 11](#11-updating-to-a-new-version)).
-- **Pre-live / test / dev:** leave it unset to track `:latest` and always get the newest build.
+- **Test / first try:** leave it unset to always get the latest build.
 
 ```bash
 cd /opt/ipsolis

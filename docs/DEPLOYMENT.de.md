@@ -147,6 +147,8 @@ FLOWER_PASSWORD=<strong-password>
 
 Die Plattform läuft hinter einem nginx-Reverse-Proxy, der SSL terminiert. Sie benötigen ein TLS-Zertifikat und einen privaten Schlüssel.
 
+> **Wählen Sie eine** der drei Optionen unten (A, B **oder** C) — sie sind sich gegenseitig ausschließende Alternativen, je nachdem, wie Ihr Server erreichbar ist. Sobald `cert.pem` + `key.pem` in `nginx/ssl/` liegen, geht es bei [**nginx konfigurieren**](#nginx-konfigurieren) weiter — dieser Schritt ist für alle Optionen erforderlich.
+
 ### Option A: Internes / selbstsigniertes Zertifikat (Intranet)
 
 Wenn Ihr Server nur innerhalb Ihres Unternehmensnetzwerks erreichbar ist, verwenden Sie [mkcert](https://github.com/FiloSottile/mkcert), um ein vertrauenswürdiges Zertifikat zu generieren:
@@ -239,6 +241,10 @@ echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx ngi
 
 ### nginx konfigurieren
 
+> **Ende der Zertifikat-Optionen.** Unabhängig davon, welche Option (A, B oder C)
+> Sie oben gewählt haben, geht es hier weiter — die folgenden Schritte gelten für
+> **alle** Setups.
+
 Das Repository liefert bereits eine einsatzbereite `nginx/nginx.conf` mit dem Platzhalter `YOUR_HOSTNAME.YOUR_COMPANY.COM`. Ersetzen Sie ihn durch Ihren tatsächlichen FQDN — denselben Hostnamen, den Sie oben für das Zertifikat verwendet haben (`sed` behandelt beide Vorkommen in einem Durchgang):
 
 ```bash
@@ -295,17 +301,16 @@ Das Overlay fügt nginx für die SSL-Terminierung hinzu und entfernt die Dev-Bin
 
 ## 6. Stack starten
 
-Pullen Sie die öffentlichen GHCR-Images und führen Sie dann die Migrations- + Verifizierungsschritte aus. Das Setzen von
-`COMPOSE_FILE` sorgt dafür, dass jeder spätere `docker compose`-Befehl (exec, ps, logs, down)
-die richtigen Overlays erbt, ohne `-f` wiederholen zu müssen.
+Laden Sie die fertigen Images und starten Sie den Stack. Wenn Sie `COMPOSE_FILE`
+einmal setzen, verwendet jeder spätere `docker compose`-Befehl (exec, ps, logs, down)
+automatisch die richtigen Dateien — Sie müssen `-f` nicht wiederholen.
 
-Die Images werden mit eingebackenem `locales/`+`scripts/` ausgeliefert (v0.6.10+). Wählen Sie das Image-Tag basierend
-auf Ihrer Umgebung:
+Wählen Sie, welche Version laufen soll:
 
-- **Produktion:** **fixieren Sie ein bestimmtes Release** mit `IPSOLIS_VERSION`, damit ein ungeplantes `docker
-  compose pull` niemals einen ungetesteten Build einspielen kann. Erhöhen Sie es bewusst beim Upgrade
-  (siehe [Abschnitt 11](#11-aktualisierung-auf-eine-neue-version)).
-- **Pre-live / Test / Dev:** lassen Sie es unbesetzt, um `:latest` zu verfolgen und immer den neuesten Build zu erhalten.
+- **Produktion:** Setzen Sie `IPSOLIS_VERSION` auf ein bestimmtes Release, damit
+  sich das laufende System nicht unerwartet ändert. Erhöhen Sie den Wert, wenn Sie
+  aktualisieren möchten (siehe [Abschnitt 11](#11-aktualisierung-auf-eine-neue-version)).
+- **Test / erster Versuch:** lassen Sie es leer, um immer den neuesten Build zu erhalten.
 
 ```bash
 cd /opt/ipsolis
