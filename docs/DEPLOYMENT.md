@@ -286,7 +286,7 @@ server {
 
 ## 5. Production Compose Overlay
 
-`docker-compose.prelive.yml` is already included in the repository — no action needed.
+`docker-compose.prod.yml` is already included in the repository — no action needed.
 The overlay adds nginx for SSL termination and removes the dev bind-mounts from
 `api` and `worker`.
 
@@ -315,8 +315,7 @@ export IPSOLIS_VERSION=x.x.x   # e.g. 0.6.12
 # Pre-live / test — track latest (leave IPSOLIS_VERSION unset):
 # (nothing to export)
 
-# docker-compose.prelive.yml is the production overlay (adds TLS/nginx) — the name is historical, use it for production too
-export COMPOSE_FILE=docker-compose.ghcr.yml:docker-compose.prelive.yml
+export COMPOSE_FILE=docker-compose.ghcr.yml:docker-compose.prod.yml
 docker compose pull
 docker compose up -d
 ```
@@ -679,8 +678,7 @@ cd /opt/ipsolis
 git pull origin main                 # refresh compose files / nginx.conf / docs
 export IPSOLIS_VERSION=x.x.x          # production: set to the release you want (e.g. 0.6.12)
                                      # pre-live/test: leave unset to track :latest
-# docker-compose.prelive.yml is the production overlay (adds TLS/nginx) — the name is historical, use it for production too
-export COMPOSE_FILE=docker-compose.ghcr.yml:docker-compose.prelive.yml
+export COMPOSE_FILE=docker-compose.ghcr.yml:docker-compose.prod.yml
 docker compose pull                   # fetch the new images
 docker compose up -d                  # recreate changed containers (no build)
 docker compose exec -T api alembic upgrade head   # apply any new migrations
@@ -750,7 +748,7 @@ the load balancer.
 
 ```bash
 # Single-host: bump the api replica count via compose
-docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml \
+docker compose -f docker-compose.ghcr.yml -f docker-compose.prod.yml \
   up -d --scale api=3
 
 # Verify each replica is reachable through the load balancer
@@ -783,7 +781,7 @@ rolls, fold the `up -d` step into a per-replica loop:
 ```bash
 for i in 1 2 3; do
   docker compose stop api-$i
-  docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml \
+  docker compose -f docker-compose.ghcr.yml -f docker-compose.prod.yml \
     up -d --no-deps api-$i
   # Wait for the new container to pass health
   until curl -fsk http://localhost/health > /dev/null 2>&1; do
@@ -822,7 +820,7 @@ scale-up; the worker code itself doesn't change.
 **Scaling command** (single-host, all queues on each replica):
 
 ```bash
-docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml \
+docker compose -f docker-compose.ghcr.yml -f docker-compose.prod.yml \
   up -d --scale worker=3
 ```
 
@@ -832,7 +830,7 @@ each with its own `command:` overriding the default queue list, or
 a runtime `command:` override:
 
 ```yaml
-# docker-compose.prelive.yml — per-queue split
+# docker-compose.prod.yml — per-queue split
 services:
   worker-provision:
     image: ipsolis-worker
@@ -859,7 +857,7 @@ replicated for HA:
 ```bash
 docker compose \
   -f docker-compose.ghcr.yml \
-  -f docker-compose.prelive.yml \
+  -f docker-compose.prod.yml \
   up -d --scale beat=2
 ```
 
@@ -907,7 +905,7 @@ Nginx may have cached the old container IP. Restart the container
 ```bash
 docker compose \
   -f docker-compose.ghcr.yml \
-  -f docker-compose.prelive.yml \
+  -f docker-compose.prod.yml \
   restart nginx
 ```
 
@@ -972,7 +970,7 @@ directory. For a fully clean reinstall:
 cd /opt/ipsolis
 docker compose \
   -f docker-compose.ghcr.yml \
-  -f docker-compose.prelive.yml \
+  -f docker-compose.prod.yml \
   down -v
 
 # 2. Remove the repository directory

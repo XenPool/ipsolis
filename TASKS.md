@@ -23,55 +23,6 @@ the provider-agnostic SSO task on 2026-06-24.
 
 ---
 
-### [open] Rename `docker-compose.prelive.yml` → `docker-compose.prod.yml` (production overlay naming)
-
-**Problem:** The non-dev compose overlay is named `docker-compose.prelive.yml`, but it is in
-fact the **production** overlay (adds nginx/TLS termination, removes the dev bind-mounts).
-Operators doing a production install/update see `prelive` in the `COMPOSE_FILE` export and
-reasonably worry they picked the wrong file. The name is historical (introduced first for the
-prelive environment) and now misleads the production audience. The Done-summary table below even
-refers to it as `docker-compose.prod.yml`, which it never actually was.
-
-**Interim mitigation (done 2026-06-24):** A clarifying comment was added above the
-`export COMPOSE_FILE=…` lines in `docs/DEPLOYMENT.md` / `.de.md` §6 + §11
-("docker-compose.prelive.yml is the production overlay; the name is historical").
-
-**Proposed solution:** Rename the file to `docker-compose.prod.yml` and keep
-`docker-compose.prelive.yml` as a symlink (or thin alias) for back-compat, so CI and existing
-installs don't break during the migration.
-
-**Why a symlink/back-compat step:** The filename is referenced in 8 places, incl. CI
-(`.github/workflows/deploy-prelive.yml`) and the live hosts' `COMPOSE_FILE` env (LinPre1 prelive,
-LinPre3 prod). A hard rename without an alias breaks the prelive auto-deploy and existing update
-commands until every reference is updated.
-
-**Impact / references to update** (grep `docker-compose.prelive.yml`):
-- `.github/workflows/deploy-prelive.yml` (CI auto-deploy on LinPre1)
-- `docker-compose.ghcr.yml` (usage comments)
-- `tools/install/bootstrap-certs.sh`
-- `docs/DEPLOYMENT.md`, `docs/DEPLOYMENT.de.md`, `README.md`, `TASKS.md`
-- the overlay file itself
-
-**Implementation slices:**
-- [ ] `git mv docker-compose.prelive.yml docker-compose.prod.yml`; add a back-compat
-      `docker-compose.prelive.yml` symlink → `docker-compose.prod.yml` (verify the Linux deploy
-      hosts resolve the symlink; on Windows/git ensure it commits as a symlink, else keep a
-      1-line duplicate during transition)
-- [ ] Update CI `deploy-prelive.yml` to reference `docker-compose.prod.yml` (keep the prelive
-      *environment*/workflow name — only the overlay file is renamed)
-- [ ] Update all doc/script references (DEPLOYMENT.md/.de.md, README, `bootstrap-certs.sh`,
-      `docker-compose.ghcr.yml` comments); switch the §6/§11 `COMPOSE_FILE` examples to
-      `docker-compose.prod.yml` and drop the "historical name" clarifying comment
-- [ ] Update existing hosts' `COMPOSE_FILE` (LinPre1, LinPre3) to the new name — or rely on the
-      symlink during the transition
-- [ ] After a transition period, remove the `prelive.yml` symlink/alias
-- [ ] CHANGELOG entry
-
-**Note:** The prelive *environment* and its deploy workflow stay named as-is — only the
-**overlay file** is misnamed. The two concerns are independent.
-
----
-
 ### [open] Cloud group management via Microsoft Graph — future
 Extend `target_executor` to manage Entra cloud-only security groups for asset types
 that define `{"type": "entra_group", "group_id": "..."}` targets. Requires
@@ -103,3 +54,4 @@ All items below are shipped. Detailed implementation notes live in git history.
 | Leaver Events / Certifications | — | Bulk lifecycle triggers, access certification campaigns |
 | Cost reporting | — | Chargeback breakdown, cost threshold alerts |
 | Deployment docs | 2026-06 | Full EN + DE deployment guide, sudo fixes, nginx template, docker-compose.prod.yml |
+| Production overlay rename | 2026-06-25 | `docker-compose.prelive.yml` → `docker-compose.prod.yml` (hard rename, no alias). Updated CI (`deploy-prelive.yml`), `docker-compose.ghcr.yml` comments, `bootstrap-certs.sh`, README, DEPLOYMENT.md/.de.md (dropped "historical name" comments). Prelive *environment*/workflow names unchanged. **Action:** update LinPre1/LinPre3 `COMPOSE_FILE` env to the new filename |
