@@ -14,8 +14,17 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.13] — 2026-06-28
+
+### Added
+- **Admin Users — masked password reset.** The "Reset password" action now opens a dedicated modal with a masked input and a show/hide (👁) toggle, replacing the native browser `prompt()` that always displayed the new password in cleartext. The same show/hide toggle was added to the Create-user password field for consistency.
+
 ### Changed
 - **Production overlay renamed:** `docker-compose.prelive.yml` → `docker-compose.prod.yml` to match its actual role (the TLS/nginx production overlay; the old `prelive` name was historical and misled operators). All references updated — CI (`deploy-prelive.yml`), `docker-compose.ghcr.yml` usage comments, `tools/install/bootstrap-certs.sh`, `README.md`, and `docs/DEPLOYMENT.md`/`.de.md` (the `COMPOSE_FILE` examples now use `docker-compose.prod.yml` and the interim "historical name" clarifying comments are removed). The prelive *environment* and its deploy workflow keep their names — only the overlay file was renamed. **Operator action:** hosts that pin the overlay via `COMPOSE_FILE` (e.g. LinPre1/LinPre3) must update the filename; there is no back-compat alias.
+- **Deployment guide clarified for first-time installers.** The TLS section now states explicitly that certificate Options A/B/C are mutually exclusive alternatives, with an "end of options" callout before *Configure nginx* (the shared step). The *Start the Stack* intro was simplified — dropped the `locales/`/`scripts/` baked-in internals and version wording that confused first-time installers, keeping only pull/start and the prod-pin-vs-latest choice. (EN + DE)
+
+### Fixed
+- **CI: stop uploading buildx `.dockerbuild` build records.** The release workflow now sets `DOCKER_BUILD_RECORD_UPLOAD=false` (and `DOCKER_BUILD_SUMMARY=false`) at job level so the API and Worker `build-push` steps no longer emit the `.dockerbuild` artifacts that were accumulating on every release. Image build, push, cache, and tags are unchanged.
 
 ## [0.6.12] — 2026-06-24
 
