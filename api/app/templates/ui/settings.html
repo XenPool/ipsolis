@@ -297,7 +297,7 @@
         <div class="oidc-id-row grid grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-medium text-muted mb-1">Provider ID</label>
-            <input type="text" data-f="id" placeholder="okta"
+            <input type="text" data-f="id" placeholder="entra"
                    class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono read-only:opacity-60 read-only:cursor-not-allowed">
             <p class="text-xs text-muted/70 mt-1">Lowercase a–z, 0–9, <code>_</code> or <code>-</code>. Used in the callback URL — cannot be changed after creation.</p>
           </div>
@@ -311,8 +311,9 @@
           </div>
           <div>
             <label class="block text-xs font-medium text-muted mb-1">Client ID</label>
-            <input type="text" data-f="client_id" placeholder="application / client id"
+            <input type="text" data-f="client_id" placeholder="00000000-0000-0000-0000-000000000000"
                    class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
+            <p class="text-xs text-muted/70 mt-1">The OAuth2 client ID from your IdP app registration. Entra: <em>Application (client) ID</em>; Okta/Google: <em>Client ID</em>.</p>
           </div>
         </div>
 
@@ -2545,18 +2546,18 @@ async function saveAdAttributeMapping() {
 
 function showBanner(data) {
   var el = document.getElementById('ad-banner');
-  el.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'border', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30',
-                       'bg-red-50', 'text-red-800', 'border-red-200',
-                       'bg-blue-50', 'text-blue-800', 'border-blue-200');
+  // Reset to the base classes so no color (incl. dark: variants) leaks from a
+  // previous state — otherwise a leftover dark:text-red-300 wins over a fresh
+  // green and a successful test renders red in dark mode.
+  el.className = 'mb-4 px-4 py-3 rounded text-sm font-medium border';
   if (data.ok === true) {
-    el.classList.add('bg-green-50', 'text-green-800', 'border', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30');
+    el.classList.add('bg-green-50', 'text-green-800', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30');
   } else if (data.ok === false) {
-    el.classList.add('bg-red-50', 'text-red-800', 'border', 'border-red-200', 'dark:bg-red-500/10', 'dark:text-red-300', 'dark:border-red-500/30');
+    el.classList.add('bg-red-50', 'text-red-800', 'border-red-200', 'dark:bg-red-500/10', 'dark:text-red-300', 'dark:border-red-500/30');
   } else {
-    el.classList.add('bg-blue-50', 'text-blue-800', 'border', 'border-blue-200', 'dark:bg-blue-500/10', 'dark:text-blue-300', 'dark:border-blue-500/30');
+    el.classList.add('bg-blue-50', 'text-blue-800', 'border-blue-200', 'dark:bg-blue-500/10', 'dark:text-blue-300', 'dark:border-blue-500/30');
   }
   el.textContent = data.message;
-  el.classList.remove('hidden');
 }
 
 // ── Hosting Infrastructure ─────────────────────────────────────────────────────
@@ -2595,7 +2596,7 @@ async function saveHostingConfig(prefix, textFields, pwField) {
 
   var banner = document.getElementById(prefix + '-banner') || document.getElementById('hosting-banner');
   banner.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'border', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30',
-                           'bg-red-50', 'text-red-800', 'border-red-200');
+                           'bg-red-50', 'text-red-800', 'border-red-200', 'dark:bg-red-500/10', 'dark:text-red-300', 'dark:border-red-500/30');
   if (errors.length === 0) {
     banner.classList.add('bg-green-50', 'text-green-800', 'border', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30');
     banner.textContent = 'Settings saved.';
@@ -2613,8 +2614,8 @@ async function testSccmConnection() {
 
   var banner = document.getElementById('sccm-banner');
   banner.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'border', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30',
-                           'bg-red-50', 'text-red-800', 'border-red-200',
-                           'bg-blue-50', 'text-blue-800', 'border-blue-200');
+                           'bg-red-50', 'text-red-800', 'border-red-200', 'dark:bg-red-500/10', 'dark:text-red-300', 'dark:border-red-500/30',
+                           'bg-blue-50', 'text-blue-800', 'border-blue-200', 'dark:bg-blue-500/10', 'dark:text-blue-300', 'dark:border-blue-500/30');
   banner.classList.add('bg-blue-50', 'text-blue-800', 'border', 'border-blue-200', 'dark:bg-blue-500/10', 'dark:text-blue-300', 'dark:border-blue-500/30');
   banner.textContent = 'Testing SCCM Admin Service connection…';
   banner.classList.remove('hidden');
@@ -2622,7 +2623,7 @@ async function testSccmConnection() {
   try {
     var resp = await fetch('/admin/config/sccm/test', {method: 'POST'});
     var data = await resp.json();
-    banner.classList.remove('bg-blue-50', 'text-blue-800', 'border-blue-200');
+    banner.classList.remove('bg-blue-50', 'text-blue-800', 'border-blue-200', 'dark:bg-blue-500/10', 'dark:text-blue-300', 'dark:border-blue-500/30');
     if (data.ok === true) {
       banner.classList.add('bg-green-50', 'text-green-800', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30');
     } else {
@@ -2630,7 +2631,7 @@ async function testSccmConnection() {
     }
     banner.textContent = data.message || (data.ok ? 'OK' : 'Test failed.');
   } catch (e) {
-    banner.classList.remove('bg-blue-50', 'text-blue-800', 'border-blue-200');
+    banner.classList.remove('bg-blue-50', 'text-blue-800', 'border-blue-200', 'dark:bg-blue-500/10', 'dark:text-blue-300', 'dark:border-blue-500/30');
     banner.classList.add('bg-red-50', 'text-red-800', 'border-red-200', 'dark:bg-red-500/10', 'dark:text-red-300', 'dark:border-red-500/30');
     banner.textContent = 'Request failed: ' + e;
   }
@@ -3289,18 +3290,16 @@ async function refreshSiemStatus() {
 function showComplianceBanner(data) {
   var el = document.getElementById('compliance-banner');
   if (!el) return;
-  el.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'border', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30',
-                       'bg-red-50', 'text-red-800', 'border-red-200',
-                       'bg-blue-50', 'text-blue-800', 'border-blue-200');
+  // Reset to base classes so no color (incl. dark: variants) leaks from a prior state.
+  el.className = 'mb-4 px-4 py-3 rounded text-sm font-medium border';
   if (data.ok === true) {
-    el.classList.add('bg-green-50', 'text-green-800', 'border', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30');
+    el.classList.add('bg-green-50', 'text-green-800', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30');
   } else if (data.ok === false) {
-    el.classList.add('bg-red-50', 'text-red-800', 'border', 'border-red-200', 'dark:bg-red-500/10', 'dark:text-red-300', 'dark:border-red-500/30');
+    el.classList.add('bg-red-50', 'text-red-800', 'border-red-200', 'dark:bg-red-500/10', 'dark:text-red-300', 'dark:border-red-500/30');
   } else {
-    el.classList.add('bg-blue-50', 'text-blue-800', 'border', 'border-blue-200', 'dark:bg-blue-500/10', 'dark:text-blue-300', 'dark:border-blue-500/30');
+    el.classList.add('bg-blue-50', 'text-blue-800', 'border-blue-200', 'dark:bg-blue-500/10', 'dark:text-blue-300', 'dark:border-blue-500/30');
   }
   el.textContent = data.message;
-  el.classList.remove('hidden');
 }
 
 // Refresh SIEM status when the Compliance tab is opened (delegated showTab observer).
@@ -3373,18 +3372,16 @@ async function testTeamsConfig() {
 
 function showEmailBanner(data) {
   var el = document.getElementById('email-banner');
-  el.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'border', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30',
-                       'bg-red-50', 'text-red-800', 'border-red-200',
-                       'bg-blue-50', 'text-blue-800', 'border-blue-200');
+  // Reset to base classes so no color (incl. dark: variants) leaks from a prior state.
+  el.className = 'mb-4 px-4 py-3 rounded text-sm font-medium border';
   if (data.ok === true) {
-    el.classList.add('bg-green-50', 'text-green-800', 'border', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30');
+    el.classList.add('bg-green-50', 'text-green-800', 'border-green-200', 'dark:bg-green-500/10', 'dark:text-green-300', 'dark:border-green-500/30');
   } else if (data.ok === false) {
-    el.classList.add('bg-red-50', 'text-red-800', 'border', 'border-red-200', 'dark:bg-red-500/10', 'dark:text-red-300', 'dark:border-red-500/30');
+    el.classList.add('bg-red-50', 'text-red-800', 'border-red-200', 'dark:bg-red-500/10', 'dark:text-red-300', 'dark:border-red-500/30');
   } else {
-    el.classList.add('bg-blue-50', 'text-blue-800', 'border', 'border-blue-200', 'dark:bg-blue-500/10', 'dark:text-blue-300', 'dark:border-blue-500/30');
+    el.classList.add('bg-blue-50', 'text-blue-800', 'border-blue-200', 'dark:bg-blue-500/10', 'dark:text-blue-300', 'dark:border-blue-500/30');
   }
   el.textContent = data.message;
-  el.classList.remove('hidden');
 }
 
 // ── Email Templates ─────────────────────────────────────────────────────────────
