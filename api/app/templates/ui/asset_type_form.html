@@ -238,6 +238,11 @@
           </label>
           {% endfor %}
         </div>
+        <p class="text-[11px] text-muted/70 mt-2 leading-snug">
+          The pool of instances for personal assets is maintained under
+          <a href="/ui/asset-pool" class="text-blue-500 hover:underline font-medium">Personal Assets</a>
+          — add, edit, or retire the instances that <em>"Assign free instance"</em> reserves from.
+        </p>
       </div>
 
       <div id="naming-pattern-row" class="{% if not asset_type or asset_type.personal_provisioning_strategy != 'create_new' %}hidden{% endif %}">
@@ -597,9 +602,9 @@
             <select name="target_type[]"
                     class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
               <option value="ad_group" {% if tgt.type == 'ad_group' %}selected{% endif %}>AD Group</option>
-              <option value="entra_group" {% if tgt.type == 'entra_group' %}selected{% endif %}>Entra Group</option>
-              <option value="rds_collection" {% if tgt.type == 'rds_collection' %}selected{% endif %}>RDS Collection</option>
-              <option value="other" {% if tgt.type == 'other' %}selected{% endif %}>Other</option>
+              <option value="entra_group" {% if tgt.type == 'entra_group' %}selected{% endif %} disabled>Entra Group (coming soon)</option>
+              <option value="rds_collection" {% if tgt.type == 'rds_collection' %}selected{% endif %} disabled>RDS Collection (coming soon)</option>
+              <option value="other" {% if tgt.type == 'other' %}selected{% endif %} disabled>Other (coming soon)</option>
             </select>
             <input type="text" name="target_identifier[]" value="{{ tgt.identifier }}" placeholder="CN=Group,OU=..."
                    class="col-span-5 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
@@ -624,9 +629,9 @@
             <select name="target_type[]"
                     class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
               <option value="ad_group">AD Group</option>
-              <option value="entra_group">Entra Group</option>
-              <option value="rds_collection">RDS Collection</option>
-              <option value="other">Other</option>
+              <option value="entra_group" disabled>Entra Group (coming soon)</option>
+              <option value="rds_collection" disabled>RDS Collection (coming soon)</option>
+              <option value="other" disabled>Other (coming soon)</option>
             </select>
             <input type="text" name="target_identifier[]" placeholder="CN=Group,OU=..."
                    class="col-span-5 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
@@ -1391,9 +1396,9 @@ function addTargetRow() {
     '<select name="target_type[]"'
     + ' class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">'
     + '<option value="ad_group">AD Group</option>'
-    + '<option value="entra_group">Entra Group</option>'
-    + '<option value="rds_collection">RDS Collection</option>'
-    + '<option value="other">Other</option>'
+    + '<option value="entra_group" disabled>Entra Group (coming soon)</option>'
+    + '<option value="rds_collection" disabled>RDS Collection (coming soon)</option>'
+    + '<option value="other" disabled>Other (coming soon)</option>'
     + '</select>'
     + '<input type="text" name="target_identifier[]" placeholder="CN=Group,OU=..."'
     + ' class="col-span-5 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">'
