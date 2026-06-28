@@ -317,6 +317,33 @@ Konfiguration unter **Admin → Einstellungen → SMTP**:
 
 Verwenden Sie **Test-E-Mail senden**, um die Verbindung vor dem Speichern zu verifizieren.
 
+### Authentifizierungs-Optionen
+
+ip·Solis spricht reines SMTP (STARTTLS/SSL + Benutzername/Passwort). Das ist bewusst
+provider-agnostisch — es funktioniert mit jedem Mailsystem, nicht nur mit Microsoft oder
+Google — sodass Sie unabhängig von Ihrem Identity-Provider nur **eine** SMTP-Konfiguration
+pflegen. ip·Solis nutzt **keine** herstellerspezifischen Versand-APIs (z. B. Microsoft Graph),
+die einen zweiten, nur für Microsoft gültigen Konfigurationspfad bedeuten würden.
+
+Wie Sie sich authentifizieren, hängt von Ihrer Mailplattform ab:
+
+| Szenario | Empfohlenes Vorgehen |
+|---|---|
+| Dedizierter/interner SMTP-Server oder ein Mail-Relay (SES, SendGrid, Mailgun, interner Postfix-/Exchange-Smarthost) | Benutzername + API-Key/Passwort des Relays direkt verwenden. **Empfohlen** — das Relay übernimmt die provider-spezifische Auth, ip·Solis behält eine einfache SMTP-Konfiguration. |
+| Microsoft 365 mit aktivierter MFA | Ein **App-Kennwort** für ein dediziertes Service-Postfach erstellen und als SMTP-Passwort verwenden. Funktioniert heute, beachten Sie aber den Hinweis unten. |
+| Google Workspace mit Bestätigung in zwei Schritten | Ein **App-Kennwort** für ein dediziertes Service-Konto erstellen und als SMTP-Passwort verwenden. |
+
+> **Hinweis zu Microsoft 365:** App-Kennwörter setzen das legacy per-user MFA voraus und sind
+> bei aktivierten *Security Defaults* nicht verfügbar; zudem baut Microsoft Basic Auth für SMTP
+> schrittweise ab. Für ein zukunftssicheres M365-Setup richten Sie ip·Solis auf ein
+> **SMTP-Relay / einen Mail-Connector** aus (Option 1 oben), statt sich direkt mit einem
+> App-Kennwort gegen `smtp-mail.outlook.com` zu verbinden. So bleibt ip·Solis auf einem
+> provider-agnostischen SMTP-Pfad, und die M365-spezifische Auth liegt beim Relay, wo sie hingehört.
+
+Token-basiertes SMTP (`XOAUTH2`) und herstellerspezifische Versand-APIs sind bewusst nicht
+implementiert: Sie erfordern provider-spezifische Token-Verarbeitung und eine zweite
+Konfigurationsfläche — bei geringem Mehrwert gegenüber einem Relay.
+
 ---
 
 ## Externe Secret-Backends
