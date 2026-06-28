@@ -11,9 +11,9 @@
 #   docker compose -f docker-compose.ghcr.yml pull
 #   docker compose -f docker-compose.ghcr.yml up -d
 #
-# Add TLS / nginx for production by layering the prelive overlay on top
+# Add TLS / nginx for production by layering the prod overlay on top
 # (it only overrides volumes/command and adds nginx -- it inherits these images):
-#   docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml up -d
+#   docker compose -f docker-compose.ghcr.yml -f docker-compose.prod.yml up -d
 #
 # Images are PUBLIC (no registry login needed):
 #   ghcr.io/xenpool/ipsolis-api:<version>      (api -- FastAPI dispatcher + REST + Admin UI)

@@ -146,6 +146,8 @@ FLOWER_PASSWORD=<strong-password>
 
 The platform runs behind an nginx reverse proxy that terminates SSL. You need a TLS certificate and private key.
 
+> **Choose one** of the three options below (A, B, **or** C) — they are mutually exclusive alternatives, depending on how your server is reached. After you have a `cert.pem` + `key.pem` in `nginx/ssl/`, continue with [**Configure nginx**](#configure-nginx) — that step is required for all options.
+
 ### Option A: Internal / Self-Signed Certificate (Intranet)
 
 If your server is only accessible within your corporate network, use [mkcert](https://github.com/FiloSottile/mkcert) to generate a trusted certificate:
@@ -238,6 +240,9 @@ echo "0 3 * * * certbot renew --quiet --post-hook 'docker exec ipsolis-nginx ngi
 
 ### Configure nginx
 
+> **End of the certificate options.** Whichever option (A, B, or C) you chose
+> above, continue here — the following steps apply to **all** setups.
+
 The repository already ships a ready-to-use `nginx/nginx.conf` with the placeholder `YOUR_HOSTNAME.YOUR_COMPANY.COM`. Replace it with your actual FQDN — the same hostname you used for the certificate above (`sed` handles both occurrences in one pass):
 
 ```bash
@@ -286,7 +291,7 @@ server {
 
 ## 5. Production Compose Overlay
 
-`docker-compose.prelive.yml` is already included in the repository — no action needed.
+`docker-compose.prod.yml` is already included in the repository — no action needed.
 The overlay adds nginx for SSL termination and removes the dev bind-mounts from
 `api` and `worker`.
 
@@ -294,17 +299,16 @@ The overlay adds nginx for SSL termination and removes the dev bind-mounts from
 
 ## 6. Start the Stack
 
-Pull the public GHCR images, then run the migration + verify steps. Setting
-`COMPOSE_FILE` makes every later `docker compose` command (exec, ps, logs, down)
-inherit the right overlays without repeating `-f`.
+Pull the prebuilt images and start the stack. Setting `COMPOSE_FILE` once means
+every later `docker compose` command (exec, ps, logs, down) uses the right files
+automatically — no need to repeat `-f`.
 
-The images ship with `locales/`+`scripts/` baked in (v0.6.10+). Choose the image tag based
-on your environment:
+Pick which version to run:
 
-- **Production:** **pin a specific release** with `IPSOLIS_VERSION` so an unplanned `docker
-  compose pull` can never swap in an untested build. Bump it deliberately when you upgrade
+- **Production:** set `IPSOLIS_VERSION` to a specific release so the running
+  system never changes unexpectedly. Raise it when you want to upgrade
   (see [Section 11](#11-updating-to-a-new-version)).
-- **Pre-live / test / dev:** leave it unset to track `:latest` and always get the newest build.
+- **Test / first try:** leave it unset to always get the latest build.
 
 ```bash
 cd /opt/ipsolis
@@ -315,8 +319,7 @@ export IPSOLIS_VERSION=x.x.x   # e.g. 0.6.12
 # Pre-live / test — track latest (leave IPSOLIS_VERSION unset):
 # (nothing to export)
 
-# docker-compose.prelive.yml is the production overlay (adds TLS/nginx) — the name is historical, use it for production too
-export COMPOSE_FILE=docker-compose.ghcr.yml:docker-compose.prelive.yml
+export COMPOSE_FILE=docker-compose.ghcr.yml:docker-compose.prod.yml
 docker compose pull
 docker compose up -d
 ```
@@ -679,8 +682,7 @@ cd /opt/ipsolis
 git pull origin main                 # refresh compose files / nginx.conf / docs
 export IPSOLIS_VERSION=x.x.x          # production: set to the release you want (e.g. 0.6.12)
                                      # pre-live/test: leave unset to track :latest
-# docker-compose.prelive.yml is the production overlay (adds TLS/nginx) — the name is historical, use it for production too
-export COMPOSE_FILE=docker-compose.ghcr.yml:docker-compose.prelive.yml
+export COMPOSE_FILE=docker-compose.ghcr.yml:docker-compose.prod.yml
 docker compose pull                   # fetch the new images
 docker compose up -d                  # recreate changed containers (no build)
 docker compose exec -T api alembic upgrade head   # apply any new migrations
@@ -750,7 +752,7 @@ the load balancer.
 
 ```bash
 # Single-host: bump the api replica count via compose
-docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml \
+docker compose -f docker-compose.ghcr.yml -f docker-compose.prod.yml \
   up -d --scale api=3
 
 # Verify each replica is reachable through the load balancer
@@ -783,7 +785,7 @@ rolls, fold the `up -d` step into a per-replica loop:
 ```bash
 for i in 1 2 3; do
   docker compose stop api-$i
-  docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml \
+  docker compose -f docker-compose.ghcr.yml -f docker-compose.prod.yml \
     up -d --no-deps api-$i
   # Wait for the new container to pass health
   until curl -fsk http://localhost/health > /dev/null 2>&1; do
@@ -822,7 +824,7 @@ scale-up; the worker code itself doesn't change.
 **Scaling command** (single-host, all queues on each replica):
 
 ```bash
-docker compose -f docker-compose.ghcr.yml -f docker-compose.prelive.yml \
+docker compose -f docker-compose.ghcr.yml -f docker-compose.prod.yml \
   up -d --scale worker=3
 ```
 
@@ -832,7 +834,7 @@ each with its own `command:` overriding the default queue list, or
 a runtime `command:` override:
 
 ```yaml
-# docker-compose.prelive.yml — per-queue split
+# docker-compose.prod.yml — per-queue split
 services:
   worker-provision:
     image: ipsolis-worker
@@ -859,7 +861,7 @@ replicated for HA:
 ```bash
 docker compose \
   -f docker-compose.ghcr.yml \
-  -f docker-compose.prelive.yml \
+  -f docker-compose.prod.yml \
   up -d --scale beat=2
 ```
 
@@ -907,7 +909,7 @@ Nginx may have cached the old container IP. Restart the container
 ```bash
 docker compose \
   -f docker-compose.ghcr.yml \
-  -f docker-compose.prelive.yml \
+  -f docker-compose.prod.yml \
   restart nginx
 ```
 
@@ -972,7 +974,7 @@ directory. For a fully clean reinstall:
 cd /opt/ipsolis
 docker compose \
   -f docker-compose.ghcr.yml \
-  -f docker-compose.prelive.yml \
+  -f docker-compose.prod.yml \
   down -v
 
 # 2. Remove the repository directory

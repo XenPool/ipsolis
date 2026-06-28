@@ -1,8 +1,8 @@
-# Prelive overlay -- adds nginx reverse proxy with SSL termination and
+# Production overlay -- adds nginx reverse proxy with SSL termination and
 # removes dev hot-reload volumes from api and worker.
 #
 # Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.prelive.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
 # Prerequisites (run once per host):
 #   1. Place TLS certificate and key at nginx/ssl/cert.pem and nginx/ssl/key.pem
