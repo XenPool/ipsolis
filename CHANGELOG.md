@@ -14,6 +14,12 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.15] — 2026-06-30
+
+### Changed
+- **Licensing terms & texts updated for the free-tier / volume-band model** (reviewed and approved). The XenPool Commercial Source License (`LICENSE`, EN + DE), the German `AGB` and the English `Terms`, plus the README and deployment/onboarding docs now reflect the sales model enforced since 0.6.14: free productive use for up to **25 active users** (including in an organizational context), with commercial use (more than 25 active users) licensed in **volume bands** by active-user count. Adds an authoritative *active user* definition; the license scope wording changed from "licensed instances" to "licensed number of users / volume band (max. Active Users; 0 = unlimited)"; after expiry + the 30-day grace the software reverts to the Free Tier (no longer described as "evaluation only").
+- **In-app license texts & shop links.** The dashboard unlicensed-state banner is now a "Free tier · up to 25 active users" banner; the Maintenance license card explains the tiers and bands. All purchase / renewal calls-to-action now point to the **ip·Solis license shop** (locale-aware: `…/en/shop` / `…/de/shop`) instead of a sales email; `sales@xenpool.de` is retained only for inquiries, support and the imprint.
+
 ## [0.6.14] — 2026-06-30
 
 ### Added
