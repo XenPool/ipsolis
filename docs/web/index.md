@@ -31,9 +31,10 @@ Built for on-premises datacenters. Deployable in an afternoon.
 
 ip·Solis is source-available under the **XenPool Commercial Source License v1.0**.
 
-- **Free use** — purely private use by individuals outside any organizational activity, plus non-productive research/teaching at state-recognized educational institutions. No license key required.
+- **Free tier** — productive use for up to **25 active users**, including in an organizational context. No license key required. (An *active user* is a distinct person — by email — holding at least one active asset request/assignment.)
+- **Free use** — also purely private use by individuals, and non-productive research/teaching at state-recognized educational institutions.
 - **Evaluation** — 30 days free in any environment.
-- **Commercial use** — any productive or organizational use requires a license from XenPool GmbH, regardless of profit intent, **including public-sector bodies and non-profit / charitable organizations** (`sales@xenpool.de`).
+- **Commercial use** — productive use with **more than 25 active users** requires a license from XenPool GmbH, offered in **volume bands** by active-user count, regardless of profit intent, **including public-sector bodies and non-profit / charitable organizations**. Get a license at the [ip·Solis license shop](https://ipsolis.com/en/shop).
 
 All features ship in a single image. Features that require additional infrastructure (SCCM, ServiceNow, SCIM, etc.) are noted throughout these docs.
 

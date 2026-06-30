@@ -8,11 +8,12 @@ Give your users a self-service portal to request, extend, and return IT assets (
 
 ip·Solis is source-available under the **XenPool Commercial Source License v1.0**.
 
-- **Free use** — purely private use by individuals outside any commercial, professional, governmental or organizational activity, plus non-productive research/teaching at state-recognized educational institutions. No license key required.
+- **Free tier** — productive use for up to **25 active users**, including in a commercial, governmental or other organizational context. No license key required. (An *active user* is a distinct person — by email — holding at least one active asset request/assignment; ended ones don't count.)
+- **Free use** — also purely private use by individuals, and non-productive research/teaching at state-recognized educational institutions.
 - **Evaluation** — 30 days free in any environment, no license key required.
-- **Commercial use** — any productive or operational use in a commercial, freelance, governmental or other organizational context requires a valid license purchased from XenPool GmbH — **regardless of profit intent, and including public-sector bodies and non-profit / charitable organizations**. Contact **sales@xenpool.de**.
+- **Commercial use** — productive use with **more than 25 active users** requires a valid license purchased from XenPool GmbH, offered in **volume bands** by active-user count (e.g. 26–75, 76–250, 250+) — **regardless of profit intent, and including public-sector bodies and non-profit / charitable organizations**. Get a license at the **[ip·Solis license shop](https://ipsolis.com/en/shop)**.
 
-All features ship in a single image. There is no feature-limited free tier.
+All features ship in a single image — the tiers differ only by **active-user count**, never by features.
 
 ## Why This Exists
 
@@ -370,12 +371,12 @@ Operators are responsible for maintaining their own records of processing activi
 ## License
 
 ip·Solis is source-available under the **XenPool Commercial Source License v1.0** — see
-the [Licensing](#licensing) section above for the summary (free for private and 30-day
-evaluation use; any organizational, public-sector or non-profit production use requires a
-purchased license).
+the [Licensing](#licensing) section above for the summary (free productive use up to
+25 active users, plus private and 30-day evaluation use; production use with more than
+25 active users requires a purchased volume-band license).
 
-See [LICENSE](LICENSE) for the full license text. For commercial licensing, contact
-**sales@xenpool.de**.
+See [LICENSE](LICENSE) for the full license text. Get a commercial license at the
+**[ip·Solis license shop](https://ipsolis.com/en/shop)**.
 
 This project bundles third-party open-source components under their own licenses (MIT, BSD,
 Apache-2.0, LGPL, and others). See [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) for the

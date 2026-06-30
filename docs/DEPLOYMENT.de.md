@@ -97,10 +97,11 @@ ip·Solis wird als fertiges Docker-Image bereitgestellt — Sie müssen nichts s
 Images sind öffentlich (kein `docker login` nötig). Die Pull- und Start-Befehle folgen in
 [Abschnitt 6](#6-stack-starten).
 
-> **Lizenzierung:** ip·Solis ist für die private Nutzung und die 30-tägige Evaluierung
-> kostenlos. Jede produktive oder organisatorische Nutzung — einschließlich öffentlicher
-> Hand und gemeinnütziger Organisationen — erfordert eine kommerzielle Lizenz. Siehe
-> [LICENSE](../LICENSE) und kontaktieren Sie **sales@xenpool.de** zum Erwerb.
+> **Lizenzierung:** ip·Solis ist für die produktive Nutzung mit bis zu **25 aktiven
+> Nutzern** kostenlos (ebenso private Nutzung und 30-tägige Evaluierung). Produktive
+> Nutzung mit mehr als 25 aktiven Nutzern — einschließlich öffentlicher Hand und
+> gemeinnütziger Organisationen — erfordert eine kommerzielle Volumenband-Lizenz. Siehe
+> [LICENSE](../LICENSE); eine Lizenz erhalten Sie im [ip·Solis-Lizenzshop](https://ipsolis.com/de/shop).
 
 ---
 
@@ -410,9 +411,10 @@ gemeinsame Schlüssel wird nur aus Gründen der Abwärtskompatibilität beibehal
 
 ### Lizenz installieren
 
-Für die private Nutzung und die 30-tägige Evaluierung ist keine Lizenzdatei erforderlich. Jedes
-produktive oder organisatorische Deployment — einschließlich öffentlicher Hand und gemeinnütziger
-Nutzung — erfordert eine kommerzielle Lizenz; XenPool liefert nach dem Kauf eine signierte `.lic`-Datei.
+Für die produktive Nutzung mit bis zu **25 aktiven Nutzern** (sowie private Nutzung und die 30-tägige
+Evaluierung) ist keine Lizenzdatei erforderlich. Produktive Nutzung mit mehr als 25 aktiven Nutzern —
+einschließlich öffentlicher Hand und gemeinnütziger Nutzung — erfordert eine kommerzielle
+Volumenband-Lizenz; XenPool liefert nach dem Kauf eine signierte `.lic`-Datei.
 
 Installieren Sie sie über die Admin-UI:
 

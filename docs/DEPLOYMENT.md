@@ -96,10 +96,11 @@ ip·Solis ships as ready-to-run Docker images — there's nothing to build yours
 are public (no `docker login` needed). The pull and start commands follow in
 [Section 6](#6-start-the-stack).
 
-> **Licensing:** ip·Solis is free for private and 30-day evaluation use. Any
-> productive or organizational use — including public-sector bodies and non-profit
-> organizations — requires a commercial license. See [LICENSE](../LICENSE) and
-> contact **sales@xenpool.de** to purchase.
+> **Licensing:** ip·Solis is free for productive use with up to **25 active users**
+> (plus private and 30-day evaluation use). Productive use with more than 25 active
+> users — including by public-sector bodies and non-profit organizations — requires a
+> commercial volume-band license. See [LICENSE](../LICENSE); get a license at the
+> [ip·Solis license shop](https://ipsolis.com/en/shop).
 
 ---
 
