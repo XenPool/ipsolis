@@ -14,8 +14,37 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+## [0.6.14] — 2026-06-30
+
+### Added
+- **Free-tier / commercial-band user-count enforcement.** A free productive tier allows up to **25 active end-users** without a license; a valid **commercial** license raises the limit to its signed `max_users` band (e.g. 75 / 250; `0` = unlimited). "Active user" = a distinct (case-insensitive) `orders.user_email` on an order in an active status. Enforcement is **soft**: existing operation is untouched — only the creation of an order for a **new** (not-yet-counted) identity is blocked once at/over the limit (HTTP 403 across the portal, `/orders` API and the ServiceNow webhook). The Admin Dashboard shows a banner (red at the limit, amber from 80 %). The band rides on the existing 30-day license-expiry grace; demo/evaluation licenses never raise the limit. New endpoint `GET /admin/tier/status`.
+- **Evaluation-license recognition & display.** Demo/evaluation licenses (signed by the demo key) are now labelled as such: a dashboard "Evaluation license" banner and an "Evaluation" badge on the Admin → Maintenance → License card, with licensee and validity.
+- **Built-in tile-icon picker for asset definitions.** A bundled set of monochrome IT icons (Desktop/VDI, Laptop, Server, VM, Database, Mailbox, Application, License, Smartphone, Monitor, Cloud, Storage) selectable directly in the asset-type form — no upload needed. Stored as a data-URL like an uploaded logo, so the portal catalog renders them unchanged.
+- **Reassign an asset definition while Free.** Operators can change a personal asset's Asset Definition inline in Personal Assets, but only while the asset's status is `Free` (UI dropdown + server-side guard; rejected with 409 otherwise).
+
+### Changed
+- **Unimplemented Access Target types marked "coming soon".** In the asset-type form, *Entra Group*, *RDS Collection* and *Other* are now disabled and labelled "(coming soon)" — only *AD Group* is implemented end-to-end (the others were selectable but failed silently at provision time). Backend status documented in `TASKS.md`.
+- **Admin Settings — OIDC provider field labels.** Provider-ID placeholder aligned with the Entra example, and a help line added under *Client ID*.
+- **Integrations docs — SMTP authentication options.** New section (EN + DE) clarifying that ip·Solis is provider-agnostic SMTP-only (no vendor send APIs), with a decision table (relay vs. app password) and an M365 caveat recommending a relay for a future-proof setup.
+
+### Fixed
+- **HTTPS OIDC redirect URIs behind the reverse proxy.** uvicorn now runs with `--proxy-headers --forwarded-allow-ips=*` so it honours nginx's `X-Forwarded-Proto`; previously the app derived `http://` callback URLs, breaking SSO with `AADSTS50011`. Image build/push/cache and tags are unchanged.
+- **Admin status banners in dark mode.** On reset, the `dark:` red/blue colour classes were not cleared, so a successful test (AD/SCCM/email/compliance) could render red. Banners now reset to base classes before applying the new state.
+
+### Internal
+- `test_asset_type_constraints.py` realigned with the migration-0047 validator (two create-time rules; runbook-wiring is now a dispatch-time concern) — the suite previously targeted the removed 5-rule API.
+
+## [0.6.13] — 2026-06-28
+
+### Added
+- **Admin Users — masked password reset.** The "Reset password" action now opens a dedicated modal with a masked input and a show/hide (👁) toggle, replacing the native browser `prompt()` that always displayed the new password in cleartext. The same show/hide toggle was added to the Create-user password field for consistency.
+
 ### Changed
 - **Production overlay renamed:** `docker-compose.prelive.yml` → `docker-compose.prod.yml` to match its actual role (the TLS/nginx production overlay; the old `prelive` name was historical and misled operators). All references updated — CI (`deploy-prelive.yml`), `docker-compose.ghcr.yml` usage comments, `tools/install/bootstrap-certs.sh`, `README.md`, and `docs/DEPLOYMENT.md`/`.de.md` (the `COMPOSE_FILE` examples now use `docker-compose.prod.yml` and the interim "historical name" clarifying comments are removed). The prelive *environment* and its deploy workflow keep their names — only the overlay file was renamed. **Operator action:** hosts that pin the overlay via `COMPOSE_FILE` (e.g. LinPre1/LinPre3) must update the filename; there is no back-compat alias.
+- **Deployment guide clarified for first-time installers.** The TLS section now states explicitly that certificate Options A/B/C are mutually exclusive alternatives, with an "end of options" callout before *Configure nginx* (the shared step). The *Start the Stack* intro was simplified — dropped the `locales/`/`scripts/` baked-in internals and version wording that confused first-time installers, keeping only pull/start and the prod-pin-vs-latest choice. (EN + DE)
+
+### Fixed
+- **CI: stop uploading buildx `.dockerbuild` build records.** The release workflow now sets `DOCKER_BUILD_RECORD_UPLOAD=false` (and `DOCKER_BUILD_SUMMARY=false`) at job level so the API and Worker `build-push` steps no longer emit the `.dockerbuild` artifacts that were accumulating on every release. Image build, push, cache, and tags are unchanged.
 
 ## [0.6.12] — 2026-06-24
 

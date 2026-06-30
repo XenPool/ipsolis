@@ -119,6 +119,10 @@
                class="block text-sm text-muted
                       file:mr-3 file:py-1 file:px-3 file:rounded file:border file:border-token-border
                       file:text-xs file:font-medium file:bg-surface file:text-body hover:file:bg-surface-raised file:cursor-pointer">
+        <button type="button" onclick="openIconLibrary()"
+                class="text-xs font-medium px-3 py-1 rounded border border-token-border bg-surface text-body hover:bg-surface-raised">
+          Choose icon
+        </button>
         <button type="button" onclick="openLogoLibrary()"
                 class="text-xs font-medium px-3 py-1 rounded border border-token-border bg-surface text-body hover:bg-surface-raised">
           Choose existing
@@ -138,6 +142,21 @@
                     class="text-muted/70 hover:text-body text-lg leading-none">&times;</button>
           </div>
           <div id="logo-library-body" class="p-4 overflow-y-auto">
+            <p class="text-xs text-muted/70">Loading…</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Built-in icon picker (bundled monochrome line icons for typical IT assets) -->
+      <div id="icon-library-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+           onclick="if (event.target === this) closeIconLibrary()">
+        <div class="bg-surface rounded-lg border border-token-border shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-token-border">
+            <h3 class="text-sm font-semibold text-heading">Pick a built-in icon</h3>
+            <button type="button" onclick="closeIconLibrary()"
+                    class="text-muted/70 hover:text-body text-lg leading-none">&times;</button>
+          </div>
+          <div id="icon-library-body" class="p-4 overflow-y-auto">
             <p class="text-xs text-muted/70">Loading…</p>
           </div>
         </div>
@@ -238,6 +257,11 @@
           </label>
           {% endfor %}
         </div>
+        <p class="text-[11px] text-muted/70 mt-2 leading-snug">
+          The pool of instances for personal assets is maintained under
+          <a href="/ui/asset-pool" class="text-blue-500 hover:underline font-medium">Personal Assets</a>
+          — add, edit, or retire the instances that <em>"Assign free instance"</em> reserves from.
+        </p>
       </div>
 
       <div id="naming-pattern-row" class="{% if not asset_type or asset_type.personal_provisioning_strategy != 'create_new' %}hidden{% endif %}">
@@ -597,9 +621,9 @@
             <select name="target_type[]"
                     class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
               <option value="ad_group" {% if tgt.type == 'ad_group' %}selected{% endif %}>AD Group</option>
-              <option value="entra_group" {% if tgt.type == 'entra_group' %}selected{% endif %}>Entra Group</option>
-              <option value="rds_collection" {% if tgt.type == 'rds_collection' %}selected{% endif %}>RDS Collection</option>
-              <option value="other" {% if tgt.type == 'other' %}selected{% endif %}>Other</option>
+              <option value="entra_group" {% if tgt.type == 'entra_group' %}selected{% endif %} disabled>Entra Group (coming soon)</option>
+              <option value="rds_collection" {% if tgt.type == 'rds_collection' %}selected{% endif %} disabled>RDS Collection (coming soon)</option>
+              <option value="other" {% if tgt.type == 'other' %}selected{% endif %} disabled>Other (coming soon)</option>
             </select>
             <input type="text" name="target_identifier[]" value="{{ tgt.identifier }}" placeholder="CN=Group,OU=..."
                    class="col-span-5 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
@@ -624,9 +648,9 @@
             <select name="target_type[]"
                     class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
               <option value="ad_group">AD Group</option>
-              <option value="entra_group">Entra Group</option>
-              <option value="rds_collection">RDS Collection</option>
-              <option value="other">Other</option>
+              <option value="entra_group" disabled>Entra Group (coming soon)</option>
+              <option value="rds_collection" disabled>RDS Collection (coming soon)</option>
+              <option value="other" disabled>Other (coming soon)</option>
             </select>
             <input type="text" name="target_identifier[]" placeholder="CN=Group,OU=..."
                    class="col-span-5 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
@@ -1070,6 +1094,58 @@ function pickLibraryLogo(dataUrl) {
   closeLogoLibrary();
 }
 
+// ── Built-in icon picker (bundled monochrome line icons) ─────────────────────
+function closeIconLibrary() {
+  document.getElementById('icon-library-modal').classList.add('hidden');
+}
+
+async function openIconLibrary() {
+  var modal = document.getElementById('icon-library-modal');
+  var body = document.getElementById('icon-library-body');
+  modal.classList.remove('hidden');
+  body.innerHTML = '<p class="text-xs text-muted/70">Loading…</p>';
+  try {
+    var resp = await fetch('/admin/asset-type-icons');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var data = await resp.json();
+    var icons = data.icons || [];
+    if (!icons.length) {
+      body.innerHTML = '<p class="text-xs text-muted/70">No built-in icons available.</p>';
+      return;
+    }
+    var grid = document.createElement('div');
+    grid.className = 'grid grid-cols-3 sm:grid-cols-4 gap-2';
+    icons.forEach(function(item) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'flex flex-col items-center gap-1.5 p-3 rounded border border-token-border bg-surface-raised hover:border-blue-500';
+      btn.title = item.name;
+      var img = document.createElement('img');
+      img.src = item.data_url;
+      img.alt = item.name;
+      img.className = 'w-8 h-8 object-contain';
+      var span = document.createElement('span');
+      span.className = 'text-[10px] text-muted text-center leading-tight';
+      span.textContent = item.name;
+      btn.appendChild(img);
+      btn.appendChild(span);
+      btn.addEventListener('click', function() { pickIconLogo(item.data_url); });
+      grid.appendChild(btn);
+    });
+    body.innerHTML = '';
+    body.appendChild(grid);
+  } catch (ex) {
+    body.innerHTML = '<p class="text-xs text-red-600">Failed to load icons: ' + ex.message + '</p>';
+  }
+}
+
+function pickIconLogo(dataUrl) {
+  document.getElementById('at-logo-data').value = dataUrl;
+  document.getElementById('at-logo-file').value = '';
+  _showTileLogo(dataUrl);
+  closeIconLibrary();
+}
+
 function updateAutomationUI() {
   var sel = document.querySelector('[name="automation_strategy"]:checked');
   var val = sel ? sel.value : 'runbook_only';
@@ -1391,9 +1467,9 @@ function addTargetRow() {
     '<select name="target_type[]"'
     + ' class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">'
     + '<option value="ad_group">AD Group</option>'
-    + '<option value="entra_group">Entra Group</option>'
-    + '<option value="rds_collection">RDS Collection</option>'
-    + '<option value="other">Other</option>'
+    + '<option value="entra_group" disabled>Entra Group (coming soon)</option>'
+    + '<option value="rds_collection" disabled>RDS Collection (coming soon)</option>'
+    + '<option value="other" disabled>Other (coming soon)</option>'
     + '</select>'
     + '<input type="text" name="target_identifier[]" placeholder="CN=Group,OU=..."'
     + ' class="col-span-5 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">'

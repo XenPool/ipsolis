@@ -14,6 +14,7 @@ from app.utils.ad_lookup import snapshot_requester_attrs
 from app.utils.audit import _order_snap, aaudit, actor_by, classify_for_asset_type_id
 from app.utils.auth import attribute_actor_if_present
 from app.utils.capacity import enforce_max_per_user, enforce_pool_capacity
+from app.utils.tier import enforce_user_tier_limit
 
 logger = logging.getLogger(__name__)
 # Public-by-design router: order creation accepts unauthenticated calls
@@ -100,6 +101,10 @@ async def create_order(
         await enforce_max_per_user(
             db, asset_type.id, str(payload.user_email), asset_type.max_per_user
         )
+
+        # Free-tier / commercial-band user-count limit — blocks only NEW
+        # (not-yet-counted) identities once at/over the effective limit.
+        await enforce_user_tier_limit(db, str(payload.user_email))
 
     # Best-effort AD snapshot — chargeback report needs requester HR
     # attributes for non-portal-driven orders too. lookup_user is sync;

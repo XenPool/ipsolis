@@ -157,6 +157,9 @@ class AssetBulkCreate(BaseModel):
 
 class AssetPoolUpdate(BaseModel):
     name: str | None = None
+    # Reassigning to a different asset definition — only honoured while the
+    # asset is Free (enforced in the route).
+    asset_type_id: int | None = None
     status: AssetStatus | None = None
     asset_metadata: dict[str, Any] | None = None
     expires_at: datetime | None = None

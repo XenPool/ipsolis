@@ -539,6 +539,14 @@ async def portal_create_order(
     except HTTPException as exc:
         return await _render_error(exc.detail)
 
+    # Free-tier / commercial-band user-count limit — blocks only NEW
+    # (not-yet-counted) identities once at/over the effective limit.
+    from app.utils.tier import enforce_user_tier_limit
+    try:
+        await enforce_user_tier_limit(db, user_email)
+    except HTTPException as exc:
+        return await _render_error(exc.detail)
+
     order_config, attr_error = _validate_order_attrs(form_data, asset_type.config or [])
     if attr_error:
         return await _render_error(attr_error)

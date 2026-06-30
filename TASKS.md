@@ -23,10 +23,26 @@ the provider-agnostic SSO task on 2026-06-24.
 
 ---
 
-### [open] Cloud group management via Microsoft Graph — future
-Extend `target_executor` to manage Entra cloud-only security groups for asset types
-that define `{"type": "entra_group", "group_id": "..."}` targets. Requires
-Microsoft Graph API integration (separate sprint).
+### [open] Access Targets — only `ad_group` is implemented
+Of the four **Access Target** types offered in the asset-type form, only **AD Group**
+(`ad_group`) works end-to-end. The other three are now shown as **"(coming soon)"** and
+**disabled** in the UI ([`asset_type_form.html`](api/app/templates/ui/asset_type_form.html),
+all three dropdown render paths) so operators can no longer save targets that fail silently
+at provision time. Current backend state in
+[`target_executor.py`](worker/tasks/modules/target_executor.py):
+
+- **`entra_group`** — stub: `_grant_entra_group` / `_revoke_entra_group` raise
+  `NotImplementedError`. To finish: implement grant/revoke via **Microsoft Graph**
+  (Application Permission `GroupMember.ReadWrite.All`) for Entra cloud-only security groups
+  on asset types defining `{"type": "entra_group", "identifier": "<group-id>"}`. Fits the
+  existing Entra/OIDC stack; separate sprint.
+- **`rds_collection`** / **`other`** — no handler at all (fall into the "Unknown target type"
+  branch). These are **not** planned as native target types — RDS session-collection
+  membership etc. belongs in a **custom runbook step** (PowerShell `Add-RDUserToSessionCollection`).
+  Re-enable in the UI only if/when a real native handler is added.
+
+**Follow-up:** add server-side validation of `target_type` (reject anything but `ad_group`
+until handlers exist) so the disabled-option UI guard is backed by the API.
 
 ---
 

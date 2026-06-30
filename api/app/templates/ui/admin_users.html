@@ -59,9 +59,16 @@
       </div>
       <div>
         <label class="block text-xs font-medium text-muted mb-1">Password</label>
-        <input type="password" id="new-password" minlength="12"
-               class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
-               placeholder="At least 12 characters">
+        <div class="relative">
+          <input type="password" id="new-password" minlength="12"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm pl-3 pr-10 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                 placeholder="At least 12 characters">
+          <button type="button" onclick="togglePw('new-password', this)" tabindex="-1"
+                  aria-label="Show password" title="Show password"
+                  class="absolute inset-y-0 right-0 flex items-center px-3 text-muted/70 hover:text-body">
+            <span data-eye>👁</span>
+          </button>
+        </div>
       </div>
       <div>
         <label class="block text-xs font-medium text-muted mb-1">Role</label>
@@ -83,6 +90,37 @@
       <button onclick="createUser()"
               class="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">
         Create
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset-password modal -->
+<div id="reset-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+  <div class="bg-surface rounded-xl border border-token-border shadow-xl p-6 w-full max-w-md">
+    <h2 class="text-base font-semibold text-heading mb-1">Reset password</h2>
+    <p id="reset-subtitle" class="text-xs text-muted/70 mb-3"></p>
+    <div>
+      <label class="block text-xs font-medium text-muted mb-1">New password (min 12 chars)</label>
+      <div class="relative">
+        <input type="password" id="reset-password" minlength="12"
+               class="w-full rounded border border-token-border bg-surface text-body text-sm pl-3 pr-10 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
+               placeholder="At least 12 characters">
+        <button type="button" onclick="togglePw('reset-password', this)" tabindex="-1"
+                aria-label="Show password" title="Show password"
+                class="absolute inset-y-0 right-0 flex items-center px-3 text-muted/70 hover:text-body">
+          <span data-eye>👁</span>
+        </button>
+      </div>
+    </div>
+    <div class="mt-5 flex justify-end gap-2">
+      <button onclick="closeResetModal()"
+              class="px-3 py-2 text-sm rounded border border-token-border bg-surface-raised text-body hover:bg-surface">
+        Cancel
+      </button>
+      <button onclick="submitReset()"
+              class="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">
+        Reset password
       </button>
     </div>
   </div>
@@ -271,10 +309,45 @@ function changeRole(id, role, username) {
 function toggleActive(id, isActive, username) {
   _patchUser(id, {is_active: isActive}, isActive ? 'Reactivated' : 'Deactivated', username);
 }
+// Toggle a password field between masked and cleartext, swapping the eye glyph.
+function togglePw(inputId, btn) {
+  var input = document.getElementById(inputId);
+  if (!input) return;
+  var show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  var eye = btn.querySelector('[data-eye]');
+  if (eye) eye.textContent = show ? '🙈' : '👁';
+  btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+  btn.setAttribute('title', show ? 'Hide password' : 'Show password');
+}
+
+let _resetUserId = null;
+let _resetUsername = null;
 function resetPwd(id, username) {
-  var pwd = prompt('New password for ' + username + ' (min 12 chars):');
-  if (!pwd) return;
+  _resetUserId = id;
+  _resetUsername = username;
+  document.getElementById('reset-subtitle').textContent = 'User: ' + username;
+  // Always reopen masked, with an empty field.
+  var input = document.getElementById('reset-password');
+  input.value = '';
+  input.type = 'password';
+  var eye = document.querySelector('#reset-modal [data-eye]');
+  if (eye) eye.textContent = '👁';
+  document.getElementById('reset-modal').classList.remove('hidden');
+  input.focus();
+}
+function closeResetModal() {
+  document.getElementById('reset-modal').classList.add('hidden');
+  document.getElementById('reset-password').value = '';
+  _resetUserId = null;
+  _resetUsername = null;
+}
+function submitReset() {
+  if (!_resetUserId) return;
+  var pwd = document.getElementById('reset-password').value;
   if (pwd.length < 12) { showBanner({ok: false, message: 'Password must be at least 12 characters.'}); return; }
+  var id = _resetUserId, username = _resetUsername;
+  closeResetModal();
   _patchUser(id, {new_password: pwd}, 'Password rotated for', username);
 }
 async function deleteUser(id, username) {
@@ -365,6 +438,12 @@ async function saveGrants() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', loadUsers);
+document.addEventListener('DOMContentLoaded', function() {
+  loadUsers();
+  document.getElementById('reset-password').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); submitReset(); }
+    else if (e.key === 'Escape') { closeResetModal(); }
+  });
+});
 </script>
 {% endblock %}

@@ -15,6 +15,7 @@ from app.schemas.order import OrderRead, WebhookPayload
 from app.utils.ad_lookup import snapshot_requester_attrs
 from app.utils.audit import _order_snap, aaudit, classify_for_asset_type_id
 from app.utils.capacity import enforce_max_per_user, enforce_pool_capacity
+from app.utils.tier import enforce_user_tier_limit
 logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/webhook",
@@ -134,6 +135,10 @@ async def receive_servicenow_webhook(
         await enforce_max_per_user(
             db, asset_type.id, str(payload.user_email), asset_type.max_per_user
         )
+
+        # Free-tier / commercial-band user-count limit — blocks only NEW
+        # (not-yet-counted) identities once at/over the effective limit.
+        await enforce_user_tier_limit(db, str(payload.user_email))
 
     # Check for duplicate ServiceNow reference (idempotency)
     existing = await db.execute(
