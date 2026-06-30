@@ -1475,7 +1475,11 @@
     const validity = document.getElementById('validity-badge');
     const filePresent = !!info.file_present;
 
-    if (info.file_present && info.valid) {
+    if (info.file_present && info.valid && info.is_evaluation) {
+      editionBadge.textContent = 'Evaluation';
+      editionBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ' +
+        'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300';
+    } else if (info.file_present && info.valid) {
       editionBadge.textContent = 'Licensed';
       editionBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ' +
         'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300';

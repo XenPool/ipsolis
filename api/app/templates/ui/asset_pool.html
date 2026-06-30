@@ -547,10 +547,25 @@ function startEdit(id) {
   var mac = (a.asset_metadata && a.asset_metadata.mac_address) ? a.asset_metadata.mac_address : '';
   var notes = (a.asset_metadata && a.asset_metadata.notes) ? a.asset_metadata.notes : '';
   var tr = document.getElementById('row-' + id);
+  // Asset definition is only reassignable while the asset is Free — otherwise
+  // an active assignment would point at the wrong type. Show a dropdown for
+  // Free assets, plain text otherwise.
+  var typeCell;
+  if (a.status === 'Free') {
+    var typeOpts = Object.keys(_typeNameById).map(function(tid) {
+      return '<option value="' + tid + '"' + (String(a.asset_type_id) === String(tid) ? ' selected' : '')
+        + '>' + _esc(_typeNameById[tid]) + '</option>';
+    }).join('');
+    typeCell = '<td class="px-4 py-2"><select id="edit-type-' + id + '"'
+      + ' class="w-full rounded border border-token-border bg-surface text-body text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500">'
+      + typeOpts + '</select></td>';
+  } else {
+    typeCell = '<td class="px-4 py-2 text-xs text-muted">' + _esc(a.type_name) + '</td>';
+  }
   tr.innerHTML =
     '<td class="px-4 py-2"><input id="edit-name-' + id + '" value="' + _esc(a.name) + '"'
     + ' class="w-full rounded border border-token-border bg-surface text-body text-xs px-2 py-1 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"></td>'
-    + '<td class="px-4 py-2 text-xs text-muted">' + _esc(a.type_name) + '</td>'
+    + typeCell
     + '<td class="px-4 py-2">'
     + '<select id="edit-status-' + id + '" class="rounded border border-token-border bg-surface text-body text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500">'
     + (EDIT_STATUS_OPTIONS[a.status] || [a.status]).map(function(v) {
@@ -583,16 +598,26 @@ async function saveEdit(id) {
   delete meta.ip_address; // dropped from the schema
   meta.mac_address = newMac ? newMac.toLowerCase() : undefined;
   meta.notes = newNotes || undefined;
+  var body = { name: newName, status: newStatus, asset_metadata: meta };
+  // Asset-definition dropdown is only present for Free assets (see startEdit).
+  var typeSel = document.getElementById('edit-type-' + id);
+  if (typeSel) body.asset_type_id = parseInt(typeSel.value, 10);
   try {
     var resp = await fetch('/admin/assets/' + id, {
       method: 'PUT',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ name: newName, status: newStatus, asset_metadata: meta }),
+      body: JSON.stringify(body),
     });
     if (!resp.ok) { var err = {}; try { err = await resp.json(); } catch(e) {} alert('Error: ' + (err.detail || resp.status)); return; }
     var updated = await resp.json();
     var idx = _allAssets.findIndex(function(x) { return x.id === id; });
-    if (idx >= 0) { _allAssets[idx].name = updated.name; _allAssets[idx].status = updated.status; _allAssets[idx].asset_metadata = meta; }
+    if (idx >= 0) {
+      _allAssets[idx].name = updated.name;
+      _allAssets[idx].status = updated.status;
+      _allAssets[idx].asset_metadata = meta;
+      _allAssets[idx].asset_type_id = updated.asset_type_id;
+      if (_typeNameById[updated.asset_type_id]) _allAssets[idx].type_name = _typeNameById[updated.asset_type_id];
+    }
     _editingId = null;
     renderTable();
   } catch(e) { alert('Network error: ' + e.message); }

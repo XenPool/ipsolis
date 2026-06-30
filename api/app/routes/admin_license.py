@@ -78,7 +78,9 @@ def _license_info_dict() -> dict[str, Any]:
     return {
         "license_id": info.license_id,
         "licensee": info.licensee,
+        "issued_to": info.issued_to,
         "edition": info.edition,
+        "is_evaluation": info.is_evaluation,
         "max_users": info.max_users,
         "max_asset_types": info.max_asset_types,
         "issued_at": info.issued_at.isoformat() if info.issued_at else None,
