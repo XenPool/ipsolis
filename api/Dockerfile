@@ -40,4 +40,7 @@ COPY api/alembic.ini .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# --proxy-headers + --forwarded-allow-ips=* so uvicorn honors nginx's
+# X-Forwarded-Proto/-For (TLS is terminated at the proxy). Without this the app
+# sees plain http and derives http:// OIDC redirect URIs, breaking SSO callbacks.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--proxy-headers", "--forwarded-allow-ips", "*"]

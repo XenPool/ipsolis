@@ -771,6 +771,25 @@ async def asset_type_logos(db: AsyncSession = Depends(get_db)) -> dict:
     return {"logos": logos, "total": len(seen)}
 
 
+@router.get("/asset-type-icons", include_in_schema=False)
+async def asset_type_icons() -> dict:
+    """Returns the bundled monochrome line icons for the asset-type logo picker.
+
+    Each icon is a ``data:image/svg+xml`` URL — selecting one stores it in
+    ``asset_types.logo`` just like an upload, so no extra storage or rendering
+    path is needed. See ``app.utils.asset_icons``.
+    """
+    from app.utils.asset_icons import builtin_asset_icons
+    return {"icons": builtin_asset_icons()}
+
+
+@router.get("/tier/status", include_in_schema=False)
+async def tier_status_endpoint(db: AsyncSession = Depends(get_db)) -> dict:
+    """Free-tier / commercial-band active-user status (powers the admin banner)."""
+    from app.utils.tier import tier_status
+    return await tier_status(db)
+
+
 @router.post(
     "/asset-types",
     response_model=AssetTypeRead,
@@ -1207,6 +1226,25 @@ async def update_asset(
                     detail=f"Asset with name {new_name!r} already exists",
                 )
             asset.name = new_name
+    if payload.asset_type_id is not None and payload.asset_type_id != asset.asset_type_id:
+        # Changing the asset definition is only safe while the asset is Free —
+        # a reserved/busy/maintenance asset has (or is about to have) an active
+        # assignment that would otherwise point at the wrong type. Guard on the
+        # CURRENT status, before any status change in this same request.
+        if asset.status != AssetStatus.FREE:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Asset definition can only be changed while the asset is Free",
+            )
+        type_exists = await db.execute(
+            select(AssetType.id).where(AssetType.id == payload.asset_type_id)
+        )
+        if type_exists.scalar_one_or_none() is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Asset type {payload.asset_type_id} not found",
+            )
+        asset.asset_type_id = payload.asset_type_id
     if payload.status is not None:
         asset.status = payload.status
     if payload.asset_metadata is not None:

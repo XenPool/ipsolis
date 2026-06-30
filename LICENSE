@@ -9,44 +9,65 @@ DEFINITIONS
 "Software" means the ip-Solis source code, Docker images, documentation,
 and all associated files in this repository.
 
+"Active User" means a distinct natural person, identified by their email
+address, who at a given point in time holds at least one active asset
+request or assignment in the Software. Persons whose requests and
+assignments have all ended (e.g. cancelled, expired, revoked, returned,
+or otherwise terminated) are not counted.
+
 "Free Use" means use of the Software without a license file, limited to:
 (i) purely private use by natural persons outside any commercial,
 professional, governmental, or other organizational activity;
-(ii) time-limited evaluation for up to 30 days; and (iii) non-productive
+(ii) time-limited evaluation for up to 30 days; (iii) non-productive
 use for research and teaching purposes at state-recognized educational
-and research institutions.
+and research institutions; and (iv) productive use with up to 25 Active
+Users (the "Free Tier"), including in a commercial, governmental, or
+other organizational context.
 
 "Commercial Use" means any use of the Software beyond Free Use. In
-particular, any productive or operational use of the Software in the
-context of a commercial, freelance, governmental, or other organizational
-activity is Commercial Use -- irrespective of any intention to generate
-revenue or profit. This expressly includes use by legal entities under
-public law (e.g. cities, municipalities, public authorities, and
-public-law corporations and institutions) as well as by tax-privileged
-or charitable organizations.
+particular, productive or operational use of the Software with more than
+25 Active Users in the context of a commercial, freelance, governmental,
+or other organizational activity is Commercial Use -- irrespective of any
+intention to generate revenue or profit. The Free Tier (productive use
+with up to 25 Active Users) does not by itself constitute Commercial Use,
+regardless of the organizational context. Use with more than 25 Active
+Users -- including by legal entities under public law (e.g. cities,
+municipalities, public authorities, and public-law corporations and
+institutions) as well as by tax-privileged or charitable organizations --
+requires a commercial license.
 
 GRANT OF RIGHTS
 
 Subject to the terms below, XenPool GmbH grants you a worldwide,
 non-exclusive, non-transferable license to:
 
-1. Use, copy, and modify the Software for Free Use.
+1. Use, copy, and modify the Software for Free Use, including productive
+   use within the Free Tier (up to 25 Active Users).
 2. Evaluate the Software in any environment for up to 30 days without a
    license key.
 
 COMMERCIAL USE REQUIRES A LICENSE
 
 Any Commercial Use of the Software requires a valid commercial license
-obtained from XenPool GmbH. To purchase a license, contact:
+obtained from XenPool GmbH. To purchase a license, visit the ip-Solis
+license shop:
 
-  sales@xenpool.de
-  https://xenpool.de
+  https://ipsolis.com/en/shop
 
 A valid commercial license is evidenced by a signed .lic file issued by
-XenPool GmbH and installed in the Software's license directory. The
-Software will operate with a 30-day grace period after license expiry,
-after which it reverts to evaluation mode until a renewed license is
-installed.
+XenPool GmbH and installed in the Software's license directory. Among
+other parameters, the license defines its term and the maximum number of
+Active Users permitted (the licensed volume band); a band of "0" means an
+unlimited number of Active Users. The Software will operate with a 30-day
+grace period after license expiry, after which it reverts to the Free Tier
+until a renewed license is installed.
+
+Enforcement is non-disruptive: existing operation continues, and once the
+applicable Active-User limit is reached -- 25 in the Free Tier, or the
+licensed band where a commercial license is installed -- the Software
+prevents the creation of access for additional, previously-uncounted users
+until usage falls below the limit or a license covering the required band
+is installed.
 
 RESTRICTIONS
 
@@ -98,21 +119,34 @@ DEFINITIONEN
 „Software" bezeichnet den ip·Solis-Quellcode, Docker-Images, Dokumentation
 und alle zugehörigen Dateien in diesem Repository.
 
+„Aktiver Nutzer" bezeichnet eine eindeutige natürliche Person, identifiziert
+über ihre E-Mail-Adresse, die zu einem gegebenen Zeitpunkt mindestens eine
+aktive Asset-Anforderung oder -Zuweisung in der Software innehat. Personen,
+deren Anforderungen und Zuweisungen sämtlich beendet sind (z. B. storniert,
+abgelaufen, entzogen, zurückgegeben oder anderweitig beendet), werden nicht
+gezählt.
+
 „Kostenfreier Gebrauch" bezeichnet die Nutzung der Software ohne Lizenzdatei,
 beschränkt auf: (i) die rein private Nutzung durch natürliche Personen außerhalb
 jeder gewerblichen, beruflichen, behördlichen oder sonstigen organisatorischen
-Tätigkeit, (ii) die zeitlich begrenzte Evaluierung für bis zu 30 Tage sowie
+Tätigkeit, (ii) die zeitlich begrenzte Evaluierung für bis zu 30 Tage,
 (iii) die nicht-produktive Nutzung zu Forschungs- und Lehrzwecken an staatlich
-anerkannten Bildungs- und Forschungseinrichtungen.
+anerkannten Bildungs- und Forschungseinrichtungen sowie (iv) die produktive
+Nutzung mit bis zu 25 aktiven Nutzern (das „Free-Tier"), auch in einem
+gewerblichen, behördlichen oder sonstigen organisatorischen Kontext.
 
 „Kommerzieller Gebrauch" bezeichnet jede über den kostenfreien Gebrauch
 hinausgehende Nutzung. Kommerziell ist insbesondere jeder produktive oder
-betriebliche Einsatz der Software im Rahmen einer gewerblichen, freiberuflichen,
-behördlichen oder sonstigen organisatorischen Tätigkeit — unabhängig von einer
-Gewinnerzielungsabsicht. Dies umfasst ausdrücklich auch die Nutzung durch
-juristische Personen des öffentlichen Rechts (z. B. Städte, Gemeinden, Behörden,
-Körperschaften und Anstalten des öffentlichen Rechts) sowie durch
-steuerbegünstigte oder gemeinnützige Körperschaften.
+betriebliche Einsatz der Software mit mehr als 25 aktiven Nutzern im Rahmen
+einer gewerblichen, freiberuflichen, behördlichen oder sonstigen
+organisatorischen Tätigkeit — unabhängig von einer Gewinnerzielungsabsicht.
+Das Free-Tier (produktive Nutzung mit bis zu 25 aktiven Nutzern) stellt für
+sich genommen keinen kommerziellen Gebrauch dar, unabhängig vom
+organisatorischen Kontext. Eine Nutzung mit mehr als 25 aktiven Nutzern —
+einschließlich durch juristische Personen des öffentlichen Rechts (z. B.
+Städte, Gemeinden, Behörden, Körperschaften und Anstalten des öffentlichen
+Rechts) sowie durch steuerbegünstigte oder gemeinnützige Körperschaften —
+setzt eine kommerzielle Lizenz voraus.
 
 RECHTEEINRÄUMUNG
 
@@ -120,24 +154,32 @@ Vorbehaltlich der nachstehenden Bedingungen räumt XenPool GmbH Ihnen eine
 weltweite, nicht-exklusive, nicht übertragbare Lizenz ein zu:
 
 1. Nutzung, Vervielfältigung und Modifikation der Software für den
-   kostenfreien Gebrauch.
+   kostenfreien Gebrauch, einschließlich der produktiven Nutzung im
+   Rahmen des Free-Tiers (bis zu 25 aktive Nutzer).
 2. Evaluierung der Software in beliebiger Umgebung für bis zu
    30 Tage ohne Lizenzschlüssel.
 
 KOMMERZIELLER GEBRAUCH ERFORDERT EINE LIZENZ
 
 Jeder kommerzielle Gebrauch der Software setzt eine gültige kommerzielle
-Lizenz voraus, die bei XenPool GmbH erworben werden muss. Zur Lizenzierung
-wenden Sie sich bitte an:
+Lizenz voraus, die bei XenPool GmbH erworben werden muss. Eine Lizenz
+erhalten Sie im ip·Solis-Lizenzshop:
 
-  sales@xenpool.de
-  https://xenpool.de
+  https://ipsolis.com/de/shop
 
 Eine gültige kommerzielle Lizenz wird durch eine von XenPool GmbH ausgestellte
 und signierte .lic-Datei nachgewiesen, die im Lizenzverzeichnis der Software
-installiert ist. Nach Ablauf der Lizenz gilt eine 30-tägige Kulanzfrist,
-nach deren Ablauf die Software in den Evaluierungsmodus zurückfällt, bis eine
-erneuerte Lizenz installiert wird.
+installiert ist. Die Lizenz definiert unter anderem ihre Laufzeit sowie die
+höchstzulässige Anzahl aktiver Nutzer (das lizenzierte Volumenband); ein Band
+von „0" bedeutet eine unbegrenzte Anzahl aktiver Nutzer. Nach Ablauf der Lizenz
+gilt eine 30-tägige Kulanzfrist, nach deren Ablauf die Software in das Free-Tier
+zurückfällt, bis eine erneuerte Lizenz installiert wird.
+
+Die Durchsetzung erfolgt unterbrechungsfrei: Der bestehende Betrieb läuft weiter;
+sobald die jeweils geltende Nutzergrenze erreicht ist — 25 im Free-Tier bzw. das
+lizenzierte Band bei installierter kommerzieller Lizenz — verhindert die Software
+das Anlegen von Zugängen für zusätzliche, bislang nicht gezählte Nutzer, bis die
+Nutzung unter die Grenze fällt oder eine Lizenz mit passendem Band installiert wird.
 
 EINSCHRÄNKUNGEN
 

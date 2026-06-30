@@ -121,9 +121,9 @@
         <p class="text-sm font-semibold text-amber-800 dark:text-amber-300">License expired — grace period active</p>
         <p id="grace-period-detail" class="mt-1 text-xs text-amber-700 dark:text-amber-400"></p>
         <p class="mt-1 text-xs text-amber-700 dark:text-amber-400">
-          All features remain enabled. Contact
-          <a href="mailto:sales@xenpool.de" class="underline">sales@xenpool.de</a>
-          to renew before the grace period ends.
+          All features remain enabled.
+          <a href="https://ipsolis.com/en/shop" target="_blank" rel="noopener" class="underline">Renew at the ip·Solis shop</a>
+          before the grace period ends.
         </p>
       </div>
     </div>
@@ -172,6 +172,7 @@
   <!-- How-to card -->
   <section class="bg-surface-raised rounded-lg border border-token-border p-5 text-xs text-muted leading-relaxed">
     <h3 class="text-xs font-semibold uppercase tracking-wider text-body mb-2">How it works</h3>
+    <p class="mb-2">ip·Solis is free for productive use with up to <strong>25 active users</strong>. A commercial license raises the limit to its volume band (e.g. 75 / 250 active users); above that, contact sales.</p>
     <ol class="list-decimal pl-5 space-y-1">
       <li>Purchase a license at the
         <a class="underline hover:text-body ipsolis-shop-link" href="https://ipsolis.com/en/shop" target="_blank" rel="noopener">ip·Solis Shop</a>.
@@ -1475,7 +1476,11 @@
     const validity = document.getElementById('validity-badge');
     const filePresent = !!info.file_present;
 
-    if (info.file_present && info.valid) {
+    if (info.file_present && info.valid && info.is_evaluation) {
+      editionBadge.textContent = 'Evaluation';
+      editionBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ' +
+        'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300';
+    } else if (info.file_present && info.valid) {
       editionBadge.textContent = 'Licensed';
       editionBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ' +
         'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300';

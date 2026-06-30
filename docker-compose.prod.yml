@@ -14,7 +14,10 @@ services:
   api:
     # Remove dev bind-mount; use code baked into the Docker image
     volumes: []
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+    # --proxy-headers + --forwarded-allow-ips=* so uvicorn trusts nginx's
+    # X-Forwarded-Proto (TLS terminates at the proxy); otherwise OIDC redirect
+    # URIs are derived as http:// and SSO callbacks fail with AADSTS50011.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4", "--proxy-headers", "--forwarded-allow-ips", "*"]
 
   worker:
     # Remove dev bind-mount; keep persistent PowerShell module volume

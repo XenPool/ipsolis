@@ -46,6 +46,11 @@ LICENSE_PATH = Path(os.environ.get("IPSOLIS_LICENSE_PATH", "/app/license/ipsolis
 COMMUNITY_EDITION = "community"
 PRO_EDITION       = "pro"
 
+# Free productive tier: active end-user identities allowed without a valid
+# COMMERCIAL license. Above this a commercial volume-band license is required
+# (its signed ``max_users`` field sets the band). See ``app.utils.tier``.
+FREE_TIER_MAX_USERS = 25
+
 # All features remain active for this many days after expiry.
 GRACE_PERIOD_DAYS = 30
 
@@ -60,7 +65,14 @@ class LicenseInfo(BaseModel):
 
     license_id: str = "community"
     licensee: str = "ip·Solis"
+    # Who the license was issued to (contact email/name from the .lic payload).
+    issued_to: str = ""
     edition: Literal["community", "pro"] = "community"
+    # True for evaluation/demo licenses — signed by a demo-only trust-list key.
+    is_evaluation: bool = False
+    # True for paid commercial licenses — signed by a commercial trust-list key.
+    # Only a commercial license raises the free-tier user limit (demo/eval does not).
+    is_commercial: bool = False
     max_users: int = 0
     max_asset_types: int = 0
     issued_at: datetime | None = None
@@ -237,10 +249,27 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
             f"{days_left} day(s) remaining. Renew to avoid reverting to evaluation mode."
         )
 
+    # Evaluation = signed by a trust-list key that only accepts demo licenses.
+    # Keying off the verifying key (not a payload field) means marketing demo
+    # licenses are recognised even though they omit an explicit type/license_id.
+    is_evaluation = bool(
+        verification.key
+        and verification.key.accepted_license_types == frozenset({"demo"})
+    )
+    # Commercial = signed by a key that accepts commercial licenses. Only this
+    # raises the free-tier user limit; demo/eval keys never do.
+    is_commercial = bool(
+        verification.key
+        and "commercial" in verification.key.accepted_license_types
+    )
+
     info = LicenseInfo(
         license_id=str(data.get("license_id") or "community"),
         licensee=str(data.get("licensee") or "ip·Solis"),
+        issued_to=str(data.get("issued_to") or ""),
         edition=edition,  # type: ignore[arg-type]
+        is_evaluation=is_evaluation,
+        is_commercial=is_commercial,
         max_users=int(data.get("max_users") or 0),
         max_asset_types=int(data.get("max_asset_types") or 0),
         issued_at=issued_at,
@@ -266,3 +295,20 @@ def load_license(force_reload: bool = False) -> LicenseInfo:
 def get_license_info() -> LicenseInfo:
     """Return cached license info (loading on first access)."""
     return load_license()
+
+
+def effective_user_limit(info: LicenseInfo) -> int | None:
+    """Maximum allowed active end-user identities for this license state.
+
+    - Valid **commercial** license (including the 30-day expiry grace, during
+      which ``valid`` stays True): the signed ``max_users`` band applies.
+      ``max_users == 0`` means unlimited → returns ``None``.
+    - Anything else — no license, community, demo/evaluation, or a commercial
+      license whose grace has been exhausted (reverted to community,
+      ``valid=False``) — falls back to the free tier.
+
+    Returns ``None`` for unlimited.
+    """
+    if info.is_commercial and info.valid:
+        return None if info.max_users == 0 else info.max_users
+    return FREE_TIER_MAX_USERS

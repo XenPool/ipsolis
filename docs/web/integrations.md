@@ -317,6 +317,33 @@ Configure in **Admin → Settings → SMTP**:
 
 Use **Send Test Email** to verify the connection before saving.
 
+### Authentication options
+
+ip·Solis speaks plain SMTP (STARTTLS/SSL + username/password). This is provider-agnostic
+by design — it works with any mail system, not just Microsoft or Google — so there is a
+single SMTP configuration to manage regardless of your identity provider. ip·Solis does
+**not** use vendor-specific send APIs (e.g. Microsoft Graph), which would add a second,
+Microsoft-only configuration path.
+
+How you authenticate depends on your mail platform:
+
+| Scenario | Recommended approach |
+|---|---|
+| Dedicated/internal SMTP server, or a mail relay (SES, SendGrid, Mailgun, internal Postfix/Exchange smarthost) | Use the relay's username + API key/password directly. **Recommended** — the relay handles provider-specific auth, ip·Solis keeps one simple SMTP config. |
+| Microsoft 365 with MFA enabled | Create an **app password** for a dedicated service mailbox and use it as the SMTP password. Works today, but see the caveat below. |
+| Google Workspace with 2-step verification | Create an **app password** for a dedicated service account and use it as the SMTP password. |
+
+> **Microsoft 365 caveat:** App passwords depend on legacy per-user MFA and are unavailable
+> when *Security Defaults* are enabled; Microsoft is also phasing out Basic Auth for SMTP.
+> For a future-proof M365 setup, point ip·Solis at an **SMTP relay / mail connector** (option 1
+> above) rather than connecting to `smtp-mail.outlook.com` directly with an app password.
+> This keeps ip·Solis on one provider-agnostic SMTP path and moves the M365-specific auth to
+> the relay, where it belongs.
+
+Token-based SMTP (`XOAUTH2`) and vendor send APIs are intentionally not implemented: they
+require provider-specific token handling and a second configuration surface, for little gain
+over a relay.
+
 ---
 
 ## External Secret Backends

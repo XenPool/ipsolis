@@ -185,7 +185,7 @@ Log in with:
 3. The page shows the license tier, seat count, and expiry date once accepted.
 
 Without a valid license the platform runs in evaluation mode (30-day free trial).
-Commercial use requires a license — see `sales@xenpool.de`.
+Commercial use (more than 25 active users) requires a license — get one at the ip·Solis license shop: https://ipsolis.com/en/shop
 
 ---
 
