@@ -36,23 +36,22 @@ Configure in **Admin → Settings → Active Directory**:
 
 ---
 
-## Microsoft Entra ID (Azure AD) SSO
+## Portal SSO — OpenID Connect (OIDC)
 
+Portal sign-in uses standards-based **OpenID Connect**. You register one or more identity providers (any compliant IdP — **Microsoft Entra ID**, Okta, Ping, Google, Keycloak, Authentik, Zitadel, …); each self-configures from its issuer's discovery document. Whether login is required at all is controlled by **Require login to access the portal** (see [Self-Service → Authentication](./self-service#authentication)).
 
-Entra ID provides SSO authentication for the self-service portal. When `entra.mode` is set to `entra_only` or `entra_with_onprem`, users are redirected to Microsoft's login page and returned to the portal with a verified identity.
-
-Configure in **Admin → Settings → Entra ID**:
+Add providers under **Admin → Settings → Authentication → OIDC Providers**. Per provider:
 
 | Setting | Description |
 |---|---|
-| Tenant ID | Your Azure AD tenant |
-| Client ID | App registration client ID |
-| Client secret | App registration secret |
-| Redirect URI | Must match the registered redirect in Azure Portal |
-| Domain allow-list | Optional: restrict login to specific email domains |
-| Mode | `disabled` / `entra_only` / `entra_with_onprem` |
+| Provider ID | Lowercase slug (`a–z0-9_-`), used in the callback URL; cannot change after creation |
+| Display name | Shown on the login chooser (e.g. "Entra ID") |
+| Issuer URL | The IdP issuer; discovery is read from `<issuer>/.well-known/openid-configuration` (Entra: `https://login.microsoftonline.com/<tenant>/v2.0`, Okta: `https://<org>.okta.com`, Google: `https://accounts.google.com`) |
+| Client ID / secret | From the IdP app registration |
+| Redirect URI | Auto-derived from the portal host as `/portal/auth/<provider>/callback` — register this exact URI in the IdP app |
+| Allowed domains | Optional comma-separated UPN/email domain allow-list |
 
-Use **Test Entra Credentials** to verify the client credentials via a token-flow check before saving.
+Use **Test** on a provider to verify its discovery document is reachable before saving. On-prem LDAP username/password login can be offered alongside OIDC (`auth.ldap_enabled`).
 
 ---
 

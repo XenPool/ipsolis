@@ -15,15 +15,19 @@ Das Self-Service-Portal ermöglicht es Mitarbeitenden, IT-Assets anzufordern, de
 
 ## Authentifizierung
 
-Das Portal unterstützt drei Authentifizierungsmodi, die unter **Admin → Settings → Entra ID** konfiguriert werden:
+Ob das Portal einen Login erfordert, steuert **Login zum Zugriff auf das Portal erforderlich** (**Admin → Settings → Authentifizierung**):
 
-| Modus | Verhalten |
+- **Aus** — das Portal ist offen; alle Benutzer teilen sich eine anonyme Identität. Geeignet für Tests oder rein interne Bereitstellungen ohne SSO.
+- **An** — Benutzer müssen sich anmelden, bevor sie den Katalog durchsuchen oder Bestellungen aufgeben können.
+
+Bei aktiviertem Login unterstützt ip·Solis zwei Arten von Anmeldemethoden, die kombiniert werden können:
+
+| Methode | Verhalten |
 |---|---|
-| `disabled` | Das Portal ist offen; alle Benutzer teilen sich eine anonyme Identität. Geeignet für Tests oder rein interne Bereitstellungen ohne SSO |
-| `entra_only` | Entra ID (Azure AD) SSO erforderlich. Benutzer melden sich mit ihrem Microsoft-365-Konto an |
-| `entra_with_onprem` | Entra ID SSO plus eine lokale LDAP-Mitgliedschaftsprüfung. Der Benutzer muss sowohl in Entra authentifiziert als auch in der konfigurierten AD-Gruppe vorhanden sein |
+| **OIDC Single Sign-On** | Ein oder mehrere standardbasierte OpenID-Connect-Identity-Provider — jeder kompatible IdP (Microsoft Entra ID, Okta, Ping, Google, Keycloak, Authentik, Zitadel, …). Jeder Provider konfiguriert sich selbst aus dem Discovery-Dokument seines Issuers; hinzufügen unter **Admin → Settings → Authentifizierung → OIDC Providers**. Der Callback lautet `/portal/auth/<provider>/callback`. |
+| **On-Prem LDAP** | Optionale Anmeldung mit Benutzername/Passwort gegen Ihr Active Directory / LDAP (`auth.ldap_enabled`) — für Umgebungen ohne Cloud-SSO. |
 
-Wenn SSO aktiviert ist, wird die E-Mail-Adresse des Benutzers automatisch aufgelöst. Die Vorgesetzten-Suche für das Genehmigungs-Routing nutzt dieselbe AD-Verbindung.
+Sind mehrere Anmeldemethoden aktiv, sehen die Benutzer eine Auswahl; bei genau einer geht es direkt dorthin. Nach erfolgreicher Anmeldung wird die E-Mail-Adresse des Benutzers automatisch aufgelöst. Die Vorgesetzten-Suche für das Genehmigungs-Routing nutzt dieselbe AD-/LDAP-Verbindung.
 
 ---
 

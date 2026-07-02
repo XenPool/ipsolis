@@ -36,23 +36,22 @@ Konfiguration unter **Admin → Einstellungen → Active Directory**:
 
 ---
 
-## Microsoft Entra ID (Azure AD) SSO
+## Portal-SSO — OpenID Connect (OIDC)
 
+Die Portal-Anmeldung nutzt standardbasiertes **OpenID Connect**. Sie registrieren einen oder mehrere Identity-Provider (jeder kompatible IdP — **Microsoft Entra ID**, Okta, Ping, Google, Keycloak, Authentik, Zitadel, …); jeder konfiguriert sich selbst aus dem Discovery-Dokument seines Issuers. Ob überhaupt ein Login erforderlich ist, steuert **Login zum Zugriff auf das Portal erforderlich** (siehe [Self-Service → Authentifizierung](./self-service#authentifizierung)).
 
-Entra ID stellt die SSO-Authentifizierung für das Self-Service-Portal bereit. Wenn `entra.mode` auf `entra_only` oder `entra_with_onprem` gesetzt ist, werden Benutzer auf die Microsoft-Anmeldeseite umgeleitet und mit einer verifizierten Identität zum Portal zurückgeleitet.
-
-Konfiguration unter **Admin → Einstellungen → Entra ID**:
+Provider hinzufügen unter **Admin → Einstellungen → Authentifizierung → OIDC Providers**. Je Provider:
 
 | Einstellung | Beschreibung |
 |---|---|
-| Tenant-ID | Ihr Azure-AD-Tenant |
-| Client-ID | Client-ID der App-Registrierung |
-| Client-Secret | Secret der App-Registrierung |
-| Redirect-URI | Muss mit der registrierten Redirect-URI im Azure-Portal übereinstimmen |
-| Domänen-Allowlist | Optional: Anmeldung auf bestimmte E-Mail-Domänen beschränken |
-| Modus | `disabled` / `entra_only` / `entra_with_onprem` |
+| Provider ID | Kleinbuchstaben-Slug (`a–z0-9_-`), erscheint in der Callback-URL; nach Anlage nicht änderbar |
+| Anzeigename | Erscheint in der Login-Auswahl (z. B. „Entra ID") |
+| Issuer-URL | Der IdP-Issuer; Discovery wird aus `<issuer>/.well-known/openid-configuration` gelesen (Entra: `https://login.microsoftonline.com/<tenant>/v2.0`, Okta: `https://<org>.okta.com`, Google: `https://accounts.google.com`) |
+| Client-ID / Secret | Aus der IdP-App-Registrierung |
+| Redirect-URI | Wird aus dem Portal-Host als `/portal/auth/<provider>/callback` abgeleitet — genau diese URI in der IdP-App registrieren |
+| Domänen-Allowlist | Optionale kommaseparierte UPN-/E-Mail-Domänen-Allowlist |
 
-Verwenden Sie **Entra-Zugangsdaten testen**, um die Client-Zugangsdaten vor dem Speichern über eine Token-Flow-Prüfung zu verifizieren.
+Verwenden Sie **Test** an einem Provider, um vor dem Speichern zu prüfen, ob dessen Discovery-Dokument erreichbar ist. On-Prem-LDAP-Anmeldung (Benutzername/Passwort) kann zusätzlich zu OIDC angeboten werden (`auth.ldap_enabled`).
 
 ---
 
