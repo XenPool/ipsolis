@@ -17,12 +17,12 @@ Each asset type is configured with one of three automation strategies that deter
 
 ### Group Access
 
-ip·Solis adds or removes the user from one or more Active Directory or Entra ID groups. No PowerShell scripting required. Configure group targets in the asset type under **Targets**.
+ip·Solis adds or removes the user from one or more **Active Directory** groups. No PowerShell scripting required. Configure group targets in the asset type under **Targets**.
 
 Each target specifies:
-- **Type** — AD group, Entra ID group
-- **Identifier** — the group DN or object ID
-- **Principal source** — whether the user's AD account or Entra UPN is used for membership
+- **Type** — AD group. *(Entra ID group and RDS collection targets are planned — coming soon; today only AD group is executed.)*
+- **Identifier** — the group DN (supports the `{asset_name}` placeholder, substituted with the assigned asset at provision time)
+- **Principal source** — which of the order's users are added to the group: the requester, the additional RDP users, the admin users, or all of them
 
 ### Runbook
 
