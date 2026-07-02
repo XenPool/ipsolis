@@ -15,7 +15,7 @@ ip·Solis verwaltet den gesamten Lebenszyklus von IT-Assets — von der initiale
 
 ## Zuweisungsmodelle
 
-Jeder Asset-Typ wird mit einem von drei Zuweisungsmodellen konfiguriert, die bestimmen, wie Assets zugeteilt werden.
+Jeder Asset-Typ wird mit einem von zwei Zuweisungsmodellen konfiguriert, die bestimmen, wie Assets zugeteilt werden.
 
 ### Capacity-Pooled
 
@@ -24,12 +24,6 @@ Ein gemeinsam genutzter Pool austauschbarer Assets. Wenn ein Benutzer eines anfo
 Typischer Einsatz: virtuelle Desktops, VPN-Konten, gemeinsam genutzte Server.
 
 **Benutzerkontingent** (`max_per_user`) — begrenzt optional, wie viele Instanzen ein einzelner Benutzer gleichzeitig halten darf. Gezählt über alle nicht-terminalen Bestellzustände hinweg.
-
-### Dedicated-Shared
-
-Ein festes Asset, das gleichzeitig von mehreren Benutzern genutzt wird. Keine Erschöpfung — jede Bestellung dieses Typs verweist auf dieselbe gemeinsam genutzte Ressource. Die Deprovisionierung entfernt den Zugriff des Benutzers, lässt das Asset selbst jedoch unangetastet.
-
-Typischer Einsatz: Jump-Hosts, gemeinsam genutzte Anwendungsserver, Team-Dateifreigaben.
 
 ### Assigned-Personal
 
@@ -66,7 +60,7 @@ Wichtige Felder:
 | Feld | Beschreibung |
 |---|---|
 | **Kategorie** | Gruppiert Asset-Typen im Portal-Katalog |
-| **Zuweisungsmodell** | Capacity-pooled, dedicated-shared oder assigned-personal |
+| **Zuweisungsmodell** | Capacity-pooled oder assigned-personal |
 | **Automatisierungsstrategie** | Gruppenzugriff, Runbook oder Composite — siehe [Automatisierung & Runbooks](./automation) |
 | **Deprovisionierungsrichtlinie** | Was passiert, wenn ein Asset zurückgegeben wird oder abläuft |
 | **Pool-Kapazität** | Maximale Pool-Größe; Kapazitätswarnungen erscheinen auf dem Dashboard bei ≥80 % / ≥95 % Auslastung |

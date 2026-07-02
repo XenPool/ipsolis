@@ -15,7 +15,7 @@ ip·Solis manages the full lifecycle of IT assets — from initial assignment th
 
 ## Assignment Models
 
-Every asset type is configured with one of three assignment models that determine how assets are allocated.
+Every asset type is configured with one of two assignment models that determine how assets are allocated.
 
 ### Capacity-Pooled
 
@@ -24,12 +24,6 @@ A shared pool of fungible assets. When a user requests one, ip·Solis picks an a
 Typical use: virtual desktops, VPN accounts, shared servers.
 
 **Per-user quota** (`max_per_user`) — optionally limits how many instances a single user can hold simultaneously. Counted across all non-terminal order states.
-
-### Dedicated-Shared
-
-A fixed asset shared by multiple users simultaneously. No depletion — every order for this type points at the same shared resource. Deprovisioning removes the user's access but leaves the asset untouched.
-
-Typical use: jump hosts, shared application servers, team file shares.
 
 ### Assigned-Personal
 
@@ -66,7 +60,7 @@ Key fields:
 | Field | Description |
 |---|---|
 | **Category** | Groups asset types in the portal catalog |
-| **Assignment model** | Capacity-pooled, dedicated-shared, or assigned-personal |
+| **Assignment model** | Capacity-pooled or assigned-personal |
 | **Automation strategy** | Group Access, Runbook, or Composite — see [Automation & Runbooks](./automation) |
 | **Deprovision policy** | What happens when an asset is returned or expired |
 | **Pool capacity** | Maximum pool size; capacity warnings appear on the dashboard at ≥80% / ≥95% fill |
