@@ -1,0 +1,114 @@
+name: CI
+run-name: CI (${{ github.ref_name }})
+
+# Test gate for the active development branch. Runs BEFORE anything can
+# reach prelive: catches regressions on `dev` instead of at deploy time.
+# NOTE: this workflow only tests — it never deploys. Deployment stays in
+# deploy-prelive.yml (push → prelive).
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+
+# A newer push to the same branch/PR cancels the in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Lint ─────────────────────────────────────────────────────────────────────
+  lint:
+    name: Ruff (critical errors)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: pip install ruff
+      - name: Lint for real errors
+        # Conservative rule set: syntax errors (E9) + pyflakes undefined
+        # names / broken imports (F63,F7,F82). This gates genuine bugs
+        # without drowning the build in style noise. Broaden the --select
+        # list over time as the codebase is cleaned up.
+        run: ruff check --select E9,F63,F7,F82 api worker
+
+  # ── Tests ────────────────────────────────────────────────────────────────────
+  test:
+    name: Unit + E2E against the compose stack
+    runs-on: ubuntu-latest
+    env:
+      # Test-only secrets — the app reads real external-system creds from
+      # app_config at runtime, so a booting stack needs only these.
+      ADMIN_API_KEY: ci_admin_key_at_least_32_characters_long
+      IPSOLIS_BASE_URL: http://localhost:8000
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Write test .env
+        # Minimal env so the stack boots. Not committed; CI-only values.
+        run: |
+          cat > .env <<'EOF'
+          POSTGRES_DB=ipsolis
+          POSTGRES_USER=xpuser
+          POSTGRES_PASSWORD=ci_test_password
+          API_SECRET_KEY=ci_api_secret_key_at_least_32_characters
+          CORS_ORIGINS=http://localhost:8000
+          WEBHOOK_SECRET_TOKEN=ci_webhook_token
+          ADMIN_API_KEY=ci_admin_key_at_least_32_characters_long
+          CELERY_BROKER_URL=redis://redis:6379/0
+          CELERY_RESULT_BACKEND=redis://redis:6379/1
+          EOF
+
+      - name: Build & start stack
+        run: docker compose up -d --build
+
+      - name: Wait for API health
+        run: |
+          echo "Waiting for ipsolis-api to become healthy..."
+          for i in $(seq 1 24); do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' ipsolis-api 2>/dev/null || echo "missing")
+            echo "  Attempt $i: container=$STATUS"
+            if [ "$STATUS" = "healthy" ]; then break; fi
+            sleep 5
+          done
+          [ "$STATUS" = "healthy" ] || { docker compose logs api --tail=60; exit 1; }
+
+      - name: Run migrations
+        run: docker compose exec -T api alembic upgrade head
+
+      - name: Unit + integration tests (in container)
+        # api/tests/conftest.py adds worker/ to sys.path; runs against the
+        # live compose DB. Same command documented in that conftest.
+        run: docker compose exec -T api python -m pytest tests/ -q
+
+      - name: Set up Playwright (host)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Playwright + Chromium
+        run: |
+          pip install -r tests/e2e/requirements.txt
+          playwright install --with-deps chromium
+
+      - name: E2E smoke tests (headless, against localhost:8000)
+        run: pytest tests/e2e/ -q --tracing=retain-on-failure --output=e2e-artifacts
+
+      - name: Upload Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: e2e-artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose logs --tail=100
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
