@@ -35,9 +35,29 @@ jobs:
         # list over time as the codebase is cleaned up.
         run: ruff check --select E9,F63,F7,F82 api worker
 
-  # ── Tests ────────────────────────────────────────────────────────────────────
-  test:
-    name: Unit + E2E against the compose stack
+  # ── Unit + integration tests ─────────────────────────────────────────────────
+  unit:
+    name: Unit tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install app + worker deps
+        # api/tests import both app.* (API) and tasks.* (worker), and mock
+        # all external systems — no live DB/network needed. This is the
+        # "local run" mode api/tests/conftest.py documents (worker/ added
+        # to sys.path). All deps are pip wheels; no system libs required.
+        run: pip install -r api/requirements.txt -r worker/requirements.txt
+      - name: Run unit tests
+        # cwd=api so `app` is importable; conftest adds ../worker for `tasks`.
+        working-directory: api
+        run: python -m pytest tests/ -q
+
+  # ── E2E against the compose stack ────────────────────────────────────────────
+  e2e:
+    name: E2E smoke (Playwright vs compose stack)
     runs-on: ubuntu-latest
     env:
       # Test-only secrets — the app reads real external-system creds from
@@ -78,11 +98,6 @@ jobs:
 
       - name: Run migrations
         run: docker compose exec -T api alembic upgrade head
-
-      - name: Unit + integration tests (in container)
-        # api/tests/conftest.py adds worker/ to sys.path; runs against the
-        # live compose DB. Same command documented in that conftest.
-        run: docker compose exec -T api python -m pytest tests/ -q
 
       - name: Set up Playwright (host)
         uses: actions/setup-python@v5
