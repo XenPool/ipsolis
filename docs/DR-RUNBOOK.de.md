@@ -55,6 +55,10 @@ Diese Dinge *vor* dem Start bereithalten (idealerweise off-box / im Secret-Manag
 - [ ] Die alte `.env` — oder mindestens dieselben Werte für `API_SECRET_KEY`,
       `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`, `ADMIN_API_KEY`,
       `WEBHOOK_SECRET_TOKEN` und die `CELERY_*`-URLs.
+- [ ] **Bei at-rest-verschlüsselten Backups** (`*.sql.gz.enc`): derselbe
+      `BACKUP_ENCRYPTION_KEY` — ohne ihn lässt sich ein verschlüsselter Dump
+      nicht entschlüsseln und ist unwiederbringlich. Infra-Secret in `.env`,
+      nicht im Dump.
 - [ ] Das Deploy-Verzeichnis / die Compose-Dateien (`docker-compose.yml` +
       `docker-compose.prod.yml`).
 - [ ] TLS-Zertifikate (`certs/`) oder Akzeptanz eines frischen Self-Signed-Zertifikats

@@ -51,6 +51,9 @@ Have these available *before* you start (ideally stored off-box / in your secret
 - [ ] The old `.env` — or at least the same values for `API_SECRET_KEY`,
       `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`, `ADMIN_API_KEY`,
       `WEBHOOK_SECRET_TOKEN`, and the `CELERY_*` URLs.
+- [ ] **If backups are encrypted at-rest** (`*.sql.gz.enc`): the same
+      `BACKUP_ENCRYPTION_KEY` — without it an encrypted dump cannot be decrypted
+      and is unrecoverable. It is an infra secret in `.env`, not in the dump.
 - [ ] The deploy directory / compose files (`docker-compose.yml` + `docker-compose.prod.yml`).
 - [ ] TLS certs (`certs/`), or accept a fresh self-signed cert (`tools/install/bootstrap-certs.sh`).
 - [ ] The `.lic` license file (`licenses/`), for Pro deployments.

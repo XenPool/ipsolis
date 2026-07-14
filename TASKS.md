@@ -160,30 +160,6 @@ qualified/eIDAS e-signatures; QR-tagged physical inventory.
 
 ---
 
-### [open] Backup encryption at-rest
-
-Surfaced by the DR audit: credentials are stored **plaintext** in `app_config`
-([`config.py:21`](api/app/models/config.py#L21); `is_secret` only masks the UI, it does not
-encrypt), so the pg_dump backup files ([`maintenance.py:165-274`](worker/tasks/modules/maintenance.py#L165-L274))
-contain AD/SMTP passwords in cleartext. A GDPR/security hardening gap — the backup file is a
-credential store.
-
-**Scope:**
-- Encrypt backup files at-rest — symmetric, key stored **separately** (NOT `API_SECRET_KEY`, else a
-  key-in-the-same-restore problem) — or, at minimum, a documented requirement to encrypt the backup
-  volume/target.
-- Restic/Borg-style encrypted backup transport as the lightweight documented entry point.
-- Optional/complementary (note as an option, not a v1 must): encrypt `app_config` secrets at-rest
-  (larger change touching the secret-resolver path).
-- Thematically GDPR (adjacent to the shipped audit-retention feature) but **not** retention — a
-  separate small task.
-
-**Follow-up:** bilingual docs (EN + DE, `<name>.md` / `<name>.de.md`).
-
-**Out of scope:** full `app_config`-at-rest encryption in v1.
-
----
-
 ### [open] Portal accessibility (BITV 2.0 / EN 301 549)
 
 Public sector is in the target market, which makes accessibility a tender gate. There is no a11y
@@ -379,6 +355,7 @@ All items below are shipped. Detailed implementation notes live in git history.
 
 | Area | Shipped | Notes |
 |------|---------|-------|
+| Backup encryption at-rest | 2026-07-14 | Optional AES-256-CBC encryption of DB backups, opt-in via a new `BACKUP_ENCRYPTION_KEY` infra secret ([`config.py`](api/app/config.py) + [`.env.example`](.env.example)). When set, [`_run_backup_sync`](worker/tasks/modules/maintenance.py) pipes `pg_dump \| gzip \| openssl enc` → `*.sql.gz.enc`; `run_restore` decrypts the same way. The **`.enc` suffix is the single source of truth** — the api picks it ([`admin_maintenance.py`](api/app/routes/admin_maintenance.py) `_backup_suffix`, incl. pre-restore safety backup + widened `_SAFE_NAME`); the worker encrypts/decrypts on that signal. **Back-compat:** key unset → plaintext `.sql.gz` as before; restore auto-detects, so old backups still load. Key is kept **out of the DB** (app_config lives inside the dump) and must be carried to a fresh host — [DR-RUNBOOK](docs/DR-RUNBOOK.md)/`.de` updated. Read-only "Encrypted at-rest" badge on the Maintenance → Backups tab via `GET /schedule`. Verified on the compose stack: real pg_dump→encrypt→decrypt yields valid SQL (openssl `Salted__`, wrong key fails); plaintext path still produces a valid gzip. **Out of scope:** full app_config-at-rest encryption |
 | Admin UI navigation restructure | 2026-07-14 | Flat ~25-link sidebar (internal scrollbar at laptop heights) reorganised in [`base.html`](api/app/templates/base.html): **Stufe 1** — collapsible `<details>` groups (Operate, Administration), only the active group opens (native, no JS); reports moved out of tiny footer links. **Stufe 2** — consolidated **hubs**: Inventory (Asset Definitions + Personal Assets), Automation (Runbooks + Modules + PS Modules), Reports (Access + Cost + Certifications + Leaver + Audit) each collapse to one sidebar entry, with a shared tab bar on the member pages (`_partials/hub_tabs_{inventory,automation,reports}.html`). Sidebar now ≈ Operate group + 3 hub links + Administration group → no scrollbar. All role gates preserved; Jinja macros (navlink/hublink/grpsummary) remove repetition. Verified against a live session: every page 200, correct tab + sidebar hub active-state across all member pages |
 | Guided setup wizard | 2026-07-14 | New [`/ui/setup-wizard`](api/app/templates/ui/setup_wizard.html) page (superadmin) — a guided stepper over the existing [`/admin/setup/state`](api/app/routes/admin_setup.py) checklist: Essential + Recommended progress bars, per-step status/hint, **Configure→** links to the settings section, and inline **Test connection** buttons wired to the existing `*/test` endpoints (email/ad/teams/siem). Skippable, re-checkable; first-run setup now redirects here ([`admin_auth.py`](api/app/routes/admin_auth.py)) instead of a blank dashboard. Nav entry under Configuration (superadmin). Reuses the checklist + test endpoints — **no rebuild, no new data model, no new endpoints**. Verified on the compose stack (setup/state + AD test reachable, page serves). **i18n N/A** (admin UI hardcoded English) |
 | Operations dashboard (fulfillment SLA) | 2026-07-14 | New [`admin_operations.py`](api/app/routes/admin_operations.py) `GET /admin/operations/summary` + dedicated [`/ui/operations`](api/app/templates/ui/operations.html) page (admin, own nav entry, separate from the capacity dashboard). Tiles: **failed** provisionings with aging + multi-select **batch retry** (`POST /admin/operations/retry-batch` wraps the existing single retry N-fold, same FAILED-only guard), **overdue approvals** (pending `order_approvals` past SLA), **upcoming expirations** (active orders within horizon), **stuck-in-progress** (transitional past threshold, informational). SLA thresholds configurable via `app_config` `ops.approval_sla_hours` / `ops.stuck_hours` / `ops.expiry_horizon_days` (defaults 48/2/7). Drift tile (4) is a graceful-degrade placeholder (`drift.available=false`) **pending the B1 drift task**. No new data model. Verified on the compose stack: summary + real data, config-override respected, batch-retry guards reject not-found/not-failed without triggering provisioning. **i18n N/A** (admin UI hardcoded English) |

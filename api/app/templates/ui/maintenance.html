@@ -265,7 +265,11 @@
   <!-- Schedule panel -->
   <div class="bg-surface rounded-lg border border-token-border p-5 mb-6 max-w-3xl">
     <div class="flex items-center justify-between mb-3">
-      <h3 class="text-sm font-semibold text-body">Scheduled backups</h3>
+      <div class="flex items-center gap-2">
+        <h3 class="text-sm font-semibold text-body">Scheduled backups</h3>
+        <span id="backup-encryption-badge" class="hidden text-[10px] px-1.5 py-0.5 rounded font-medium"
+              title="Whether backup files are encrypted at-rest (set BACKUP_ENCRYPTION_KEY in .env)."></span>
+      </div>
       <label class="flex items-center gap-2 text-xs text-muted">
         <input type="checkbox" id="schedule-enabled" class="rounded border-token-border">
         Enabled
@@ -1430,6 +1434,17 @@
       document.getElementById('schedule-cron').value = cron;
       applyCronToFields(cron);
       updateCronHuman();
+      var badge = document.getElementById('backup-encryption-badge');
+      if (badge) {
+        if (data.encrypted_at_rest) {
+          badge.textContent = '🔒 Encrypted at-rest';
+          badge.className = 'text-[10px] px-1.5 py-0.5 rounded font-medium bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300';
+        } else {
+          badge.textContent = 'Not encrypted at-rest';
+          badge.className = 'text-[10px] px-1.5 py-0.5 rounded font-medium bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300';
+        }
+        badge.classList.remove('hidden');
+      }
     } catch (err) {
       banner('Failed to load schedule: ' + err, 'error');
     }

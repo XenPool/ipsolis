@@ -45,7 +45,18 @@ _WRITE_GATE = require_role("admin")
 BACKUP_DIR = Path("/app/backups")
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
-_SAFE_NAME = re.compile(r"^xp_backup_\d{8}_\d{6}\.sql\.gz$")
+_SAFE_NAME = re.compile(r"^xp_backup_(?:pre_restore_)?\d{8}_\d{6}\.sql\.gz(?:\.enc)?$")
+
+
+def _backup_suffix() -> str:
+    """Return the filename suffix for a new backup.
+
+    The ``.enc`` suffix is the single source of truth for whether a backup is
+    encrypted: the worker encrypts iff the target name ends in ``.enc`` and the
+    restore path decrypts on the same signal. Driven by whether an at-rest
+    backup key is configured.
+    """
+    return ".sql.gz.enc" if settings.BACKUP_ENCRYPTION_KEY.strip() else ".sql.gz"
 
 
 def _get_celery():
@@ -236,7 +247,7 @@ async def create_backup(
 ) -> dict:
     """Creates a pending db_backups row and enqueues the worker task."""
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"xp_backup_{ts}.sql.gz"
+    filename = f"xp_backup_{ts}{_backup_suffix()}"
 
     created_by = _session_user(request)
     backup = DbBackup(
@@ -365,7 +376,7 @@ async def restore_backup(
     # Reserve the safety-backup row before kicking the worker.
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     safety = DbBackup(
-        filename=f"xp_backup_pre_restore_{ts}.sql.gz",
+        filename=f"xp_backup_pre_restore_{ts}{_backup_suffix()}",
         status="pending",
         trigger="pre_restore",
         created_by=_session_user(request),
@@ -870,6 +881,9 @@ async def get_schedule(db: AsyncSession = Depends(get_db)) -> dict:
     return {
         "enabled": (cfg.get("backup.enabled") or "false").lower() in ("1", "true", "yes", "on"),
         "cron":    cfg.get("backup.schedule_cron") or "0 2 * * *",
+        # Read-only: whether backups are encrypted at-rest (driven by the
+        # BACKUP_ENCRYPTION_KEY infra secret, not editable from the UI).
+        "encrypted_at_rest": bool(settings.BACKUP_ENCRYPTION_KEY.strip()),
     }
 
 
