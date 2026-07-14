@@ -6,6 +6,316 @@ Format: `[open]` / `[done]` / `[blocked]`. Add new tasks at the top of their sec
 
 ## Open Tasks
 
+> Tasks below down to _Portal accessibility_ were added on 2026-07-14 from the codebase audit
+> ([`AUDIT-FINDINGS.md`](AUDIT-FINDINGS.md)). Rough priority order, highest first.
+
+### [open] Drift / out-of-band reconciliation (AD group membership) — top priority
+
+The IGA backbone gap: [`target_executor.py`](worker/tasks/modules/target_executor.py) is
+effectively **write-only** (fire-and-forget grant/revoke); its only LDAP read resolves user DNs,
+never group membership. [`Order.provisioned_state`](api/app/models/order.py#L127-L128) is a stored
+snapshot that is never re-read against live AD, and no Beat job reconciles the two. So ipSolis is
+fire-and-forget, not a system of record — it can't tell you if someone was added to a managed group
+out of band, or removed from one it granted.
+
+**Scope:**
+- New Beat task (scan-and-act pattern, like `certification_reminders.scan_and_remind`) that reads
+  **actual** AD group membership — a new `pagedsearch` on the group `member` attribute, extending
+  the user-DN read at [`target_executor.py:46-63`](worker/tasks/modules/target_executor.py#L46-L63)
+  — and diffs it against `Order.provisioned_state`.
+- **Two toggle levels:** global master switch `drift.enabled` (default **off**, opt-in) **plus**
+  per-asset-type opt-in; scheduler `drift.schedule_cron`. Config pattern mirrors the backup
+  scheduler (`backup.enabled` / `backup.schedule_cron`,
+  [`admin_maintenance.py:834-887`](api/app/routes/admin_maintenance.py#L834-L887)).
+- `drift.remediation_mode` = **`detect_only`** (default; alert only) | **`auto_remediate`**
+  (correct via the existing [`_grant_ad_group` / `_revoke_ad_group`](worker/tasks/modules/target_executor.py#L190) handlers).
+- **Both directions:** missing access (in `provisioned_state`, not in AD → optional re-grant) and
+  out-of-band access (in AD, never granted by ipSolis → optional revoke).
+- Alerting reuses existing channels (email / Teams card / SIEM `post_webhook`).
+- Only `ad_group` for now (`entra_group` is a stub — see the Access Targets task).
+- **Guard for a later slice:** auto-remediate of out-of-band members revokes manually-added AD
+  members — needs an allowlist / break-glass concept (known service accounts); the `detect_only`
+  default covers v1.
+
+**Follow-up:** every new UI string in all 5 locale files
+([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
+[`es`](locales/es.json) / [`it`](locales/it.json)).
+
+**Out of scope:** `entra_group` drift (until entra_group provisioning lands); non-AD target types.
+
+---
+
+### [open] Operations dashboard (fulfillment SLA & remediation)
+
+A clean retry path for failed orders already exists (route + button + task,
+[`POST /orders/{id}/retry`](api/app/routes/ui.py#L612-L643)) and the state model supports it
+([`OrderStatus.FAILED`](api/app/models/order.py#L36), `OrderStep`), but there is no aggregated
+operator view — no open-request aging, no failed roll-up, no upcoming-expiration tile, no drift
+alerts, and retry is only reachable one order at a time.
+
+**Scope:**
+- New dedicated **"Operations" page** (separate from the capacity-oriented
+  [`dashboard.html`](api/app/templates/dashboard.html)) — new route + nav entry; do not mix
+  capacity and fulfillment views.
+- Four tiles: **(1)** failed-provisioning roll-up with aging + multi-select **batch retry** (wraps
+  the existing single retry N-fold); **(2)** approvals overdue (SLA aging, red-flagged, from
+  existing approval-reminder data); **(3)** upcoming expirations (today only per-user email,
+  [`notifications.py:264`](worker/tasks/modules/notifications.py#L264)); **(4)** drift alerts —
+  **depends on the drift task**, graceful-degrades to hidden when drift is disabled.
+- **Configurable SLA thresholds** via `app_config` (e.g. approval > 48h, provisioning stuck > 2h),
+  pattern like `retention.*` / `backup.*`.
+- No new data model — aggregation route/template + a batch wrapper over the existing retry.
+- Tiles 1–3 are buildable independently; tile 4 requires the drift task.
+
+**Follow-up:** every new UI string in all 5 locale files
+([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
+[`es`](locales/es.json) / [`it`](locales/it.json)).
+
+**Out of scope:** replacing the capacity dashboard; SLA breach auto-escalation beyond alerting.
+
+---
+
+### [open] Software license & contract lifecycle
+
+Cost reporting today answers "what did access cost" (chargeback) but has no notion of the
+*contract* behind an asset type. **Not** the commercial product `.lic` licensing system
+([`admin_license.py`](api/app/routes/admin_license.py)) — that is product/tier gating; this tracks
+*customer* software contracts.
+
+**Scope:**
+- New entity `License`/`Contract`: vendor, product, `contract_value`, billing interval,
+  `licensed_seats` (nullable = unlimited), `start`/`renewal_date`, `notice_period_days`,
+  `auto_renew`, notes.
+- **Cardinality 1 License : N AssetTypes** — [`AssetType`](api/app/models/asset.py) gets a
+  `license_id` FK (0..1). **Consumption = sum of active** (non-revoked/non-expired)
+  [`Order`](api/app/models/order.py) rows across all bound types (derived, not stored — same logic
+  as `max_per_user`). Surface over-/under-allocation.
+- **Seat exhaustion: surface + alert only** — orders keep flowing; the contract is decoupled from
+  provisioning (no order-time block/warning).
+- **Cost: full chargeback integration** — contract cost flows into cost allocation (seat price ×
+  consumption per cost center). NB: this is the largest part of the task — a real change to the
+  cost report, not just an informational field.
+- Renewal-reminder Beat task at `renewal_date − notice_period_days`; reuse SIEM/audit/email emit.
+  Admin CRUD + binding on [`asset_type_form.html`](api/app/templates/ui/asset_type_form.html);
+  contract/renewal view in the cost report.
+
+**Follow-up:** every new UI string in all 5 locale files
+([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
+[`es`](locales/es.json) / [`it`](locales/it.json)).
+
+**Out of scope:** SaaS discovery; cost-per-seat market benchmarks; usage-based (last-login)
+reclamation (needs a usage signal ipSolis does not collect).
+
+---
+
+### [open] Point-in-time access report (historical reconstruction)
+
+"Who has access to X **today**?" already exists (order lists, asset-pool, cost report). "Who **had**
+access on date Y?" does not — the audit-log route only filters a flat event stream by timestamp, it
+never folds grant/revoke events into an access set as of a date. The historical part is the
+audit-bearing one.
+
+**Scope:**
+- As-of access query that replays grant/revoke events up to a date from
+  [`order_change_log`](api/app/models/change_log.py) (immutable grant|revoke with
+  `principal`/`executed_at`/`state`) + `audit_log`.
+- Reuse the cost-report snapshot UI/API pattern (daily Beat + `?as_of=` date picker,
+  [`admin_cost_report.py`](api/app/routes/admin_cost_report.py)) as the template.
+- No new data model — a query over existing logs.
+
+**Follow-up:** every new UI string in all 5 locale files
+([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
+[`es`](locales/es.json) / [`it`](locales/it.json)).
+
+**Out of scope:** a new access-history data model (reconstruct from existing logs instead).
+
+---
+
+### [open] Manager order-on-behalf (team ordering)
+
+Ordering an asset whose end-user differs from the requester already works (owner ≠ requester:
+[`order.py:77-79`](api/app/models/order.py#L77-L79), `is_deputy` at
+[`portal.py:560`](api/app/routes/portal.py#L560)), but there is no manager→team relationship — any
+requester can name any directory user as owner. Distinct from approval-delegation (which only
+re-routes *approval decisions*).
+
+**Scope:**
+- **Team source: AD `directReports`** (reverse of the `manager` attribute) — reuse the existing AD
+  lookup (`lookup_manager`) in reverse.
+- Team picker in the portal create form (shows the requester's own team first) but any valid
+  directory user remains selectable as owner.
+- **Manager approval counts as implicitly satisfied** when the requester orders for their own report
+  — **guard: only when the AD manager relationship is verified** (requester == AD `manager` of the
+  owner); otherwise the full approval flow runs. Implemented via the existing `sod_exempt` mechanic
+  ([`approval.py:63`](api/app/models/approval.py#L63)), not a new skip path.
+- No new data model — a directReports lookup + server-side manager-verify on top of the existing
+  owner/`is_deputy` machinery.
+
+**Follow-up:** every new UI string in all 5 locale files
+([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
+[`es`](locales/es.json) / [`it`](locales/it.json)).
+
+**Out of scope:** org-hierarchy management UI; multi-level / cross-team delegation.
+
+---
+
+### [open] Slack approval delivery (delta)
+
+Microsoft Teams Adaptive-Card delivery already runs in parallel with email on every approval path
+([`teams_notify.py`](worker/tasks/modules/teams_notify.py); dual delivery in
+[`dynamic_runner.py:1416-1484`](worker/tasks/workflows/dynamic_runner.py#L1416-L1484)). Only **Slack**
+is missing — this is a thin delta, not a new channel framework.
+
+**Scope:**
+- New `slack_notify.post_message()` (Slack incoming webhook / Block Kit) as a **second delivery
+  branch** in `deliver_approval_notification`, mirroring the Teams branch.
+- Config keys `slack.mode` / `slack.webhook_url` (pattern `teams.*`), `POST /config/slack/test`,
+  setup-checklist item — all analogous to Teams.
+- Channel-agnostic signed token unchanged; reminder / cost-threshold / certification paths inherit
+  the channel like Teams. Teams remains untouched.
+
+**Follow-up:** every new UI string in all 5 locale files
+([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
+[`es`](locales/es.json) / [`it`](locales/it.json)).
+
+**Out of scope:** interactive approve-in-Slack actions — link out to the signed-token URL like Teams.
+
+---
+
+### [open] Signed attestation artifacts: handover & revocation certificates
+
+Two ISO-27001-relevant evidence artifacts sharing one mechanism (the signed-token URL already proven
+by the access-certification review link, [`certification_token.py:45-59`](api/app/utils/certification_token.py#L45-L59)).
+Both hang off existing [`Order`](api/app/models/order.py) lifecycle transitions — no new lifecycle
+states. **NB (audit correction):** there is **no PDF generation** in the repo — artifacts are
+signed HTML, not PDF.
+
+**Scope:**
+- **Format: signed-token HTML page** (like the certification review URL) — **no PDF library**
+  (none exists; PDF export is a later follow-up). Archival via browser print. 1:1 reuse of the
+  signed-token + Jinja mechanics.
+- **Handover (Übergabeprotokoll) on `provisioned`:** optional receipt/AUP acknowledgment via signed
+  link (asset type, recipient, config snapshot, optional AUP); acknowledgment persisted +
+  audit-logged.
+- **Revocation/disposal certificate on `revoked`/`expired`:** optional signed HTML attestation of
+  removal/retirement (removed from AD group X, VM deleted, date Y) for audit/disposal evidence;
+  hangs off the existing revoke path.
+- Per-asset-type flags `requires_handover_ack` / `emit_revocation_certificate` (default **off**);
+  admin view of outstanding/completed acks; overdue reminder via the existing Beat pattern. Nothing
+  is blocked.
+
+**Follow-up:** every new UI string in all 5 locale files
+([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
+[`es`](locales/es.json) / [`it`](locales/it.json)) + artifact text strings.
+
+**Out of scope:** server-generated PDF export (later follow-up if a customer needs archival PDFs);
+qualified/eIDAS e-signatures; QR-tagged physical inventory.
+
+---
+
+### [open] Config migration export/import (JSON)
+
+Standing up a fresh instance means re-entering config by hand: CSV import exists only for asset-pool
+*instances* ([`asset_pool.html:109`](api/app/templates/ui/asset_pool.html#L109) →
+[`/admin/assets/bulk`](api/app/routes/admin.py#L1157)), there is no export anywhere, and asset-types
+can't be migrated at all.
+
+**Scope:**
+- **Format: JSON via the existing seed-export mechanism**
+  ([`admin_seed_export.py:180`](api/app/routes/admin_seed_export.py#L180)) extended — **not CSV**:
+  asset-types carry nested JSONB (`targets` / `composite_steps` / `approval_rules`) that CSV can't
+  represent cleanly.
+- **Export first** (read-only, low risk); **import as a second stage** with name-conflict handling
+  (insert only when the name is absent, like migration 0046 — never overwrite user edits).
+- Entities v1: **asset-types** (JSON export/import); **asset-pool instances** (add the missing
+  export). **Bundles** planned but **gated** on the Onboarding bundles task — extend the seed export
+  to bundles once that entity lands (explicit follow-up).
+- No new data model — extend the existing seed export/import.
+
+**Follow-up:** every new UI string in all 5 locale files
+([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
+[`es`](locales/es.json) / [`it`](locales/it.json)).
+
+**Out of scope:** an orders/access export snapshot; CSV paths for complex config.
+
+---
+
+### [open] Guided setup wizard (delta)
+
+The diagnostics page and all per-integration "test connection" endpoints already exist; a live setup
+**checklist** ([`admin_setup.py:44-171`](api/app/routes/admin_setup.py#L44-L171)) already derives what
+is configured. Only the *guided flow* is missing — today the checklist just links out to scattered
+settings sections.
+
+**Scope:**
+- **Guided multi-step flow on its own page** after first-admin creation (Branding → SMTP → AD →
+  SSO → …), each step with an **inline test** via the existing `*/test` endpoints
+  ([`admin.py:236`](api/app/routes/admin.py#L236) AD, `:309` IdP, `:460` SIEM, `:562` Teams,
+  `:607` secret-store, `:702` SCCM, `:1653` SMTP).
+- **Skippable / re-callable anytime**; shown until the checklist `essential` items are done
+  (progress source = the existing `setup/state`). Guides, does not gate.
+- **Do not rebuild** the diagnostics page / test endpoints — they exist.
+- No new data model.
+
+**Follow-up:** every new UI string in all 5 locale files
+([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
+[`es`](locales/es.json) / [`it`](locales/it.json)).
+
+**Out of scope:** rebuilding diagnostics/test endpoints; mandatory gating of the main UI behind the
+wizard.
+
+---
+
+### [open] Backup encryption at-rest
+
+Surfaced by the DR audit: credentials are stored **plaintext** in `app_config`
+([`config.py:21`](api/app/models/config.py#L21); `is_secret` only masks the UI, it does not
+encrypt), so the pg_dump backup files ([`maintenance.py:165-274`](worker/tasks/modules/maintenance.py#L165-L274))
+contain AD/SMTP passwords in cleartext. A GDPR/security hardening gap — the backup file is a
+credential store.
+
+**Scope:**
+- Encrypt backup files at-rest — symmetric, key stored **separately** (NOT `API_SECRET_KEY`, else a
+  key-in-the-same-restore problem) — or, at minimum, a documented requirement to encrypt the backup
+  volume/target.
+- Restic/Borg-style encrypted backup transport as the lightweight documented entry point.
+- Optional/complementary (note as an option, not a v1 must): encrypt `app_config` secrets at-rest
+  (larger change touching the secret-resolver path).
+- Thematically GDPR (adjacent to the shipped audit-retention feature) but **not** retention — a
+  separate small task.
+
+**Follow-up:** bilingual docs (EN + DE, `<name>.md` / `<name>.de.md`).
+
+**Out of scope:** full `app_config`-at-rest encryption in v1.
+
+---
+
+### [open] Portal accessibility (BITV 2.0 / EN 301 549)
+
+Public sector is in the target market, which makes accessibility a tender gate. There is no a11y
+work today; `<html lang="en">` is hardcoded despite the DE/EN switcher
+([`base_portal.html:2`](api/app/templates/portal/base_portal.html#L2)) — itself a BITV `lang`
+conformance gap.
+
+**Scope:**
+- **Structural-first at the shared choke points** ([`base_portal.html`](api/app/templates/portal/base_portal.html)
+  + `_partials/language_switcher.html`): dynamic `lang` binding (not hardcoded `en`), skip link,
+  landmark roles, focus/keyboard operability, form labels. Full WCAG 2.1 AA follows iteratively.
+- **Portal only** (end-user surface) — **admin UI excluded** (operator tool, generally not in tender
+  scope).
+- **This version is not a conformance claim** — it closes the structural basics; the formal
+  Barrierefreiheitserklärung + external BITV test is a **separate follow-up task** when a concrete
+  tender arises.
+
+**Follow-up:** new visible strings (skip-link text, …) in all 5 locale files
+([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
+[`es`](locales/es.json) / [`it`](locales/it.json)).
+
+**Out of scope:** admin-UI accessibility; the formal accessibility statement + external BITV test
+(separate follow-up); full AA conformance certification.
+
+---
+
 ### [open] Order groups — header/line-item model with header-level approval
 
 Today one order = one asset = one approval run: [`Order`](api/app/models/order.py) is a flat
@@ -132,6 +442,12 @@ the provider-agnostic SSO task on 2026-06-24.
   [`scim.py`](api/app/routes/scim.py)). That in turn requires persisting a minimal user/identity
   projection so attribute changes (**mover**) can be diffed against the last-seen state — ip·Solis
   has no local portal-user store today, so joiner/mover diffing needs one.
+- **Mover reconciliation (explicit deliverable — sharpened 2026-07-14 audit):** on a diffed
+  attribute change, re-run the assignment-rule service against the new attribute set, diff the
+  resulting target bundle/asset set against the user's active orders, and reconcile — create orders
+  for newly-entitled asset types (through the normal approval path) and revoke orders for lost
+  entitlements. Reuses the onboarding-bundle rule engine and the existing revoke flow; the mover is
+  a *delta* over the joiner, not new machinery. Depends on the Onboarding bundles task.
 
 ---
 
@@ -144,10 +460,15 @@ at provision time. Current backend state in
 [`target_executor.py`](worker/tasks/modules/target_executor.py):
 
 - **`entra_group`** — stub: `_grant_entra_group` / `_revoke_entra_group` raise
-  `NotImplementedError`. To finish: implement grant/revoke via **Microsoft Graph**
+  `NotImplementedError` ([`target_executor.py:237-239`](worker/tasks/modules/target_executor.py) / `:271-273`).
+  To finish: implement grant/revoke via **Microsoft Graph**
   (Application Permission `GroupMember.ReadWrite.All`) for Entra cloud-only security groups
   on asset types defining `{"type": "entra_group", "identifier": "<group-id>"}`. Fits the
-  existing Entra/OIDC stack; separate sprint.
+  existing Entra/OIDC stack. **Priority: raised (2026-07-14 audit)** — this is the sell against
+  cloud SaaS for M365-/cloud-only customers: the gap between "Entra login" (OIDC shipped) and
+  *provisioning* Entra groups. The dispatch-table + change-log + idempotency framework
+  (`grant()` / `revoke()`) is target-agnostic — only the two stub handlers need filling, no other
+  plumbing change. Re-enable the UI guard for `entra_group` once the handlers land.
 - **`rds_collection`** / **`other`** — no handler at all (fall into the "Unknown target type"
   branch). These are **not** planned as native target types — RDS session-collection
   membership etc. belongs in a **custom runbook step** (PowerShell `Add-RDUserToSessionCollection`).
@@ -164,6 +485,7 @@ All items below are shipped. Detailed implementation notes live in git history.
 
 | Area | Shipped | Notes |
 |------|---------|-------|
+| DR runbook (backup/restore) | 2026-07-14 | Bilingual [`docs/DR-RUNBOOK.md`](docs/DR-RUNBOOK.md) / [`.de.md`](docs/DR-RUNBOOK.de.md): fresh-host recovery (host → DB-only up → clean DB → `gunzip -c \| psql` → `alembic upgrade head`), what the pg_dump does/doesn't contain (plaintext `app_config` creds **are** in it; `API_SECRET_KEY`/externalized `vault://` secrets are **not**), `api_tokens` rotation, tick-off verification (email/AD/approval-link), externalized-secret case, rollback via pre-restore safety backup. Fixed docs drift in [`INSTALL.md`](docs/onboarding/INSTALL.md) (removed non-existent `from app.tasks import backup_database`, added restore pointers). Doc-only by design — **no automated restore test** (audit A4) |
 | CI test gate + Playwright E2E | 2026-07-13 | New [`ci.yml`](.github/workflows/ci.yml) on push/PR to `dev` — three jobs: **ruff** (critical errors `E9,F63,F7,F82`), **unit** (`api/tests` on the runner in conftest's local mode — pure/mocked, imports `app.*`+`tasks.*`), **e2e** (headless Playwright vs. the `docker compose` stack). Host-side smoke suite in [`tests/e2e/`](tests/e2e/): health, admin login (+ negative), core-page nav, asset-type form, portal reachability; login handles both first-run setup and legacy `ADMIN_API_KEY`. Closes the "no test/lint gate before prelive" gap. **Deferred:** broaden ruff rules over time; deeper journeys (order-create needs real backends → intentionally out) |
 | Provider-agnostic SSO (generic OIDC) | 2026-06-20 | Any compliant IdP via discovery doc (Entra, Okta, Ping, Google, Keycloak…); provider registry `idp.<id>.*`, parametric callback `/portal/auth/{id}/callback`, login picker, RP-initiated logout; retired `entra.py`/MSAL path; on-prem LDAP alongside. **Deferred:** SAML 2.0 + Okta OIN listing; SCIM provisioning is its own open task |
 | GHCR prebuilt images | 2026-06 | CI build+push to ghcr.io on `v*.*.*` tags, public packages, `docker-compose.ghcr.yml`, `locales/`+`scripts/` baked into images, pull-count note (`docs/internal/metrics.md`); multi-arch arm64 intentionally skipped (amd64-only — on-prem is amd64) |
