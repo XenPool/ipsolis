@@ -12,6 +12,7 @@ from .config import AppConfig
 from .cost_report_snapshot import CostReportSnapshot
 from .cost_threshold import CostThreshold
 from .db_backup import DbBackup
+from .drift_finding import DriftFinding
 from .global_var import GlobalVar
 from .hr_leaver_event import HrLeaverEvent
 from .ps_module import PsModule

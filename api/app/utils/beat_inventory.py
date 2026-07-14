@@ -242,6 +242,25 @@ BEAT_INVENTORY: list[BeatEntry] = [
         ],
     },
     {
+        "name": "drift-scheduler",
+        "task": "tasks.workflows.drift_reconcile.check_drift_schedule",
+        "cadence": "Every minute (fires per ``drift.schedule_cron``)",
+        "queue": "reclaim",
+        "description": (
+            "Gated on ``drift.enabled``; when ``drift.schedule_cron`` is "
+            "due, enqueues ``reconcile_drift`` — which diffs actual AD "
+            "group membership against what ipSolis granted for "
+            "``drift_monitor`` asset types, records divergences to "
+            "``drift_findings``, and (in ``auto_remediate`` mode) "
+            "re-grants / revokes. Dedups on ``drift.last_run``."
+        ),
+        "config_keys": [
+            "drift.enabled",
+            "drift.schedule_cron",
+            "drift.remediation_mode",
+        ],
+    },
+    {
         "name": "siem-stream-audit-log",
         "task": "tasks.workflows.siem_streamer.stream_audit_log",
         "cadence": "Every minute",

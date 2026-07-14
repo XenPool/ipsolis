@@ -9,42 +9,6 @@ Format: `[open]` / `[done]` / `[blocked]`. Add new tasks at the top of their sec
 > Tasks below down to _Portal accessibility_ were added on 2026-07-14 from the codebase audit
 > ([`AUDIT-FINDINGS.md`](AUDIT-FINDINGS.md)). Rough priority order, highest first.
 
-### [open] Drift / out-of-band reconciliation (AD group membership) — top priority
-
-The IGA backbone gap: [`target_executor.py`](worker/tasks/modules/target_executor.py) is
-effectively **write-only** (fire-and-forget grant/revoke); its only LDAP read resolves user DNs,
-never group membership. [`Order.provisioned_state`](api/app/models/order.py#L127-L128) is a stored
-snapshot that is never re-read against live AD, and no Beat job reconciles the two. So ipSolis is
-fire-and-forget, not a system of record — it can't tell you if someone was added to a managed group
-out of band, or removed from one it granted.
-
-**Scope:**
-- New Beat task (scan-and-act pattern, like `certification_reminders.scan_and_remind`) that reads
-  **actual** AD group membership — a new `pagedsearch` on the group `member` attribute, extending
-  the user-DN read at [`target_executor.py:46-63`](worker/tasks/modules/target_executor.py#L46-L63)
-  — and diffs it against `Order.provisioned_state`.
-- **Two toggle levels:** global master switch `drift.enabled` (default **off**, opt-in) **plus**
-  per-asset-type opt-in; scheduler `drift.schedule_cron`. Config pattern mirrors the backup
-  scheduler (`backup.enabled` / `backup.schedule_cron`,
-  [`admin_maintenance.py:834-887`](api/app/routes/admin_maintenance.py#L834-L887)).
-- `drift.remediation_mode` = **`detect_only`** (default; alert only) | **`auto_remediate`**
-  (correct via the existing [`_grant_ad_group` / `_revoke_ad_group`](worker/tasks/modules/target_executor.py#L190) handlers).
-- **Both directions:** missing access (in `provisioned_state`, not in AD → optional re-grant) and
-  out-of-band access (in AD, never granted by ipSolis → optional revoke).
-- Alerting reuses existing channels (email / Teams card / SIEM `post_webhook`).
-- Only `ad_group` for now (`entra_group` is a stub — see the Access Targets task).
-- **Guard for a later slice:** auto-remediate of out-of-band members revokes manually-added AD
-  members — needs an allowlist / break-glass concept (known service accounts); the `detect_only`
-  default covers v1.
-
-**Follow-up:** every new UI string in all 5 locale files
-([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
-[`es`](locales/es.json) / [`it`](locales/it.json)).
-
-**Out of scope:** `entra_group` drift (until entra_group provisioning lands); non-AD target types.
-
----
-
 ### [open] Software license & contract lifecycle
 
 Cost reporting today answers "what did access cost" (chargeback) but has no notion of the
@@ -327,6 +291,7 @@ All items below are shipped. Detailed implementation notes live in git history.
 
 | Area | Shipped | Notes |
 |------|---------|-------|
+| Drift / out-of-band reconciliation (AD) | 2026-07-14 | Closes the IGA write-only gap: ipSolis granted AD group membership fire-and-forget and never re-read it. New Beat pair in [`drift_reconcile.py`](worker/tasks/workflows/drift_reconcile.py) — `check_drift_schedule` (every minute, gated on `drift.enabled` + `drift.schedule_cron` via croniter, dedups on `drift.last_run`, mirrors the backup scheduler) enqueues `reconcile_drift`, which for every `ad_group` provisioned by a **`drift_monitor`** asset type (via `order_change_log` grants over active orders) reads **actual** membership (new [`list_ad_group_members`](worker/tasks/modules/target_executor.py) — paged `(&(objectClass=user)(memberOf=…))`, RFC-4515 escaped) and diffs it against what ipSolis granted **across all active orders** (so a group legitimately granted by a non-monitored type isn't mis-flagged). Two directions → `drift_findings` (new table, migration [`0004`](api/alembic/versions/0004_drift_reconciliation.py)): **missing_access** (granted, absent in AD → optional re-grant) and **out_of_band** (in AD, never granted, excludes the bind account → optional revoke). `drift.remediation_mode` = `detect_only` (default, record + alert) \| `auto_remediate` (writes AD via existing `_grant_ad_group`/`_revoke_ad_group`). Findings audited (→ SIEM) + best-effort email/Teams. **UI:** per-type *Monitor for access drift* toggle on the asset-type form; **Maintenance → Drift** tab (enable / cron / mode / run-now, `GET`+`PUT`+`run-now` on [`admin_maintenance.py`](api/app/routes/admin_maintenance.py)); live **Operations → Drift** tile ([`admin_operations.py`](api/app/routes/admin_operations.py) `drift` block replaces the old placeholder). **Verified end-to-end against the real test AD** (WinSRV1): out-of-band member detected in `detect_only` (no write) then revoked in `auto_remediate`; out-of-band removal of a granted member re-granted; finding→dashboard data path; PUT validation (bad mode 400) + template compile. **Fixed a bug found in review:** an open finding first recorded in `detect_only` was never remediated after switching to `auto_remediate` (remediation was gated on the finding being *new*) — `_record_finding` now returns `(id, is_new)` so auto acts on already-open findings. **Guard for a later slice:** out-of-band auto-revoke has no allowlist/break-glass for known manual service accounts yet (`detect_only` default covers v1). **Out of scope:** `entra_group` drift, non-AD targets. **i18n N/A** (admin UI hardcoded English) |
 | Manager order-on-behalf (team ordering) | 2026-07-14 | **Part 1** — AD [`lookup_direct_reports`](api/app/utils/ad_lookup.py) (reverse `manager` lookup) + [`is_owner_managed_by`](api/app/utils/ad_lookup.py) verify helper; portal `GET /portal/my-team`; a team-picker in the order form ([`order_new.html`](api/app/templates/portal/order_new.html)) — the requester's direct reports as quick-select chips, any valid user still typeable, graceful when AD has none; i18n ×5. **Part 2** — the manager-approval short-circuit in [`portal.py`](api/app/routes/portal.py): when a manager orders for their own report (verified: requester == owner's AD `manager`), the manager approval is recorded auto-approved + `sod_exempt`; the order is then advanced by re-using the decision path's `_compute_bucket_state`/`_post_approval_dispatch` so it neither hangs in `pending_approval` nor dispatches without a required approval (other approvals — owner/rules/classification — still gate normally). **Verified** vs the real test AD (stefan→jupp) + the bucket-quorum advance decision across manager-only / +owner-pending / +owner-approved cases. Portal end-to-end walkthrough (log in as a manager, order for a report) is the operator's final manual check. **i18n:** portal strings in all 5 locales |
 | Backup encryption at-rest | 2026-07-14 | Optional AES-256-CBC encryption of DB backups, opt-in via a new `BACKUP_ENCRYPTION_KEY` infra secret ([`config.py`](api/app/config.py) + [`.env.example`](.env.example)). When set, [`_run_backup_sync`](worker/tasks/modules/maintenance.py) pipes `pg_dump \| gzip \| openssl enc` → `*.sql.gz.enc`; `run_restore` decrypts the same way. The **`.enc` suffix is the single source of truth** — the api picks it ([`admin_maintenance.py`](api/app/routes/admin_maintenance.py) `_backup_suffix`, incl. pre-restore safety backup + widened `_SAFE_NAME`); the worker encrypts/decrypts on that signal. **Back-compat:** key unset → plaintext `.sql.gz` as before; restore auto-detects, so old backups still load. Key is kept **out of the DB** (app_config lives inside the dump) and must be carried to a fresh host — [DR-RUNBOOK](docs/DR-RUNBOOK.md)/`.de` updated. Read-only "Encrypted at-rest" badge on the Maintenance → Backups tab via `GET /schedule`. Verified on the compose stack: real pg_dump→encrypt→decrypt yields valid SQL (openssl `Salted__`, wrong key fails); plaintext path still produces a valid gzip. **Out of scope:** full app_config-at-rest encryption |
 | Admin UI navigation restructure | 2026-07-14 | Flat ~25-link sidebar (internal scrollbar at laptop heights) reorganised in [`base.html`](api/app/templates/base.html): **Stufe 1** — collapsible `<details>` groups (Operate, Administration), only the active group opens (native, no JS); reports moved out of tiny footer links. **Stufe 2** — consolidated **hubs**: Inventory (Asset Definitions + Personal Assets), Automation (Runbooks + Modules + PS Modules), Reports (Access + Cost + Certifications + Leaver + Audit) each collapse to one sidebar entry, with a shared tab bar on the member pages (`_partials/hub_tabs_{inventory,automation,reports}.html`). Sidebar now ≈ Operate group + 3 hub links + Administration group → no scrollbar. All role gates preserved; Jinja macros (navlink/hublink/grpsummary) remove repetition. Verified against a live session: every page 200, correct tab + sidebar hub active-state across all member pages |

@@ -82,6 +82,23 @@
           </span>
         </label>
       </div>
+      <div>
+        <label class="flex items-start gap-2 text-sm cursor-pointer">
+          <input type="checkbox" name="drift_monitor" value="true" id="at-drift-monitor"
+                 {% if asset_type and asset_type.drift_monitor %}checked{% endif %}
+                 class="mt-0.5 rounded border-token-border text-blue-600 focus:ring-blue-400">
+          <span>
+            <span class="font-medium text-body">Monitor for access drift</span>
+            <span class="block text-xs text-muted/70 mt-0.5">
+              Periodically re-reads the AD groups this type provisions into and flags divergence between
+              what ipSolis granted and actual membership — <em>missing access</em> (granted but removed in AD)
+              and <em>out-of-band</em> (added directly, never granted here). Findings surface on
+              <strong>Operations → Drift</strong>; the scan schedule and detect-vs-auto-remediate mode are
+              set globally under Maintenance → Drift reconciliation.
+            </span>
+          </span>
+        </label>
+      </div>
     </div>
 
     <!-- Logo + live tile preview -->
@@ -2026,6 +2043,7 @@ async function submitForm() {
     help_text: form.querySelector('[name="help_text"]').value.trim() || null,
     is_active: form.querySelector('[name="is_active"]').checked,
     show_on_dashboard: form.querySelector('[name="show_on_dashboard"]').checked,
+    drift_monitor: form.querySelector('[name="drift_monitor"]').checked,
     category: form.querySelector('[name="category"]:checked').value,
     assignment_model: assignmentModel,
     pool_capacity: form.querySelector('[name="pool_capacity"]').value

@@ -65,7 +65,7 @@ _ASSET_TYPE_FIELDS = (
     "allow_rdp_users", "allow_admin_users", "rds_gateway_url",
     "requires_manager_approval", "requires_owner_approval", "approval_owners",
     "approval_rules", "min_approvals_required", "requires_approval_on_modify",
-    "eligible_requestors_dn", "logo",
+    "eligible_requestors_dn", "logo", "drift_monitor",
 )
 
 
@@ -176,6 +176,7 @@ def _build_asset_type(row: dict[str, Any]) -> AssetType:
         requires_approval_on_modify=bool(row.get("requires_approval_on_modify", False)),
         eligible_requestors_dn=(row.get("eligible_requestors_dn") or None),
         logo=(row.get("logo") or None),
+        drift_monitor=bool(row.get("drift_monitor", False)),
     )
 
 

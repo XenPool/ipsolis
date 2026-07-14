@@ -166,6 +166,12 @@ class AssetType(Base):
     eligible_requestors_dn: Mapped[str | None] = mapped_column(
         String(500), nullable=True
     )
+    # Per-type opt-in for drift / out-of-band reconciliation. When true (and
+    # the global `drift.enabled` switch is on), the drift Beat task compares
+    # this type's ad_group targets against actual AD membership.
+    drift_monitor: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     # Logo image stored as data URL (base64-encoded)
     logo: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

@@ -201,6 +201,57 @@ async def operations_summary(db: AsyncSession = Depends(get_db)) -> dict[str, An
         for r in expiry_rows
     ]
 
+    # ── Access drift (B1) ──────────────────────────────────────────────
+    # Open findings from the drift reconciliation task. The tile hides when
+    # drift monitoring is off *and* there is nothing outstanding, so an
+    # install that never enabled drift sees no noise.
+    drift_cfg = {
+        k: v for k, v in (await db.execute(text(
+            "SELECT key, value FROM app_config "
+            "WHERE key IN ('drift.enabled', 'drift.last_run')"
+        ))).all()
+    }
+    drift_enabled = (drift_cfg.get("drift.enabled") or "false").lower() in ("1", "true", "yes", "on")
+    drift_rows = (await db.execute(
+        text(
+            """
+            SELECT f.id, f.direction, f.principal, f.identifier, f.detected_at,
+                   at.name AS asset_type_name
+            FROM drift_findings f
+            LEFT JOIN asset_types at ON at.id = f.asset_type_id
+            WHERE f.status = 'open'
+            ORDER BY f.detected_at DESC
+            LIMIT :cap
+            """
+        ),
+        {"cap": _LIST_CAP},
+    )).mappings().all()
+    drift_items = [
+        {
+            "finding_id": r["id"],
+            "direction": r["direction"],
+            "principal": r["principal"],
+            # Group identifier is a full DN — surface just the CN for the tile.
+            "group": (r["identifier"] or "").split(",", 1)[0].replace("CN=", ""),
+            "asset_type_name": r["asset_type_name"],
+            "detected_at": r["detected_at"].isoformat() if r["detected_at"] else None,
+            "age_hours": _age_hours(r["detected_at"]),
+        }
+        for r in drift_rows
+    ]
+    open_total = (await db.execute(
+        text("SELECT COUNT(*) FROM drift_findings WHERE status = 'open'")
+    )).scalar() or 0
+    drift = {
+        "available": bool(drift_enabled or open_total),
+        "enabled": drift_enabled,
+        "last_run": drift_cfg.get("drift.last_run") or None,
+        "open_total": int(open_total),
+        "missing_access": sum(1 for i in drift_items if i["direction"] == "missing_access"),
+        "out_of_band": sum(1 for i in drift_items if i["direction"] == "out_of_band"),
+        "items": drift_items,
+    }
+
     return {
         "generated_at": now.isoformat(),
         "thresholds": {
@@ -212,9 +263,7 @@ async def operations_summary(db: AsyncSession = Depends(get_db)) -> dict[str, An
         "stuck": stuck,
         "overdue_approvals": overdue_approvals,
         "upcoming_expirations": upcoming_expirations,
-        # Tile 4 — depends on the drift reconciliation task (B1). Until that
-        # lands there is no drift signal to surface, so the UI hides the tile.
-        "drift": {"available": False},
+        "drift": drift,
         "counts": {
             "failed": len(failed),
             "stuck": len(stuck),

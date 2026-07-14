@@ -823,6 +823,7 @@ async def create_asset_type(
         help_text=payload.help_text,
         is_active=payload.is_active,
         show_on_dashboard=payload.show_on_dashboard,
+        drift_monitor=payload.drift_monitor,
         category=payload.category,
         config=payload.config,
         assignment_model=payload.assignment_model,
@@ -976,6 +977,8 @@ async def update_asset_type(
     asset_type.logo = payload.logo or None
     if payload.show_on_dashboard is not None:
         asset_type.show_on_dashboard = payload.show_on_dashboard
+    if payload.drift_monitor is not None:
+        asset_type.drift_monitor = payload.drift_monitor
     await aaudit(db, "asset_type", asset_type.id, "updated", old=old_snap, new=_type_snap(asset_type),
                  by=actor_by(request, "update_asset_type"),
                  classification=classify_asset_type(asset_type))
@@ -1053,6 +1056,7 @@ async def clone_asset_type(
         min_approvals_required=src.min_approvals_required,
         requires_approval_on_modify=src.requires_approval_on_modify,
         eligible_requestors_dn=src.eligible_requestors_dn,
+        drift_monitor=src.drift_monitor,
         logo=src.logo,
     )
     db.add(new_type)

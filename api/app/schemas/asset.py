@@ -13,6 +13,7 @@ class AssetTypeRead(BaseModel):
     help_text: str | None = None
     is_active: bool = True
     show_on_dashboard: bool = False
+    drift_monitor: bool = False
     category: AssetCategory
     config: list[dict[str, Any]] | None
     assignment_model: str

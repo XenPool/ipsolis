@@ -273,6 +273,63 @@ def _revoke_entra_group(identifier: str, principal: str, db: Session) -> dict:
     raise NotImplementedError("Entra group revoke not yet implemented")
 
 
+def _ldap_filter_escape(value: str) -> str:
+    """Escape a value for safe interpolation into an LDAP filter (RFC 4515)."""
+    return "".join(
+        {"\\": "\\5c", "*": "\\2a", "(": "\\28", ")": "\\29", "\x00": "\\00"}.get(ch, ch)
+        for ch in value
+    )
+
+
+def list_ad_group_members(identifier: str, db: Session) -> list[dict]:
+    """Return the direct **user** members of an AD group (by its DN).
+
+    Uses ``(&(objectClass=user)(memberOf=<groupDN>))`` — direct membership
+    only, which is exactly what ipSolis manages via ``_grant_ad_group``.
+    Each member: ``{"sam": ..., "mail": ..., "dn": ...}``. Used by the drift
+    reconciliation task to compare actual AD membership against what ipSolis
+    provisioned.
+    """
+    import asyncio
+    from msldap.commons.factory import LDAPConnectionFactory
+
+    url, base_dn = _build_msldap_url(db)
+
+    async def _do():
+        factory = LDAPConnectionFactory.from_url(url)
+        client = factory.get_client()
+        await client.connect()
+        try:
+            filt = f"(&(objectClass=user)(memberOf={_ldap_filter_escape(identifier)}))"
+            attrs = ["sAMAccountName", "mail", "userPrincipalName", "distinguishedName"]
+            members: list[dict] = []
+            async for entry, err in client.pagedsearch(filt, attrs, tree=base_dn):
+                if err:
+                    raise ValueError(f"LDAP member search error: {err}")
+                if not entry:
+                    continue
+                a = entry.get("attributes") or {}
+
+                def _g(k):
+                    v = a.get(k)
+                    if isinstance(v, list):
+                        v = v[0] if v else None
+                    if isinstance(v, bytes):
+                        return v.decode("utf-8", errors="replace")
+                    return str(v) if v else None
+
+                members.append({
+                    "sam": _g("sAMAccountName"),
+                    "mail": _g("mail") or _g("userPrincipalName"),
+                    "dn": _g("distinguishedName"),
+                })
+            return members
+        finally:
+            await client.disconnect()
+
+    return asyncio.run(_do())
+
+
 _GRANT_HANDLERS: dict[str, object] = {
     "ad_group": _grant_ad_group,
     "entra_group": _grant_entra_group,

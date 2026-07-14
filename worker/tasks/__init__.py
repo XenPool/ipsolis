@@ -14,6 +14,7 @@ _include = [
     "tasks.workflows.license_check",
     "tasks.workflows.approval_reminders",
     "tasks.workflows.approval_auto_decline",
+    "tasks.workflows.drift_reconcile",
     "tasks.workflows.cost_threshold_alerter",
     "tasks.workflows.cost_report_snapshot",
     "tasks.workflows.audit_retention",
@@ -123,6 +124,13 @@ app.conf.update(
             "task": "tasks.modules.maintenance.check_backup_schedule",
             "schedule": crontab(minute="*"),  # Every minute
             "options": {"queue": "default"},
+        },
+        # Drift / out-of-band reconciliation (opt-in via drift.enabled; cron
+        # honoured from drift.schedule_cron — checker runs every minute).
+        "drift-scheduler": {
+            "task": "tasks.workflows.drift_reconcile.check_drift_schedule",
+            "schedule": crontab(minute="*"),  # Every minute (cron gate inside)
+            "options": {"queue": "reclaim"},
         },
         # Health probe transitions → email alerts
         "maintenance-health-alert": {
