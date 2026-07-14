@@ -231,19 +231,21 @@ async def schemas(
 
 # ── Users — list / read / create / update / delete ──────────────────────────
 
-def _user_resource(email: str, display_name: str | None = None) -> dict:
+def _user_resource(
+    email: str, display_name: str | None = None, *,
+    active: bool = True, external_id: str | None = None,
+) -> dict:
     """Render a SCIM User resource for an ip·Solis user.
 
-    The ``id`` is the lowercase email — stable, unique, and guaranteed
-    to exist for any user who's interacted with ip·Solis. ``externalId``
-    isn't tracked since we don't store users; SCIM clients map their
-    own external id to ``userName`` (which equals ``id`` here).
+    The ``id`` is the lowercase email — stable, unique, and guaranteed to exist
+    for any user who's interacted with ip·Solis. ``active`` / ``externalId`` come
+    from the SCIM identity projection when present (else active defaults True).
     """
-    return {
+    res: dict[str, Any] = {
         "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
         "id": email,
         "userName": email,
-        "active": True,
+        "active": active,
         "displayName": display_name or email,
         "emails": [{"value": email, "primary": True, "type": "work"}],
         "meta": {
@@ -251,6 +253,35 @@ def _user_resource(email: str, display_name: str | None = None) -> dict:
             "location": f"/scim/v2/Users/{email}",
         },
     }
+    if external_id:
+        res["externalId"] = external_id
+    return res
+
+
+async def _all_user_resources(db: AsyncSession) -> list[dict[str, Any]]:
+    """Build the candidate set for in-memory filtering.
+
+    Merges distinct ``orders.user_email`` (with the latest name) and the SCIM
+    identity projection (name / active / externalId). Keyed by lowercased email.
+    Used only for complex filters; simple ``userName eq`` and unfiltered lists
+    take DB-paginated fast paths.
+    """
+    merged: dict[str, dict[str, Any]] = {}
+    order_rows = (await db.execute(text(
+        "SELECT DISTINCT ON (lower(user_email)) lower(user_email) AS email, user_name AS name "
+        "FROM orders ORDER BY lower(user_email), id DESC"
+    ))).all()
+    for email, name in order_rows:
+        merged[email] = {"email": email, "name": name, "active": True, "external_id": None}
+    ident_rows = (await db.execute(text(
+        "SELECT lower(user_email) AS email, display_name, active, external_id FROM scim_identities"
+    ))).all()
+    for email, dname, active, ext in ident_rows:
+        row = merged.setdefault(email, {"email": email, "name": None, "active": True, "external_id": None})
+        row["name"] = row.get("name") or dname
+        row["active"] = bool(active)
+        row["external_id"] = ext
+    return sorted(merged.values(), key=lambda r: r["email"])
 
 
 @router.get("/Users")
@@ -261,68 +292,77 @@ async def list_users(
     startIndex: int = Query(default=1, ge=1),
     count: int = Query(default=100, ge=0, le=200),
 ) -> dict:
-    """List users (= distinct ``orders.user_email`` values).
+    """List users, with full SCIM filter-grammar support (RFC 7644 §3.4.2.2).
 
-    Filters: only ``userName eq "<email>"`` is supported. Anything
-    else returns the unfiltered list with a ``Warning`` header.
-    Implementing the full SCIM filter grammar is queued for slice 2.
+    Users are derived from ``orders.user_email`` + the SCIM identity projection.
+    A ``userName``/``id``/``emails eq`` filter takes an indexed single-lookup
+    fast path; any other filter is parsed to an AST and evaluated in memory over
+    the full user set. A malformed filter returns 400 ``invalidFilter``.
     """
     await _scim_auth(request, db, write=False)
 
-    target_email: str | None = None
-    if filter:
-        # Naive parse — sufficient for the most common Okta / SailPoint pattern.
-        f = filter.strip()
-        for keyword in ('userName eq "', 'username eq "', 'emails eq "'):
-            if f.lower().startswith(keyword.lower()):
-                tail = f[len(keyword):]
-                if tail.endswith('"'):
-                    target_email = tail[:-1].strip().lower()
-                    break
+    from app.utils.scim_filter import (
+        SCIMFilterError, evaluate, parse_filter, simple_email_equality,
+    )
 
-    if target_email:
-        rows = await db.execute(
-            select(Order.user_email, Order.user_name)
-            .where(func.lower(Order.user_email) == target_email)
-            .order_by(Order.id.desc())
-            .limit(1)
-        )
-        row = rows.first()
-        if row is None:
-            return {
-                "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
-                "totalResults": 0,
-                "startIndex": startIndex,
-                "itemsPerPage": 0,
-                "Resources": [],
-            }
-        email_l = row[0].lower()
+    def _list(resources: list[dict], total: int) -> dict:
         return {
             "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
-            "totalResults": 1,
+            "totalResults": total,
             "startIndex": startIndex,
-            "itemsPerPage": 1,
-            "Resources": [_user_resource(email_l, row[1])],
+            "itemsPerPage": len(resources),
+            "Resources": resources,
         }
 
-    # Unfiltered list — distinct lowercased emails, paginated.
-    total_q = select(func.count(distinct(func.lower(Order.user_email))))
-    total = (await db.execute(total_q)).scalar_one()
+    if filter:
+        try:
+            node = parse_filter(filter)
+        except SCIMFilterError as exc:
+            return _scim_error(400, f"Invalid filter: {exc}", scim_type="invalidFilter")
 
-    page_q = (
+        # Fast path — the ubiquitous single-user lookup.
+        email = simple_email_equality(node)
+        if email is not None:
+            row = (await db.execute(
+                select(Order.user_email, Order.user_name)
+                .where(func.lower(Order.user_email) == email)
+                .order_by(Order.id.desc()).limit(1)
+            )).first()
+            if row is not None:
+                return _list([_user_resource(row[0].lower(), row[1])], 1)
+            # May still exist as a SCIM projection with no orders yet.
+            from app.models.scim_identity import ScimIdentity
+            ident = (await db.execute(
+                select(ScimIdentity).where(func.lower(ScimIdentity.user_email) == email)
+            )).scalars().first()
+            if ident is None:
+                return _list([], 0)
+            return _list([_user_resource(
+                ident.user_email.lower(), ident.display_name,
+                active=ident.active, external_id=ident.external_id,
+            )], 1)
+
+        # General path — parse + evaluate over the full user set.
+        candidates = await _all_user_resources(db)
+        matched = [r for r in candidates if evaluate(node, r)]
+        total = len(matched)
+        page = matched[max(0, startIndex - 1): max(0, startIndex - 1) + count]
+        return _list(
+            [_user_resource(r["email"], r["name"], active=r["active"], external_id=r["external_id"])
+             for r in page],
+            total,
+        )
+
+    # Unfiltered list — distinct lowercased emails, DB-paginated.
+    total = (await db.execute(
+        select(func.count(distinct(func.lower(Order.user_email))))
+    )).scalar_one()
+    rows = (await db.execute(
         select(distinct(func.lower(Order.user_email)).label("email"))
         .order_by(func.lower(Order.user_email))
-        .offset(max(0, startIndex - 1))
-        .limit(count)
-    )
-    rows = (await db.execute(page_q)).all()
-    return {
-        "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
-        "totalResults": int(total or 0),
-        "startIndex": startIndex,
-        "itemsPerPage": len(rows),
-        "Resources": [_user_resource(r[0]) for r in rows],
-    }
+        .offset(max(0, startIndex - 1)).limit(count)
+    )).all()
+    return _list([_user_resource(r[0]) for r in rows], int(total or 0))
 
 
 @router.get("/Users/{user_id}")
