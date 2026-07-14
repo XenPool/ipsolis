@@ -16,7 +16,7 @@ from app.database import AsyncSessionLocal
 from app.models.config import AppConfig
 from app.routes import (
     admin, admin_access_report, admin_api_tokens, admin_approval_delegations, admin_auth,
-    admin_certifications, admin_cost_report, admin_license, admin_maintenance,
+    admin_certifications, admin_contracts, admin_cost_report, admin_license, admin_maintenance,
     admin_migration, admin_modules, admin_operations, admin_runbooks, admin_seed_export,
     admin_self, admin_setup,
     admin_standalone_runbooks, admin_users,
@@ -207,6 +207,7 @@ app.include_router(admin_api_tokens.router)
 app.include_router(admin_users.router)
 app.include_router(admin_self.router)
 app.include_router(admin_cost_report.router)
+app.include_router(admin_contracts.router)
 app.include_router(admin_access_report.router)
 app.include_router(admin_certifications.router)
 app.include_router(certifications_external.router)

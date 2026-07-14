@@ -785,13 +785,25 @@ def _empty_runbook_slots() -> list[dict]:
     return [{"action": a, "label": l, "runbook": None} for a, l in _RUNBOOK_SLOTS]
 
 
+async def _load_contracts_for_form(db: AsyncSession) -> list[dict]:
+    """Software contracts for the asset-type form's License/Contract picker."""
+    rows = (await db.execute(text(
+        "SELECT id, vendor, product, currency, licensed_seats "
+        "FROM software_contracts ORDER BY vendor, product"
+    ))).mappings().all()
+    return [dict(r) for r in rows]
+
+
 @router.get("/asset-types/new", response_class=HTMLResponse)
-async def asset_type_new_form(request: Request) -> HTMLResponse:
+async def asset_type_new_form(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> HTMLResponse:
     return templates.TemplateResponse(
         request, "ui/asset_type_form.html",
         {
             "asset_type": None,
             "runbook_slots": _empty_runbook_slots(),
+            "contracts": await _load_contracts_for_form(db),
             "active_page": "asset-types",
         },
     )
@@ -811,6 +823,7 @@ async def asset_type_edit_form(
         {
             "asset_type": t,
             "runbook_slots": await _load_runbook_slots(db, type_id),
+            "contracts": await _load_contracts_for_form(db),
             "active_page": "asset-types",
         },
     )
@@ -1276,6 +1289,15 @@ async def cost_report_page(request: Request) -> HTMLResponse:
         request,
         "ui/cost_report.html",
         {"active_page": "cost-report"},
+    )
+
+
+@router.get("/contracts", response_class=HTMLResponse)
+async def contracts_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ui/contracts.html",
+        {"active_page": "contracts"},
     )
 
 

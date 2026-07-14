@@ -18,6 +18,7 @@ from .hr_leaver_event import HrLeaverEvent
 from .ps_module import PsModule
 from .runbook import RunbookDefinition, RunbookStep
 from .script_module import ScriptModule
+from .software_contract import SoftwareContract
 from .standalone_runbook import (
     StandaloneRunbook,
     StandaloneRunbookStep,
@@ -49,6 +50,7 @@ __all__ = [
     "RunbookDefinition",
     "RunbookStep",
     "ScriptModule",
+    "SoftwareContract",
     "StandaloneRunbook",
     "StandaloneRunbookStep",
     "StandaloneRunbookRun",

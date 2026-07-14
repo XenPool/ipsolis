@@ -351,6 +351,24 @@
                  class="w-48 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
         </div>
       </div>
+      <div class="mt-3">
+        <label class="block text-xs text-muted mb-1">License / Contract</label>
+        {% set _cid = (asset_type.contract_id if asset_type and asset_type.contract_id else None) %}
+        <select name="contract_id" id="at-contract-id"
+                class="w-full max-w-lg rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <option value="">— none (use Monthly cost above) —</option>
+          {% for c in contracts %}
+          <option value="{{ c.id }}" {% if _cid == c.id %}selected{% endif %}>
+            {{ c.vendor }} — {{ c.product }} ({{ c.currency }}{% if c.licensed_seats %}, {{ c.licensed_seats }} seats{% else %}, unlimited{% endif %})
+          </option>
+          {% endfor %}
+        </select>
+        <p class="text-[11px] text-muted/60 mt-1 leading-snug">
+          Bind this type to a vendor contract (<a href="/ui/contracts" class="text-blue-600 hover:underline">manage licenses</a>).
+          When set, the cost report prices each active order at the contract's <strong>per-seat</strong> rate
+          (contract value ÷ seats) instead of the Monthly cost above, and tracks seat utilization / shelfware.
+        </p>
+      </div>
     </div>
 
     <!-- Lifecycle -->
@@ -2044,6 +2062,8 @@ async function submitForm() {
     is_active: form.querySelector('[name="is_active"]').checked,
     show_on_dashboard: form.querySelector('[name="show_on_dashboard"]').checked,
     drift_monitor: form.querySelector('[name="drift_monitor"]').checked,
+    contract_id: form.querySelector('[name="contract_id"]').value
+      ? parseInt(form.querySelector('[name="contract_id"]').value, 10) : null,
     category: form.querySelector('[name="category"]:checked').value,
     assignment_model: assignmentModel,
     pool_capacity: form.querySelector('[name="pool_capacity"]').value

@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+
+{% block title %}Licenses & Contracts – {{ app_title }}{% endblock %}
+
+{% block content %}
+{% include "_partials/hub_tabs_reports.html" %}
+
+<div class="mb-6 flex items-start justify-between gap-4">
+  <div>
+    <h1 class="text-lg font-semibold text-heading">Licenses &amp; Contracts</h1>
+    <p class="text-xs text-muted/70 mt-1 max-w-3xl">
+      Vendor software contracts (Adobe, Microsoft, …) that back one or more asset types. Bind a type to a
+      contract on the <a href="/ui/asset-types" class="text-blue-600 hover:underline">Asset Definitions</a> page;
+      the <a href="/ui/cost-report" class="text-blue-600 hover:underline">Cost Report</a> then prices each active
+      order at the contract's <strong>per-seat</strong> rate (contract value ÷ seats), and tracks
+      <strong>utilization</strong> and unused-seat <strong>shelfware</strong>. Not the ip·Solis product license.
+    </p>
+  </div>
+  <button onclick="openForm()"
+          class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 whitespace-nowrap">
+    + New contract
+  </button>
+</div>
+
+<div id="banner" class="hidden mb-4 px-4 py-2 rounded text-sm"></div>
+
+<div class="bg-surface rounded-lg border border-token-border overflow-x-auto">
+  <table class="w-full text-sm min-w-[980px]">
+    <thead class="bg-surface-raised text-xs uppercase text-muted">
+      <tr>
+        <th class="px-3 py-3 text-left font-medium">Vendor / Product</th>
+        <th class="px-3 py-3 text-right font-medium">Value</th>
+        <th class="px-3 py-3 text-right font-medium">Seat / mo</th>
+        <th class="px-3 py-3 text-left font-medium">Utilization</th>
+        <th class="px-3 py-3 text-right font-medium">Allocated</th>
+        <th class="px-3 py-3 text-right font-medium">Shelfware</th>
+        <th class="px-3 py-3 text-left font-medium">Renewal</th>
+        <th class="px-3 py-3 text-right font-medium">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="rows" class="divide-y divide-token-border">
+      <tr><td colspan="8" class="px-4 py-8 text-center text-muted/70">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Create / edit modal -->
+<div id="form-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div class="bg-surface rounded-lg border border-token-border w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-token-border">
+      <h2 id="form-title" class="text-sm font-semibold text-body">New contract</h2>
+      <button onclick="closeForm()" class="text-muted hover:text-body text-xl leading-none">&times;</button>
+    </div>
+    <div class="p-5 space-y-4">
+      <input type="hidden" id="f-id">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs text-muted mb-1">Vendor *</label>
+          <input id="f-vendor" type="text" placeholder="e.g. Adobe"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5">
+        </div>
+        <div>
+          <label class="block text-xs text-muted mb-1">Product *</label>
+          <input id="f-product" type="text" placeholder="e.g. Creative Cloud"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5">
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="block text-xs text-muted mb-1">Contract value *</label>
+          <input id="f-value" type="number" min="0" step="0.01" placeholder="6000.00"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5 font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-muted mb-1">Currency</label>
+          <select id="f-currency" class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5">
+            {% for code in ['EUR','USD','GBP','CHF','JPY','CAD','AUD','SEK','DKK','NOK','PLN'] %}
+            <option value="{{ code }}">{{ code }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-muted mb-1">Billing interval</label>
+          <select id="f-interval" class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5">
+            <option value="annual">Annual</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="block text-xs text-muted mb-1">Licensed seats</label>
+          <input id="f-seats" type="number" min="0" step="1" placeholder="blank = unlimited"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5 font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-muted mb-1">Cost center</label>
+          <input id="f-cc" type="text" placeholder="CC-IT-2100"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5 font-mono">
+        </div>
+        <div class="flex items-end">
+          <label class="flex items-center gap-2 text-sm cursor-pointer">
+            <input id="f-autorenew" type="checkbox" class="rounded border-token-border">
+            <span class="text-body">Auto-renews</span>
+          </label>
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="block text-xs text-muted mb-1">Start date</label>
+          <input id="f-start" type="date"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5">
+        </div>
+        <div>
+          <label class="block text-xs text-muted mb-1">Renewal date</label>
+          <input id="f-renewal" type="date"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5">
+        </div>
+        <div>
+          <label class="block text-xs text-muted mb-1">Notice period (days)</label>
+          <input id="f-notice" type="number" min="0" step="1" value="0"
+                 class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5 font-mono">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs text-muted mb-1">Notes</label>
+        <textarea id="f-notes" rows="2"
+                  class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5"></textarea>
+      </div>
+      <div id="form-error" class="hidden text-sm text-red-600"></div>
+    </div>
+    <div class="flex items-center justify-end gap-2 px-5 py-3 border-t border-token-border">
+      <button onclick="closeForm()" class="px-3 py-1.5 text-sm rounded border border-token-border text-body hover:bg-surface-raised">Cancel</button>
+      <button onclick="saveContract()" id="save-btn" class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function escapeHtml(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function banner(msg, kind) {
+  var el = document.getElementById('banner');
+  el.className = 'mb-4 px-4 py-2 rounded text-sm ' +
+    (kind === 'error' ? 'bg-red-50 text-red-700 border border-red-200'
+                      : 'bg-green-50 text-green-700 border border-green-200');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  if (kind !== 'error') setTimeout(function() { el.classList.add('hidden'); }, 4000);
+}
+function money(v, cur) { return v == null ? '—' : Number(v).toFixed(2) + ' ' + (cur || ''); }
+
+var _contracts = [];
+
+async function loadContracts() {
+  var tbody = document.getElementById('rows');
+  try {
+    var resp = await fetch('/admin/contracts');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    _contracts = await resp.json();
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-8 text-center text-red-600">Failed to load: ' + escapeHtml(e.message) + '</td></tr>';
+    return;
+  }
+  if (!_contracts.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-8 text-center text-muted/70">No contracts yet. Click <strong>+ New contract</strong> to add one.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _contracts.map(renderRow).join('');
+}
+
+function utilCell(c) {
+  if (c.utilization == null) {
+    return '<span class="text-xs text-muted/60">' + c.consumption + ' used · unlimited</span>';
+  }
+  var pct = Math.round(c.utilization * 100);
+  var barColor = c.over_allocated ? 'bg-red-500' : (pct >= 90 ? 'bg-amber-500' : 'bg-blue-500');
+  var label = c.consumption + ' / ' + c.licensed_seats + ' (' + pct + '%)'
+    + (c.over_allocated ? ' ⚠' : '');
+  return '<div class="flex items-center gap-2 min-w-[130px]">'
+    + '<div class="flex-1 h-1.5 bg-surface-raised rounded overflow-hidden">'
+    + '<div class="' + barColor + ' h-full" style="width:' + Math.min(100, pct) + '%"></div></div>'
+    + '<span class="text-xs ' + (c.over_allocated ? 'text-red-600 font-medium' : 'text-muted') + ' whitespace-nowrap">' + label + '</span></div>';
+}
+
+function renewalCell(c) {
+  if (!c.renewal_date) return '<span class="text-muted/50">—</span>';
+  var cls = 'text-muted';
+  if (c.days_to_renewal != null) {
+    if (c.days_to_renewal < 0) cls = 'text-red-600 font-medium';
+    else if (c.days_to_renewal <= 30) cls = 'text-amber-600 font-medium';
+  }
+  var d = c.days_to_renewal;
+  var rel = d == null ? '' : (d < 0 ? ' (' + Math.abs(d) + 'd ago)' : ' (in ' + d + 'd)');
+  return '<span class="' + cls + '">' + escapeHtml(c.renewal_date) + rel + '</span>'
+    + (c.auto_renew ? ' <span class="text-[10px] px-1 py-0.5 rounded bg-surface-raised text-muted">auto</span>' : '');
+}
+
+function renderRow(c) {
+  var shelf = c.shelfware_monthly;
+  var shelfCell = shelf == null ? '<span class="text-muted/50">—</span>'
+    : (shelf > 0 ? '<span class="text-amber-600">' + money(shelf, c.currency) + '</span>' : money(0, c.currency));
+  return '<tr>'
+    + '<td class="px-3 py-2"><div class="font-medium text-body">' + escapeHtml(c.vendor) + ' — ' + escapeHtml(c.product) + '</div>'
+      + '<div class="text-[11px] text-muted/60">' + (c.bound_type_count || 0) + ' bound type(s)'
+      + (c.cost_center ? ' · ' + escapeHtml(c.cost_center) : '') + '</div></td>'
+    + '<td class="px-3 py-2 text-right whitespace-nowrap">' + money(c.contract_value, c.currency)
+      + '<div class="text-[11px] text-muted/60">/ ' + escapeHtml(c.billing_interval) + '</div></td>'
+    + '<td class="px-3 py-2 text-right font-mono whitespace-nowrap">' + (c.seat_price_monthly == null ? '—' : money(c.seat_price_monthly, c.currency)) + '</td>'
+    + '<td class="px-3 py-2">' + utilCell(c) + '</td>'
+    + '<td class="px-3 py-2 text-right whitespace-nowrap">' + money(c.allocated_monthly, c.currency) + '</td>'
+    + '<td class="px-3 py-2 text-right whitespace-nowrap">' + shelfCell + '</td>'
+    + '<td class="px-3 py-2 whitespace-nowrap">' + renewalCell(c) + '</td>'
+    + '<td class="px-3 py-2 text-right whitespace-nowrap">'
+      + '<button onclick="openForm(' + c.id + ')" class="text-blue-600 hover:underline text-xs">Edit</button>'
+      + ' <button onclick="deleteContract(' + c.id + ')" class="text-red-600 hover:underline text-xs ml-2">Delete</button>'
+    + '</td></tr>';
+}
+
+function openForm(id) {
+  document.getElementById('form-error').classList.add('hidden');
+  var c = id ? _contracts.find(function(x) { return x.id === id; }) : null;
+  document.getElementById('form-title').textContent = c ? 'Edit contract' : 'New contract';
+  document.getElementById('f-id').value = c ? c.id : '';
+  document.getElementById('f-vendor').value = c ? c.vendor : '';
+  document.getElementById('f-product').value = c ? c.product : '';
+  document.getElementById('f-value').value = c ? c.contract_value : '';
+  document.getElementById('f-currency').value = c ? c.currency : 'EUR';
+  document.getElementById('f-interval').value = c ? c.billing_interval : 'annual';
+  document.getElementById('f-seats').value = (c && c.licensed_seats != null) ? c.licensed_seats : '';
+  document.getElementById('f-cc').value = (c && c.cost_center) ? c.cost_center : '';
+  document.getElementById('f-autorenew').checked = c ? !!c.auto_renew : false;
+  document.getElementById('f-start').value = (c && c.start_date) ? c.start_date : '';
+  document.getElementById('f-renewal').value = (c && c.renewal_date) ? c.renewal_date : '';
+  document.getElementById('f-notice').value = c ? c.notice_period_days : 0;
+  document.getElementById('f-notes').value = (c && c.notes) ? c.notes : '';
+  document.getElementById('form-modal').classList.remove('hidden');
+}
+function closeForm() { document.getElementById('form-modal').classList.add('hidden'); }
+
+async function saveContract() {
+  var id = document.getElementById('f-id').value;
+  var seats = document.getElementById('f-seats').value;
+  var payload = {
+    vendor: document.getElementById('f-vendor').value.trim(),
+    product: document.getElementById('f-product').value.trim(),
+    contract_value: parseFloat(document.getElementById('f-value').value || '0'),
+    currency: document.getElementById('f-currency').value,
+    billing_interval: document.getElementById('f-interval').value,
+    licensed_seats: seats === '' ? null : parseInt(seats, 10),
+    cost_center: document.getElementById('f-cc').value.trim() || null,
+    auto_renew: document.getElementById('f-autorenew').checked,
+    start_date: document.getElementById('f-start').value || null,
+    renewal_date: document.getElementById('f-renewal').value || null,
+    notice_period_days: parseInt(document.getElementById('f-notice').value || '0', 10),
+    notes: document.getElementById('f-notes').value.trim() || null,
+  };
+  if (!payload.vendor || !payload.product) {
+    var err = document.getElementById('form-error');
+    err.textContent = 'Vendor and product are required.';
+    err.classList.remove('hidden');
+    return;
+  }
+  var btn = document.getElementById('save-btn');
+  btn.disabled = true;
+  try {
+    var resp = await fetch('/admin/contracts' + (id ? '/' + id : ''), {
+      method: id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    var body = await resp.json().catch(function() { return {}; });
+    if (!resp.ok) throw new Error(body.detail || ('HTTP ' + resp.status));
+    closeForm();
+    banner(id ? 'Contract updated.' : 'Contract created.', 'ok');
+    loadContracts();
+  } catch (e) {
+    var err2 = document.getElementById('form-error');
+    err2.textContent = 'Save failed: ' + e.message;
+    err2.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function deleteContract(id) {
+  var c = _contracts.find(function(x) { return x.id === id; });
+  var extra = (c && c.bound_type_count) ? '\n\n' + c.bound_type_count + ' asset type(s) are bound and will be unbound (they fall back to their own monthly cost).' : '';
+  if (!confirm('Delete this contract?' + extra)) return;
+  try {
+    var resp = await fetch('/admin/contracts/' + id, { method: 'DELETE' });
+    if (!resp.ok && resp.status !== 204) {
+      var body = await resp.json().catch(function() { return {}; });
+      throw new Error(body.detail || ('HTTP ' + resp.status));
+    }
+    banner('Contract deleted.', 'ok');
+    loadContracts();
+  } catch (e) {
+    banner('Delete failed: ' + e.message, 'error');
+  }
+}
+
+loadContracts();
+</script>
+{% endblock %}

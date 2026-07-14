@@ -128,6 +128,12 @@ class AssetType(Base):
     monthly_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     cost_center: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Optional binding to a vendor software contract (SoftwareContract).
+    # When set, the cost report prices this type per-seat from the contract
+    # (Model A) instead of ``monthly_cost``. SET NULL on contract delete.
+    contract_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("software_contracts.id", ondelete="SET NULL"), nullable=True
+    )
     # Lifecycle
     lifecycle_ttl_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     lifecycle_renewable: Mapped[bool] = mapped_column(

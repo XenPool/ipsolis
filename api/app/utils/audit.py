@@ -216,6 +216,7 @@ def _type_snap(t) -> dict:
         "max_per_user": t.max_per_user,
         "min_approvals_required": getattr(t, "min_approvals_required", None),
         "drift_monitor": getattr(t, "drift_monitor", False),
+        "contract_id": getattr(t, "contract_id", None),
         "approval_rules": getattr(t, "approval_rules", None),
         "monthly_cost": str(t.monthly_cost) if t.monthly_cost is not None else None,
         "currency": t.currency,

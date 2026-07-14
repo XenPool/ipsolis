@@ -15,6 +15,7 @@ _include = [
     "tasks.workflows.approval_reminders",
     "tasks.workflows.approval_auto_decline",
     "tasks.workflows.drift_reconcile",
+    "tasks.workflows.contract_renewals",
     "tasks.workflows.cost_threshold_alerter",
     "tasks.workflows.cost_report_snapshot",
     "tasks.workflows.audit_retention",
@@ -87,6 +88,7 @@ app.conf.update(
         "tasks.workflows.approval_reminders.*": {"queue": "notifications"},
         "tasks.workflows.approval_auto_decline.*": {"queue": "notifications"},
         "tasks.workflows.cost_threshold_alerter.*": {"queue": "notifications"},
+        "tasks.workflows.contract_renewals.*": {"queue": "notifications"},
         "tasks.workflows.cost_report_snapshot.*": {"queue": "default"},
         "tasks.workflows.certification_notifications.*": {"queue": "notifications"},
         "tasks.workflows.certification_reminders.*": {"queue": "notifications"},
@@ -143,6 +145,14 @@ app.conf.update(
             "task": "tasks.workflows.license_check.check_license_expiry",
             "schedule": crontab(hour=8, minute=0),  # Daily at 08:00 Europe/Berlin
             "options": {"queue": "default"},
+        },
+        # Daily software-contract renewal reminders (opt-in via
+        # contract.renewal_reminder_enabled). Fires when a contract enters its
+        # notice-period window.
+        "contract-renewal-reminders": {
+            "task": "tasks.workflows.contract_renewals.check_contract_renewals",
+            "schedule": crontab(hour=8, minute=15),  # Daily at 08:15 Europe/Berlin
+            "options": {"queue": "notifications"},
         },
         # Stream new audit_log rows to the configured SIEM endpoint
         "siem-stream-audit-log": {

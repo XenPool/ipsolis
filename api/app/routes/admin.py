@@ -824,6 +824,7 @@ async def create_asset_type(
         is_active=payload.is_active,
         show_on_dashboard=payload.show_on_dashboard,
         drift_monitor=payload.drift_monitor,
+        contract_id=payload.contract_id,
         category=payload.category,
         config=payload.config,
         assignment_model=payload.assignment_model,
@@ -979,6 +980,9 @@ async def update_asset_type(
         asset_type.show_on_dashboard = payload.show_on_dashboard
     if payload.drift_monitor is not None:
         asset_type.drift_monitor = payload.drift_monitor
+    # contract_id: explicit null unbinds, so honour presence (not just non-None).
+    if "contract_id" in payload.model_fields_set:
+        asset_type.contract_id = payload.contract_id
     await aaudit(db, "asset_type", asset_type.id, "updated", old=old_snap, new=_type_snap(asset_type),
                  by=actor_by(request, "update_asset_type"),
                  classification=classify_asset_type(asset_type))
@@ -1057,6 +1061,7 @@ async def clone_asset_type(
         requires_approval_on_modify=src.requires_approval_on_modify,
         eligible_requestors_dn=src.eligible_requestors_dn,
         drift_monitor=src.drift_monitor,
+        contract_id=src.contract_id,
         logo=src.logo,
     )
     db.add(new_type)

@@ -14,6 +14,7 @@ class AssetTypeRead(BaseModel):
     is_active: bool = True
     show_on_dashboard: bool = False
     drift_monitor: bool = False
+    contract_id: int | None = None
     category: AssetCategory
     config: list[dict[str, Any]] | None
     assignment_model: str

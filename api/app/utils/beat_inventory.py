@@ -148,6 +148,22 @@ BEAT_INVENTORY: list[BeatEntry] = [
         ),
         "config_keys": ["license.warning_email"],
     },
+    {
+        "name": "contract-renewal-reminders",
+        "task": "tasks.workflows.contract_renewals.check_contract_renewals",
+        "cadence": "Daily 08:15 Europe/Berlin",
+        "queue": "notifications",
+        "description": (
+            "Emails a reminder for each software contract entering its "
+            "renewal notice window (renewal_date − notice_period_days). "
+            "Opt-in; deduped per window via last_renewal_reminder_at. "
+            "Recipient falls back to health.alert_email."
+        ),
+        "config_keys": [
+            "contract.renewal_reminder_enabled",
+            "contract.renewal_reminder_email",
+        ],
+    },
 
     # ── Hourly ──────────────────────────────────────────────────────────
     {
