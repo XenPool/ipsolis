@@ -45,36 +45,6 @@ out of band, or removed from one it granted.
 
 ---
 
-### [open] Operations dashboard (fulfillment SLA & remediation)
-
-A clean retry path for failed orders already exists (route + button + task,
-[`POST /orders/{id}/retry`](api/app/routes/ui.py#L612-L643)) and the state model supports it
-([`OrderStatus.FAILED`](api/app/models/order.py#L36), `OrderStep`), but there is no aggregated
-operator view — no open-request aging, no failed roll-up, no upcoming-expiration tile, no drift
-alerts, and retry is only reachable one order at a time.
-
-**Scope:**
-- New dedicated **"Operations" page** (separate from the capacity-oriented
-  [`dashboard.html`](api/app/templates/dashboard.html)) — new route + nav entry; do not mix
-  capacity and fulfillment views.
-- Four tiles: **(1)** failed-provisioning roll-up with aging + multi-select **batch retry** (wraps
-  the existing single retry N-fold); **(2)** approvals overdue (SLA aging, red-flagged, from
-  existing approval-reminder data); **(3)** upcoming expirations (today only per-user email,
-  [`notifications.py:264`](worker/tasks/modules/notifications.py#L264)); **(4)** drift alerts —
-  **depends on the drift task**, graceful-degrades to hidden when drift is disabled.
-- **Configurable SLA thresholds** via `app_config` (e.g. approval > 48h, provisioning stuck > 2h),
-  pattern like `retention.*` / `backup.*`.
-- No new data model — aggregation route/template + a batch wrapper over the existing retry.
-- Tiles 1–3 are buildable independently; tile 4 requires the drift task.
-
-**Follow-up:** every new UI string in all 5 locale files
-([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
-[`es`](locales/es.json) / [`it`](locales/it.json)).
-
-**Out of scope:** replacing the capacity dashboard; SLA breach auto-escalation beyond alerting.
-
----
-
 ### [open] Software license & contract lifecycle
 
 Cost reporting today answers "what did access cost" (chargeback) but has no notion of the
@@ -435,6 +405,7 @@ All items below are shipped. Detailed implementation notes live in git history.
 
 | Area | Shipped | Notes |
 |------|---------|-------|
+| Operations dashboard (fulfillment SLA) | 2026-07-14 | New [`admin_operations.py`](api/app/routes/admin_operations.py) `GET /admin/operations/summary` + dedicated [`/ui/operations`](api/app/templates/ui/operations.html) page (admin, own nav entry, separate from the capacity dashboard). Tiles: **failed** provisionings with aging + multi-select **batch retry** (`POST /admin/operations/retry-batch` wraps the existing single retry N-fold, same FAILED-only guard), **overdue approvals** (pending `order_approvals` past SLA), **upcoming expirations** (active orders within horizon), **stuck-in-progress** (transitional past threshold, informational). SLA thresholds configurable via `app_config` `ops.approval_sla_hours` / `ops.stuck_hours` / `ops.expiry_horizon_days` (defaults 48/2/7). Drift tile (4) is a graceful-degrade placeholder (`drift.available=false`) **pending the B1 drift task**. No new data model. Verified on the compose stack: summary + real data, config-override respected, batch-retry guards reject not-found/not-failed without triggering provisioning. **i18n N/A** (admin UI hardcoded English) |
 | Config migration export/import (JSON) | 2026-07-14 | New [`admin_migration.py`](api/app/routes/admin_migration.py): `GET /admin/migration/export` downloads asset-types + asset-pool instances as one portable JSON doc (pool instances reference their type **by name**, not id); `POST /admin/migration/import?dry_run=` loads it **insert-only** (existing name skipped, never overwritten — safe re-import), reusing `validate_asset_type` + `aaudit`, imported instances start `Free`. Migration tab on the Maintenance page ([`maintenance.html`](api/app/templates/ui/maintenance.html)) with export download + file upload + dry-run preview. **No new data model.** Verified round-trip on the compose stack (export→dry-run→real→idempotent re-import; invalid-category + orphan-type paths). **Bundles** deferred (gated on the Onboarding-bundles entity). **i18n N/A** — admin UI is hardcoded English (`locales/*.json` are portal-only) |
 | Point-in-time access report | 2026-07-14 | New [`admin_access_report.py`](api/app/routes/admin_access_report.py) `GET /admin/access-report` (auditor floor, `orders:read`): reconstructs the active access set **as of any past date** by replaying `order_change_log` — `DISTINCT ON (principal,target_type,identifier)` latest **successful** event, keep those whose latest is a `grant`; `?as_of=YYYY-MM-DD` (end-of-day UTC, live if omitted), `principal`/`asset_type_id` filters, JSON + CSV. UI page [`access_report.html`](api/app/templates/ui/access_report.html) + [`/ui/access-report`](api/app/routes/ui.py) + nav (mirrors the cost-report `?as_of=` pattern). **No new data model** — query over existing logs. Verified end-to-end on the compose stack incl. before/after-grant-date differential (0→1). **i18n N/A** — the admin UI is hardcoded English (`locales/*.json` are portal-only) |
 | DR runbook (backup/restore) | 2026-07-14 | Bilingual [`docs/DR-RUNBOOK.md`](docs/DR-RUNBOOK.md) / [`.de.md`](docs/DR-RUNBOOK.de.md): fresh-host recovery (host → DB-only up → clean DB → `gunzip -c \| psql` → `alembic upgrade head`), what the pg_dump does/doesn't contain (plaintext `app_config` creds **are** in it; `API_SECRET_KEY`/externalized `vault://` secrets are **not**), `api_tokens` rotation, tick-off verification (email/AD/approval-link), externalized-secret case, rollback via pre-restore safety backup. Fixed docs drift in [`INSTALL.md`](docs/onboarding/INSTALL.md) (removed non-existent `from app.tasks import backup_database`, added restore pointers). Doc-only by design — **no automated restore test** (audit A4) |

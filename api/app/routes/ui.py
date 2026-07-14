@@ -1279,6 +1279,15 @@ async def cost_report_page(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/operations", response_class=HTMLResponse)
+async def operations_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ui/operations.html",
+        {"active_page": "operations"},
+    )
+
+
 @router.get("/access-report", response_class=HTMLResponse)
 async def access_report_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(

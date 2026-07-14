@@ -17,7 +17,8 @@ from app.models.config import AppConfig
 from app.routes import (
     admin, admin_access_report, admin_api_tokens, admin_approval_delegations, admin_auth,
     admin_certifications, admin_cost_report, admin_license, admin_maintenance,
-    admin_migration, admin_modules, admin_runbooks, admin_seed_export, admin_self, admin_setup,
+    admin_migration, admin_modules, admin_operations, admin_runbooks, admin_seed_export,
+    admin_self, admin_setup,
     admin_standalone_runbooks, admin_users,
     approvals_external, assets, auth,
     certifications_external,
@@ -217,6 +218,7 @@ app.include_router(admin_setup.router)
 app.include_router(admin_approval_delegations.router)
 app.include_router(admin_seed_export.router)
 app.include_router(admin_migration.router)
+app.include_router(admin_operations.router)
 app.include_router(admin_auth.router)  # admin login/logout — no auth, before ui.router
 app.include_router(ui.router)
 app.include_router(auth.router)   # login / callback / logout — before portal
