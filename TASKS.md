@@ -160,32 +160,6 @@ qualified/eIDAS e-signatures; QR-tagged physical inventory.
 
 ---
 
-### [open] Guided setup wizard (delta)
-
-The diagnostics page and all per-integration "test connection" endpoints already exist; a live setup
-**checklist** ([`admin_setup.py:44-171`](api/app/routes/admin_setup.py#L44-L171)) already derives what
-is configured. Only the *guided flow* is missing — today the checklist just links out to scattered
-settings sections.
-
-**Scope:**
-- **Guided multi-step flow on its own page** after first-admin creation (Branding → SMTP → AD →
-  SSO → …), each step with an **inline test** via the existing `*/test` endpoints
-  ([`admin.py:236`](api/app/routes/admin.py#L236) AD, `:309` IdP, `:460` SIEM, `:562` Teams,
-  `:607` secret-store, `:702` SCCM, `:1653` SMTP).
-- **Skippable / re-callable anytime**; shown until the checklist `essential` items are done
-  (progress source = the existing `setup/state`). Guides, does not gate.
-- **Do not rebuild** the diagnostics page / test endpoints — they exist.
-- No new data model.
-
-**Follow-up:** every new UI string in all 5 locale files
-([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
-[`es`](locales/es.json) / [`it`](locales/it.json)).
-
-**Out of scope:** rebuilding diagnostics/test endpoints; mandatory gating of the main UI behind the
-wizard.
-
----
-
 ### [open] Backup encryption at-rest
 
 Surfaced by the DR audit: credentials are stored **plaintext** in `app_config`
@@ -405,6 +379,7 @@ All items below are shipped. Detailed implementation notes live in git history.
 
 | Area | Shipped | Notes |
 |------|---------|-------|
+| Guided setup wizard | 2026-07-14 | New [`/ui/setup-wizard`](api/app/templates/ui/setup_wizard.html) page (superadmin) — a guided stepper over the existing [`/admin/setup/state`](api/app/routes/admin_setup.py) checklist: Essential + Recommended progress bars, per-step status/hint, **Configure→** links to the settings section, and inline **Test connection** buttons wired to the existing `*/test` endpoints (email/ad/teams/siem). Skippable, re-checkable; first-run setup now redirects here ([`admin_auth.py`](api/app/routes/admin_auth.py)) instead of a blank dashboard. Nav entry under Configuration (superadmin). Reuses the checklist + test endpoints — **no rebuild, no new data model, no new endpoints**. Verified on the compose stack (setup/state + AD test reachable, page serves). **i18n N/A** (admin UI hardcoded English) |
 | Operations dashboard (fulfillment SLA) | 2026-07-14 | New [`admin_operations.py`](api/app/routes/admin_operations.py) `GET /admin/operations/summary` + dedicated [`/ui/operations`](api/app/templates/ui/operations.html) page (admin, own nav entry, separate from the capacity dashboard). Tiles: **failed** provisionings with aging + multi-select **batch retry** (`POST /admin/operations/retry-batch` wraps the existing single retry N-fold, same FAILED-only guard), **overdue approvals** (pending `order_approvals` past SLA), **upcoming expirations** (active orders within horizon), **stuck-in-progress** (transitional past threshold, informational). SLA thresholds configurable via `app_config` `ops.approval_sla_hours` / `ops.stuck_hours` / `ops.expiry_horizon_days` (defaults 48/2/7). Drift tile (4) is a graceful-degrade placeholder (`drift.available=false`) **pending the B1 drift task**. No new data model. Verified on the compose stack: summary + real data, config-override respected, batch-retry guards reject not-found/not-failed without triggering provisioning. **i18n N/A** (admin UI hardcoded English) |
 | Config migration export/import (JSON) | 2026-07-14 | New [`admin_migration.py`](api/app/routes/admin_migration.py): `GET /admin/migration/export` downloads asset-types + asset-pool instances as one portable JSON doc (pool instances reference their type **by name**, not id); `POST /admin/migration/import?dry_run=` loads it **insert-only** (existing name skipped, never overwritten — safe re-import), reusing `validate_asset_type` + `aaudit`, imported instances start `Free`. Migration tab on the Maintenance page ([`maintenance.html`](api/app/templates/ui/maintenance.html)) with export download + file upload + dry-run preview. **No new data model.** Verified round-trip on the compose stack (export→dry-run→real→idempotent re-import; invalid-category + orphan-type paths). **Bundles** deferred (gated on the Onboarding-bundles entity). **i18n N/A** — admin UI is hardcoded English (`locales/*.json` are portal-only) |
 | Point-in-time access report | 2026-07-14 | New [`admin_access_report.py`](api/app/routes/admin_access_report.py) `GET /admin/access-report` (auditor floor, `orders:read`): reconstructs the active access set **as of any past date** by replaying `order_change_log` — `DISTINCT ON (principal,target_type,identifier)` latest **successful** event, keep those whose latest is a `grant`; `?as_of=YYYY-MM-DD` (end-of-day UTC, live if omitted), `principal`/`asset_type_id` filters, JSON + CSV. UI page [`access_report.html`](api/app/templates/ui/access_report.html) + [`/ui/access-report`](api/app/routes/ui.py) + nav (mirrors the cost-report `?as_of=` pattern). **No new data model** — query over existing logs. Verified end-to-end on the compose stack incl. before/after-grant-date differential (0→1). **i18n N/A** — the admin UI is hardcoded English (`locales/*.json` are portal-only) |

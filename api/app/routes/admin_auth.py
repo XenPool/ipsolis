@@ -216,7 +216,9 @@ async def admin_first_run_setup(
     request.session["admin_role"] = user.role
     request.session["admin_via"] = "user"
     logger.info("First-run setup: created superadmin %s", user.username)
-    return RedirectResponse(url="/ui/", status_code=303)
+    # Land the brand-new superadmin in the guided setup wizard rather than a
+    # blank dashboard — it walks them through the essential integrations.
+    return RedirectResponse(url="/ui/setup-wizard", status_code=303)
 
 
 @router.post("/logout")

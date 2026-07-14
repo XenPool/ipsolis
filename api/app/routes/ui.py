@@ -1279,6 +1279,15 @@ async def cost_report_page(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/setup-wizard", response_class=HTMLResponse)
+async def setup_wizard_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ui/setup_wizard.html",
+        {"active_page": "setup-wizard"},
+    )
+
+
 @router.get("/operations", response_class=HTMLResponse)
 async def operations_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
