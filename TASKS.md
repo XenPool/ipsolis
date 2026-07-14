@@ -190,33 +190,6 @@ qualified/eIDAS e-signatures; QR-tagged physical inventory.
 
 ---
 
-### [open] Config migration export/import (JSON)
-
-Standing up a fresh instance means re-entering config by hand: CSV import exists only for asset-pool
-*instances* ([`asset_pool.html:109`](api/app/templates/ui/asset_pool.html#L109) →
-[`/admin/assets/bulk`](api/app/routes/admin.py#L1157)), there is no export anywhere, and asset-types
-can't be migrated at all.
-
-**Scope:**
-- **Format: JSON via the existing seed-export mechanism**
-  ([`admin_seed_export.py:180`](api/app/routes/admin_seed_export.py#L180)) extended — **not CSV**:
-  asset-types carry nested JSONB (`targets` / `composite_steps` / `approval_rules`) that CSV can't
-  represent cleanly.
-- **Export first** (read-only, low risk); **import as a second stage** with name-conflict handling
-  (insert only when the name is absent, like migration 0046 — never overwrite user edits).
-- Entities v1: **asset-types** (JSON export/import); **asset-pool instances** (add the missing
-  export). **Bundles** planned but **gated** on the Onboarding bundles task — extend the seed export
-  to bundles once that entity lands (explicit follow-up).
-- No new data model — extend the existing seed export/import.
-
-**Follow-up:** every new UI string in all 5 locale files
-([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
-[`es`](locales/es.json) / [`it`](locales/it.json)).
-
-**Out of scope:** an orders/access export snapshot; CSV paths for complex config.
-
----
-
 ### [open] Guided setup wizard (delta)
 
 The diagnostics page and all per-integration "test connection" endpoints already exist; a live setup
@@ -462,6 +435,7 @@ All items below are shipped. Detailed implementation notes live in git history.
 
 | Area | Shipped | Notes |
 |------|---------|-------|
+| Config migration export/import (JSON) | 2026-07-14 | New [`admin_migration.py`](api/app/routes/admin_migration.py): `GET /admin/migration/export` downloads asset-types + asset-pool instances as one portable JSON doc (pool instances reference their type **by name**, not id); `POST /admin/migration/import?dry_run=` loads it **insert-only** (existing name skipped, never overwritten — safe re-import), reusing `validate_asset_type` + `aaudit`, imported instances start `Free`. Migration tab on the Maintenance page ([`maintenance.html`](api/app/templates/ui/maintenance.html)) with export download + file upload + dry-run preview. **No new data model.** Verified round-trip on the compose stack (export→dry-run→real→idempotent re-import; invalid-category + orphan-type paths). **Bundles** deferred (gated on the Onboarding-bundles entity). **i18n N/A** — admin UI is hardcoded English (`locales/*.json` are portal-only) |
 | Point-in-time access report | 2026-07-14 | New [`admin_access_report.py`](api/app/routes/admin_access_report.py) `GET /admin/access-report` (auditor floor, `orders:read`): reconstructs the active access set **as of any past date** by replaying `order_change_log` — `DISTINCT ON (principal,target_type,identifier)` latest **successful** event, keep those whose latest is a `grant`; `?as_of=YYYY-MM-DD` (end-of-day UTC, live if omitted), `principal`/`asset_type_id` filters, JSON + CSV. UI page [`access_report.html`](api/app/templates/ui/access_report.html) + [`/ui/access-report`](api/app/routes/ui.py) + nav (mirrors the cost-report `?as_of=` pattern). **No new data model** — query over existing logs. Verified end-to-end on the compose stack incl. before/after-grant-date differential (0→1). **i18n N/A** — the admin UI is hardcoded English (`locales/*.json` are portal-only) |
 | DR runbook (backup/restore) | 2026-07-14 | Bilingual [`docs/DR-RUNBOOK.md`](docs/DR-RUNBOOK.md) / [`.de.md`](docs/DR-RUNBOOK.de.md): fresh-host recovery (host → DB-only up → clean DB → `gunzip -c \| psql` → `alembic upgrade head`), what the pg_dump does/doesn't contain (plaintext `app_config` creds **are** in it; `API_SECRET_KEY`/externalized `vault://` secrets are **not**), `api_tokens` rotation, tick-off verification (email/AD/approval-link), externalized-secret case, rollback via pre-restore safety backup. Fixed docs drift in [`INSTALL.md`](docs/onboarding/INSTALL.md) (removed non-existent `from app.tasks import backup_database`, added restore pointers). Doc-only by design — **no automated restore test** (audit A4) |
 | CI test gate + Playwright E2E | 2026-07-13 | New [`ci.yml`](.github/workflows/ci.yml) on push/PR to `dev` — three jobs: **ruff** (critical errors `E9,F63,F7,F82`), **unit** (`api/tests` on the runner in conftest's local mode — pure/mocked, imports `app.*`+`tasks.*`), **e2e** (headless Playwright vs. the `docker compose` stack). Host-side smoke suite in [`tests/e2e/`](tests/e2e/): health, admin login (+ negative), core-page nav, asset-type form, portal reachability; login handles both first-run setup and legacy `ADMIN_API_KEY`. Closes the "no test/lint gate before prelive" gap. **Deferred:** broaden ruff rules over time; deeper journeys (order-create needs real backends → intentionally out) |
