@@ -70,6 +70,12 @@ def login_admin(page: Page, base_url: str, admin_api_key: str) -> None:
     else:
         page.get_by_label("Password", exact=True).fill(admin_api_key)
         page.get_by_role("button", name="Sign in").click()
+    # Both paths redirect to an authenticated page — normal login lands on the
+    # dashboard, first-run setup now lands on the guided setup wizard
+    # (routes/admin_auth.py). Wait until we've left the login page (auth
+    # completed + session cookie set), then normalise to the dashboard.
+    page.wait_for_url(lambda url: "/ui/login" not in url)
+    page.goto(f"{base_url}/ui/")
     expect(page).to_have_url(f"{base_url}/ui/")
 
 
