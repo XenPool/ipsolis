@@ -62,6 +62,15 @@ async def _joiner_enabled(db: AsyncSession) -> bool:
     )).first()
     return bool(row) and (row[0] or "").strip().lower() in ("1", "true", "yes", "on")
 
+
+async def _mover_mode(db: AsyncSession) -> str:
+    """Return the mover reconciliation mode: disabled | additions_only | reconcile."""
+    row = (await db.execute(
+        text("SELECT value FROM app_config WHERE key = 'scim.mover_mode'")
+    )).first()
+    mode = ((row[0] if row else None) or "disabled").strip().lower()
+    return mode if mode in ("additions_only", "reconcile") else "disabled"
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
@@ -362,7 +371,7 @@ async def create_user(
     if not ext["email"]:
         return _scim_error(400, "userName or emails[].value required", scim_type="invalidValue")
 
-    ident, is_new, reactivated = await upsert_identity(db, ext, raw=payload)
+    ident, is_new, reactivated, _old = await upsert_identity(db, ext, raw=payload)
     if ext["active"] and (is_new or reactivated) and await _joiner_enabled(db):
         await run_joiner(
             db, email=ext["email"], display_name=ext["display_name"],
@@ -390,7 +399,9 @@ async def replace_user(
     except Exception:
         return _scim_error(400, "Body must be valid JSON")
 
-    from app.services.scim_provisioning import extract_scim_attrs, run_joiner, upsert_identity
+    from app.services.scim_provisioning import (
+        extract_scim_attrs, run_joiner, run_mover, upsert_identity,
+    )
     ext = extract_scim_attrs(payload)
     if not ext["email"]:
         ext["email"] = (user_id or "").strip().lower()
@@ -399,18 +410,26 @@ async def replace_user(
     active = payload.get("active", True)
     if active is False:
         # Mark the projection inactive + run the leaver flow.
-        ident, _is_new, _react = await upsert_identity(db, ext, raw=payload)
+        await upsert_identity(db, ext, raw=payload)
         await db.commit()
         await _maybe_run_leaver(db, email=email_l, actor=actor, raw=payload)
         return _user_resource(email_l, payload.get("displayName"))
 
-    # Active replace — upsert projection; run joiner on a reactivation.
-    ident, is_new, reactivated = await upsert_identity(db, ext, raw=payload)
+    # Active replace — upsert projection; capture pre-change attrs to detect a mover.
+    ident, is_new, reactivated, old_attrs = await upsert_identity(db, ext, raw=payload)
     if (is_new or reactivated) and await _joiner_enabled(db):
         await run_joiner(
             db, email=email_l, display_name=ext["display_name"],
             attributes=ext["attributes"], actor=f"api:scim ({actor})",
         )
+    elif not is_new and not reactivated and ext["attributes"] != old_attrs:
+        mode = await _mover_mode(db)
+        if mode != "disabled":
+            await db.commit()  # persist the new projection before reconciling
+            await run_mover(
+                db, email=email_l, display_name=ext["display_name"],
+                attributes=ext["attributes"], actor=f"api:scim ({actor})", mode=mode,
+            )
     await db.commit()
     return _user_resource(email_l, payload.get("displayName"))
 
@@ -452,6 +471,25 @@ async def patch_user(
 
     if triggered_leaver:
         await _maybe_run_leaver(db, email=email_l, actor=actor, raw=payload)
+        return _user_resource(email_l)
+
+    # Attribute-change PATCH → mover reconciliation (existing identity only).
+    from app.models.scim_identity import ScimIdentity
+    from app.services.scim_provisioning import patch_ops_to_attrs, run_mover
+    ident = (await db.execute(
+        select(ScimIdentity).where(func.lower(ScimIdentity.user_email) == email_l)
+    )).scalars().first()
+    if ident is not None:
+        new_attrs, changed = patch_ops_to_attrs(dict(ident.attributes or {}), operations)
+        if changed:
+            ident.attributes = new_attrs
+            await db.commit()
+            mode = await _mover_mode(db)
+            if mode != "disabled":
+                await run_mover(
+                    db, email=email_l, display_name=ident.display_name,
+                    attributes=new_attrs, actor=f"api:scim ({actor})", mode=mode,
+                )
 
     return _user_resource(email_l)
 

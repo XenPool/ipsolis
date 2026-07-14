@@ -1424,6 +1424,24 @@
              {% if scim_config.get('scim.joiner_enabled', 'false') in ['true','1','yes','on'] %}checked{% endif %}>
       <span class="text-body">Auto-provision bundles on SCIM joiner (Create)</span>
     </label>
+
+    <div class="mt-5">
+      <label class="block text-xs font-medium text-muted mb-1">Mover reconciliation (on attribute change)</label>
+      {% set _mm = scim_config.get('scim.mover_mode', 'disabled') %}
+      <select id="scim-mover-mode"
+              class="w-full max-w-md rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <option value="disabled" {% if _mm == 'disabled' %}selected{% endif %}>Disabled — ignore attribute changes</option>
+        <option value="additions_only" {% if _mm == 'additions_only' %}selected{% endif %}>Additions only — order newly-entitled bundles, never revoke</option>
+        <option value="reconcile" {% if _mm == 'reconcile' %}selected{% endif %}>Reconcile — additions plus revoke lost entitlements</option>
+      </select>
+      <p class="text-[11px] text-muted/60 mt-1 leading-snug">
+        When a mover (attribute change) arrives via SCIM, re-evaluate assignment rules against the new
+        attributes. <strong>Reconcile</strong> also revokes entitlements the user no longer matches —
+        <strong>only</strong> those provisioned by a rule/SCIM trigger; self-service and manual orders are never
+        auto-revoked.
+      </p>
+    </div>
+
     <div class="flex gap-3 mt-6">
       <button onclick="saveScimConfig()"
               class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
@@ -3540,13 +3558,21 @@ async function saveAttestationConfig() {
 
 // ── SCIM Settings ────────────────────────────────────────────────────────────────
 async function saveScimConfig() {
-  var resp = await fetch('/admin/config/scim.joiner_enabled', {
-    method: 'PUT', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({value: document.getElementById('scim-joiner-enabled').checked ? 'true' : 'false'}),
-  });
-  showEmailBanner(resp.ok
+  var fields = {
+    'scim.joiner_enabled': document.getElementById('scim-joiner-enabled').checked ? 'true' : 'false',
+    'scim.mover_mode': document.getElementById('scim-mover-mode').value,
+  };
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showEmailBanner(errors.length === 0
     ? {ok: true, message: 'SCIM settings saved.'}
-    : {ok: false, message: 'Failed to save SCIM settings.'});
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
 }
 
 function showEmailBanner(data) {

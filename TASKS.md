@@ -27,48 +27,18 @@ ever makes a uniform header worthwhile.
 
 ---
 
-### [open] SCIM provisioning (joiner/mover/leaver → asset lifecycle)
+### [open] SCIM completeness (filter grammar / Groups / bulk) — post-JML
 
-> **Progress 2026-07-14 (slice 1 shipped — joiner + identity projection):** the joiner half is done.
-> New `ScimIdentity` last-seen projection ([model](api/app/models/scim_identity.py),
-> [migration 0009](api/alembic/versions/0009_scim_identity_projection.py)) — the persistent
-> user/attribute store mover diffing needs (ip·Solis has none otherwise). SCIM `POST /Users`
-> (and `PUT` reactivation) now upsert the projection and, when **`scim.joiner_enabled`** is on
-> (opt-in, Settings → Compliance), map the SCIM payload (core + enterprise extension: department /
-> costCenter / employeeNumber / organization / title) to the rule-eval attribute dict, evaluate
-> assignment rules, and order the matched bundles via the shared bundle-order service (origin `scim`,
-> idempotent). Leaver stays as-is. **Verified**: attr extraction, projection upsert (is_new /
-> reactivated), joiner eval→order (Engineering match → group `origin=scim`), re-run idempotency.
-> **Deferred to slice 2 (the risky part):** **mover reconciliation** — on a diffed attribute change,
-> re-run rules, diff the target set against the user's active orders, create newly-entitled + **revoke
-> lost** entitlements. Also deferred: full SCIM filter grammar, `/Groups` shim, bulk ops.
+The **joiner/mover/leaver → asset-lifecycle** provisioning is **shipped** (see the Done summary).
+What remains is SCIM 2.0 protocol completeness, none of which blocks the JML flow:
 
-Extend SCIM 2.0 beyond the current **leaver-focused** subset (already shipped) to full
-**joiner/mover/leaver** provisioning that drives the asset lifecycle — a drop-in target for
-Okta / SailPoint / Ping provisioning workflows. Higher strategic value than SAML. Split out of
-the provider-agnostic SSO task on 2026-06-24.
-
-**Scope / related:**
-- Builds on the existing `/scim/v2/*` endpoint (ServiceProviderConfig, ResourceTypes, Schemas,
-  Users CRUD; DELETE / PATCH `active=false` already trigger the leaver flow).
-- Pulls in the deferred "HR feed + SCIM slice 2": full SCIM filter grammar, `/Groups` shim,
-  bulk operations.
-- Joiner/mover → asset lifecycle mapping is the new design work (how SCIM create/update maps to
-  asset orders / access grants).
-- The joiner/mover → asset-lifecycle mapping builds on the two new tasks
-  ([Order groups](#open-order-groups--headerline-item-model-with-header-level-approval) and
-  [Onboarding bundles + assignment rules](#open-onboarding-bundles-and-attribute-based-assignment-rules)):
-  a SCIM **joiner** event evaluates assignment rules and creates a bundle `OrderGroup`, so SCIM
-  create/update must become a real trigger (today `POST /scim/v2/Users` is a no-op —
-  [`scim.py`](api/app/routes/scim.py)). That in turn requires persisting a minimal user/identity
-  projection so attribute changes (**mover**) can be diffed against the last-seen state — ip·Solis
-  has no local portal-user store today, so joiner/mover diffing needs one.
-- **Mover reconciliation (explicit deliverable — sharpened 2026-07-14 audit):** on a diffed
-  attribute change, re-run the assignment-rule service against the new attribute set, diff the
-  resulting target bundle/asset set against the user's active orders, and reconcile — create orders
-  for newly-entitled asset types (through the normal approval path) and revoke orders for lost
-  entitlements. Reuses the onboarding-bundle rule engine and the existing revoke flow; the mover is
-  a *delta* over the joiner, not new machinery. Depends on the Onboarding bundles task.
+- **Full SCIM filter grammar** — today only `userName eq "…"` is parsed
+  ([`scim.py`](api/app/routes/scim.py) `list_users`); implement the RFC 7644 §3.4.2.2 grammar
+  (`and`/`or`/`not`, `co`/`sw`/`ew`/`pr`, grouping).
+- **`/Groups` shim** — ip·Solis doesn't model user-group membership (groups live in AD via
+  `target_executor`); a read-only stub may still be needed for some IdP provisioning configs.
+- **Bulk operations** (`/Bulk`) — currently advertised as unsupported in ServiceProviderConfig.
+- **HR-feed slice 2** items folded in here from the earlier SSO split.
 
 ---
 
@@ -106,6 +76,7 @@ All items below are shipped. Detailed implementation notes live in git history.
 
 | Area | Shipped | Notes |
 |------|---------|-------|
+| SCIM joiner/mover/leaver → asset lifecycle | 2026-07-14 | Extends SCIM from leaver-only to full **joiner/mover/leaver** provisioning (drop-in target for Okta / SailPoint / Ping). New `ScimIdentity` last-seen projection ([model](api/app/models/scim_identity.py), [migration 0009](api/alembic/versions/0009_scim_identity_projection.py)) — the persistent user/attribute store mover diffing needs (ip·Solis has no local user store). **Joiner** ([`services/scim_provisioning.py`](api/app/services/scim_provisioning.py)): `POST /Users` (+ `PUT` reactivation) upsert the projection and, when **`scim.joiner_enabled`** is on (opt-in), map the SCIM payload (core + enterprise ext: department / costCenter / employeeNumber / organization / title) to the rule-eval attribute dict, evaluate assignment rules, and order matched bundles via the shared bundle-order service (origin `scim`, idempotent). **Mover** — safety-ramp config **`scim.mover_mode`** = `disabled` \| `additions_only` \| `reconcile` (mirrors drift's detect/auto): on a diffed attribute change (`PUT` full replace or `PATCH` attr ops — `patch_ops_to_attrs` handles the common IdP shapes) it re-evaluates rules against the new attributes, orders newly-entitled bundles (additions, idempotent), and in **reconcile** mode **revokes** lost entitlements via the existing revoke path — **only** rule/SCIM-provisioned orders (`order_group.origin` ∈ scim/rule_based); self-service (`bundle_catalog`, NULL-group portal orders) and ServiceNow/api orders are **never** auto-revoked. **Leaver** unchanged. Settings → Compliance → SCIM toggles. **Verified end-to-end on the compose stack**: joiner (rule match → group `origin=scim`, re-run idempotent), PATCH parsing, mover **additions_only** (orders new, revokes nothing) and **reconcile** (revokes the rule-provisioned order 285→revoking, leaves the protected manual order 286→provisioned), no-change no-op, migrations + templates. Test data cleaned up. **Out of scope (separate open task):** SCIM filter grammar, `/Groups` shim, bulk ops. **i18n N/A** (admin toggles English; SCIM is machine-facing) |
 | Onboarding bundles + assignment rules | 2026-07-14 | **Design decision** (see the descoped *Order groups* entry): the audit's core-model inversion was **not** built — grouping is a lightweight **nullable** `order_groups` header (`Order.order_group_id`, no backfill / NOT NULL) created **only** for multi-item requests; single orders stay untouched. **Slice 1** — entities ([migration 0008](api/alembic/versions/0008_onboarding_bundles.py)): `Bundle` + `BundlePosition` (reference existing AssetTypes; no new assets), `AssignmentRule` (condition reuses the approval-rule JSON format), `order_groups`; pure rule-eval service ([`services/onboarding.py`](api/app/services/onboarding.py) — reuses `approval_rules._eval_condition` over an `attr.*` context; idempotency = skip asset types the user already actively holds); admin CRUD + evaluate-preview ([`admin_bundles.py`](api/app/routes/admin_bundles.py)); **Onboarding** admin page (Bundles / Rules / Evaluate tabs). **Slice 2** — self-contained bundle-order service ([`services/bundle_order.py`](api/app/services/bundle_order.py)) creates one `OrderGroup` + N line items reusing the order primitives (requester-attr freeze, rule/classification/delegation approvers, quorum check, runbook dispatch) **without touching `portal_create_order`**; per item runs the standard approval computation (approve-immediately vs `pending_approval` + `send_approval_requests`); admin "order for user" ([`POST /admin/onboarding/order`](api/app/routes/admin_bundles.py)) wired into the Evaluate tab; self-service **Packages** catalog ([`/portal/packages`](api/app/templates/portal/packages.html) + `POST /portal/bundles/{id}/order`, new portal nav entry) with i18n in **all 5 locales** (validator green at 230 keys). **Verified end-to-end on the compose stack**: create bundle+positions, create rule, evaluate (dept match → item skipped as `already_held`, other would-order; no-match negative), **real ordering** (group + N orders, immediate-dispatch branch, idempotency correctly re-orders a failed item but skips a still-active one), CRUD + cascade, mappers, templates + locale render. **Deliberately deferred** (optional): first-login evaluation trigger (config flag). SCIM joiner/mover wiring stays in the separate SCIM task (which now builds on this). **i18n**: self-service strings ×5; admin UI English (N/A) |
 | Portal accessibility — structural (BITV/EN 301 549 basics) | 2026-07-14 | Structural-first a11y at the shared portal choke points, **no visual redesign** (layout/colors/components unchanged). [`base_portal.html`](api/app/templates/portal/base_portal.html): skip link (visually hidden until keyboard focus) → new `<main id="main-content" tabindex="-1">` target; landmark labels on `<aside>` / `<nav>` (translated via `data-i18n-attr-aria-label`); decorative nav SVGs `aria-hidden` + `focusable=false`; notification badges `role="status" aria-live="polite"` (screen-reader announces count changes); an early inline `lang`-set from `localStorage.portal_lang` before first paint (closes the hardcoded-`en` gap ahead of i18n.js's own `apply()` which already set `<html lang>`); scoped `:focus-visible` outline (keyboard focus only — invisible to mouse users) + skip-link CSS, **portal-scoped so admin UI is untouched**. [`_partials/language_switcher.html`](api/app/templates/_partials/language_switcher.html): `aria-expanded` toggle synced on open/select/click-away, `aria-controls`, `role=menuitem` on options, decorative flag/chevron SVGs `aria-hidden`. New a11y strings (`portal.a11y.skip_to_content` / `.sidebar`, `portal.nav.aria_label`) in **all 5 locales** — validator green at 221 keys parity. **Verified**: templates compile + rendered base_portal contains every marker (skip link, main target, landmarks, aria-hidden, live badges, early-lang, focus CSS, switcher aria-expanded). **Scope**: portal only (admin excluded); **not a conformance claim** — closes structural basics. **Out of scope / follow-up**: formal Barrierefreiheitserklärung + external BITV test, full WCAG 2.1 AA, contrast audit, login-page layout (separate template) |
 | Signed attestation artifacts (handover + revocation) | 2026-07-14 | Two ISO-27001 evidence artifacts on one signed-token HTML mechanism (no PDF). New `AttestationArtifact` ([model](api/app/models/attestation_artifact.py), table `attestation_artifacts`, migration [`0007`](api/alembic/versions/0007_attestation_artifacts.py)) + per-type flags `requires_handover_ack` / `emit_revocation_certificate` (default off, on the asset-type form). **Emission** ([`attestation.py`](worker/tasks/modules/attestation.py)) is hooked at the three order-completion points in [`dynamic_runner.py`](worker/tasks/workflows/dynamic_runner.py) via one idempotent best-effort helper: **handover** (Übergabeprotokoll) on `provisioned` (status `pending`, emails a signed ack link) and **revocation/disposal certificate** on `revoked` (status `emitted`, cites the just-rolled-back `order_change_log` grants; expiry-driven revokes flow through the same delete-order completion). Signed token ([`attestation_token.py`](api/app/utils/attestation_token.py) + worker mirror, `kind=attestation`, 90-day TTL) reuses the certification-link HMAC pattern. **External pages** (no auth): `GET/POST /attestation/{token}` ([`attestation_external.py`](api/app/routes/attestation_external.py)) — handover ack page (records `acknowledged_by`/`_at`, audited) + printable revocation cert. **Admin**: read API [`admin_attestations.py`](api/app/routes/admin_attestations.py) + a **Reports → Attestations** page (filter by kind/status, per-row signed viewer link, count tiles); Settings → Attestations card (AUP text + reminder config). **Overdue-ack reminder** Beat task ([`attestation_reminders.py`](worker/tasks/workflows/attestation_reminders.py), daily 08:30, opt-in, deduped via `last_reminder_at`). **Verified end-to-end on the compose stack:** emit both kinds for a real provisioned order (idempotent — no dup), handover page renders + ack flips `pending→acknowledged`, revocation cert renders w/ print, bad token → 410, admin list + counts, reminder fires-then-dedups, full audit trail (emitted/acknowledged/reminder_sent), all templates compile. **i18n N/A** (admin UI + worker artifacts English, like Teams cards). **Out of scope:** server-generated PDF, eIDAS e-signatures, QR physical inventory |
