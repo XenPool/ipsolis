@@ -78,47 +78,6 @@ reclamation (needs a usage signal ipSolis does not collect).
 
 ---
 
-### [open] Manager order-on-behalf (team ordering)
-
-Ordering an asset whose end-user differs from the requester already works (owner ≠ requester:
-[`order.py:77-79`](api/app/models/order.py#L77-L79), `is_deputy` at
-[`portal.py:560`](api/app/routes/portal.py#L560)), but there is no manager→team relationship — any
-requester can name any directory user as owner. Distinct from approval-delegation (which only
-re-routes *approval decisions*).
-
-**Scope:**
-- **Team source: AD `directReports`** (reverse of the `manager` attribute) — reuse the existing AD
-  lookup (`lookup_manager`) in reverse.
-- Team picker in the portal create form (shows the requester's own team first) but any valid
-  directory user remains selectable as owner.
-- **Manager approval counts as implicitly satisfied** when the requester orders for their own report
-  — **guard: only when the AD manager relationship is verified** (requester == AD `manager` of the
-  owner); otherwise the full approval flow runs. Implemented via the existing `sod_exempt` mechanic
-  ([`approval.py:63`](api/app/models/approval.py#L63)), not a new skip path.
-- No new data model — a directReports lookup + server-side manager-verify on top of the existing
-  owner/`is_deputy` machinery.
-
-**Progress — Part 1 shipped (2026-07-14):** the team picker + AD plumbing.
-[`lookup_direct_reports`](api/app/utils/ad_lookup.py) (reverse `manager` lookup) +
-[`is_owner_managed_by`](api/app/utils/ad_lookup.py) verify helper; portal `GET /portal/my-team`
-([`portal.py`](api/app/routes/portal.py)); a team-picker in the order form
-([`order_new.html`](api/app/templates/portal/order_new.html)) that quick-selects the requester's
-direct reports (any valid user still typeable), degrades gracefully when AD has none; i18n in all 5
-locales. **Verified against the real test AD** (winsrv1.xenpool.local): `lookup_direct_reports` and
-`is_owner_managed_by` return the correct manager→report relationship.
-**Part 2 remaining (delicate):** the manager-approval short-circuit — auto-satisfy the manager
-approval (via `sod_exempt`) when the requester is the owner's verified AD manager, integrated with
-[`apply_approval_decision`](api/app/utils/approval_decision.py)'s N-of-M/SoD/dispatch machinery so
-the order neither hangs in `pending_approval` nor dispatches without a required approval.
-
-**Follow-up:** every new UI string in all 5 locale files
-([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
-[`es`](locales/es.json) / [`it`](locales/it.json)).
-
-**Out of scope:** org-hierarchy management UI; multi-level / cross-team delegation.
-
----
-
 ### [open] Slack approval delivery (delta)
 
 Microsoft Teams Adaptive-Card delivery already runs in parallel with email on every approval path
@@ -368,6 +327,7 @@ All items below are shipped. Detailed implementation notes live in git history.
 
 | Area | Shipped | Notes |
 |------|---------|-------|
+| Manager order-on-behalf (team ordering) | 2026-07-14 | **Part 1** — AD [`lookup_direct_reports`](api/app/utils/ad_lookup.py) (reverse `manager` lookup) + [`is_owner_managed_by`](api/app/utils/ad_lookup.py) verify helper; portal `GET /portal/my-team`; a team-picker in the order form ([`order_new.html`](api/app/templates/portal/order_new.html)) — the requester's direct reports as quick-select chips, any valid user still typeable, graceful when AD has none; i18n ×5. **Part 2** — the manager-approval short-circuit in [`portal.py`](api/app/routes/portal.py): when a manager orders for their own report (verified: requester == owner's AD `manager`), the manager approval is recorded auto-approved + `sod_exempt`; the order is then advanced by re-using the decision path's `_compute_bucket_state`/`_post_approval_dispatch` so it neither hangs in `pending_approval` nor dispatches without a required approval (other approvals — owner/rules/classification — still gate normally). **Verified** vs the real test AD (stefan→jupp) + the bucket-quorum advance decision across manager-only / +owner-pending / +owner-approved cases. Portal end-to-end walkthrough (log in as a manager, order for a report) is the operator's final manual check. **i18n:** portal strings in all 5 locales |
 | Backup encryption at-rest | 2026-07-14 | Optional AES-256-CBC encryption of DB backups, opt-in via a new `BACKUP_ENCRYPTION_KEY` infra secret ([`config.py`](api/app/config.py) + [`.env.example`](.env.example)). When set, [`_run_backup_sync`](worker/tasks/modules/maintenance.py) pipes `pg_dump \| gzip \| openssl enc` → `*.sql.gz.enc`; `run_restore` decrypts the same way. The **`.enc` suffix is the single source of truth** — the api picks it ([`admin_maintenance.py`](api/app/routes/admin_maintenance.py) `_backup_suffix`, incl. pre-restore safety backup + widened `_SAFE_NAME`); the worker encrypts/decrypts on that signal. **Back-compat:** key unset → plaintext `.sql.gz` as before; restore auto-detects, so old backups still load. Key is kept **out of the DB** (app_config lives inside the dump) and must be carried to a fresh host — [DR-RUNBOOK](docs/DR-RUNBOOK.md)/`.de` updated. Read-only "Encrypted at-rest" badge on the Maintenance → Backups tab via `GET /schedule`. Verified on the compose stack: real pg_dump→encrypt→decrypt yields valid SQL (openssl `Salted__`, wrong key fails); plaintext path still produces a valid gzip. **Out of scope:** full app_config-at-rest encryption |
 | Admin UI navigation restructure | 2026-07-14 | Flat ~25-link sidebar (internal scrollbar at laptop heights) reorganised in [`base.html`](api/app/templates/base.html): **Stufe 1** — collapsible `<details>` groups (Operate, Administration), only the active group opens (native, no JS); reports moved out of tiny footer links. **Stufe 2** — consolidated **hubs**: Inventory (Asset Definitions + Personal Assets), Automation (Runbooks + Modules + PS Modules), Reports (Access + Cost + Certifications + Leaver + Audit) each collapse to one sidebar entry, with a shared tab bar on the member pages (`_partials/hub_tabs_{inventory,automation,reports}.html`). Sidebar now ≈ Operate group + 3 hub links + Administration group → no scrollbar. All role gates preserved; Jinja macros (navlink/hublink/grpsummary) remove repetition. Verified against a live session: every page 200, correct tab + sidebar hub active-state across all member pages |
 | Guided setup wizard | 2026-07-14 | New [`/ui/setup-wizard`](api/app/templates/ui/setup_wizard.html) page (superadmin) — a guided stepper over the existing [`/admin/setup/state`](api/app/routes/admin_setup.py) checklist: Essential + Recommended progress bars, per-step status/hint, **Configure→** links to the settings section, and inline **Test connection** buttons wired to the existing `*/test` endpoints (email/ad/teams/siem). Skippable, re-checkable; first-run setup now redirects here ([`admin_auth.py`](api/app/routes/admin_auth.py)) instead of a blank dashboard. Nav entry under Configuration (superadmin). Reuses the checklist + test endpoints — **no rebuild, no new data model, no new endpoints**. Verified on the compose stack (setup/state + AD test reachable, page serves). **i18n N/A** (admin UI hardcoded English) |
