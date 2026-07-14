@@ -1170,6 +1170,12 @@ async def settings_page(
     )
     scim_config = {r.key: (r.value or "") for r in scim_result.scalars().all()}
 
+    # Load graph.* config keys (Entra provisioning); mask the secret.
+    graph_result = await db.execute(
+        select(AppConfig).where(AppConfig.key.like("graph.%")).order_by(AppConfig.key)
+    )
+    graph_config = {r.key: (_MASK if r.is_secret else (r.value or "")) for r in graph_result.scalars().all()}
+
     # Load siem.* config keys
     siem_result = await db.execute(
         select(AppConfig).where(AppConfig.key.like("siem.%")).order_by(AppConfig.key)
@@ -1263,6 +1269,7 @@ async def settings_page(
          "slack_config": slack_config,
          "attestation_config": attestation_config,
          "scim_config": scim_config,
+         "graph_config": graph_config,
          "siem_config": siem_config,
          "approval_config": approval_config,
          "otel_config": otel_config,

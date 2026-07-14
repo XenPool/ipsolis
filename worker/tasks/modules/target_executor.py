@@ -235,8 +235,15 @@ def _grant_ad_group(identifier: str, principal: str, db: Session, *, target: dic
 
 
 def _grant_entra_group(identifier: str, principal: str, db: Session, *, target: dict | None = None) -> dict:
-    """Adds principal to the Entra group identified by identifier (MS Graph)."""
-    raise NotImplementedError("Entra group grant not yet implemented")
+    """Adds principal to the Entra (cloud-only) group via Microsoft Graph.
+
+    ``identifier`` is the Entra group object id (GUID); ``principal`` an
+    email / UPN. Idempotent (already-a-member is treated as success).
+    """
+    from tasks.modules.graph_client import graph_add_member
+    uid = graph_add_member(db, identifier, principal)
+    logger.info("Entra group grant OK: %s → %s (uid=%s)", principal, identifier, uid)
+    return {"success": True, "user_id": uid}
 
 
 def _revoke_ad_group(identifier: str, principal: str, db: Session) -> dict:
@@ -269,8 +276,15 @@ def _revoke_ad_group(identifier: str, principal: str, db: Session) -> dict:
 
 
 def _revoke_entra_group(identifier: str, principal: str, db: Session) -> dict:
-    """Removes principal from Entra group identifier."""
-    raise NotImplementedError("Entra group revoke not yet implemented")
+    """Removes principal from the Entra (cloud-only) group via Microsoft Graph.
+
+    ``identifier`` is the Entra group object id (GUID). Idempotent
+    (not-a-member is treated as success).
+    """
+    from tasks.modules.graph_client import graph_remove_member
+    uid = graph_remove_member(db, identifier, principal)
+    logger.info("Entra group revoke OK: %s ← %s (uid=%s)", principal, identifier, uid)
+    return {"success": True, "user_id": uid}
 
 
 def _ldap_filter_escape(value: str) -> str:

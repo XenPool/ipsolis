@@ -643,6 +643,58 @@ async def test_slack_webhook(db: AsyncSession = Depends(get_db)) -> dict:
     return {"ok": ok, "message": msg}
 
 
+@router.post("/config/graph/test", dependencies=[require_role("admin")])
+async def test_graph_credentials(db: AsyncSession = Depends(get_db)) -> dict:
+    """Verify the Microsoft Graph (Entra provisioning) credentials.
+
+    Acquires an app-only token via client_credentials against the tenant —
+    the same flow the worker uses for ``entra_group`` grants. Success proves
+    the app registration + secret + scope are valid; it does not check the
+    GroupMember.ReadWrite.All permission grant (that surfaces at first use).
+    """
+    import asyncio as _asyncio
+    import json as _json
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    cfg = await db.execute(
+        select(AppConfig).where(AppConfig.key.in_(["graph.tenant_id", "graph.client_id", "graph.client_secret"]))
+    )
+    rows = {r.key: (r.value or "") for r in cfg.scalars().all()}
+    tenant = (rows.get("graph.tenant_id") or "").strip()
+    client = (rows.get("graph.client_id") or "").strip()
+    from app.utils.secrets import resolve_secret_value
+    secret = (await resolve_secret_value(db, rows.get("graph.client_secret") or "")).strip()
+
+    if not (tenant and client and secret):
+        return {"ok": False, "message": "graph.tenant_id / graph.client_id / graph.client_secret must all be set."}
+
+    def _acquire() -> tuple[bool, str]:
+        url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+        data = urllib.parse.urlencode({
+            "grant_type": "client_credentials", "client_id": client,
+            "client_secret": secret, "scope": "https://graph.microsoft.com/.default",
+        }).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method="POST",
+                                     headers={"Content-Type": "application/x-www-form-urlencoded"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                body = _json.loads(r.read())
+            return bool(body.get("access_token")), "Token acquired — Graph credentials valid."
+        except urllib.error.HTTPError as e:
+            try:
+                detail = _json.loads(e.read()).get("error_description", "")
+            except Exception:  # noqa: BLE001
+                detail = ""
+            return False, f"HTTP {e.code}: {detail.splitlines()[0] if detail else e.reason}"
+        except Exception as e:  # noqa: BLE001
+            return False, f"{type(e).__name__}: {e}"
+
+    ok, msg = await _asyncio.to_thread(_acquire)
+    return {"ok": ok, "message": msg}
+
+
 @router.post("/config/secret-backend/test", dependencies=[require_role("admin")])
 async def test_secret_backend(db: AsyncSession = Depends(get_db)) -> dict:
     """Verify the configured secret backend (Vault, CCP, or Azure KV) is reachable.
@@ -829,6 +881,28 @@ async def tier_status_endpoint(db: AsyncSession = Depends(get_db)) -> dict:
     return await tier_status(db)
 
 
+# Access-target types with a real provisioning handler. Backs the disabled-option
+# UI guard with server-side validation (rds_collection / other have no handler and
+# fail silently at provision time — reject them at save).
+_ALLOWED_TARGET_TYPES = {"ad_group", "entra_group"}
+
+
+def _validate_target_types(targets: list[dict] | None) -> None:
+    for t in targets or []:
+        if not isinstance(t, dict):
+            continue
+        ttype = (t.get("type") or "").strip()
+        if ttype and ttype not in _ALLOWED_TARGET_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Unsupported access target type {ttype!r}. Only "
+                    f"{sorted(_ALLOWED_TARGET_TYPES)} have provisioning handlers; "
+                    "use a custom runbook step for anything else."
+                ),
+            )
+
+
 @router.post(
     "/asset-types",
     response_model=AssetTypeRead,
@@ -844,6 +918,7 @@ async def create_asset_type(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Asset type {payload.name!r} already exists",
         )
+    _validate_target_types(payload.targets)
     violations = validate_asset_type(
         category=payload.category.value,
         assignment_model=payload.assignment_model,
@@ -971,6 +1046,7 @@ async def update_asset_type(
     if payload.automation_mode is not None:
         asset_type.automation_mode = payload.automation_mode
     if payload.targets is not None:
+        _validate_target_types(payload.targets)
         asset_type.targets = payload.targets
     if payload.lifecycle_ttl_days is not None:
         asset_type.lifecycle_ttl_days = payload.lifecycle_ttl_days

@@ -685,7 +685,7 @@
             <select name="target_type[]"
                     class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
               <option value="ad_group" {% if tgt.type == 'ad_group' %}selected{% endif %}>AD Group</option>
-              <option value="entra_group" {% if tgt.type == 'entra_group' %}selected{% endif %} disabled>Entra Group (coming soon)</option>
+              <option value="entra_group" {% if tgt.type == 'entra_group' %}selected{% endif %}>Entra Group</option>
               <option value="rds_collection" {% if tgt.type == 'rds_collection' %}selected{% endif %} disabled>RDS Collection (coming soon)</option>
               <option value="other" {% if tgt.type == 'other' %}selected{% endif %} disabled>Other (coming soon)</option>
             </select>
@@ -712,7 +712,7 @@
             <select name="target_type[]"
                     class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
               <option value="ad_group">AD Group</option>
-              <option value="entra_group" disabled>Entra Group (coming soon)</option>
+              <option value="entra_group">Entra Group</option>
               <option value="rds_collection" disabled>RDS Collection (coming soon)</option>
               <option value="other" disabled>Other (coming soon)</option>
             </select>
@@ -1531,7 +1531,7 @@ function addTargetRow() {
     '<select name="target_type[]"'
     + ' class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">'
     + '<option value="ad_group">AD Group</option>'
-    + '<option value="entra_group" disabled>Entra Group (coming soon)</option>'
+    + '<option value="entra_group">Entra Group</option>'
     + '<option value="rds_collection" disabled>RDS Collection (coming soon)</option>'
     + '<option value="other" disabled>Other (coming soon)</option>'
     + '</select>'
