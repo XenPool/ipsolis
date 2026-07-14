@@ -19,11 +19,12 @@
 <body class="h-full flex bg-surface-raised font-sans text-body">
 
   <!-- ── Left Sidebar ──────────────────────────────────────────────────────── -->
-  {# h-screen (not min-h-screen) caps the sidebar at viewport height so the
-     nav can scroll internally instead of pushing the footer below the fold
-     on small monitors. Since the 2026-07-14 restructure the nav is grouped
-     into collapsible <details> sections, so only the active group is expanded
-     and the internal scrollbar effectively never appears at normal heights. #}
+  {# Since the 2026-07-14 restructure the sidebar mixes two patterns to stay
+     short: primary daily items + consolidated hubs (Inventory / Automation /
+     Reports — each a single entry whose page carries a tab bar), and two
+     collapsible <details> groups (Operate, Administration) where only the group
+     containing the active page is open. Together this keeps the visible row
+     count well under a laptop viewport, so the old internal scrollbar is gone. #}
   <aside class="w-56 bg-surface border-r border-token-border flex flex-col flex-shrink-0 h-screen sticky top-0">
 
     <!-- Brand -->
@@ -45,14 +46,21 @@
 
     <!-- Navigation -->
     {# RBAC nav gating: every group/link is wrapped in admin_role_at_least()
-       so each role only sees what it can reach. Groups are collapsible
-       <details>; the group containing the active page renders `open`.
-       When changing a role min here, mirror it on the matching API route. #}
+       so each role only sees what it can reach. When changing a role min here,
+       mirror it on the matching API route. #}
     {% set _admin_role = current_admin_role(request) %}
     {% macro navlink(href, key, label) %}
       <a href="{{ href }}"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                 {% if active_page == key %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        {{ caller() }}
+        <span>{{ label }}</span>
+      </a>
+    {% endmacro %}
+    {% macro hublink(href, keys, label) %}
+      <a href="{{ href }}"
+         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+                {% if active_page in keys %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
         {{ caller() }}
         <span>{{ label }}</span>
       </a>
@@ -84,63 +92,21 @@
         </div>
       </details>
 
-      {# ── Inventory — every signed-in admin ───────────────────────────── #}
-      <details class="navgrp" {% if active_page in ['asset-types', 'asset-pool'] %}open{% endif %}>
-        {{ grpsummary('Inventory') }}
-        <div class="mt-0.5 space-y-0.5">
-          {% call navlink('/ui/asset-types', 'asset-types', 'Asset Definitions') %}
-          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-          {% endcall %}
-          {% call navlink('/ui/asset-pool', 'asset-pool', 'Personal Assets') %}
-          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg>
-          {% endcall %}
-        </div>
-      </details>
+      {# ── Hubs — each a single entry; the page carries a tab bar ───────── #}
+      {% call hublink('/ui/asset-types', ['asset-types', 'asset-pool'], 'Inventory') %}
+      <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg>
+      {% endcall %}
 
-      {# ── Automation — admin+ ─────────────────────────────────────────── #}
       {% if admin_role_at_least(request, 'admin') %}
-      <details class="navgrp" {% if active_page in ['standalone-runbooks', 'modules', 'ps-modules'] %}open{% endif %}>
-        {{ grpsummary('Automation') }}
-        <div class="mt-0.5 space-y-0.5">
-          {% call navlink('/ui/standalone-runbooks', 'standalone-runbooks', 'Runbooks') %}
-          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-          {% endcall %}
-          {% call navlink('/ui/modules', 'modules', 'Modules') %}
-          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-          {% endcall %}
-          {% call navlink('/ui/ps-modules', 'ps-modules', 'PS Modules') %}
-          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-          {% endcall %}
-        </div>
-      </details>
+      {% call hublink('/ui/standalone-runbooks', ['standalone-runbooks', 'modules', 'ps-modules'], 'Automation') %}
+      <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+      {% endcall %}
       {% endif %}
 
-      {# ── Governance — auditor+ (moved out of the footer) ──────────────── #}
       {% if admin_role_at_least(request, 'auditor') %}
-      <details class="navgrp" {% if active_page in ['access-report', 'cost-report', 'certifications', 'leaver-events', 'audit-log'] %}open{% endif %}>
-        {{ grpsummary('Governance') }}
-        <div class="mt-0.5 space-y-0.5">
-          {% call navlink('/ui/access-report', 'access-report', 'Access Report') %}
-          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-          {% endcall %}
-          {% call navlink('/ui/cost-report', 'cost-report', 'Cost Report') %}
-          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-          {% endcall %}
-          {% if has_certifications %}
-          {% call navlink('/ui/certifications', 'certifications', 'Certifications') %}
-          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-          {% endcall %}
-          {% endif %}
-          {% if has_leaver_events %}
-          {% call navlink('/ui/leaver-events', 'leaver-events', 'Leaver Events') %}
-          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7H7v6h6V7z M9 1v6m6-6v6M1 9h6m6-6v6M9 13v8m6-8v8m-6-4h6m-6 4h6M1 17h6"/></svg>
-          {% endcall %}
-          {% endif %}
-          {% call navlink('/ui/audit-log', 'audit-log', 'Audit Log') %}
-          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-          {% endcall %}
-        </div>
-      </details>
+      {% call hublink('/ui/access-report', ['access-report', 'cost-report', 'certifications', 'leaver-events', 'audit-log'], 'Reports') %}
+      <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+      {% endcall %}
       {% endif %}
 
       {# ── Administration — admin+ ─────────────────────────────────────── #}
@@ -176,8 +142,8 @@
 
     <!-- Footer links + sign out -->
     <div class="px-4 py-3 border-t border-token-border space-y-1 flex-shrink-0">
-      {# Personal + external utilities. Oversight/report links now live in the
-         Governance nav group above rather than as tiny footer links. #}
+      {# Personal + external utilities. Reports/oversight now live in the
+         Reports hub in the nav above rather than as tiny footer links. #}
       <a href="/ui/my-account"
          class="flex items-center gap-2.5 text-xs {% if active_page == 'my-account' %}text-blue-700 dark:text-blue-300 font-medium{% else %}text-muted hover:text-body{% endif %}">
         <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
