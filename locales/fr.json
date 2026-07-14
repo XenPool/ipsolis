@@ -7,7 +7,8 @@
       "delegations": "Délégations",
       "certifications": "Revues d'accès",
       "request_access": "Demander l'accès",
-      "aria_label": "Navigation principale"
+      "aria_label": "Navigation principale",
+      "packages": "Packages"
     },
     "user": {
       "sign_out": "Déconnexion"
@@ -252,6 +253,16 @@
     "a11y": {
       "skip_to_content": "Aller au contenu principal",
       "sidebar": "Barre latérale"
+    },
+    "packages": {
+      "title": "Packages",
+      "subtitle": "Commandez un package d'accès prêt à l'emploi en une étape. Les éléments que vous possédez déjà sont ignorés automatiquement.",
+      "empty": "Aucun package n'est disponible pour le moment.",
+      "optional": "(optionnel)",
+      "order_btn": "Commander le package",
+      "ordered": "{n} élément(s) commandé(s){skip}.",
+      "skipped": "({n} déjà détenu(s))",
+      "order_failed": "Échec de la commande"
     }
   }
 }

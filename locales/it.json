@@ -7,7 +7,8 @@
       "delegations": "Deleghe",
       "certifications": "Revisioni di accesso",
       "request_access": "Richiedi accesso",
-      "aria_label": "Navigazione principale"
+      "aria_label": "Navigazione principale",
+      "packages": "Pacchetti"
     },
     "user": {
       "sign_out": "Esci"
@@ -252,6 +253,16 @@
     "a11y": {
       "skip_to_content": "Vai al contenuto principale",
       "sidebar": "Barra laterale"
+    },
+    "packages": {
+      "title": "Pacchetti",
+      "subtitle": "Ordina un pacchetto di accessi predefinito in un solo passaggio. Gli elementi già in tuo possesso vengono saltati automaticamente.",
+      "empty": "Al momento non è disponibile alcun pacchetto.",
+      "optional": "(opzionale)",
+      "order_btn": "Ordina pacchetto",
+      "ordered": "{n} elemento/i ordinato/i{skip}.",
+      "skipped": "({n} già posseduto/i)",
+      "order_failed": "Ordine non riuscito"
     }
   }
 }

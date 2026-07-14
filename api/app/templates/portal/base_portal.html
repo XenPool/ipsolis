@@ -163,6 +163,15 @@
         </svg>
         <span data-i18n="portal.nav.request_access">Request Access</span>
       </a>
+      <a href="/portal/packages"
+         class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+                {% if active_page == 'packages' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+        </svg>
+        <span data-i18n="portal.nav.packages">Packages</span>
+      </a>
     </nav>
 
     <!-- User info + sign out + theme + language -->

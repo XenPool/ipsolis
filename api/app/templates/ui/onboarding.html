@@ -283,9 +283,23 @@ async function runEvaluate(){
       var badge=i.skip?'<span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">skip: '+esc(i.skip)+'</span>':'<span class="text-[11px] px-1.5 py-0.5 rounded bg-green-50 text-green-700 border border-green-200">would order</span>';
       return '<tr><td class="px-3 py-1.5">'+esc(i.asset_type_name)+'</td><td class="px-3 py-1.5">'+(i.required?'required':'optional')+'</td><td class="px-3 py-1.5">'+badge+'</td></tr>';
     }).join('');
-    return '<div class="bg-surface rounded-lg border border-token-border mb-3 overflow-hidden"><div class="px-4 py-2 border-b border-token-border flex justify-between"><span class="text-sm font-semibold text-body">'+esc(m.bundle_name)+'</span><span class="text-[11px] text-muted/70">matched: '+esc((m.matched_rules||[]).join(', '))+'</span></div>'
+    var wouldOrder=m.items.filter(function(i){return !i.skip;}).length;
+    var orderBtn=wouldOrder?'<button onclick="orderForUser('+m.bundle_id+',\''+esc(m.bundle_name).replace(/'/g,"")+'\')" class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700">Order for user ('+wouldOrder+')</button>':'<span class="text-[11px] text-muted/60">nothing to order</span>';
+    return '<div class="bg-surface rounded-lg border border-token-border mb-3 overflow-hidden"><div class="px-4 py-2 border-b border-token-border flex items-center justify-between gap-3"><span class="text-sm font-semibold text-body">'+esc(m.bundle_name)+'</span><span class="text-[11px] text-muted/70 mr-auto ml-2">matched: '+esc((m.matched_rules||[]).join(', '))+'</span>'+orderBtn+'</div>'
       +'<table class="w-full text-sm"><tbody class="divide-y divide-token-border">'+rows+'</tbody></table></div>';
   }).join('');
+}
+async function orderForUser(bundleId,bundleName){
+  var email=document.getElementById('ev-email').value.trim();
+  if(!email){banner('Enter a user email to order for.','error');return;}
+  if(!confirm('Order bundle "'+bundleName+'" for '+email+'? This creates real orders (with approvals where required).'))return;
+  try{
+    var d=await api('POST','/admin/onboarding/order',{user_email:email,bundle_ids:[bundleId]});
+    var r=(d.results||[])[0]||{};
+    var n=(r.ordered||[]).length, sk=(r.skipped||[]).length;
+    banner('Ordered '+n+' item(s)'+(sk?', '+sk+' skipped':'')+(r.group_id?' (group #'+r.group_id+')':'')+'.');
+    runEvaluate();
+  }catch(e){banner('Order failed: '+e.message,'error');}
 }
 
 // init

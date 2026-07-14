@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,6 +66,12 @@ class EvaluateIn(BaseModel):
     user_email: str | None = None
     # Manual attribute override / supply (wins over AD-resolved values).
     attrs: dict[str, Any] | None = None
+
+
+class OrderBundlesIn(BaseModel):
+    user_email: str = Field(min_length=3)
+    user_name: str | None = None
+    bundle_ids: list[int] = Field(min_length=1)
 
 
 # ── Serialisation ────────────────────────────────────────────────────────────
@@ -268,3 +274,47 @@ async def evaluate_for_user(
         "context_fields": sorted(context.keys()),
         "matched_bundles": resolved,
     }
+
+
+@router.post("/admin/onboarding/order", dependencies=[_WRITE])
+async def order_bundles_for_user(
+    payload: OrderBundlesIn, request: Request, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """Order one or more bundles for a user (admin-triggered onboarding).
+
+    Creates one OrderGroup + N line items per bundle through the self-contained
+    bundle-order service (portal path untouched). Items the user already holds
+    are skipped. Returns a per-bundle summary of ordered / skipped items.
+    """
+    from app.services.bundle_order import order_bundle
+    from app.utils.audit import actor_by
+
+    # Best-effort display name from AD if not supplied.
+    name = (payload.user_name or "").strip()
+    if not name:
+        res = await asyncio.to_thread(_lookup_user_safe, payload.user_email)
+        name = res.get("display_name") or payload.user_email
+
+    actor = actor_by(request, "onboarding_order")
+    results = []
+    for bid in payload.bundle_ids:
+        bundle = await db.get(Bundle, bid)
+        if not bundle or not bundle.is_active:
+            results.append({"bundle_id": bid, "error": "bundle not found or inactive"})
+            continue
+        summary = await order_bundle(
+            db, bundle=bundle,
+            recipient_email=payload.user_email, recipient_name=name,
+            requester_email=None, requester_name=actor,
+            origin="rule_based", actor=actor,
+        )
+        results.append(summary)
+    return {"user_email": payload.user_email, "results": results}
+
+
+def _lookup_user_safe(email: str) -> dict[str, Any]:
+    try:
+        from app.utils.ad_lookup import lookup_user
+        return lookup_user(email) or {}
+    except Exception:  # noqa: BLE001
+        return {}

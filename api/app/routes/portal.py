@@ -366,6 +366,73 @@ async def portal_new_order_form(
     })
 
 
+@router.get("/packages", response_class=HTMLResponse)
+async def portal_packages(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
+):
+    """Self-service catalog of orderable bundles ("packages")."""
+    from app.models.bundle import Bundle, BundlePosition
+    bundles = (await db.execute(
+        select(Bundle).where(Bundle.is_active.is_(True), Bundle.catalog_visible.is_(True))
+        .order_by(Bundle.name)
+    )).scalars().all()
+    # Resolve position asset-type names for display.
+    out = []
+    for b in bundles:
+        positions = (await db.execute(
+            select(BundlePosition).where(BundlePosition.bundle_id == b.id)
+            .order_by(BundlePosition.sort_order, BundlePosition.id)
+        )).scalars().all()
+        at_ids = [p.asset_type_id for p in positions]
+        names = {}
+        if at_ids:
+            for at in (await db.execute(
+                select(AssetType).where(AssetType.id.in_(at_ids))
+            )).scalars().all():
+                names[at.id] = at.name
+        out.append({
+            "id": b.id, "name": b.name, "description": b.description,
+            "lines": [{"name": names.get(p.asset_type_id, "?"), "required": p.required}
+                      for p in positions],
+        })
+    return templates.TemplateResponse("portal/packages.html", {
+        "request": request, "active_page": "packages",
+        "user": current_user, "bundles": out,
+    })
+
+
+@router.post("/bundles/{bundle_id}/order")
+async def portal_order_bundle(
+    bundle_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
+) -> dict:
+    """Order a catalog bundle for the logged-in user."""
+    from app.models.bundle import Bundle
+    from app.services.bundle_order import order_bundle
+    bundle = await db.get(Bundle, bundle_id)
+    if not bundle or not bundle.is_active or not bundle.catalog_visible:
+        raise HTTPException(status_code=404, detail="Package not found")
+    email = (current_user.get("email") or "").strip()
+    if not email or (current_user.get("oid") or "").lower() == "anonymous":
+        raise HTTPException(status_code=403, detail="Sign in to order a package")
+    summary = await order_bundle(
+        db, bundle=bundle,
+        recipient_email=email, recipient_name=current_user.get("name") or email,
+        requester_email=email, requester_name=current_user.get("name") or email,
+        origin="bundle_catalog",
+        actor=portal_actor_by(current_user, "portal_order_bundle"),
+    )
+    return {
+        "ok": True, "group_id": summary["group_id"],
+        "ordered": len(summary["ordered"]), "skipped": len(summary["skipped"]),
+        "items": summary["ordered"], "skipped_items": summary["skipped"],
+    }
+
+
 @router.get("/my-team")
 async def portal_my_team(
     request: Request,

@@ -27,68 +27,6 @@ ever makes a uniform header worthwhile.
 
 ---
 
-### [open] Onboarding bundles and attribute-based assignment rules
-
-> **Progress 2026-07-14 (slice 1 shipped):** foundation + management + rule evaluation are done —
-> `Bundle`/`BundlePosition`/`AssignmentRule` + lightweight nullable `order_groups`/`Order.order_group_id`
-> ([migration 0008](api/alembic/versions/0008_onboarding_bundles.py), models); the pure rule-eval
-> service ([`services/onboarding.py`](api/app/services/onboarding.py), reuses `approval_rules._eval_condition`,
-> idempotency = skip active-held asset types); admin CRUD + evaluate-preview
-> ([`admin_bundles.py`](api/app/routes/admin_bundles.py)); and the **Onboarding** admin page
-> (Bundles / Rules / Evaluate tabs). **Deliberately deferred to slice 2** (the risky part — touches
-> the order/approval path): actual **bundle ordering** (create one `OrderGroup` + N orders via a
-> self-contained service that leaves `portal_create_order` untouched), the **self-service "order
-> package"** catalog entry + i18n×5, and the optional **first-login trigger**. SCIM wiring stays in
-> the separate SCIM task.
-
-Pre-work for the open [SCIM provisioning (joiner/mover/leaver → asset lifecycle)](#open-scim-provisioning-joinermoverleaver--asset-lifecycle)
-task — bundles are the target that SCIM joiner/mover events will trigger — but they must also work
-standalone without SCIM (manual order in self-service, admin-triggered evaluation). **Depends on
-the [Order groups](#open-order-groups--headerline-item-model-with-header-level-approval) entry
-above.** Bundles define **no new assets**; they only reference existing
-[`AssetType`](api/app/models/asset.py) rows, which remain the single source of truth. Because
-ip·Solis has no local user store (portal users are session-only via OIDC/LDAP; requester
-attributes are resolved from AD at order-creation time and frozen on the order), rule evaluation
-is an **internal service that takes a user-attribute dictionary as input** — not a hook on a
-(nonexistent) user entity.
-
-**Scope:**
-- New entity `Bundle`: name, description, active flag, ordered list of positions. Each position
-  references an `AssetType`, with a required/optional flag and an optional default attribute
-  selection (pre-fill for [`Order.config`](api/app/models/order.py), drawn from
-  `AssetType.config`). No quantity — one item per unit, consistent with the order-groups entry.
-- New entity `AssignmentRule`: condition on user attributes (department, cost center, group
-  membership, …) → bundle. **Reuse** the existing conditional-approval-rule condition format and
-  its AND/OR/NOT visual editor pattern (`AssetType.approval_rules`) instead of inventing a new
-  rule syntax.
-- Rule-evaluation service with explicit trigger points:
-  (a) manual admin action "evaluate onboarding rules for user X" (attributes resolved from AD via
-  the existing `ad.attribute.*` mechanism, with manual override);
-  (b) optionally on first portal login (config flag, default off);
-  (c) SCIM create/update — wired up later in the separate SCIM task, **out of scope here**.
-  Define an idempotency/dedup rule: never order an asset type the user already has an **active**
-  (non-revoked, non-expired) order for.
-- A bundle trigger creates **one** `OrderGroup` with N line items through the existing
-  order/approval/execution paths. No bundle-specific approval logic — the approver can strike
-  individual (e.g. optional) items and the rest proceeds, exactly the mechanism from the
-  order-groups entry.
-- Line items **freeze** the bundle position at order time (snapshot of bundle id/name and resolved
-  position config) for auditability; the bundle itself references `AssetType` rows live. Mirrors
-  the existing freeze pattern (`OrderApproval.rule_name` / `rule_threshold`,
-  `Order.provisioned_state`).
-- Bundles are additionally orderable in the self-service catalog ("order package") and produce the
-  **same** `OrderGroup` shape as the rule-based trigger.
-- Admin UI for bundles and assignment rules.
-
-**Follow-up:** every new UI string in all 5 locale files
-([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
-[`es`](locales/es.json) / [`it`](locales/it.json)).
-
-**Out of scope:** the SCIM endpoint itself (existing separate task); mover/leaver workflows
-(follow-up task); cart UI.
-
----
-
 ### [open] SCIM provisioning (joiner/mover/leaver → asset lifecycle)
 
 Extend SCIM 2.0 beyond the current **leaver-focused** subset (already shipped) to full
@@ -154,6 +92,7 @@ All items below are shipped. Detailed implementation notes live in git history.
 
 | Area | Shipped | Notes |
 |------|---------|-------|
+| Onboarding bundles + assignment rules | 2026-07-14 | **Design decision** (see the descoped *Order groups* entry): the audit's core-model inversion was **not** built — grouping is a lightweight **nullable** `order_groups` header (`Order.order_group_id`, no backfill / NOT NULL) created **only** for multi-item requests; single orders stay untouched. **Slice 1** — entities ([migration 0008](api/alembic/versions/0008_onboarding_bundles.py)): `Bundle` + `BundlePosition` (reference existing AssetTypes; no new assets), `AssignmentRule` (condition reuses the approval-rule JSON format), `order_groups`; pure rule-eval service ([`services/onboarding.py`](api/app/services/onboarding.py) — reuses `approval_rules._eval_condition` over an `attr.*` context; idempotency = skip asset types the user already actively holds); admin CRUD + evaluate-preview ([`admin_bundles.py`](api/app/routes/admin_bundles.py)); **Onboarding** admin page (Bundles / Rules / Evaluate tabs). **Slice 2** — self-contained bundle-order service ([`services/bundle_order.py`](api/app/services/bundle_order.py)) creates one `OrderGroup` + N line items reusing the order primitives (requester-attr freeze, rule/classification/delegation approvers, quorum check, runbook dispatch) **without touching `portal_create_order`**; per item runs the standard approval computation (approve-immediately vs `pending_approval` + `send_approval_requests`); admin "order for user" ([`POST /admin/onboarding/order`](api/app/routes/admin_bundles.py)) wired into the Evaluate tab; self-service **Packages** catalog ([`/portal/packages`](api/app/templates/portal/packages.html) + `POST /portal/bundles/{id}/order`, new portal nav entry) with i18n in **all 5 locales** (validator green at 230 keys). **Verified end-to-end on the compose stack**: create bundle+positions, create rule, evaluate (dept match → item skipped as `already_held`, other would-order; no-match negative), **real ordering** (group + N orders, immediate-dispatch branch, idempotency correctly re-orders a failed item but skips a still-active one), CRUD + cascade, mappers, templates + locale render. **Deliberately deferred** (optional): first-login evaluation trigger (config flag). SCIM joiner/mover wiring stays in the separate SCIM task (which now builds on this). **i18n**: self-service strings ×5; admin UI English (N/A) |
 | Portal accessibility — structural (BITV/EN 301 549 basics) | 2026-07-14 | Structural-first a11y at the shared portal choke points, **no visual redesign** (layout/colors/components unchanged). [`base_portal.html`](api/app/templates/portal/base_portal.html): skip link (visually hidden until keyboard focus) → new `<main id="main-content" tabindex="-1">` target; landmark labels on `<aside>` / `<nav>` (translated via `data-i18n-attr-aria-label`); decorative nav SVGs `aria-hidden` + `focusable=false`; notification badges `role="status" aria-live="polite"` (screen-reader announces count changes); an early inline `lang`-set from `localStorage.portal_lang` before first paint (closes the hardcoded-`en` gap ahead of i18n.js's own `apply()` which already set `<html lang>`); scoped `:focus-visible` outline (keyboard focus only — invisible to mouse users) + skip-link CSS, **portal-scoped so admin UI is untouched**. [`_partials/language_switcher.html`](api/app/templates/_partials/language_switcher.html): `aria-expanded` toggle synced on open/select/click-away, `aria-controls`, `role=menuitem` on options, decorative flag/chevron SVGs `aria-hidden`. New a11y strings (`portal.a11y.skip_to_content` / `.sidebar`, `portal.nav.aria_label`) in **all 5 locales** — validator green at 221 keys parity. **Verified**: templates compile + rendered base_portal contains every marker (skip link, main target, landmarks, aria-hidden, live badges, early-lang, focus CSS, switcher aria-expanded). **Scope**: portal only (admin excluded); **not a conformance claim** — closes structural basics. **Out of scope / follow-up**: formal Barrierefreiheitserklärung + external BITV test, full WCAG 2.1 AA, contrast audit, login-page layout (separate template) |
 | Signed attestation artifacts (handover + revocation) | 2026-07-14 | Two ISO-27001 evidence artifacts on one signed-token HTML mechanism (no PDF). New `AttestationArtifact` ([model](api/app/models/attestation_artifact.py), table `attestation_artifacts`, migration [`0007`](api/alembic/versions/0007_attestation_artifacts.py)) + per-type flags `requires_handover_ack` / `emit_revocation_certificate` (default off, on the asset-type form). **Emission** ([`attestation.py`](worker/tasks/modules/attestation.py)) is hooked at the three order-completion points in [`dynamic_runner.py`](worker/tasks/workflows/dynamic_runner.py) via one idempotent best-effort helper: **handover** (Übergabeprotokoll) on `provisioned` (status `pending`, emails a signed ack link) and **revocation/disposal certificate** on `revoked` (status `emitted`, cites the just-rolled-back `order_change_log` grants; expiry-driven revokes flow through the same delete-order completion). Signed token ([`attestation_token.py`](api/app/utils/attestation_token.py) + worker mirror, `kind=attestation`, 90-day TTL) reuses the certification-link HMAC pattern. **External pages** (no auth): `GET/POST /attestation/{token}` ([`attestation_external.py`](api/app/routes/attestation_external.py)) — handover ack page (records `acknowledged_by`/`_at`, audited) + printable revocation cert. **Admin**: read API [`admin_attestations.py`](api/app/routes/admin_attestations.py) + a **Reports → Attestations** page (filter by kind/status, per-row signed viewer link, count tiles); Settings → Attestations card (AUP text + reminder config). **Overdue-ack reminder** Beat task ([`attestation_reminders.py`](worker/tasks/workflows/attestation_reminders.py), daily 08:30, opt-in, deduped via `last_reminder_at`). **Verified end-to-end on the compose stack:** emit both kinds for a real provisioned order (idempotent — no dup), handover page renders + ack flips `pending→acknowledged`, revocation cert renders w/ print, bad token → 410, admin list + counts, reminder fires-then-dedups, full audit trail (emitted/acknowledged/reminder_sent), all templates compile. **i18n N/A** (admin UI + worker artifacts English, like Teams cards). **Out of scope:** server-generated PDF, eIDAS e-signatures, QR physical inventory |
 | Slack approval delivery (delta) | 2026-07-14 | Slack as a second, independent delivery channel alongside the existing Teams path (Teams untouched). New [`slack_notify.py`](worker/tasks/modules/slack_notify.py) (worker) + [`slack_notify.py`](api/app/utils/slack_notify.py) (api mirror, cross-image duplicate like Teams): `post_message` (Slack incoming webhook) + `build_approval_message` (Block Kit — header / greeting / fact section / "Review request" URL button + notification-fallback `text`). Wired as a best-effort branch into [`deliver_approval_notification`](worker/tasks/workflows/dynamic_runner.py) (so it covers **both** initial dispatch and the reminder Beat task, with the "Reminder (n)" headline bump), reading `slack.mode` / `slack.webhook_url` in `send_approval_requests` + `approval_reminders`. **Reuses the channel-agnostic signed approval token** (`make_approval_token`), so the one-click `/approve/{token}` URL is identical across email/Teams/Slack. `POST /admin/config/slack/test` ([`admin.py`](api/app/routes/admin.py)) mirrors the Teams test; Settings → Slack section + save/test JS ([`settings.html`](api/app/templates/ui/settings.html)); setup-checklist item ([`admin_setup.py`](api/app/routes/admin_setup.py)); config seeded by migration [`0006`](api/alembic/versions/0006_slack_approval_config.py) (`slack.mode`, `slack.webhook_url` is_secret). **Verified on the compose stack:** `post_message` HTTP mechanics (200 → success, 400 → error-with-detail, empty → config error), test endpoint states (disabled → ok:null, enabled+bad-webhook → ok:false), config round-trip (webhook stored as secret), Block Kit shape, all templates compile. Real-Slack visual render is the operator's final manual check (no live Slack webhook in the lab). **i18n N/A** (admin UI + worker-generated message English, same as Teams cards). **Out of scope:** interactive approve-in-Slack buttons (links out to the signed URL, like Teams) |

@@ -7,7 +7,8 @@
       "delegations": "Vertretungen",
       "certifications": "Zugriffsprüfungen",
       "request_access": "Zugang anfordern",
-      "aria_label": "Hauptnavigation"
+      "aria_label": "Hauptnavigation",
+      "packages": "Pakete"
     },
     "user": {
       "sign_out": "Abmelden"
@@ -252,6 +253,16 @@
     "a11y": {
       "skip_to_content": "Zum Hauptinhalt springen",
       "sidebar": "Seitenleiste"
+    },
+    "packages": {
+      "title": "Pakete",
+      "subtitle": "Bestellen Sie ein fertiges Zugriffspaket in einem Schritt. Bereits vorhandene Elemente werden automatisch übersprungen.",
+      "empty": "Derzeit sind keine Pakete verfügbar.",
+      "optional": "(optional)",
+      "order_btn": "Paket bestellen",
+      "ordered": "{n} Element(e) bestellt{skip}.",
+      "skipped": "({n} bereits vorhanden)",
+      "order_failed": "Bestellung fehlgeschlagen"
     }
   }
 }
