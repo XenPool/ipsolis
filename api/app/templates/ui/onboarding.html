@@ -3,15 +3,22 @@
 {% block title %}Onboarding – {{ app_title }}{% endblock %}
 
 {% block content %}
-<div class="mb-5">
-  <h1 class="text-lg font-semibold text-heading">Onboarding — Bundles &amp; Assignment Rules</h1>
-  <p class="text-xs text-muted/70 mt-1 max-w-3xl">
-    A <strong>bundle</strong> groups existing asset definitions into a package. An <strong>assignment
-    rule</strong> maps a user's attributes (department, cost center, …) to a bundle. Use
-    <strong>Evaluate</strong> to preview which bundles match a user and which items would be ordered
-    (already-held items are skipped). Ordering a matched bundle is triggered from here and the
-    self-service catalog. Bundles reference asset definitions live; nothing new is defined here.
-  </p>
+<div class="mb-5 flex items-start justify-between gap-4">
+  <div>
+    <h1 class="text-lg font-semibold text-heading">Onboarding — Bundles &amp; Assignment Rules</h1>
+    <p class="text-xs text-muted/70 mt-1 max-w-3xl">
+      A <strong>bundle</strong> groups existing asset definitions into a package. An <strong>assignment
+      rule</strong> maps a user's attributes (department, cost center, …) to a bundle. Use
+      <strong>Evaluate</strong> to preview which bundles match a user and which items would be ordered
+      (already-held items are skipped). Ordering a matched bundle is triggered from here and the
+      self-service catalog. Bundles reference asset definitions live; nothing new is defined here.
+    </p>
+  </div>
+  <label class="flex items-center gap-2 text-xs text-muted whitespace-nowrap cursor-pointer bg-surface border border-token-border rounded px-3 py-2 mt-1">
+    <input type="checkbox" id="first-login-toggle" onchange="saveFirstLogin()" class="rounded border-token-border"
+           {% if eval_on_first_login %}checked{% endif %}>
+    <span>Evaluate on first login</span>
+  </label>
 </div>
 
 <div id="banner" class="hidden mb-4 px-4 py-2 rounded text-sm"></div>
@@ -300,6 +307,13 @@ async function orderForUser(bundleId,bundleName){
     banner('Ordered '+n+' item(s)'+(sk?', '+sk+' skipped':'')+(r.group_id?' (group #'+r.group_id+')':'')+'.');
     runEvaluate();
   }catch(e){banner('Order failed: '+e.message,'error');}
+}
+
+async function saveFirstLogin(){
+  var on=document.getElementById('first-login-toggle').checked;
+  try{await fetch('/admin/config/onboarding.eval_on_first_login',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:on?'true':'false'})});
+    banner('First-login evaluation '+(on?'enabled':'disabled')+'.');}
+  catch(e){banner('Failed to save: '+e.message,'error');}
 }
 
 // init

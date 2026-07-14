@@ -120,6 +120,32 @@ _USER_SCHEMA = {
     ],
 }
 
+_GROUP_RESOURCE_TYPE = {
+    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"],
+    "id": "Group",
+    "name": "Group",
+    "endpoint": "/Groups",
+    "description": "Group (read-only shim — ip·Solis models group membership in AD, not SCIM)",
+    "schema": "urn:ietf:params:scim:schemas:core:2.0:Group",
+}
+
+_GROUP_SCHEMA = {
+    "id": "urn:ietf:params:scim:schemas:core:2.0:Group",
+    "name": "Group",
+    "description": "Core SCIM 2.0 Group schema (read-only in ip·Solis)",
+    "attributes": [
+        {
+            "name": "displayName", "type": "string", "multiValued": False,
+            "required": True, "caseExact": False, "mutability": "readOnly",
+            "returned": "default",
+        },
+        {
+            "name": "members", "type": "complex", "multiValued": True,
+            "required": False, "mutability": "readOnly", "returned": "default",
+        },
+    ],
+}
+
 _SERVICE_PROVIDER_CONFIG = {
     "schemas": ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"],
     "documentationUri": "https://datatracker.ietf.org/doc/html/rfc7644",
@@ -212,8 +238,8 @@ async def resource_types(
     await _scim_auth(request, db, write=False)
     return {
         "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
-        "totalResults": 1,
-        "Resources": [_USER_RESOURCE_TYPE],
+        "totalResults": 2,
+        "Resources": [_USER_RESOURCE_TYPE, _GROUP_RESOURCE_TYPE],
     }
 
 
@@ -224,8 +250,8 @@ async def schemas(
     await _scim_auth(request, db, write=False)
     return {
         "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
-        "totalResults": 1,
-        "Resources": [_USER_SCHEMA],
+        "totalResults": 2,
+        "Resources": [_USER_SCHEMA, _GROUP_SCHEMA],
     }
 
 
@@ -546,6 +572,46 @@ async def delete_user(
     if not email_l:
         return _scim_error(400, "User id (email) required")
     await _maybe_run_leaver(db, email=email_l, actor=actor, raw=None)
+
+
+# ── Groups (read-only shim) ──────────────────────────────────────────────────
+# ip·Solis models group membership in AD (managed by target_executor), not in
+# SCIM. These endpoints exist only so IdP provisioning configs that probe
+# /Groups get valid empty responses instead of 404s. Writes are refused.
+
+@router.get("/Groups")
+async def list_groups(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    startIndex: int = Query(default=1, ge=1),
+    count: int = Query(default=100, ge=0, le=200),
+) -> dict:
+    """Read-only shim — ip·Solis exposes no SCIM groups (empty list)."""
+    await _scim_auth(request, db, write=False)
+    return {
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
+        "totalResults": 0,
+        "startIndex": startIndex,
+        "itemsPerPage": 0,
+        "Resources": [],
+    }
+
+
+@router.get("/Groups/{group_id}")
+async def get_group(request: Request, group_id: str, db: AsyncSession = Depends(get_db)):
+    await _scim_auth(request, db, write=False)
+    return _scim_error(404, f"Group {group_id!r} not found — ip·Solis models groups in AD, not SCIM")
+
+
+@router.api_route("/Groups", methods=["POST"])
+@router.api_route("/Groups/{group_id}", methods=["PUT", "PATCH", "DELETE"])
+async def groups_write_unsupported(request: Request, db: AsyncSession = Depends(get_db)):
+    """Group writes are not supported — membership is managed in AD."""
+    await _scim_auth(request, db, write=True)
+    return _scim_error(
+        501, "Group provisioning is not supported; ip·Solis manages group membership in AD.",
+        scim_type="mutability",
+    )
 
 
 async def _maybe_run_leaver(

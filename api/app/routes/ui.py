@@ -1340,11 +1340,17 @@ async def attestations_page(request: Request) -> HTMLResponse:
 
 
 @router.get("/onboarding", response_class=HTMLResponse)
-async def onboarding_page(request: Request) -> HTMLResponse:
+async def onboarding_page(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
+    flag = (await db.execute(
+        select(AppConfig.value).where(AppConfig.key == "onboarding.eval_on_first_login")
+    )).scalar_one_or_none()
     return templates.TemplateResponse(
         request,
         "ui/onboarding.html",
-        {"active_page": "onboarding"},
+        {
+            "active_page": "onboarding",
+            "eval_on_first_login": (flag or "false").strip().lower() in ("1", "true", "yes", "on"),
+        },
     )
 
 
