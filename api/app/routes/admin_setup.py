@@ -66,6 +66,9 @@ async def setup_state(db: AsyncSession = Depends(get_db)) -> dict:
     teams_mode = (await _get_value(db, "teams.mode")) or "disabled"
     teams_webhook = await _get_value(db, "teams.webhook_url")
 
+    slack_mode = (await _get_value(db, "slack.mode")) or "disabled"
+    slack_webhook = await _get_value(db, "slack.webhook_url")
+
     siem_enabled = (await _get_value(db, "siem.enabled") or "false").lower() == "true"
     siem_endpoint = await _get_value(db, "siem.endpoint_url")
 
@@ -135,6 +138,14 @@ async def setup_state(db: AsyncSession = Depends(get_db)) -> dict:
             "label": "Enable Microsoft Teams approval cards",
             "done": teams_mode == "enabled" and bool(teams_webhook),
             "hint": "Approvers get an Adaptive Card with a one-click review link in addition to email.",
+            "link": "/ui/settings#email",
+            "tier": "recommended",
+        },
+        {
+            "key": "slack",
+            "label": "Enable Slack approval messages",
+            "done": slack_mode == "enabled" and bool(slack_webhook),
+            "hint": "Approvers get a Block Kit message with a one-click review link, in addition to email.",
             "link": "/ui/settings#email",
             "tier": "recommended",
         },

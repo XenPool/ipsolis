@@ -1151,6 +1151,13 @@ async def settings_page(
     teams_rows = teams_result.scalars().all()
     teams_config = {r.key: (_MASK if r.is_secret else (r.value or "")) for r in teams_rows}
 
+    # Load slack.* config keys
+    slack_result = await db.execute(
+        select(AppConfig).where(AppConfig.key.like("slack.%")).order_by(AppConfig.key)
+    )
+    slack_rows = slack_result.scalars().all()
+    slack_config = {r.key: (_MASK if r.is_secret else (r.value or "")) for r in slack_rows}
+
     # Load siem.* config keys
     siem_result = await db.execute(
         select(AppConfig).where(AppConfig.key.like("siem.%")).order_by(AppConfig.key)
@@ -1241,6 +1248,7 @@ async def settings_page(
         {"vars": masked_vars, "ad_config": ad_config, "portal_auth_config": portal_auth_config,
          "email_config": email_config, "email_templates": email_templates,
          "teams_config": teams_config,
+         "slack_config": slack_config,
          "siem_config": siem_config,
          "approval_config": approval_config,
          "otel_config": otel_config,

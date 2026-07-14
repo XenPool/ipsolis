@@ -1416,10 +1416,12 @@ def deliver_approval_notification(
     teams_mode: str,
     teams_webhook: str,
     app_title: str,
+    slack_mode: str = "disabled",
+    slack_webhook: str = "",
     is_reminder: bool = False,
     reminder_count: int = 0,
 ) -> tuple[bool, bool]:
-    """Send a single approval notification (email + Teams card if enabled).
+    """Send a single approval notification (email + Teams + Slack if enabled).
 
     Returns ``(email_sent, teams_sent)``. Reused by both the initial
     dispatch and the reminder Beat task. ``approver_email`` is forwarded
@@ -1429,6 +1431,12 @@ def deliver_approval_notification(
     Workflows" (Teams suppresses self-authored channel-post notifications).
     ``is_reminder`` bumps the card headline to "Reminder (n): …" so the
     recipient can tell it's a nudge.
+
+    Slack delivery (when ``slack_mode == 'enabled'``) runs as a second,
+    independent best-effort branch mirroring Teams: it reuses the same
+    channel-agnostic signed token, so the approve link is identical. Its
+    outcome is not folded into the returned tuple (email + Teams drive the
+    order flow); failures are logged only.
     """
     from tasks.modules import notifications as notif
 
@@ -1481,6 +1489,34 @@ def deliver_approval_notification(
         except Exception as exc:  # noqa: BLE001
             logger.warning("Teams card error for approval %s: %s", approval_id, exc)
 
+    # Slack — second independent best-effort branch, mirroring Teams. Same
+    # channel-agnostic signed token → identical approve URL.
+    if slack_mode == "enabled" and slack_webhook:
+        try:
+            from tasks.modules.slack_notify import build_approval_message, post_message
+            from tasks.modules.teams_notify import make_approval_token
+            token = make_approval_token(approval_id)
+            review_url = f"{portal_base.rstrip('/')}/approve/{token}"
+            payload = build_approval_message(
+                asset_type_name=asset_type_name,
+                requester_name=requester_name,
+                requester_email=requester_email,
+                approver_name=approver_name,
+                review_url=review_url,
+                from_date=from_date,
+                until_date=until_date,
+                app_title=app_title,
+            )
+            if is_reminder and reminder_count > 0:
+                nudge = f"{app_title} — Reminder ({reminder_count}): access request awaiting approval"
+                payload["text"] = nudge
+                payload["blocks"][0]["text"]["text"] = nudge
+            ok, msg = post_message(slack_webhook, payload)
+            if not ok:
+                logger.warning("Slack delivery failed for approval %s: %s", approval_id, msg)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Slack error for approval %s: %s", approval_id, exc)
+
     return email_sent, teams_sent
 
 
@@ -1530,6 +1566,8 @@ def send_approval_requests(order_id: int) -> dict:
         # when not enabled. Failure to deliver to Teams must not abort the order.
         teams_mode = (get_config(db, "teams.mode", "disabled") or "disabled").strip()
         teams_webhook = _get_secret_config(db, "teams.webhook_url").strip()
+        slack_mode = (get_config(db, "slack.mode", "disabled") or "disabled").strip()
+        slack_webhook = _get_secret_config(db, "slack.webhook_url").strip()
         app_title = get_config(db, "app.title", "ip·Solis") or "ip·Solis"
 
         sent = 0
@@ -1548,6 +1586,8 @@ def send_approval_requests(order_id: int) -> dict:
                 portal_base=portal_base,
                 teams_mode=teams_mode,
                 teams_webhook=teams_webhook,
+                slack_mode=slack_mode,
+                slack_webhook=slack_webhook,
                 app_title=app_title,
                 is_reminder=False,
             )

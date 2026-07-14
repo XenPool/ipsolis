@@ -58,6 +58,8 @@ def scan_and_remind() -> dict:
         portal_base = get_config(db, "portal.base_url", "http://localhost:8000")
         teams_mode = (get_config(db, "teams.mode", "disabled") or "disabled").strip()
         teams_webhook = get_secret_config(db, "teams.webhook_url").strip()
+        slack_mode = (get_config(db, "slack.mode", "disabled") or "disabled").strip()
+        slack_webhook = get_secret_config(db, "slack.webhook_url").strip()
         app_title = get_config(db, "app.title", "ip·Solis") or "ip·Solis"
         escalation_emails_raw = (get_config(db, "approval.escalation_email") or "").strip()
         escalation_emails = [a.strip() for a in escalation_emails_raw.split(",") if a.strip()]
@@ -110,6 +112,8 @@ def scan_and_remind() -> dict:
                 portal_base=portal_base,
                 teams_mode=teams_mode,
                 teams_webhook=teams_webhook,
+                slack_mode=slack_mode,
+                slack_webhook=slack_webhook,
                 app_title=app_title,
                 is_reminder=True,
                 reminder_count=(r.reminder_count or 0) + 1,

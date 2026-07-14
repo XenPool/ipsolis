@@ -604,6 +604,45 @@ async def test_teams_webhook(db: AsyncSession = Depends(get_db)) -> dict:
     return {"ok": ok, "message": msg}
 
 
+@router.post("/config/slack/test", dependencies=[require_role("admin")])
+async def test_slack_webhook(db: AsyncSession = Depends(get_db)) -> dict:
+    """POST a test Block Kit message to the configured Slack incoming webhook."""
+    from app.utils.slack_notify import build_approval_message, post_message
+
+    cfg = await db.execute(
+        select(AppConfig).where(AppConfig.key.in_(["slack.mode", "slack.webhook_url", "app.title"]))
+    )
+    rows = {r.key: (r.value or "") for r in cfg.scalars().all()}
+    mode = (rows.get("slack.mode") or "disabled").strip()
+    # Slack webhook URL is is_secret=true so it can be stored as a
+    # secret-store reference; dereference here before posting.
+    from app.utils.secrets import resolve_secret_value
+    url = (await resolve_secret_value(db, rows.get("slack.webhook_url") or "")).strip()
+    app_title = (rows.get("app.title") or "ip·Solis").strip()
+
+    if mode == "disabled":
+        return {"ok": None, "message": "Slack notifications are disabled — no test sent."}
+    if not url:
+        return {"ok": False, "message": "Slack webhook URL is not configured."}
+
+    payload = build_approval_message(
+        asset_type_name="(Test asset)",
+        requester_name="Test Requester",
+        requester_email="test@example.com",
+        approver_name="Approver",
+        review_url="https://example.com/approve/test-token",
+        from_date="2026-01-01",
+        until_date="2026-01-08",
+        app_title=app_title,
+    )
+    # Relabel the headline so the recipient knows this is a test.
+    test_line = f"{app_title} — Test notification (no action required)"
+    payload["text"] = test_line
+    payload["blocks"][0]["text"]["text"] = test_line
+    ok, msg = post_message(url, payload)
+    return {"ok": ok, "message": msg}
+
+
 @router.post("/config/secret-backend/test", dependencies=[require_role("admin")])
 async def test_secret_backend(db: AsyncSession = Depends(get_db)) -> dict:
     """Verify the configured secret backend (Vault, CCP, or Azure KV) is reachable.
