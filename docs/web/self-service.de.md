@@ -61,6 +61,12 @@ Wenn für einen Asset-Typ `monthly_cost` konfiguriert ist, zeigt das Bestellform
 
 ---
 
+## Ein Paket bestellen *(Pro)*
+
+Über einzelne Assets hinaus bietet die Seite **Pakete** fertige Bundles — eine kuratierte Zugriffs-Zusammenstellung, mit einem Klick bestellt (z. B. die Standard-Ausstattung einer Rolle). Bereits vorhandene Elemente werden automatisch übersprungen; der Rest durchläuft als einzelne Bestellungen den normalen Genehmigungs- und Provisionierungs-Flow. Welche Pakete hier erscheinen, steuern Administratoren je Bundle; siehe [Lifecycle → Onboarding-Bundles](./lifecycle#onboarding-bundles-pro).
+
+---
+
 ## Genehmigungsworkflow
 
 Bestellungen, die eine Genehmigung erfordern, gelangen in den Zustand `pending_approval`. Das Portal zeigt den aktuellen Genehmigungsstatus auf der Detailseite der Bestellung an. Die Bereitstellung beginnt erst, wenn alle erforderlichen Genehmigungen eingeholt wurden (vorbehaltlich des Quorums — siehe unten).
@@ -273,3 +279,9 @@ Wird ein Benutzer als Austretender gekennzeichnet (über einen HR-Webhook oder S
 ## Mehrsprachige Unterstützung
 
 Die Portal-UI ist in **Englisch, Deutsch, Französisch, Spanisch und Italienisch** verfügbar. Die aktive Sprache wird aus dem `Accept-Language`-Header des Browsers erkannt und kann über eine Sprachauswahl überschrieben werden. Alle Beschriftungen, Validierungsmeldungen, E-Mail-Vorlagen und Leerzustände sind lokalisiert.
+
+---
+
+## Barrierefreiheit
+
+Das Portal erfüllt die strukturellen Grundlagen von **BITV 2.0 / EN 301 549** — einen Sprunglink zum Inhalt, semantische Landmarks und Beschriftungen, einen tastatursichtbaren Fokus-Indikator, Benachrichtigungs-Badges als Live-Regionen und ein Dokument-`lang`, das der gewählten Sprache folgt (relevant für Ausschreibungen der öffentlichen Hand). Damit sind die strukturellen Essentials abgedeckt; eine formale Barrierefreiheitserklärung und ein externer Konformitätstest sind ein separater Schritt je Deployment.

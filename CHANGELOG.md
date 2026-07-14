@@ -14,6 +14,66 @@ the full upgrade procedure including DB backup recommendations.
 
 ## [Unreleased]
 
+### Added
+- **Drift / out-of-band reconciliation (AD).** A Beat task periodically re-reads the AD groups that
+  `drift_monitor` asset types provision into and compares actual membership against what ip·Solis
+  granted (from the order change log). Divergences — *missing access* (granted, removed in AD) and
+  *out-of-band* (added directly, never granted) — are recorded to `drift_findings`, audit-logged
+  (streamed to the SIEM), and surfaced on **Operations → Drift**. Opt-in per type; global schedule +
+  `detect_only` / `auto_remediate` mode under **Maintenance → Drift reconciliation**; auto-remediate
+  re-grants / revokes via AD. Best-effort email/Teams alert.
+- **Software license & contract lifecycle.** New `SoftwareContract` entity (vendor, product, value,
+  billing interval, licensed seats, renewal date, notice period) bound **1 : N** to asset types.
+  The cost report prices each active order at the contract's **per-seat** rate (contract value ÷
+  seats) instead of a flat monthly cost, and tracks utilization + unused-seat **shelfware** and
+  seat over-allocation (**Model A** — actual consumption). New **Reports → Licenses & Contracts**
+  page; daily opt-in renewal-reminder Beat task fires when a contract enters its notice window.
+- **Slack approval delivery.** Approvals can post a Block Kit message to Slack in parallel with
+  email (and Teams), reusing the same channel-agnostic signed one-click approve link. Config
+  `slack.mode` / `slack.webhook_url` + Settings section + test button; covers initial dispatch and
+  reminders.
+- **Signed attestation artifacts.** Optional per asset type: a **handover** acknowledgment
+  (Übergabeprotokoll) on provisioning — the recipient gets a signed link to confirm receipt (and an
+  acceptable-use policy) — and a **revocation / disposal certificate** on revoke/expiry (audit
+  evidence of what was removed). Signed-token HTML pages (archival via print); reviewed under
+  **Reports → Attestations**; overdue-ack reminder Beat task.
+- **Onboarding bundles & assignment rules.** A `Bundle` groups existing asset definitions into a
+  package; an `AssignmentRule` maps user attributes (department, cost center, …) to a bundle
+  (reusing the approval-rule condition format). Ordering a bundle creates one lightweight
+  `OrderGroup` with one order per position through the normal approval/execution paths (idempotent —
+  asset types the user already holds are skipped). Triggerable from **Onboarding** admin (evaluate
+  for a user), the self-service **Packages** catalog, a SCIM joiner, and optionally a user's first
+  portal login (`onboarding.eval_on_first_login`).
+- **SCIM joiner/mover provisioning.** Extends the SCIM endpoint from leaver-only to full
+  joiner/mover/leaver: a new `ScimIdentity` last-seen projection; `POST/PUT /Users` (opt-in
+  `scim.joiner_enabled`) evaluate assignment rules and order matched bundles; a mover (attribute
+  change) reconciles entitlements via `scim.mover_mode` (`disabled` / `additions_only` /
+  `reconcile`), where reconcile also **revokes** lost entitlements — strictly limited to
+  rule/SCIM-provisioned orders (self-service and manual orders are never auto-revoked).
+- **Entra group provisioning (Microsoft Graph).** The `entra_group` access-target type now grants /
+  revokes Entra (cloud-only) security-group membership via Microsoft Graph (app-only, dedicated
+  `graph.*` app registration). Closes the gap between Entra *login* (OIDC) and *provisioning* Entra
+  groups for M365 / cloud-only customers. Settings card + **Test Credentials**.
+
+### Changed
+- **Portal accessibility (structural).** Skip link, `main` landmark + labels, decorative-icon
+  `aria-hidden`, live notification badges, an early `lang` binding, and keyboard `:focus-visible`
+  outlines across the shared portal templates — no visual redesign. Closes the BITV / EN 301 549
+  structural basics (portal only; not a formal conformance claim).
+- **SCIM full filter grammar (RFC 7644 §3.4.2.2).** `GET /Users?filter=` now supports the full
+  grammar (`eq ne co sw ew gt ge lt le pr`, `and` / `or` / `not`, grouping) instead of only
+  `userName eq`; a malformed filter returns `400 invalidFilter`. Added a read-only **`/Groups`**
+  shim (empty list; group membership lives in AD, not SCIM).
+- **Access-target validation.** Saving an asset type now rejects access-target types without a
+  provisioning handler (only `ad_group` / `entra_group`; `rds_collection` / `other` → 400).
+
+### Migration
+- Adds `0004`–`0012`: drift findings + per-type flag; software contracts + `asset_types.contract_id`;
+  Slack config; attestation artifacts + flags; onboarding bundles / assignment rules / lightweight
+  `order_groups` + nullable `orders.order_group_id`; SCIM identity projection; SCIM mover config;
+  Graph (`graph.*`) config; onboarding first-login config. All additive (new tables + nullable
+  columns + seeded config); no backfill of existing rows.
+
 ## [0.6.15] — 2026-06-30
 
 ### Changed

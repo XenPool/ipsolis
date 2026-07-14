@@ -55,21 +55,47 @@ Verwenden Sie **Test** an einem Provider, um vor dem Speichern zu prüfen, ob de
 
 ---
 
+## Entra-ID-Gruppenprovisionierung — Microsoft Graph *(Pro)*
+
+Über die Entra-ID-*Anmeldung* (OIDC oben) hinaus kann ip·Solis Mitgliedschaft in **Entra-(Cloud-only-)Sicherheitsgruppen** als Zugriffsziel *provisionieren* — für M365-/Cloud-only-Kunden ohne On-Prem-AD. Ein Asset-Typ mit einem `entra_group`-Zugriffsziel gewährt/entzieht die Mitgliedschaft bei Bestellung und Widerruf, genau wie eine AD-Gruppe.
+
+Konfiguration unter **Admin → Einstellungen → Compliance → Entra-Gruppenprovisionierung**:
+
+| Einstellung | Beschreibung |
+|---|---|
+| Tenant-ID / Client-ID | Eine **dedizierte App-Registrierung** (getrennt von der OIDC-Anmelde-App) |
+| Client-Secret | Als Secret gespeichert; Secret-Store-Referenzen werden unterstützt |
+
+Die App-Registrierung benötigt die Anwendungsberechtigungen **`GroupMember.ReadWrite.All`** + **`User.Read.All`** (mit Admin-Zustimmung). Am Asset-Typ ist der Gruppen-`identifier` die **Objekt-ID** (GUID) der Entra-Gruppe. Grant/Revoke sind idempotent und werden im selben Order-Change-Log wie AD-Gruppen erfasst. Mit **Anmeldedaten testen** prüfen Sie den Client-Credentials-Flow.
+
+---
+
 ## SCIM 2.0 *(Pro)*
 
-ip·Solis stellt unter `/scim/v2/*` einen Leaver-fokussierten SCIM-2.0-Endpunkt für Identity Provider bereit, die SCIM-Deprovisionierung unterstützen. Kompatibel mit Okta, SailPoint und Ping.
+ip·Solis stellt unter `/scim/v2/*` einen vollständigen **Joiner-/Mover-/Leaver-**SCIM-2.0-Endpunkt bereit — ein Drop-in-Provisionierungsziel für Okta, SailPoint und Ping.
 
-Die unterstützten Operationen, die den Leaver-Flow auslösen, sind:
+**Leaver** (immer aktiv):
 
 - `DELETE /scim/v2/Users/{id}` — löst die vollständige Leaver-Verarbeitung aus
-- `PATCH /scim/v2/Users/{id}` mit `active=false` — löst die vollständige Leaver-Verarbeitung aus
-- `PUT /scim/v2/Users/{id}` mit `active=false` — löst die vollständige Leaver-Verarbeitung aus
+- `PATCH` / `PUT /scim/v2/Users/{id}` mit `active=false` — löst die vollständige Leaver-Verarbeitung aus
 
-Create-, Read- und Update-Operationen werden bestätigt, sind aber wirkungslos (No-Op) (ip·Solis speichert keine Benutzerkonten — Benutzer werden erst real, wenn sie ihre erste Bestellung aufgeben).
+**Joiner** (Opt-in, `scim.joiner_enabled`): Ein SCIM-**Create** (`POST /Users`) — oder eine Reaktivierung — mappt die SCIM-Attribute des Benutzers (Core + Enterprise-Extension: `department`, `costCenter`, `employeeNumber`, `organization`, `title`) auf ip·Solis-Attribute, wertet Ihre [Zuweisungsregeln](./lifecycle#onboarding-bundles-pro) aus und bestellt die passenden [Bundles](./lifecycle#onboarding-bundles-pro). Idempotent — bereits vorhandene Asset-Typen werden übersprungen.
 
-**Authentifizierung**: Erstellen Sie unter **Admin → API-Token** ein Token mit den Scopes `scim:read` + `scim:write` und fügen Sie es in die Konnektor-Konfiguration Ihres IDP ein.
+**Mover** (`scim.mover_mode`): Bei einer Attribut-Änderung (`PUT`-Replace oder `PATCH`) wertet ip·Solis die Regeln gegen die neuen Attribute neu aus und gleicht die Berechtigungen ab:
 
-Siehe [Lifecycle & Asset-Pool → HR-Leaver-Flow](./lifecycle#hr-leaver-flow) für das vollständige Leaver-Verhalten.
+- `disabled` — Attribut-Änderungen werden ignoriert
+- `additions_only` — neu berechtigte Bundles bestellen; nie widerrufen
+- `reconcile` — Additions **plus** Widerruf von Berechtigungen, die nicht mehr passen
+
+Der Auto-Revoke ist strikt auf **regel-/SCIM-provisionierte** Zugriffe beschränkt; Self-Service- und manuell erstellte Bestellungen werden nie automatisch widerrufen. Da ip·Solis keinen lokalen Benutzerspeicher hat, nutzt das Mover-Diffing eine minimale Last-Seen-**Identitätsprojektion** (`scim_identities`), die bei jedem SCIM-Write gepflegt wird.
+
+**Listenfilter**: `GET /Users?filter=` unterstützt die vollständige Grammatik nach RFC 7644 §3.4.2.2 — Vergleichsoperatoren `eq ne co sw ew gt ge lt le`, Präsenz `pr`, logisch `and` / `or` / `not` und geklammerte Gruppierung. Ein fehlerhafter Filter liefert `400 invalidFilter`.
+
+**Gruppen**: `/Groups` ist ein Read-Only-Shim (leere Liste) — ip·Solis modelliert Gruppen-Mitgliedschaft im Active Directory, nicht in SCIM.
+
+**Authentifizierung**: Erstellen Sie unter **Admin → API-Token** ein Token mit den Scopes `scim:read` + `scim:write` und fügen Sie es in den IdP-Konnektor ein. Joiner / Mover aktivieren Sie unter **Einstellungen → Compliance → SCIM**.
+
+Siehe [Lifecycle & Asset-Pool → HR-Leaver-Flow](./lifecycle#hr-leaver-flow) für das Leaver-Verhalten und [Onboarding-Bundles](./lifecycle#onboarding-bundles-pro) für die Regel-Engine.
 
 ---
 
@@ -342,6 +368,19 @@ Wie Sie sich authentifizieren, hängt von Ihrer Mailplattform ab:
 Token-basiertes SMTP (`XOAUTH2`) und herstellerspezifische Versand-APIs sind bewusst nicht
 implementiert: Sie erfordern provider-spezifische Token-Verarbeitung und eine zweite
 Konfigurationsfläche — bei geringem Mehrwert gegenüber einem Relay.
+
+---
+
+## Chat-Benachrichtigungen — Microsoft Teams & Slack *(Pro)*
+
+Genehmigungsanfragen (und Erinnerungen) können parallel zur E-Mail an **Microsoft Teams** und/oder **Slack** gesendet werden. Beide tragen denselben kanal-agnostischen **Ein-Klick-Genehmigungslink** (ein signiertes Token — der Genehmiger entscheidet ohne Portal-Login), sodass eine Anfrage gleichzeitig per E-Mail, Teams und Slack ankommen kann.
+
+| Kanal | Einstellung | Zustellung |
+|---|---|---|
+| Teams | `teams.mode` + Workflows-Webhook-URL | Adaptive Card (mit @Mention des Genehmigers, damit Teams eine echte Benachrichtigung auslöst) |
+| Slack | `slack.mode` + Incoming-Webhook-URL | Block-Kit-Nachricht |
+
+Beide konfigurieren Sie unter **Admin → Einstellungen** (Teams- und Slack-Karten), jeweils mit einem **Test-senden**-Button. Sie laufen unabhängig — das Aktivieren von Slack beeinflusst Teams nicht, und keiner ersetzt die E-Mail. Dieselben Kanäle tragen auch Zertifizierungs- und Kostenschwellen-Benachrichtigungen.
 
 ---
 

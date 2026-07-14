@@ -129,6 +129,25 @@ Reviewers with Entra ID SSO can also access their review queue at `/portal/certi
 
 ---
 
+## Onboarding Bundles *(Pro)*
+
+A **bundle** groups existing asset definitions into a package — a new hire's standard kit (laptop, VDI, M365 groups, …) ordered as a unit. Bundles define no new assets; each **position** references an asset type (required or optional, with an optional attribute pre-fill).
+
+An **assignment rule** maps user attributes (department, cost center, title, …) to a bundle, reusing the same AND/OR/NOT condition editor as the conditional approval rules. There is no local user store, so rule evaluation is a pure function over an attribute dictionary — resolved from AD, supplied via SCIM, or entered manually.
+
+Ordering a bundle creates **one order group** with one order per resolvable position, through the normal approval and execution paths — so per-item approval, capacity, runbooks, and audit all work unchanged. It is **idempotent**: an asset type the user already actively holds is skipped. A bundle can be triggered from:
+
+- **Onboarding** admin — *evaluate for a user* (resolve their attributes, preview the matched bundles + which items would be ordered), then order
+- the self-service **Packages** catalog — a user orders a package for themselves
+- a **SCIM joiner** (see [Integrations → SCIM](./integrations#scim-20-pro))
+- a user's **first portal login** (opt-in, `onboarding.eval_on_first_login`)
+
+Manage bundles and rules under **Onboarding**.
+
+> **Design note:** ip·Solis deliberately did *not* invert its order model into a mandatory header. A single order stays exactly as before (no group); a lightweight `order_group` header exists only for multi-item requests — so bundles add capability without touching the proven single-order path.
+
+---
+
 ## HR Leaver Flow
 
 When a user leaves the organisation, ip·Solis automatically revokes all their active access. The leaver flow is triggered by one of two entry points:

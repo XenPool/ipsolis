@@ -46,6 +46,22 @@ When an asset type has a `monthly_cost` configured, the portal's order form show
 
 ---
 
+## Software Licenses & Contracts *(Pro)*
+
+Beyond a made-up per-seat `monthly_cost`, ip·Solis can track the **real vendor contract** behind an asset type. A **contract** (vendor, product, contract value, billing interval, licensed seats, renewal date, notice period) binds **one contract to many asset types**.
+
+When a type is bound to a contract, the cost report prices each active order at the contract's **per-seat rate** — `contract value ÷ billing interval ÷ seats` — instead of the flat `monthly_cost`. Consumption is the sum of active orders across **all** bound types, which drives:
+
+- **Utilization** — seats consumed vs. licensed
+- **Shelfware** — unused seats × seat price (money paid for capacity nobody uses)
+- **Over-allocation** — more active orders than licensed seats (surfaced, never blocks ordering)
+
+This is *Model A* — actual consumption is charged back; unused capacity is reported, not spread across consumers. Manage contracts and see live utilization under **Reports → Licenses & Contracts**; bind an asset type to a contract on its definition form.
+
+A daily opt-in **renewal-reminder** emails when a contract enters its `renewal_date − notice_period_days` window, so you never miss a cancellation deadline.
+
+---
+
 ## FX Conversion
 
 When asset types are priced in different currencies, the cost report can convert everything to a single canonical reporting currency.
