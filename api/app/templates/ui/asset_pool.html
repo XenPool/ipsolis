@@ -220,6 +220,18 @@
   </table>
 </div>
 
+<!-- Pagination (client-side; shown only when more than one page) -->
+<div id="pool-pagination" class="hidden mt-3 flex items-center justify-between gap-3 text-xs text-muted">
+  <div id="pool-page-info"></div>
+  <div class="flex items-center gap-1">
+    <button id="pool-prev" type="button" onclick="poolPrevPage()"
+            class="px-2.5 py-1 rounded border border-token-border hover:bg-surface-raised disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
+    <span id="pool-page-label" class="px-2 tabular-nums"></span>
+    <button id="pool-next" type="button" onclick="poolNextPage()"
+            class="px-2.5 py-1 rounded border border-token-border hover:bg-surface-raised disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+  </div>
+</div>
+
 <!-- ── Force-Delete Modal ───────────────────────────────────────────────────── -->
 <div id="force-delete-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
   <div class="bg-surface rounded-lg border border-token-border shadow-xl w-full max-w-md mx-4 p-6">
@@ -322,6 +334,8 @@
 
 <script>
 var _allAssets = [];
+var _poolPage = 1;
+var _POOL_PAGE_SIZE = 50;
 var _editingId = null;
 var _forceDeleteId = null;
 var _revokeId = null;
@@ -386,21 +400,49 @@ async function loadAssets() {
 }
 
 // ── Render ────────────────────────────────────────────────────────
-function applyFilters() { loadAssets(); }
+function applyFilters() { _poolPage = 1; loadAssets(); }
 
 function renderTable() {
   var statusFilter = document.getElementById('filter-status').value;
   var filtered = _allAssets.filter(function(a) {
     return !statusFilter || a.status === statusFilter;
   });
-  document.getElementById('count-label').textContent = filtered.length + ' entries';
+  var total = filtered.length;
+  document.getElementById('count-label').textContent = total + ' entries';
   var tbody = document.getElementById('pool-tbody');
-  if (!filtered.length) {
+  if (!total) {
     tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-10 text-center text-muted/70 text-sm">No assets found.</td></tr>';
+    renderPagination(0, 1, 0);
     return;
   }
+  // Client-side pagination: slice the filtered list to the current page.
+  var pageCount = Math.ceil(total / _POOL_PAGE_SIZE);
+  if (_poolPage > pageCount) _poolPage = pageCount;
+  if (_poolPage < 1) _poolPage = 1;
+  var start = (_poolPage - 1) * _POOL_PAGE_SIZE;
+  var pageRows = filtered.slice(start, start + _POOL_PAGE_SIZE);
   tbody.innerHTML = '';
-  filtered.forEach(function(a) { tbody.appendChild(buildRow(a)); });
+  pageRows.forEach(function(a) { tbody.appendChild(buildRow(a)); });
+  renderPagination(total, _poolPage, pageCount);
+}
+
+function renderPagination(total, page, pageCount) {
+  var bar = document.getElementById('pool-pagination');
+  if (pageCount <= 1) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  var start = (page - 1) * _POOL_PAGE_SIZE + 1;
+  var end = Math.min(page * _POOL_PAGE_SIZE, total);
+  document.getElementById('pool-page-info').textContent = 'Showing ' + start + '–' + end + ' of ' + total;
+  document.getElementById('pool-page-label').textContent = 'Page ' + page + ' / ' + pageCount;
+  document.getElementById('pool-prev').disabled = page <= 1;
+  document.getElementById('pool-next').disabled = page >= pageCount;
+}
+
+function poolPrevPage() {
+  if (_poolPage > 1) { _poolPage--; renderTable(); window.scrollTo({top: 0, behavior: 'smooth'}); }
+}
+function poolNextPage() {
+  _poolPage++; renderTable(); window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
 function _statusBadge(status) {
