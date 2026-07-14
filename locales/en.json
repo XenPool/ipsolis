@@ -6,7 +6,8 @@
       "my_approvals": "My Approvals",
       "delegations": "Delegations",
       "certifications": "Access Reviews",
-      "request_access": "Request Access"
+      "request_access": "Request Access",
+      "aria_label": "Main navigation"
     },
     "user": {
       "sign_out": "Sign out"
@@ -247,6 +248,10 @@
       "deprovision_heading": "Deprovision",
       "deprovision_hint": "Ends access and returns the asset to the pool. This action cannot be undone.",
       "deprovision_button": "Deprovision now"
+    },
+    "a11y": {
+      "skip_to_content": "Skip to main content",
+      "sidebar": "Sidebar"
     }
   }
 }

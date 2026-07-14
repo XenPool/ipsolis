@@ -6,7 +6,8 @@
       "my_approvals": "Meine Freigaben",
       "delegations": "Vertretungen",
       "certifications": "Zugriffsprüfungen",
-      "request_access": "Zugang anfordern"
+      "request_access": "Zugang anfordern",
+      "aria_label": "Hauptnavigation"
     },
     "user": {
       "sign_out": "Abmelden"
@@ -247,6 +248,10 @@
       "deprovision_heading": "Deprovisionieren",
       "deprovision_hint": "Beendet den Zugang und gibt das Asset zurück an den Pool. Diese Aktion kann nicht rückgängig gemacht werden.",
       "deprovision_button": "Jetzt deprovisionieren"
+    },
+    "a11y": {
+      "skip_to_content": "Zum Hauptinhalt springen",
+      "sidebar": "Seitenleiste"
     }
   }
 }

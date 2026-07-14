@@ -6,7 +6,8 @@
       "my_approvals": "Mes approbations",
       "delegations": "Délégations",
       "certifications": "Revues d'accès",
-      "request_access": "Demander l'accès"
+      "request_access": "Demander l'accès",
+      "aria_label": "Navigation principale"
     },
     "user": {
       "sign_out": "Déconnexion"
@@ -247,6 +248,10 @@
       "deprovision_heading": "Désapprovisionner",
       "deprovision_hint": "Met fin à l'accès et retourne l'actif au pool. Cette action est irréversible.",
       "deprovision_button": "Désapprovisionner maintenant"
+    },
+    "a11y": {
+      "skip_to_content": "Aller au contenu principal",
+      "sidebar": "Barre latérale"
     }
   }
 }

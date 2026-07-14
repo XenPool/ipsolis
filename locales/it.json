@@ -6,7 +6,8 @@
       "my_approvals": "Le mie approvazioni",
       "delegations": "Deleghe",
       "certifications": "Revisioni di accesso",
-      "request_access": "Richiedi accesso"
+      "request_access": "Richiedi accesso",
+      "aria_label": "Navigazione principale"
     },
     "user": {
       "sign_out": "Esci"
@@ -247,6 +248,10 @@
       "deprovision_heading": "Deprovisiona",
       "deprovision_hint": "Termina l'accesso e restituisce l'asset al pool. L'operazione non può essere annullata.",
       "deprovision_button": "Deprovisiona ora"
+    },
+    "a11y": {
+      "skip_to_content": "Vai al contenuto principale",
+      "sidebar": "Barra laterale"
     }
   }
 }
