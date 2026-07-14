@@ -29,6 +29,20 @@ ever makes a uniform header worthwhile.
 
 ### [open] SCIM provisioning (joiner/mover/leaver → asset lifecycle)
 
+> **Progress 2026-07-14 (slice 1 shipped — joiner + identity projection):** the joiner half is done.
+> New `ScimIdentity` last-seen projection ([model](api/app/models/scim_identity.py),
+> [migration 0009](api/alembic/versions/0009_scim_identity_projection.py)) — the persistent
+> user/attribute store mover diffing needs (ip·Solis has none otherwise). SCIM `POST /Users`
+> (and `PUT` reactivation) now upsert the projection and, when **`scim.joiner_enabled`** is on
+> (opt-in, Settings → Compliance), map the SCIM payload (core + enterprise extension: department /
+> costCenter / employeeNumber / organization / title) to the rule-eval attribute dict, evaluate
+> assignment rules, and order the matched bundles via the shared bundle-order service (origin `scim`,
+> idempotent). Leaver stays as-is. **Verified**: attr extraction, projection upsert (is_new /
+> reactivated), joiner eval→order (Engineering match → group `origin=scim`), re-run idempotency.
+> **Deferred to slice 2 (the risky part):** **mover reconciliation** — on a diffed attribute change,
+> re-run rules, diff the target set against the user's active orders, create newly-entitled + **revoke
+> lost** entitlements. Also deferred: full SCIM filter grammar, `/Groups` shim, bulk ops.
+
 Extend SCIM 2.0 beyond the current **leaver-focused** subset (already shipped) to full
 **joiner/mover/leaver** provisioning that drives the asset lifecycle — a drop-in target for
 Okta / SailPoint / Ping provisioning workflows. Higher strategic value than SAML. Split out of

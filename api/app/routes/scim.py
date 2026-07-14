@@ -48,10 +48,19 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import text
+
 from app.database import get_db
 from app.models.order import Order
 from app.utils.api_tokens import token_has_scope, verify_raw_token, mark_used
 from app.utils.leaver import process_leaver
+
+
+async def _joiner_enabled(db: AsyncSession) -> bool:
+    row = (await db.execute(
+        text("SELECT value FROM app_config WHERE key = 'scim.joiner_enabled'")
+    )).first()
+    return bool(row) and (row[0] or "").strip().lower() in ("1", "true", "yes", "on")
 
 logger = logging.getLogger(__name__)
 
@@ -334,27 +343,33 @@ async def create_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Acknowledge a SCIM Create — no-op storage, returns the resource.
+    """SCIM Create → joiner.
 
-    ip·Solis users live in Entra ID / AD; SCIM Create from Okta is
-    accepted to keep IDP integrations clean (Okta marks the user as
-    "provisioned in ipSolis"), but we don't actually create anything.
-    The user becomes real in ip·Solis when they make their first order.
+    Persists the identity projection and, when ``scim.joiner_enabled`` is on,
+    evaluates assignment rules for the user's attributes and orders the matched
+    bundles (idempotent — asset types the user already holds are skipped).
+    Opt-in and gated: with the flag off this is the previous accept-only no-op,
+    so existing IdP integrations are unaffected.
     """
-    await _scim_auth(request, db, write=True)
+    actor = await _scim_auth(request, db, write=True)
     try:
         payload = await request.json()
     except Exception:
         return _scim_error(400, "Body must be valid JSON")
 
-    email = (
-        payload.get("userName")
-        or _first_email(payload.get("emails"))
-    )
-    if not email:
+    from app.services.scim_provisioning import extract_scim_attrs, run_joiner, upsert_identity
+    ext = extract_scim_attrs(payload)
+    if not ext["email"]:
         return _scim_error(400, "userName or emails[].value required", scim_type="invalidValue")
 
-    return _user_resource(email.strip().lower(), payload.get("displayName"))
+    ident, is_new, reactivated = await upsert_identity(db, ext, raw=payload)
+    if ext["active"] and (is_new or reactivated) and await _joiner_enabled(db):
+        await run_joiner(
+            db, email=ext["email"], display_name=ext["display_name"],
+            attributes=ext["attributes"], actor=f"api:scim ({actor})",
+        )
+    await db.commit()
+    return _user_resource(ext["email"], ext["display_name"])
 
 
 @router.put("/Users/{user_id}")
@@ -375,10 +390,28 @@ async def replace_user(
     except Exception:
         return _scim_error(400, "Body must be valid JSON")
 
-    email_l = (user_id or "").strip().lower()
+    from app.services.scim_provisioning import extract_scim_attrs, run_joiner, upsert_identity
+    ext = extract_scim_attrs(payload)
+    if not ext["email"]:
+        ext["email"] = (user_id or "").strip().lower()
+    email_l = ext["email"]
+
     active = payload.get("active", True)
     if active is False:
+        # Mark the projection inactive + run the leaver flow.
+        ident, _is_new, _react = await upsert_identity(db, ext, raw=payload)
+        await db.commit()
         await _maybe_run_leaver(db, email=email_l, actor=actor, raw=payload)
+        return _user_resource(email_l, payload.get("displayName"))
+
+    # Active replace — upsert projection; run joiner on a reactivation.
+    ident, is_new, reactivated = await upsert_identity(db, ext, raw=payload)
+    if (is_new or reactivated) and await _joiner_enabled(db):
+        await run_joiner(
+            db, email=email_l, display_name=ext["display_name"],
+            attributes=ext["attributes"], actor=f"api:scim ({actor})",
+        )
+    await db.commit()
     return _user_resource(email_l, payload.get("displayName"))
 
 

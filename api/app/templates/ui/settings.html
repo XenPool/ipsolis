@@ -1408,6 +1408,30 @@
     </div>
   </div>
 
+  <!-- SCIM joiner provisioning -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
+    <h2 class="text-sm font-semibold text-body mb-1">SCIM — Joiner Provisioning</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      When on, a SCIM <strong>Create</strong> (a new joiner from Okta / SailPoint / Ping) evaluates your
+      <a href="/ui/onboarding" class="text-blue-600 hover:underline">assignment rules</a> against the user's
+      attributes (department, cost center, title, …) and orders the matched
+      <a href="/ui/onboarding" class="text-blue-600 hover:underline">bundles</a> automatically — going through
+      the normal approval path. Idempotent (asset types the user already holds are skipped). Leaver
+      (deactivation) already works regardless of this switch. Mover reconciliation is a separate step.
+    </p>
+    <label class="flex items-center gap-2 text-sm cursor-pointer">
+      <input type="checkbox" id="scim-joiner-enabled" class="rounded border-token-border"
+             {% if scim_config.get('scim.joiner_enabled', 'false') in ['true','1','yes','on'] %}checked{% endif %}>
+      <span class="text-body">Auto-provision bundles on SCIM joiner (Create)</span>
+    </label>
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveScimConfig()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save Settings
+      </button>
+    </div>
+  </div>
+
   <!-- OpenTelemetry tracing -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
     <h2 class="text-sm font-semibold text-body mb-1">OpenTelemetry Tracing</h2>
@@ -3512,6 +3536,17 @@ async function saveAttestationConfig() {
   showEmailBanner(errors.length === 0
     ? {ok: true,  message: 'Attestation settings saved.'}
     : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
+}
+
+// ── SCIM Settings ────────────────────────────────────────────────────────────────
+async function saveScimConfig() {
+  var resp = await fetch('/admin/config/scim.joiner_enabled', {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({value: document.getElementById('scim-joiner-enabled').checked ? 'true' : 'false'}),
+  });
+  showEmailBanner(resp.ok
+    ? {ok: true, message: 'SCIM settings saved.'}
+    : {ok: false, message: 'Failed to save SCIM settings.'});
 }
 
 function showEmailBanner(data) {

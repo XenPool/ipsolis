@@ -21,6 +21,7 @@ from .global_var import GlobalVar
 from .hr_leaver_event import HrLeaverEvent
 from .ps_module import PsModule
 from .runbook import RunbookDefinition, RunbookStep
+from .scim_identity import ScimIdentity
 from .script_module import ScriptModule
 from .software_contract import SoftwareContract
 from .standalone_runbook import (
@@ -58,6 +59,7 @@ __all__ = [
     "PsModule",
     "RunbookDefinition",
     "RunbookStep",
+    "ScimIdentity",
     "ScriptModule",
     "SoftwareContract",
     "StandaloneRunbook",

@@ -1164,6 +1164,12 @@ async def settings_page(
     )
     attestation_config = {r.key: (r.value or "") for r in attestation_result.scalars().all()}
 
+    # Load scim.* config keys
+    scim_result = await db.execute(
+        select(AppConfig).where(AppConfig.key.like("scim.%")).order_by(AppConfig.key)
+    )
+    scim_config = {r.key: (r.value or "") for r in scim_result.scalars().all()}
+
     # Load siem.* config keys
     siem_result = await db.execute(
         select(AppConfig).where(AppConfig.key.like("siem.%")).order_by(AppConfig.key)
@@ -1256,6 +1262,7 @@ async def settings_page(
          "teams_config": teams_config,
          "slack_config": slack_config,
          "attestation_config": attestation_config,
+         "scim_config": scim_config,
          "siem_config": siem_config,
          "approval_config": approval_config,
          "otel_config": otel_config,

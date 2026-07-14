@@ -22,7 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 # Real sources of a multi-item request.
-ORIGINS = ("portal", "servicenow", "api", "rule_based", "bundle_catalog")
+ORIGINS = ("portal", "servicenow", "api", "rule_based", "bundle_catalog", "scim")
 
 
 class OrderGroup(Base):
