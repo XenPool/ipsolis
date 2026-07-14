@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+
+{% block title %}Access Report – {{ app_title }}{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-start justify-between gap-4">
+  <div>
+    <h1 class="text-lg font-semibold text-heading">Access Report</h1>
+    <p class="text-xs text-muted/70 mt-1 max-w-2xl">
+      Point-in-time reconstruction of <strong>who had access to what</strong>, replayed from the
+      immutable change log (<code class="font-mono bg-surface-raised px-1 rounded">order_change_log</code>).
+      Pick a date under <strong>As of</strong> to see the access set as it stood at the end of that
+      day (UTC); leave it blank for the live "as of now" set. Each row is a granted access
+      (principal&nbsp;&rarr;&nbsp;target) whose latest successful change-log event is still a
+      <em>grant</em>. Reads from the audit trail, never re-queries AD, so it answers historical
+      dates directly.
+    </p>
+  </div>
+  <button id="csv-btn" onclick="downloadCsv()"
+     class="px-4 py-2 bg-surface-raised text-body text-sm font-medium rounded hover:bg-surface border border-token-border whitespace-nowrap">
+    Download CSV (per-grant detail)
+  </button>
+</div>
+
+<!-- Controls: as_of date + principal filter -->
+<div class="mb-4 flex flex-wrap items-end gap-4 border-b border-token-border pb-4">
+  <div>
+    <label class="block text-[11px] font-medium text-muted mb-0.5">As of</label>
+    <input id="as-of" type="date" onchange="onAsOfChange()"
+           class="rounded border border-token-border bg-surface text-body text-sm px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+           title="Reconstruct access as it stood at the end of this day (UTC). Blank = live.">
+    <button id="as-of-clear" type="button" onclick="clearAsOf()"
+            class="hidden ml-1 text-[11px] text-blue-600 hover:underline align-middle">Now</button>
+  </div>
+  <div>
+    <label class="block text-[11px] font-medium text-muted mb-0.5">Principal contains</label>
+    <input id="principal" type="text" maxlength="255" placeholder="email or sAMAccountName"
+           onchange="onPrincipalChange()"
+           class="rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1 w-64 focus:outline-none focus:ring-1 focus:ring-blue-500">
+  </div>
+</div>
+
+<div id="meta-banner" class="hidden mb-4 px-3 py-1.5 rounded bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 text-xs text-blue-800 dark:text-blue-200"></div>
+
+<!-- Summary cards -->
+<div id="summary-card" class="hidden mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
+
+<!-- Aggregations -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+  <div class="bg-surface rounded-lg border border-token-border overflow-hidden">
+    <div class="px-4 py-2 border-b border-token-border bg-surface-raised">
+      <h2 class="text-sm font-semibold text-heading">By asset definition</h2>
+    </div>
+    <table class="min-w-full divide-y divide-token-border text-sm">
+      <thead class="bg-surface">
+        <tr>
+          <th class="px-4 py-2 text-left text-xs font-medium text-muted uppercase tracking-wide">Asset definition</th>
+          <th class="px-4 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Principals</th>
+          <th class="px-4 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Grants</th>
+        </tr>
+      </thead>
+      <tbody id="by-asset-body" class="divide-y divide-token-border">
+        <tr><td colspan="3" class="px-4 py-6 text-center text-muted/70 text-sm">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="bg-surface rounded-lg border border-token-border overflow-hidden">
+    <div class="px-4 py-2 border-b border-token-border bg-surface-raised">
+      <h2 class="text-sm font-semibold text-heading">By target type</h2>
+    </div>
+    <table class="min-w-full divide-y divide-token-border text-sm">
+      <thead class="bg-surface">
+        <tr>
+          <th class="px-4 py-2 text-left text-xs font-medium text-muted uppercase tracking-wide">Target type</th>
+          <th class="px-4 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Principals</th>
+          <th class="px-4 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Grants</th>
+        </tr>
+      </thead>
+      <tbody id="by-target-body" class="divide-y divide-token-border">
+        <tr><td colspan="3" class="px-4 py-6 text-center text-muted/70 text-sm">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Detail table -->
+<div class="bg-surface rounded-lg border border-token-border overflow-hidden">
+  <div class="px-4 py-2 border-b border-token-border bg-surface-raised">
+    <h2 class="text-sm font-semibold text-heading">Access detail</h2>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-token-border text-sm">
+      <thead class="bg-surface-raised">
+        <tr>
+          <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Principal</th>
+          <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Target type</th>
+          <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Identifier</th>
+          <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Asset definition</th>
+          <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Order</th>
+          <th class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wide">Granted at</th>
+        </tr>
+      </thead>
+      <tbody id="rows-body" class="divide-y divide-token-border">
+        <tr><td colspan="6" class="px-4 py-8 text-center text-muted/70 text-sm">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, function(c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+  });
+}
+function fmtTs(iso) {
+  if (!iso) return '—';
+  try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
+}
+
+var _asOf = '';        // YYYY-MM-DD or '' for live
+var _principal = '';   // substring filter or ''
+
+function _params() {
+  var p = new URLSearchParams({fmt: 'json'});
+  if (_asOf) p.set('as_of', _asOf);
+  if (_principal) p.set('principal', _principal);
+  return p;
+}
+
+async function loadReport() {
+  var resp = await fetch('/admin/access-report?' + _params().toString());
+  if (!resp.ok) {
+    document.getElementById('rows-body').innerHTML =
+      '<tr><td colspan="6" class="px-4 py-8 text-center text-red-600 text-sm">Failed to load report (HTTP ' + resp.status + ').</td></tr>';
+    return;
+  }
+  var data = await resp.json();
+  renderMeta(data.meta || {});
+  renderSummary(data.summary || {}, data.meta || {});
+  renderByAsset((data.summary || {}).by_asset_type || []);
+  renderByTarget((data.summary || {}).by_target_type || []);
+  renderRows(data.rows || []);
+}
+
+function renderMeta(meta) {
+  var el = document.getElementById('meta-banner');
+  if (meta.live) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.innerHTML = 'Showing access as of the end of <strong>' + escapeHtml(meta.as_of) + '</strong> (UTC). '
+    + 'This is a historical reconstruction from the change log.';
+  el.classList.remove('hidden');
+}
+
+function renderSummary(summary, meta) {
+  var card = document.getElementById('summary-card');
+  var asOfLabel = meta.live ? 'now (live)' : escapeHtml(meta.as_of);
+  var cards = [
+    {label: 'Distinct principals', value: summary.distinct_principals || 0},
+    {label: 'Active grants', value: summary.total_grants || 0},
+    {label: 'As of', value: asOfLabel},
+  ];
+  card.innerHTML = cards.map(function(c) {
+    return '<div class="bg-surface rounded-lg border border-token-border p-4">'
+      + '<div class="text-[11px] uppercase tracking-wider text-muted/60">' + c.label + '</div>'
+      + '<div class="mt-1 text-lg font-semibold text-heading">' + c.value + '</div>'
+      + '</div>';
+  }).join('');
+  card.classList.remove('hidden');
+}
+
+function renderByAsset(rows) {
+  var body = document.getElementById('by-asset-body');
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="3" class="px-4 py-6 text-center text-muted/70 text-sm">No access grants.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(function(r) {
+    var name = r.asset_type_id
+      ? '<a href="/ui/asset-types/' + r.asset_type_id + '/edit" class="text-blue-600 hover:underline">' + escapeHtml(r.asset_type_name) + '</a>'
+      : escapeHtml(r.asset_type_name);
+    return '<tr>'
+      + '<td class="px-4 py-2 text-xs text-heading">' + name + '</td>'
+      + '<td class="px-4 py-2 text-right text-xs tabular-nums">' + r.principals + '</td>'
+      + '<td class="px-4 py-2 text-right text-xs tabular-nums">' + r.grants + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function renderByTarget(rows) {
+  var body = document.getElementById('by-target-body');
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="3" class="px-4 py-6 text-center text-muted/70 text-sm">No access grants.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(function(r) {
+    return '<tr>'
+      + '<td class="px-4 py-2 text-xs font-mono text-heading">' + escapeHtml(r.target_type) + '</td>'
+      + '<td class="px-4 py-2 text-right text-xs tabular-nums">' + r.principals + '</td>'
+      + '<td class="px-4 py-2 text-right text-xs tabular-nums">' + r.grants + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function renderRows(rows) {
+  var body = document.getElementById('rows-body');
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="6" class="px-4 py-12 text-center text-muted/70 text-sm">No matching access grants for this date / filter.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(function(r) {
+    var order = r.order_id
+      ? '<a href="/ui/orders/' + r.order_id + '" class="text-blue-600 hover:underline">#' + r.order_id + '</a>'
+      : '<span class="text-muted/50">—</span>';
+    var asset = r.asset_type_id
+      ? '<a href="/ui/asset-types/' + r.asset_type_id + '/edit" class="text-blue-600 hover:underline">' + escapeHtml(r.asset_type_name) + '</a>'
+      : escapeHtml(r.asset_type_name);
+    return '<tr>'
+      + '<td class="px-4 py-3 text-xs font-medium text-heading whitespace-nowrap">' + escapeHtml(r.principal) + '</td>'
+      + '<td class="px-4 py-3 text-xs font-mono text-muted whitespace-nowrap">' + escapeHtml(r.target_type) + '</td>'
+      + '<td class="px-4 py-3 text-xs text-body break-all">' + escapeHtml(r.identifier) + '</td>'
+      + '<td class="px-4 py-3 text-xs">' + asset + '</td>'
+      + '<td class="px-4 py-3 text-xs whitespace-nowrap">' + order + '</td>'
+      + '<td class="px-4 py-3 text-xs text-muted whitespace-nowrap">' + fmtTs(r.granted_at) + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+function onAsOfChange() {
+  var v = document.getElementById('as-of').value;
+  _asOf = v || '';
+  document.getElementById('as-of-clear').classList.toggle('hidden', !v);
+  loadReport();
+}
+function clearAsOf() {
+  _asOf = '';
+  document.getElementById('as-of').value = '';
+  document.getElementById('as-of-clear').classList.add('hidden');
+  loadReport();
+}
+function onPrincipalChange() {
+  _principal = document.getElementById('principal').value.trim();
+  loadReport();
+}
+function downloadCsv() {
+  var p = _params();
+  p.set('fmt', 'csv');
+  window.location = '/admin/access-report?' + p.toString();
+}
+
+document.addEventListener('DOMContentLoaded', loadReport);
+</script>
+{% endblock %}

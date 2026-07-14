@@ -108,29 +108,6 @@ reclamation (needs a usage signal ipSolis does not collect).
 
 ---
 
-### [open] Point-in-time access report (historical reconstruction)
-
-"Who has access to X **today**?" already exists (order lists, asset-pool, cost report). "Who **had**
-access on date Y?" does not — the audit-log route only filters a flat event stream by timestamp, it
-never folds grant/revoke events into an access set as of a date. The historical part is the
-audit-bearing one.
-
-**Scope:**
-- As-of access query that replays grant/revoke events up to a date from
-  [`order_change_log`](api/app/models/change_log.py) (immutable grant|revoke with
-  `principal`/`executed_at`/`state`) + `audit_log`.
-- Reuse the cost-report snapshot UI/API pattern (daily Beat + `?as_of=` date picker,
-  [`admin_cost_report.py`](api/app/routes/admin_cost_report.py)) as the template.
-- No new data model — a query over existing logs.
-
-**Follow-up:** every new UI string in all 5 locale files
-([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
-[`es`](locales/es.json) / [`it`](locales/it.json)).
-
-**Out of scope:** a new access-history data model (reconstruct from existing logs instead).
-
----
-
 ### [open] Manager order-on-behalf (team ordering)
 
 Ordering an asset whose end-user differs from the requester already works (owner ≠ requester:
@@ -485,6 +462,7 @@ All items below are shipped. Detailed implementation notes live in git history.
 
 | Area | Shipped | Notes |
 |------|---------|-------|
+| Point-in-time access report | 2026-07-14 | New [`admin_access_report.py`](api/app/routes/admin_access_report.py) `GET /admin/access-report` (auditor floor, `orders:read`): reconstructs the active access set **as of any past date** by replaying `order_change_log` — `DISTINCT ON (principal,target_type,identifier)` latest **successful** event, keep those whose latest is a `grant`; `?as_of=YYYY-MM-DD` (end-of-day UTC, live if omitted), `principal`/`asset_type_id` filters, JSON + CSV. UI page [`access_report.html`](api/app/templates/ui/access_report.html) + [`/ui/access-report`](api/app/routes/ui.py) + nav (mirrors the cost-report `?as_of=` pattern). **No new data model** — query over existing logs. Verified end-to-end on the compose stack incl. before/after-grant-date differential (0→1). **i18n N/A** — the admin UI is hardcoded English (`locales/*.json` are portal-only) |
 | DR runbook (backup/restore) | 2026-07-14 | Bilingual [`docs/DR-RUNBOOK.md`](docs/DR-RUNBOOK.md) / [`.de.md`](docs/DR-RUNBOOK.de.md): fresh-host recovery (host → DB-only up → clean DB → `gunzip -c \| psql` → `alembic upgrade head`), what the pg_dump does/doesn't contain (plaintext `app_config` creds **are** in it; `API_SECRET_KEY`/externalized `vault://` secrets are **not**), `api_tokens` rotation, tick-off verification (email/AD/approval-link), externalized-secret case, rollback via pre-restore safety backup. Fixed docs drift in [`INSTALL.md`](docs/onboarding/INSTALL.md) (removed non-existent `from app.tasks import backup_database`, added restore pointers). Doc-only by design — **no automated restore test** (audit A4) |
 | CI test gate + Playwright E2E | 2026-07-13 | New [`ci.yml`](.github/workflows/ci.yml) on push/PR to `dev` — three jobs: **ruff** (critical errors `E9,F63,F7,F82`), **unit** (`api/tests` on the runner in conftest's local mode — pure/mocked, imports `app.*`+`tasks.*`), **e2e** (headless Playwright vs. the `docker compose` stack). Host-side smoke suite in [`tests/e2e/`](tests/e2e/): health, admin login (+ negative), core-page nav, asset-type form, portal reachability; login handles both first-run setup and legacy `ADMIN_API_KEY`. Closes the "no test/lint gate before prelive" gap. **Deferred:** broaden ruff rules over time; deeper journeys (order-create needs real backends → intentionally out) |
 | Provider-agnostic SSO (generic OIDC) | 2026-06-20 | Any compliant IdP via discovery doc (Entra, Okta, Ping, Google, Keycloak…); provider registry `idp.<id>.*`, parametric callback `/portal/auth/{id}/callback`, login picker, RP-initiated logout; retired `entra.py`/MSAL path; on-prem LDAP alongside. **Deferred:** SAML 2.0 + Okta OIN listing; SCIM provisioning is its own open task |

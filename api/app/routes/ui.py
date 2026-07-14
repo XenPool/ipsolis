@@ -1279,6 +1279,15 @@ async def cost_report_page(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/access-report", response_class=HTMLResponse)
+async def access_report_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ui/access_report.html",
+        {"active_page": "access-report"},
+    )
+
+
 @router.get("/audit-log", response_class=HTMLResponse)
 async def audit_log_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
