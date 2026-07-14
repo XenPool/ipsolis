@@ -170,6 +170,8 @@
       "deputy_toggle": "+ Indica titolare (facoltativo)",
       "deputy_label": "Titolare",
       "deputy_hint": "sAMAccountName o email · deve essere un utente di dominio valido",
+      "team_label": "Il tuo team",
+      "team_hint": "— scegli un collaboratore o digita sotto",
       "user_placeholder": "m.rossi o m.rossi@azienda.it",
       "rdp_hint": "Utenti con accesso Desktop remoto (sAMAccountName o email)",
       "admin_hint": "Utenti con diritti di amministratore locale sulla VM",

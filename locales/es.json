@@ -170,6 +170,8 @@
       "deputy_toggle": "+ Indicar titular (opcional)",
       "deputy_label": "Titular",
       "deputy_hint": "sAMAccountName o correo · debe ser un usuario de dominio válido",
+      "team_label": "Tu equipo",
+      "team_hint": "— elige a alguien de tu equipo o escribe abajo",
       "user_placeholder": "j.perez o j.perez@empresa.es",
       "rdp_hint": "Usuarios con acceso a Escritorio remoto (sAMAccountName o correo)",
       "admin_hint": "Usuarios con acceso de administrador local en la VM",

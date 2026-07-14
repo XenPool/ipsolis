@@ -366,6 +366,29 @@ async def portal_new_order_form(
     })
 
 
+@router.get("/my-team")
+async def portal_my_team(
+    request: Request,
+    current_user: dict = Depends(require_portal_auth),
+) -> dict:
+    """Return the logged-in user's AD direct reports for the "order for a team
+    member" picker.
+
+    Best-effort: returns an empty list (never an error) when AD isn't
+    configured, the lookup fails, or the user has no reports — the order form
+    then degrades gracefully to the free-text owner field.
+    """
+    from app.utils.ad_lookup import lookup_direct_reports
+    email = (current_user or {}).get("email") or ""
+    if not email:
+        return {"success": True, "reports": []}
+    result = lookup_direct_reports(email)
+    if not result.get("success"):
+        logger.info("Portal my-team: AD lookup for %s degraded: %s", email, result.get("error"))
+        return {"success": True, "reports": []}
+    return {"success": True, "reports": result.get("reports", [])}
+
+
 def _validate_order_attrs(
     form_data,
     attr_defs: list[dict],

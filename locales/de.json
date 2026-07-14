@@ -170,6 +170,8 @@
       "deputy_toggle": "+ Besitzende angeben (optional)",
       "deputy_label": "Besitzende",
       "deputy_hint": "sAMAccountName oder E-Mail · muss ein gültiger Domänen-User sein",
+      "team_label": "Ihr Team",
+      "team_hint": "— Mitarbeitende wählen oder unten beliebig eingeben",
       "user_placeholder": "m.mustermann oder m.mustermann@firma.de",
       "rdp_hint": "Benutzer mit Remote-Desktop-Zugriff (sAMAccountName oder E-Mail)",
       "admin_hint": "Benutzer mit lokalen Administrator-Rechten auf der VM",

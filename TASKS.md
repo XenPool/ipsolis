@@ -98,6 +98,19 @@ re-routes *approval decisions*).
 - No new data model — a directReports lookup + server-side manager-verify on top of the existing
   owner/`is_deputy` machinery.
 
+**Progress — Part 1 shipped (2026-07-14):** the team picker + AD plumbing.
+[`lookup_direct_reports`](api/app/utils/ad_lookup.py) (reverse `manager` lookup) +
+[`is_owner_managed_by`](api/app/utils/ad_lookup.py) verify helper; portal `GET /portal/my-team`
+([`portal.py`](api/app/routes/portal.py)); a team-picker in the order form
+([`order_new.html`](api/app/templates/portal/order_new.html)) that quick-selects the requester's
+direct reports (any valid user still typeable), degrades gracefully when AD has none; i18n in all 5
+locales. **Verified against the real test AD** (winsrv1.xenpool.local): `lookup_direct_reports` and
+`is_owner_managed_by` return the correct manager→report relationship.
+**Part 2 remaining (delicate):** the manager-approval short-circuit — auto-satisfy the manager
+approval (via `sod_exempt`) when the requester is the owner's verified AD manager, integrated with
+[`apply_approval_decision`](api/app/utils/approval_decision.py)'s N-of-M/SoD/dispatch machinery so
+the order neither hangs in `pending_approval` nor dispatches without a required approval.
+
 **Follow-up:** every new UI string in all 5 locale files
 ([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
 [`es`](locales/es.json) / [`it`](locales/it.json)).

@@ -170,6 +170,8 @@
       "deputy_toggle": "+ Indiquer un titulaire (facultatif)",
       "deputy_label": "Titulaire",
       "deputy_hint": "sAMAccountName ou e-mail · doit être un utilisateur du domaine valide",
+      "team_label": "Votre équipe",
+      "team_hint": "— choisissez un collaborateur, ou saisissez ci-dessous",
       "user_placeholder": "j.dupont ou j.dupont@entreprise.fr",
       "rdp_hint": "Utilisateurs avec accès Bureau à distance (sAMAccountName ou e-mail)",
       "admin_hint": "Utilisateurs avec droits d'administrateur local sur la VM",
