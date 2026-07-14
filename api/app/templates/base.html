@@ -6,13 +6,24 @@
   <title>{% block title %}{{ app_title }}{% endblock %}</title>
   {% include "_partials/theme_head.html" %}
   <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous"></script>
+  <style>
+    /* Collapsible nav groups (native <details>) — hide the default marker
+       and rotate our own chevron when the group is open. */
+    .navgrp > summary { list-style: none; }
+    .navgrp > summary::-webkit-details-marker { display: none; }
+    .navgrp > summary::marker { content: ""; }
+    .navgrp[open] > summary .navchev { transform: rotate(90deg); }
+    .navchev { transition: transform .15s ease; }
+  </style>
 </head>
 <body class="h-full flex bg-surface-raised font-sans text-body">
 
   <!-- ── Left Sidebar ──────────────────────────────────────────────────────── -->
   {# h-screen (not min-h-screen) caps the sidebar at viewport height so the
      nav can scroll internally instead of pushing the footer below the fold
-     on small monitors / when the nav grows past ~14 entries. #}
+     on small monitors. Since the 2026-07-14 restructure the nav is grouped
+     into collapsible <details> sections, so only the active group is expanded
+     and the internal scrollbar effectively never appears at normal heights. #}
   <aside class="w-56 bg-surface border-r border-token-border flex flex-col flex-shrink-0 h-screen sticky top-0">
 
     <!-- Brand -->
@@ -33,281 +44,170 @@
     </div>
 
     <!-- Navigation -->
-    {# RBAC nav gating: every link below is wrapped in admin_role_at_least()
-       so each role only sees what it can actually reach (or read). The list
-       is ordered so each section moves up the privilege ladder:
-         everyone (helpdesk+) → admin+ → auditor+ → superadmin → personal.
-       Mismatch with the API gate would mean a user sees a link they 403 on,
-       so when changing role mins here, mirror the change on the API route. #}
+    {# RBAC nav gating: every group/link is wrapped in admin_role_at_least()
+       so each role only sees what it can reach. Groups are collapsible
+       <details>; the group containing the active page renders `open`.
+       When changing a role min here, mirror it on the matching API route. #}
     {% set _admin_role = current_admin_role(request) %}
-    {# min-h-0 + overflow-y-auto is the flexbox idiom for "shrink past
-       content height and scroll instead". Without min-h-0 the flex child
-       refuses to shrink below its intrinsic content height. #}
-    <nav class="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-0.5">
-      {# ── Operational visibility — visible to every signed-in admin ──── #}
-      <a href="/ui/"
+    {% macro navlink(href, key, label) %}
+      <a href="{{ href }}"
          class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'dashboard' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
-        </svg>
-        Dashboard
+                {% if active_page == key %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
+        {{ caller() }}
+        <span>{{ label }}</span>
       </a>
-      <a href="/ui/orders"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'orders' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+    {% endmacro %}
+    {% macro grpsummary(label) %}
+      <summary class="flex items-center justify-between px-3 py-1.5 rounded-lg cursor-pointer select-none
+                      text-[11px] font-semibold uppercase tracking-wider text-muted/60 hover:text-muted hover:bg-surface-raised">
+        <span>{{ label }}</span>
+        <svg class="navchev w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
         </svg>
-        Orders
-      </a>
-      <a href="/ui/operations"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'operations' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M13 10V3L4 14h7v7l9-11h-7z"/>
-        </svg>
-        Operations
-      </a>
-      <a href="/ui/asset-types"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'asset-types' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
-        </svg>
-        Asset Definitions
-      </a>
-      <a href="/ui/asset-pool"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'asset-pool' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
-        </svg>
-        Personal Assets
-      </a>
+      </summary>
+    {% endmacro %}
+    <nav class="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-1">
 
-      {# ── Configuration — admin+ ──────────────────────────────────────── #}
+      {# ── Operate — every signed-in admin ─────────────────────────────── #}
+      <details class="navgrp" {% if active_page in ['dashboard', 'orders', 'operations'] %}open{% endif %}>
+        {{ grpsummary('Operate') }}
+        <div class="mt-0.5 space-y-0.5">
+          {% call navlink('/ui/', 'dashboard', 'Dashboard') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+          {% endcall %}
+          {% call navlink('/ui/orders', 'orders', 'Orders') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+          {% endcall %}
+          {% call navlink('/ui/operations', 'operations', 'Operations') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          {% endcall %}
+        </div>
+      </details>
+
+      {# ── Inventory — every signed-in admin ───────────────────────────── #}
+      <details class="navgrp" {% if active_page in ['asset-types', 'asset-pool'] %}open{% endif %}>
+        {{ grpsummary('Inventory') }}
+        <div class="mt-0.5 space-y-0.5">
+          {% call navlink('/ui/asset-types', 'asset-types', 'Asset Definitions') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+          {% endcall %}
+          {% call navlink('/ui/asset-pool', 'asset-pool', 'Personal Assets') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/></svg>
+          {% endcall %}
+        </div>
+      </details>
+
+      {# ── Automation — admin+ ─────────────────────────────────────────── #}
       {% if admin_role_at_least(request, 'admin') %}
-      {% if admin_role_at_least(request, 'superadmin') %}
-      <a href="/ui/setup-wizard"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'setup-wizard' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
-        </svg>
-        Setup Wizard
-      </a>
-      {% endif %}
-      <a href="/ui/modules"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'modules' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
-        </svg>
-        Modules
-      </a>
-      <a href="/ui/ps-modules"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'ps-modules' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-        </svg>
-        PS Modules
-      </a>
-      <a href="/ui/standalone-runbooks"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'standalone-runbooks' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-        </svg>
-        Runbooks
-      </a>
-      <a href="/ui/settings"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'settings' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-        </svg>
-        Settings
-      </a>
-      <a href="/ui/maintenance"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'maintenance' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-        </svg>
-        Maintenance
-      </a>
+      <details class="navgrp" {% if active_page in ['standalone-runbooks', 'modules', 'ps-modules'] %}open{% endif %}>
+        {{ grpsummary('Automation') }}
+        <div class="mt-0.5 space-y-0.5">
+          {% call navlink('/ui/standalone-runbooks', 'standalone-runbooks', 'Runbooks') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          {% endcall %}
+          {% call navlink('/ui/modules', 'modules', 'Modules') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          {% endcall %}
+          {% call navlink('/ui/ps-modules', 'ps-modules', 'PS Modules') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          {% endcall %}
+        </div>
+      </details>
       {% endif %}
 
-      {# ── Authority-level — superadmin only ───────────────────────────── #}
-      {# Audit Log (auditor+) and API Tokens (superadmin) live in the footer
-         section below — see "Footer links + sign out". #}
-      {% if admin_role_at_least(request, 'superadmin') %}
-      <a href="/ui/admin-users"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'admin-users' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-        </svg>
-        Admin Users
-      </a>
+      {# ── Governance — auditor+ (moved out of the footer) ──────────────── #}
+      {% if admin_role_at_least(request, 'auditor') %}
+      <details class="navgrp" {% if active_page in ['access-report', 'cost-report', 'certifications', 'leaver-events', 'audit-log'] %}open{% endif %}>
+        {{ grpsummary('Governance') }}
+        <div class="mt-0.5 space-y-0.5">
+          {% call navlink('/ui/access-report', 'access-report', 'Access Report') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          {% endcall %}
+          {% call navlink('/ui/cost-report', 'cost-report', 'Cost Report') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          {% endcall %}
+          {% if has_certifications %}
+          {% call navlink('/ui/certifications', 'certifications', 'Certifications') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          {% endcall %}
+          {% endif %}
+          {% if has_leaver_events %}
+          {% call navlink('/ui/leaver-events', 'leaver-events', 'Leaver Events') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7H7v6h6V7z M9 1v6m6-6v6M1 9h6m6-6v6M9 13v8m6-8v8m-6-4h6m-6 4h6M1 17h6"/></svg>
+          {% endcall %}
+          {% endif %}
+          {% call navlink('/ui/audit-log', 'audit-log', 'Audit Log') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          {% endcall %}
+        </div>
+      </details>
       {% endif %}
 
-      {# Approval Delegations — admin+ since the API endpoint is the
-         "admin manages delegations on behalf of users" flow, not
-         self-service. Mirrors the gate in admin_approval_delegations.py. #}
+      {# ── Administration — admin+ ─────────────────────────────────────── #}
       {% if admin_role_at_least(request, 'admin') %}
-      <a href="/ui/approval-delegations"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'approval-delegations' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-        </svg>
-        Approval Delegations
-      </a>
+      <details class="navgrp" {% if active_page in ['settings', 'maintenance', 'approval-delegations', 'admin-users', 'api-tokens', 'setup-wizard'] %}open{% endif %}>
+        {{ grpsummary('Administration') }}
+        <div class="mt-0.5 space-y-0.5">
+          {% call navlink('/ui/settings', 'settings', 'Settings') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          {% endcall %}
+          {% call navlink('/ui/maintenance', 'maintenance', 'Maintenance') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+          {% endcall %}
+          {% call navlink('/ui/approval-delegations', 'approval-delegations', 'Approval Delegations') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+          {% endcall %}
+          {% if admin_role_at_least(request, 'superadmin') %}
+          {% call navlink('/ui/admin-users', 'admin-users', 'Admin Users') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+          {% endcall %}
+          {% call navlink('/ui/api-tokens', 'api-tokens', 'API Tokens') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+          {% endcall %}
+          {% call navlink('/ui/setup-wizard', 'setup-wizard', 'Setup Wizard') %}
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+          {% endcall %}
+          {% endif %}
+        </div>
+      </details>
       {% endif %}
 
-      {# ── User portal — opens in a new tab so the admin session stays put ── #}
-      <a href="/portal/" target="_blank" rel="noopener"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:bg-surface-raised hover:text-body transition-colors">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-        </svg>
-        <span class="flex-1">User Portal</span>
-        <svg class="w-3 h-3 flex-shrink-0 text-muted/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
-        </svg>
-      </a>
-
-      {# ── Personal — visible to everyone ──────────────────────────────── #}
-      <a href="/ui/my-account"
-         class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'my-account' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M19.07 4.93A10 10 0 014.93 19.07"/>
-        </svg>
-        My Account
-      </a>
     </nav>
 
     <!-- Footer links + sign out -->
     <div class="px-4 py-3 border-t border-token-border space-y-1 flex-shrink-0">
-      {# ── Oversight / authority — moved here from the main nav ─────────── #}
-      {% if admin_role_at_least(request, 'auditor') %}
-      <a href="/ui/audit-log"
-         class="flex items-center gap-2.5 text-xs {% if active_page == 'audit-log' %}text-blue-700 dark:text-blue-300 font-medium{% else %}text-muted hover:text-body{% endif %}">
+      {# Personal + external utilities. Oversight/report links now live in the
+         Governance nav group above rather than as tiny footer links. #}
+      <a href="/ui/my-account"
+         class="flex items-center gap-2.5 text-xs {% if active_page == 'my-account' %}text-blue-700 dark:text-blue-300 font-medium{% else %}text-muted hover:text-body{% endif %}">
         <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M19.07 4.93A10 10 0 014.93 19.07"/>
         </svg>
-        Audit Log
+        My Account
       </a>
-      {% endif %}
-      {% if admin_role_at_least(request, 'superadmin') %}
-      <a href="/ui/api-tokens"
-         class="flex items-center gap-2.5 text-xs {% if active_page == 'api-tokens' %}text-blue-700 dark:text-blue-300 font-medium{% else %}text-muted hover:text-body{% endif %}">
-        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
-        </svg>
-        API Tokens
-      </a>
-      {% endif %}
-      {% if admin_role_at_least(request, 'auditor') %}
-      <a href="/ui/cost-report" target="_blank"
+      <a href="/portal/" target="_blank" rel="noopener"
          class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
         <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
         </svg>
-        Cost Report
+        User Portal
+        <svg class="w-3 h-3 flex-shrink-0 text-muted/60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
       </a>
-      <a href="/ui/access-report" target="_blank"
-         class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
-        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-        </svg>
-        Access Report
-      </a>
-      {% if has_certifications %}
-      <a href="/ui/certifications" target="_blank"
-         class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
-        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
-        </svg>
-        Certifications
-      </a>
-      {% endif %}
-      {% if has_leaver_events %}
-      <a href="/ui/leaver-events" target="_blank"
-         class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
-        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M13 7H7v6h6V7z M9 1v6m6-6v6M1 9h6m6-6v6M9 13v8m6-8v8m-6-4h6m-6 4h6M1 17h6"/>
-        </svg>
-        Leaver Events
-      </a>
-      {% endif %}
-      {% endif %}
-      <a href="https://www.ipsolis.com/en/docs" target="_blank" rel="noopener"
-         class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
-        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
-        </svg>
-        Documentation
-      </a>
-      <a href="/docs" target="_blank"
-         class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
-        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-        </svg>
-        Swagger UI
-      </a>
-      <a href="http://localhost:5555" target="_blank"
-         class="flex items-center gap-2.5 text-xs text-muted hover:text-body">
-        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-        </svg>
-        Flower
-      </a>
+      <div class="flex items-center gap-3 pt-1 text-[11px] text-muted/70">
+        <a href="https://www.ipsolis.com/en/docs" target="_blank" rel="noopener" class="hover:text-body">Docs ↗</a>
+        <a href="/docs" target="_blank" class="hover:text-body">Swagger ↗</a>
+        <a href="http://localhost:5555" target="_blank" class="hover:text-body">Flower ↗</a>
+      </div>
       <form method="post" action="/ui/logout" class="mt-2">
         <button type="submit"
                 class="flex items-center gap-2.5 text-xs text-muted hover:text-body cursor-pointer">
           <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
           </svg>
           Sign out
         </button>
       </form>
-
-      {# Version only — theme toggle + signed-in user moved to the top-right header.
-         !mt-6 (important) is required: the parent's space-y-1 has higher specificity
-         than a plain mt-* and would otherwise reset this gap to 0.25rem. The extra
-         top margin balances the link group between the top divider and this line. #}
-      <div class="!mt-6 pt-3 border-t border-token-border text-[10px] text-muted/70">v{{ app_version }}</div>
+      <div class="!mt-4 pt-3 border-t border-token-border text-[10px] text-muted/70">v{{ app_version }}</div>
     </div>
 
   </aside>
@@ -315,8 +215,7 @@
   <!-- ── Main content ───────────────────────────────────────────────────────── -->
   <div class="flex-1 overflow-auto">
     {# Top bar — theme toggle + signed-in user, right-aligned. Sticky so it stays
-       visible while content scrolls; moved here from the sidebar to free vertical
-       space so the nav no longer needs an internal scrollbar. #}
+       visible while content scrolls. #}
     <header class="sticky top-0 z-20 flex items-center justify-end gap-4 px-6 sm:px-8 h-11
                    bg-surface-raised/80 backdrop-blur border-b border-token-border">
       {% if request and request.session.get('admin_user') %}
