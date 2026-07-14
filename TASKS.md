@@ -9,61 +9,37 @@ Format: `[open]` / `[done]` / `[blocked]`. Add new tasks at the top of their sec
 > Tasks below down to _Portal accessibility_ were added on 2026-07-14 from the codebase audit
 > ([`AUDIT-FINDINGS.md`](AUDIT-FINDINGS.md)). Rough priority order, highest first.
 
-### [open] Order groups — header/line-item model with header-level approval
+### [descoped] Order groups — header/line-item model with header-level approval
 
-Today one order = one asset = one approval run: [`Order`](api/app/models/order.py) is a flat
-row (`asset_type_id`, `assigned_asset_id`, `config`, `provisioned_state`, `celery_task_id`,
-`requested_from/until`, `OrderStep` children) and [`OrderApproval`](api/app/models/approval.py)
-rows hang directly off it. This blocks any multi-item request (onboarding bundles, later a
-shopping cart). Rather than turn `Order` into a header — which would force touching every
-`orders` consumer ([`AssetPool.current_order_id`](api/app/models/asset.py), the cost report,
-certification campaigns, the leaver flow, the ServiceNow webhook, and the SCIM endpoint's
-`DISTINCT orders.user_email` derivation in [`scim.py`](api/app/routes/scim.py)) — invert the
-model: add a new header entity **`OrderGroup`** on top, with 1..n existing `Order` rows as line
-items. A classic single order becomes the special case "group with exactly one item", and all
-existing FK consumers plus the per-order execution/lifecycle machinery stay untouched.
+**Decision 2026-07-14 (see the Onboarding-bundles entry):** the full core-model inversion
+(new `OrderGroup` header, `Order.order_group_id` **NOT NULL**, backfill every historical order
+into a singleton group, move `OrderApproval` to the header) is **not** being built as a
+standalone task. It only exists to serve onboarding bundles, and the NOT-NULL backfill on the
+busy `orders` table has **zero functional payoff** for single orders (a "group with one item"
+behaves exactly like today) while carrying high blast radius across the approval core, cost
+report, certification, leaver, ServiceNow and SCIM.
 
-**Scope:**
-- New entity `OrderGroup` (table `order_groups`): requester (email/name), recipient/owner,
-  derived status, timestamps, and an `origin` enum covering all real sources —
-  `portal`, `servicenow`, `api`, `rule_based`. [`Order`](api/app/models/order.py) gets an
-  `order_group_id` FK (backfilled, then NOT NULL).
-- Approval moves to the header but stays **item-scoped**: [`OrderApproval`](api/app/models/approval.py)
-  rows attach to the `OrderGroup` and each row records which item(s) it covers. Approval
-  requirements are still computed per item from its [`AssetType`](api/app/models/asset.py)
-  (`requires_manager_approval` / `requires_owner_approval` / `approval_owners` / `approval_rules`
-  / classification routing / `min_approvals_required` N-of-M / SoD — semantics unchanged). An item
-  counts as approved when its own requirements are met; the approver sees **one** approval task
-  per group.
-- The approver can reject individual items with a **mandatory per-item rejection reason**;
-  remaining items proceed. Items keep the existing [`OrderStatus`](api/app/models/order.py)
-  lifecycle (`pending_approval`, `scheduled`, `provisioning`, `provisioned`, `failed`, `revoking`,
-  `revoked`, `expired`, `cancelled`, `rejected`) — **no new item-status enum**.
-- Group status is **derived** from item statuses (e.g. `pending_approval`, `partially_approved`,
-  `in_progress`, `completed`, `rejected`). Decide and document whether it is computed on read or
-  persisted as a cache.
-- Execution stays per item: the worker, `OrderStep` tracking, provisioning, revoke, expiry and
-  reminders are untouched.
-- **No quantity field** — one `Order` row per unit/instance, which keeps `max_per_user` checks and
-  pool-reservation logic intact.
-- Alembic migration that backfills one `OrderGroup` per existing order and re-links its
-  `OrderApproval` rows to the group. Document a rollback consideration (dropping the header while
-  line items survive).
-- Self-service UI stays functionally unchanged here (it creates groups with exactly one item;
-  no cart UI). The approval UI **and** the external e-mail approval flow
-  ([`approvals_external.py`](api/app/routes/approvals_external.py)) must both support per-item
-  decisions.
-
-**Follow-up:** every new UI string in all 5 locale files
-([`en`](locales/en.json) / [`de`](locales/de.json) / [`fr`](locales/fr.json) /
-[`es`](locales/es.json) / [`it`](locales/it.json)).
-
-**Out of scope:** cart UI (future task; conceptually an `OrderGroup` in "draft" status);
-bundles and assignment rules (see the entry below); any SCIM endpoint changes.
+**Instead** grouping is built the lightweight way **inside the Onboarding-bundles task**: an
+*optional* header (**nullable** `order_group_id`) created only for real multi-item requests
+(bundle / future cart). Single orders keep `order_group_id = NULL` and stay untouched; approval
+stays per-`Order` (already item-scoped). Revisit the full inversion only if a pervasive cart UI
+ever makes a uniform header worthwhile.
 
 ---
 
 ### [open] Onboarding bundles and attribute-based assignment rules
+
+> **Progress 2026-07-14 (slice 1 shipped):** foundation + management + rule evaluation are done —
+> `Bundle`/`BundlePosition`/`AssignmentRule` + lightweight nullable `order_groups`/`Order.order_group_id`
+> ([migration 0008](api/alembic/versions/0008_onboarding_bundles.py), models); the pure rule-eval
+> service ([`services/onboarding.py`](api/app/services/onboarding.py), reuses `approval_rules._eval_condition`,
+> idempotency = skip active-held asset types); admin CRUD + evaluate-preview
+> ([`admin_bundles.py`](api/app/routes/admin_bundles.py)); and the **Onboarding** admin page
+> (Bundles / Rules / Evaluate tabs). **Deliberately deferred to slice 2** (the risky part — touches
+> the order/approval path): actual **bundle ordering** (create one `OrderGroup` + N orders via a
+> self-contained service that leaves `portal_create_order` untouched), the **self-service "order
+> package"** catalog entry + i18n×5, and the optional **first-login trigger**. SCIM wiring stays in
+> the separate SCIM task.
 
 Pre-work for the open [SCIM provisioning (joiner/mover/leaver → asset lifecycle)](#open-scim-provisioning-joinermoverleaver--asset-lifecycle)
 task — bundles are the target that SCIM joiner/mover events will trigger — but they must also work

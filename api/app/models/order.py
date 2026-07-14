@@ -81,6 +81,12 @@ class Order(Base):
     # ServiceNow REQ number (servicenow_ref contains the RITM number)
     snow_req: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
 
+    # Optional multi-item header (bundles / future cart). NULL for classic
+    # single orders — they stay untouched. See models/order_group.py.
+    order_group_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("order_groups.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     # Asset type and assigned machine
     asset_type_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("asset_types.id"), nullable=False
@@ -158,6 +164,9 @@ class Order(Base):
     )
     approvals: Mapped[list["OrderApproval"]] = relationship(  # noqa: F821
         "OrderApproval", back_populates="order", cascade="all, delete-orphan"
+    )
+    order_group: Mapped["OrderGroup | None"] = relationship(  # noqa: F821
+        "OrderGroup", back_populates="orders"
     )
 
     def __repr__(self) -> str:

@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+
+{% block title %}Onboarding – {{ app_title }}{% endblock %}
+
+{% block content %}
+<div class="mb-5">
+  <h1 class="text-lg font-semibold text-heading">Onboarding — Bundles &amp; Assignment Rules</h1>
+  <p class="text-xs text-muted/70 mt-1 max-w-3xl">
+    A <strong>bundle</strong> groups existing asset definitions into a package. An <strong>assignment
+    rule</strong> maps a user's attributes (department, cost center, …) to a bundle. Use
+    <strong>Evaluate</strong> to preview which bundles match a user and which items would be ordered
+    (already-held items are skipped). Ordering a matched bundle is triggered from here and the
+    self-service catalog. Bundles reference asset definitions live; nothing new is defined here.
+  </p>
+</div>
+
+<div id="banner" class="hidden mb-4 px-4 py-2 rounded text-sm"></div>
+
+<div class="mb-5 border-b border-token-border">
+  <nav class="flex gap-1 -mb-px">
+    <button onclick="showTab('bundles')" id="tab-btn-bundles" class="ob-tab px-4 py-2 text-sm font-medium border-b-2 border-blue-600 text-blue-700">Bundles</button>
+    <button onclick="showTab('rules')" id="tab-btn-rules" class="ob-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">Assignment Rules</button>
+    <button onclick="showTab('evaluate')" id="tab-btn-evaluate" class="ob-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">Evaluate</button>
+  </nav>
+</div>
+
+<!-- ── Bundles ─────────────────────────────────────────────────────────── -->
+<div id="tab-bundles">
+  <div class="flex justify-end mb-3">
+    <button onclick="openBundle()" class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">+ New bundle</button>
+  </div>
+  <div class="bg-surface rounded-lg border border-token-border overflow-x-auto">
+    <table class="w-full text-sm min-w-[640px]">
+      <thead class="bg-surface-raised text-xs uppercase text-muted">
+        <tr><th class="px-3 py-3 text-left font-medium">Name</th><th class="px-3 py-3 text-left font-medium">Positions</th><th class="px-3 py-3 text-left font-medium">Active</th><th class="px-3 py-3 text-left font-medium">Catalog</th><th class="px-3 py-3 text-right font-medium">Actions</th></tr>
+      </thead>
+      <tbody id="bundles-rows" class="divide-y divide-token-border"><tr><td colspan="5" class="px-4 py-8 text-center text-muted/70">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Rules ───────────────────────────────────────────────────────────── -->
+<div id="tab-rules" class="hidden">
+  <div class="flex justify-end mb-3">
+    <button onclick="openRule()" class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">+ New rule</button>
+  </div>
+  <div class="bg-surface rounded-lg border border-token-border overflow-x-auto">
+    <table class="w-full text-sm min-w-[640px]">
+      <thead class="bg-surface-raised text-xs uppercase text-muted">
+        <tr><th class="px-3 py-3 text-left font-medium">Priority</th><th class="px-3 py-3 text-left font-medium">Name</th><th class="px-3 py-3 text-left font-medium">Bundle</th><th class="px-3 py-3 text-left font-medium">Active</th><th class="px-3 py-3 text-right font-medium">Actions</th></tr>
+      </thead>
+      <tbody id="rules-rows" class="divide-y divide-token-border"><tr><td colspan="5" class="px-4 py-8 text-center text-muted/70">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Evaluate ────────────────────────────────────────────────────────── -->
+<div id="tab-evaluate" class="hidden">
+  <div class="bg-surface rounded-lg border border-token-border p-5 max-w-2xl mb-4">
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs text-muted mb-1">User email (AD-resolved)</label>
+        <input id="ev-email" type="email" placeholder="user@example.com" class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5">
+      </div>
+      <div>
+        <label class="block text-xs text-muted mb-1">Override: department</label>
+        <input id="ev-dept" type="text" placeholder="(optional)" class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5">
+      </div>
+      <div>
+        <label class="block text-xs text-muted mb-1">Override: cost center</label>
+        <input id="ev-cc" type="text" placeholder="(optional)" class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5">
+      </div>
+      <div>
+        <label class="block text-xs text-muted mb-1">Override: title</label>
+        <input id="ev-title" type="text" placeholder="(optional)" class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5">
+      </div>
+    </div>
+    <p class="text-[11px] text-muted/60 mt-2">Overrides win over AD-resolved values. Leave email blank to test purely with overrides.</p>
+    <button onclick="runEvaluate()" class="mt-3 px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">Evaluate</button>
+  </div>
+  <div id="ev-result"></div>
+</div>
+
+<!-- ── Bundle modal ────────────────────────────────────────────────────── -->
+<div id="bundle-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div class="bg-surface rounded-lg border border-token-border w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-token-border">
+      <h2 id="bundle-title" class="text-sm font-semibold text-body">New bundle</h2>
+      <button onclick="closeModal('bundle-modal')" class="text-muted hover:text-body text-xl">&times;</button>
+    </div>
+    <div class="p-5 space-y-4">
+      <input type="hidden" id="b-id">
+      <div><label class="block text-xs text-muted mb-1">Name *</label><input id="b-name" class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5"></div>
+      <div><label class="block text-xs text-muted mb-1">Description</label><input id="b-desc" class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5"></div>
+      <div class="flex gap-6">
+        <label class="flex items-center gap-2 text-sm"><input id="b-active" type="checkbox" checked class="rounded border-token-border"><span>Active</span></label>
+        <label class="flex items-center gap-2 text-sm"><input id="b-catalog" type="checkbox" checked class="rounded border-token-border"><span>Show in self-service catalog</span></label>
+      </div>
+      <div>
+        <div class="flex items-center justify-between mb-1"><label class="block text-xs text-muted">Positions</label><button onclick="addPos()" class="text-xs text-blue-600 hover:underline">+ add</button></div>
+        <div id="b-positions" class="space-y-2"></div>
+      </div>
+      <div id="bundle-err" class="hidden text-sm text-red-600"></div>
+    </div>
+    <div class="flex justify-end gap-2 px-5 py-3 border-t border-token-border">
+      <button onclick="closeModal('bundle-modal')" class="px-3 py-1.5 text-sm rounded border border-token-border text-body hover:bg-surface-raised">Cancel</button>
+      <button onclick="saveBundle()" class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Rule modal ──────────────────────────────────────────────────────── -->
+<div id="rule-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div class="bg-surface rounded-lg border border-token-border w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-token-border">
+      <h2 id="rule-title" class="text-sm font-semibold text-body">New rule</h2>
+      <button onclick="closeModal('rule-modal')" class="text-muted hover:text-body text-xl">&times;</button>
+    </div>
+    <div class="p-5 space-y-4">
+      <input type="hidden" id="r-id">
+      <div class="grid grid-cols-2 gap-4">
+        <div><label class="block text-xs text-muted mb-1">Name *</label><input id="r-name" class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5"></div>
+        <div><label class="block text-xs text-muted mb-1">Target bundle *</label><select id="r-bundle" class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5"></select></div>
+        <div><label class="block text-xs text-muted mb-1">Priority (lower first)</label><input id="r-priority" type="number" value="100" class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5 font-mono"></div>
+        <div class="flex items-end"><label class="flex items-center gap-2 text-sm"><input id="r-active" type="checkbox" checked class="rounded border-token-border"><span>Active</span></label></div>
+      </div>
+      <div>
+        <div class="flex items-center gap-3 mb-1">
+          <label class="block text-xs text-muted">Condition — match</label>
+          <select id="r-match" class="rounded border border-token-border bg-surface text-body text-xs px-2 py-1"><option value="and">ALL of</option><option value="or">ANY of</option></select>
+          <button onclick="addClause()" class="text-xs text-blue-600 hover:underline ml-auto">+ add clause</button>
+        </div>
+        <div id="r-clauses" class="space-y-2"></div>
+        <p class="text-[11px] text-muted/60 mt-1">Fields resolve from AD at evaluation time. Empty condition = always matches.</p>
+      </div>
+      <div id="rule-err" class="hidden text-sm text-red-600"></div>
+    </div>
+    <div class="flex justify-end gap-2 px-5 py-3 border-t border-token-border">
+      <button onclick="closeModal('rule-modal')" class="px-3 py-1.5 text-sm rounded border border-token-border text-body hover:bg-surface-raised">Cancel</button>
+      <button onclick="saveRule()" class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function banner(m,k){var e=document.getElementById('banner');e.className='mb-4 px-4 py-2 rounded text-sm '+(k==='error'?'bg-red-50 text-red-700 border border-red-200':'bg-green-50 text-green-700 border border-green-200');e.textContent=m;e.classList.remove('hidden');if(k!=='error')setTimeout(()=>e.classList.add('hidden'),3500);}
+function closeModal(id){document.getElementById(id).classList.add('hidden');}
+async function api(m,p,b){var o={method:m,headers:{'Content-Type':'application/json'}};if(b!==undefined)o.body=JSON.stringify(b);var r=await fetch(p,o);var j=await r.json().catch(()=>({}));if(!r.ok&&r.status!==204)throw new Error(j.detail||('HTTP '+r.status));return j;}
+
+var _assetTypes=[], _bundles=[];
+
+function showTab(n){['bundles','rules','evaluate'].forEach(function(t){
+  document.getElementById('tab-'+t).classList.toggle('hidden',t!==n);
+  var b=document.getElementById('tab-btn-'+t);
+  if(t===n){b.classList.add('border-blue-600','text-blue-700');b.classList.remove('border-transparent','text-muted');}
+  else{b.classList.remove('border-blue-600','text-blue-700');b.classList.add('border-transparent','text-muted');}
+});
+  if(n==='rules')loadRules();
+}
+
+// ── Bundles ──
+async function loadBundles(){
+  try{_bundles=await api('GET','/admin/bundles');}catch(e){banner('Load failed: '+e.message,'error');return;}
+  var tb=document.getElementById('bundles-rows');
+  tb.innerHTML=_bundles.length?_bundles.map(function(b){
+    return '<tr><td class="px-3 py-2 text-body font-medium">'+esc(b.name)+(b.description?'<div class="text-[11px] text-muted/60">'+esc(b.description)+'</div>':'')+'</td>'
+      +'<td class="px-3 py-2 text-muted">'+b.position_count+'</td>'
+      +'<td class="px-3 py-2">'+(b.is_active?'✓':'—')+'</td>'
+      +'<td class="px-3 py-2">'+(b.catalog_visible?'✓':'—')+'</td>'
+      +'<td class="px-3 py-2 text-right"><button onclick="openBundle('+b.id+')" class="text-blue-600 hover:underline text-xs">Edit</button> <button onclick="delBundle('+b.id+')" class="text-red-600 hover:underline text-xs ml-2">Delete</button></td></tr>';
+  }).join(''):'<tr><td colspan="5" class="px-4 py-8 text-center text-muted/70">No bundles yet.</td></tr>';
+}
+function posRow(p){
+  p=p||{asset_type_id:'',required:true};
+  var opts=_assetTypes.map(function(a){return '<option value="'+a.id+'" '+(a.id===p.asset_type_id?'selected':'')+'>'+esc(a.name)+'</option>';}).join('');
+  var d=document.createElement('div');d.className='flex items-center gap-2';
+  d.innerHTML='<select class="pos-at flex-1 rounded border border-token-border bg-surface text-body text-sm px-2 py-1"><option value="">— asset type —</option>'+opts+'</select>'
+    +'<label class="flex items-center gap-1 text-xs text-muted"><input type="checkbox" class="pos-req rounded border-token-border" '+(p.required?'checked':'')+'>required</label>'
+    +'<button onclick="this.parentElement.remove()" class="text-red-500 text-sm px-1">&times;</button>';
+  return d;
+}
+function addPos(p){document.getElementById('b-positions').appendChild(posRow(p));}
+function openBundle(id){
+  document.getElementById('bundle-err').classList.add('hidden');
+  var b=id?_bundles.find(x=>x.id===id):null;
+  document.getElementById('bundle-title').textContent=b?'Edit bundle':'New bundle';
+  document.getElementById('b-id').value=b?b.id:'';
+  document.getElementById('b-name').value=b?b.name:'';
+  document.getElementById('b-desc').value=(b&&b.description)||'';
+  document.getElementById('b-active').checked=b?b.is_active:true;
+  document.getElementById('b-catalog').checked=b?b.catalog_visible:true;
+  var pc=document.getElementById('b-positions');pc.innerHTML='';
+  if(b&&b.positions)b.positions.forEach(addPos);else addPos();
+  document.getElementById('bundle-modal').classList.remove('hidden');
+}
+async function saveBundle(){
+  var id=document.getElementById('b-id').value;
+  var positions=[];
+  document.querySelectorAll('#b-positions > div').forEach(function(row,i){
+    var at=row.querySelector('.pos-at').value;
+    if(at)positions.push({asset_type_id:parseInt(at,10),required:row.querySelector('.pos-req').checked,sort_order:i});
+  });
+  var payload={name:document.getElementById('b-name').value.trim(),description:document.getElementById('b-desc').value.trim()||null,
+    is_active:document.getElementById('b-active').checked,catalog_visible:document.getElementById('b-catalog').checked,positions:positions};
+  if(!payload.name){var e=document.getElementById('bundle-err');e.textContent='Name required.';e.classList.remove('hidden');return;}
+  try{await api(id?'PUT':'POST','/admin/bundles'+(id?'/'+id:''),payload);closeModal('bundle-modal');banner('Bundle saved.');loadBundles();}
+  catch(e){var el=document.getElementById('bundle-err');el.textContent=e.message;el.classList.remove('hidden');}
+}
+async function delBundle(id){if(!confirm('Delete this bundle? Its assignment rules are also removed.'))return;try{await api('DELETE','/admin/bundles/'+id);banner('Deleted.');loadBundles();}catch(e){banner(e.message,'error');}}
+
+// ── Rules ──
+var _rules=[];
+async function loadRules(){
+  try{_rules=await api('GET','/admin/assignment-rules');if(!_bundles.length)_bundles=await api('GET','/admin/bundles');}catch(e){banner('Load failed: '+e.message,'error');return;}
+  var bn={};_bundles.forEach(b=>bn[b.id]=b.name);
+  var tb=document.getElementById('rules-rows');
+  tb.innerHTML=_rules.length?_rules.map(function(r){
+    return '<tr><td class="px-3 py-2 font-mono text-muted">'+r.priority+'</td><td class="px-3 py-2 text-body font-medium">'+esc(r.name)+'</td>'
+      +'<td class="px-3 py-2 text-muted">'+esc(bn[r.bundle_id]||('#'+r.bundle_id))+'</td><td class="px-3 py-2">'+(r.is_active?'✓':'—')+'</td>'
+      +'<td class="px-3 py-2 text-right"><button onclick="openRule('+r.id+')" class="text-blue-600 hover:underline text-xs">Edit</button> <button onclick="delRule('+r.id+')" class="text-red-600 hover:underline text-xs ml-2">Delete</button></td></tr>';
+  }).join(''):'<tr><td colspan="5" class="px-4 py-8 text-center text-muted/70">No rules yet.</td></tr>';
+}
+var FIELDS=['attr.department','attr.cost_center','attr.company','attr.title','attr.employee_id'];
+var OPS=['==','contains','>','>=','<','<='];
+function clauseRow(c){
+  c=c||{field:'attr.department',op:'==',value:''};
+  var fo=FIELDS.map(f=>'<option '+(f===c.field?'selected':'')+'>'+f+'</option>').join('');
+  var oo=OPS.map(o=>'<option '+(o===c.op?'selected':'')+'>'+o+'</option>').join('');
+  var d=document.createElement('div');d.className='flex items-center gap-2';
+  d.innerHTML='<select class="cl-field rounded border border-token-border bg-surface text-body text-xs px-2 py-1">'+fo+'</select>'
+    +'<select class="cl-op rounded border border-token-border bg-surface text-body text-xs px-2 py-1 font-mono">'+oo+'</select>'
+    +'<input class="cl-value flex-1 rounded border border-token-border bg-surface text-body text-sm px-2 py-1" value="'+esc(c.value)+'">'
+    +'<button onclick="this.parentElement.remove()" class="text-red-500 text-sm px-1">&times;</button>';
+  return d;
+}
+function addClause(c){document.getElementById('r-clauses').appendChild(clauseRow(c));}
+function openRule(id){
+  document.getElementById('rule-err').classList.add('hidden');
+  var r=id?_rules.find(x=>x.id===id):null;
+  document.getElementById('rule-title').textContent=r?'Edit rule':'New rule';
+  document.getElementById('r-id').value=r?r.id:'';
+  document.getElementById('r-name').value=r?r.name:'';
+  document.getElementById('r-priority').value=r?r.priority:100;
+  document.getElementById('r-active').checked=r?r.is_active:true;
+  var sel=document.getElementById('r-bundle');sel.innerHTML=_bundles.map(b=>'<option value="'+b.id+'" '+(r&&r.bundle_id===b.id?'selected':'')+'>'+esc(b.name)+'</option>').join('');
+  var cc=document.getElementById('r-clauses');cc.innerHTML='';
+  var cond=r&&r.condition;var mode='and',clauses=[];
+  if(cond&&cond.op&&Array.isArray(cond.clauses)){mode=cond.op==='or'?'or':'and';clauses=cond.clauses.filter(c=>c.field);}
+  document.getElementById('r-match').value=mode;
+  if(clauses.length)clauses.forEach(addClause);else addClause();
+  document.getElementById('rule-modal').classList.remove('hidden');
+}
+async function saveRule(){
+  var id=document.getElementById('r-id').value;
+  var clauses=[];
+  document.querySelectorAll('#r-clauses > div').forEach(function(row){
+    var f=row.querySelector('.cl-field').value,o=row.querySelector('.cl-op').value,v=row.querySelector('.cl-value').value;
+    if(f&&v!=='')clauses.push({field:f,op:o,value:v});
+  });
+  var payload={name:document.getElementById('r-name').value.trim(),bundle_id:parseInt(document.getElementById('r-bundle').value,10),
+    priority:parseInt(document.getElementById('r-priority').value||'100',10),is_active:document.getElementById('r-active').checked,
+    condition:{op:document.getElementById('r-match').value,clauses:clauses}};
+  if(!payload.name||!payload.bundle_id){var e=document.getElementById('rule-err');e.textContent='Name and bundle required.';e.classList.remove('hidden');return;}
+  try{await api(id?'PUT':'POST','/admin/assignment-rules'+(id?'/'+id:''),payload);closeModal('rule-modal');banner('Rule saved.');loadRules();}
+  catch(e){var el=document.getElementById('rule-err');el.textContent=e.message;el.classList.remove('hidden');}
+}
+async function delRule(id){if(!confirm('Delete this rule?'))return;try{await api('DELETE','/admin/assignment-rules/'+id);banner('Deleted.');loadRules();}catch(e){banner(e.message,'error');}}
+
+// ── Evaluate ──
+async function runEvaluate(){
+  var attrs={};
+  if(document.getElementById('ev-dept').value.trim())attrs.department=document.getElementById('ev-dept').value.trim();
+  if(document.getElementById('ev-cc').value.trim())attrs.cost_center=document.getElementById('ev-cc').value.trim();
+  if(document.getElementById('ev-title').value.trim())attrs.title=document.getElementById('ev-title').value.trim();
+  var body={user_email:document.getElementById('ev-email').value.trim()||null,attrs:Object.keys(attrs).length?attrs:null};
+  var out=document.getElementById('ev-result');out.innerHTML='<p class="text-sm text-muted">Evaluating…</p>';
+  var d;try{d=await api('POST','/admin/onboarding/evaluate',body);}catch(e){out.innerHTML='<p class="text-sm text-red-600">'+esc(e.message)+'</p>';return;}
+  var head='<div class="text-xs text-muted mb-3">AD resolved: <strong>'+(d.ad_resolved?'yes':'no')+'</strong> · fields: '+(d.context_fields.join(', ')||'—')+'</div>';
+  if(!d.matched_bundles.length){out.innerHTML=head+'<div class="bg-surface rounded-lg border border-token-border p-4 text-sm text-muted/70">No bundles match these attributes.</div>';return;}
+  out.innerHTML=head+d.matched_bundles.map(function(m){
+    var rows=m.items.map(function(i){
+      var badge=i.skip?'<span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">skip: '+esc(i.skip)+'</span>':'<span class="text-[11px] px-1.5 py-0.5 rounded bg-green-50 text-green-700 border border-green-200">would order</span>';
+      return '<tr><td class="px-3 py-1.5">'+esc(i.asset_type_name)+'</td><td class="px-3 py-1.5">'+(i.required?'required':'optional')+'</td><td class="px-3 py-1.5">'+badge+'</td></tr>';
+    }).join('');
+    return '<div class="bg-surface rounded-lg border border-token-border mb-3 overflow-hidden"><div class="px-4 py-2 border-b border-token-border flex justify-between"><span class="text-sm font-semibold text-body">'+esc(m.bundle_name)+'</span><span class="text-[11px] text-muted/70">matched: '+esc((m.matched_rules||[]).join(', '))+'</span></div>'
+      +'<table class="w-full text-sm"><tbody class="divide-y divide-token-border">'+rows+'</tbody></table></div>';
+  }).join('');
+}
+
+// init
+(async function(){
+  try{_assetTypes=await api('GET','/admin/asset-types');}catch(e){}
+  loadBundles();
+})();
+</script>
+{% endblock %}

@@ -1325,6 +1325,15 @@ async def attestations_page(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/onboarding", response_class=HTMLResponse)
+async def onboarding_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ui/onboarding.html",
+        {"active_page": "onboarding"},
+    )
+
+
 @router.get("/setup-wizard", response_class=HTMLResponse)
 async def setup_wizard_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
