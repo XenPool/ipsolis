@@ -69,6 +69,27 @@ def make_review_token(review_id: int, ttl_seconds: int | None = None) -> str:
     return f"{body}.{sig}"
 
 
+# ── Attestation token (mirror of api/app/utils/attestation_token.py) ───────────
+# Same signing key; distinct ``kind`` + 90-day TTL (handover / revocation
+# evidence has a longer natural life than an approval link).
+
+_ATTESTATION_KIND = "attestation"
+_ATTESTATION_TTL_SECONDS = 60 * 60 * 24 * 90  # 90 days
+
+
+def make_attestation_token(artifact_id: int, ttl_seconds: int | None = None) -> str:
+    payload: dict[str, Any] = {
+        "aid": int(artifact_id),
+        "exp": int(time.time()) + int(ttl_seconds or _ATTESTATION_TTL_SECONDS),
+        "v": 1,
+        "kind": _ATTESTATION_KIND,
+    }
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    body = _b64url_encode(raw)
+    sig = hmac.new(_signing_key(), body.encode("ascii"), hashlib.sha256).hexdigest()
+    return f"{body}.{sig}"
+
+
 # ── Teams Workflow webhook sender ──────────────────────────────────────────────
 
 def post_adaptive_card(webhook_url: str, card: dict[str, Any]) -> tuple[bool, str]:

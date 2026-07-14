@@ -99,6 +99,35 @@
           </span>
         </label>
       </div>
+      <div>
+        <label class="flex items-start gap-2 text-sm cursor-pointer">
+          <input type="checkbox" name="requires_handover_ack" value="true" id="at-handover-ack"
+                 {% if asset_type and asset_type.requires_handover_ack %}checked{% endif %}
+                 class="mt-0.5 rounded border-token-border text-blue-600 focus:ring-blue-400">
+          <span>
+            <span class="font-medium text-body">Require handover acknowledgment</span>
+            <span class="block text-xs text-muted/70 mt-0.5">
+              On provisioning, email the recipient a signed <em>Übergabeprotokoll</em> link to acknowledge
+              receipt (and the acceptable-use policy, if set under Settings). Outstanding / completed acks
+              are tracked under <strong>Reports → Attestations</strong>. Nothing is blocked.
+            </span>
+          </span>
+        </label>
+      </div>
+      <div>
+        <label class="flex items-start gap-2 text-sm cursor-pointer">
+          <input type="checkbox" name="emit_revocation_certificate" value="true" id="at-revocation-cert"
+                 {% if asset_type and asset_type.emit_revocation_certificate %}checked{% endif %}
+                 class="mt-0.5 rounded border-token-border text-blue-600 focus:ring-blue-400">
+          <span>
+            <span class="font-medium text-body">Emit revocation certificate</span>
+            <span class="block text-xs text-muted/70 mt-0.5">
+              On revoke / expiry, issue a signed HTML disposal attestation of what was removed (audit
+              evidence, archivable via print). Emitted automatically — no acknowledgment needed.
+            </span>
+          </span>
+        </label>
+      </div>
     </div>
 
     <!-- Logo + live tile preview -->
@@ -2062,6 +2091,8 @@ async function submitForm() {
     is_active: form.querySelector('[name="is_active"]').checked,
     show_on_dashboard: form.querySelector('[name="show_on_dashboard"]').checked,
     drift_monitor: form.querySelector('[name="drift_monitor"]').checked,
+    requires_handover_ack: form.querySelector('[name="requires_handover_ack"]').checked,
+    emit_revocation_certificate: form.querySelector('[name="emit_revocation_certificate"]').checked,
     contract_id: form.querySelector('[name="contract_id"]').value
       ? parseInt(form.querySelector('[name="contract_id"]').value, 10) : null,
     category: form.querySelector('[name="category"]:checked').value,

@@ -178,6 +178,17 @@ class AssetType(Base):
     drift_monitor: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Attestation artifacts (ISO-27001 evidence, opt-in per type):
+    # requires_handover_ack — on `provisioned`, email the recipient a signed
+    # handover (Übergabeprotokoll) link to acknowledge receipt / AUP.
+    # emit_revocation_certificate — on revoke/expire, emit a signed disposal
+    # attestation of what was removed. Neither blocks the order flow.
+    requires_handover_ack: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    emit_revocation_certificate: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     # Logo image stored as data URL (base64-encoded)
     logo: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

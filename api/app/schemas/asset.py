@@ -15,6 +15,8 @@ class AssetTypeRead(BaseModel):
     show_on_dashboard: bool = False
     drift_monitor: bool = False
     contract_id: int | None = None
+    requires_handover_ack: bool = False
+    emit_revocation_certificate: bool = False
     category: AssetCategory
     config: list[dict[str, Any]] | None
     assignment_model: str

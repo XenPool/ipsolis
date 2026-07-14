@@ -1158,6 +1158,12 @@ async def settings_page(
     slack_rows = slack_result.scalars().all()
     slack_config = {r.key: (_MASK if r.is_secret else (r.value or "")) for r in slack_rows}
 
+    # Load attestation.* config keys
+    attestation_result = await db.execute(
+        select(AppConfig).where(AppConfig.key.like("attestation.%")).order_by(AppConfig.key)
+    )
+    attestation_config = {r.key: (r.value or "") for r in attestation_result.scalars().all()}
+
     # Load siem.* config keys
     siem_result = await db.execute(
         select(AppConfig).where(AppConfig.key.like("siem.%")).order_by(AppConfig.key)
@@ -1249,6 +1255,7 @@ async def settings_page(
          "email_config": email_config, "email_templates": email_templates,
          "teams_config": teams_config,
          "slack_config": slack_config,
+         "attestation_config": attestation_config,
          "siem_config": siem_config,
          "approval_config": approval_config,
          "otel_config": otel_config,
@@ -1306,6 +1313,15 @@ async def contracts_page(request: Request) -> HTMLResponse:
         request,
         "ui/contracts.html",
         {"active_page": "contracts"},
+    )
+
+
+@router.get("/attestations", response_class=HTMLResponse)
+async def attestations_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ui/attestations.html",
+        {"active_page": "attestations"},
     )
 
 

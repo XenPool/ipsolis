@@ -2,6 +2,7 @@ from .admin_user import AdminUser
 from .admin_user_grant import AdminUserAssetTypeGrant
 from .api_token import ApiToken
 from .asset import AssetType, AssetPool
+from .attestation_artifact import AttestationArtifact
 from .order import Order, OrderStep
 from .approval import OrderApproval
 from .approval_delegation import ApprovalDelegation
@@ -32,6 +33,7 @@ __all__ = [
     "ApiToken",
     "AssetType",
     "AssetPool",
+    "AttestationArtifact",
     "Order",
     "OrderStep",
     "OrderApproval",

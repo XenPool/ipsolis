@@ -101,6 +101,21 @@ def _final_status(action: str) -> str:
     return "delivered"  # modify / extend
 
 
+def _maybe_emit_attestation(db, order_id: int, final_status: str) -> None:
+    """Best-effort handover / revocation artifact on order completion.
+
+    Delegates to ``tasks.modules.attestation`` (idempotent, gated on the
+    asset type's opt-in flags). Import is local so a change there can't
+    affect the hot provisioning path's import graph, and any failure is
+    swallowed so attestation never breaks an order.
+    """
+    try:
+        from tasks.modules.attestation import emit_attestation_for_order
+        emit_attestation_for_order(db, order_id, final_status)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("attestation hook error for order %s: %s", order_id, exc)
+
+
 def _write_provisioned_state(
     db: Session,
     order_id: int,
@@ -476,6 +491,7 @@ def _run_targets_mode(
             ctx=str(celery_task.request.id),
         )
         db.commit()
+        _maybe_emit_attestation(db, order_id, final)
     logger.info("=== targets_only COMPLETE: order_id=%s ===", order_id)
     return {"success": True, "order_id": order_id}
 
@@ -1017,6 +1033,7 @@ def _run_runbook_path(
             ctx=str(celery_task.request.id),
         )
         db.commit()
+        _maybe_emit_attestation(db, order_id, final)
 
     logger.info("=== runbook_path COMPLETE: order_id=%s asset=%s ===", order_id, ctx.get("asset_name"))
     return {
@@ -1116,6 +1133,7 @@ def _run_composite_mode(
         ctx=str(celery_task.request.id),
     )
     db.commit()
+    _maybe_emit_attestation(db, order_id, final)
     logger.info("=== composite COMPLETE: order_id=%s ===", order_id)
     return {"success": True, "order_id": order_id, "composite": True}
 

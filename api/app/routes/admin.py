@@ -864,6 +864,8 @@ async def create_asset_type(
         show_on_dashboard=payload.show_on_dashboard,
         drift_monitor=payload.drift_monitor,
         contract_id=payload.contract_id,
+        requires_handover_ack=payload.requires_handover_ack,
+        emit_revocation_certificate=payload.emit_revocation_certificate,
         category=payload.category,
         config=payload.config,
         assignment_model=payload.assignment_model,
@@ -1022,6 +1024,10 @@ async def update_asset_type(
     # contract_id: explicit null unbinds, so honour presence (not just non-None).
     if "contract_id" in payload.model_fields_set:
         asset_type.contract_id = payload.contract_id
+    if payload.requires_handover_ack is not None:
+        asset_type.requires_handover_ack = payload.requires_handover_ack
+    if payload.emit_revocation_certificate is not None:
+        asset_type.emit_revocation_certificate = payload.emit_revocation_certificate
     await aaudit(db, "asset_type", asset_type.id, "updated", old=old_snap, new=_type_snap(asset_type),
                  by=actor_by(request, "update_asset_type"),
                  classification=classify_asset_type(asset_type))
@@ -1101,6 +1107,8 @@ async def clone_asset_type(
         eligible_requestors_dn=src.eligible_requestors_dn,
         drift_monitor=src.drift_monitor,
         contract_id=src.contract_id,
+        requires_handover_ack=src.requires_handover_ack,
+        emit_revocation_certificate=src.emit_revocation_certificate,
         logo=src.logo,
     )
     db.add(new_type)

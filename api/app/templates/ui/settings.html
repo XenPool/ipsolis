@@ -807,6 +807,45 @@
     </div>
   </div>
 
+  <!-- Section A2c: Attestation artifacts -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
+    <h2 class="text-sm font-semibold text-body mb-1">Attestations — Handover &amp; Revocation</h2>
+    <p class="text-xs text-muted/70 mb-4 leading-snug">
+      Per asset type, ip·Solis can require a signed <span class="font-medium">handover acknowledgment</span> on
+      provisioning and emit a signed <span class="font-medium">revocation certificate</span> on revoke / expiry
+      (enable on each Asset Definition). Review issued artifacts under
+      <a href="/ui/attestations" class="text-blue-600 hover:underline">Reports → Attestations</a>. Settings below apply globally.
+    </p>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-muted mb-1">Acceptable-Use Policy text <span class="text-muted/60">(optional)</span></label>
+        <textarea id="attestation-aup" rows="4"
+                  class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="Shown on the handover page; the recipient must tick 'I accept' before acknowledging.">{{ attestation_config.get('attestation.aup_text', '') }}</textarea>
+      </div>
+      <div class="flex items-center gap-6">
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" id="attestation-reminder-enabled" class="rounded border-token-border"
+                 {% if attestation_config.get('attestation.handover_reminder_enabled', 'false') in ['true','1','yes','on'] %}checked{% endif %}>
+          <span class="text-body">Remind on overdue handover acks</span>
+        </label>
+        <div>
+          <label class="block text-xs font-medium text-muted mb-1">Reminder after (days)</label>
+          <input type="number" min="0" id="attestation-reminder-days" value="{{ attestation_config.get('attestation.handover_reminder_days', '3') }}"
+                 class="w-24 rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5 font-mono">
+        </div>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveAttestationConfig()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save Settings
+      </button>
+    </div>
+  </div>
+
   <!-- Section A3: Approval reminders -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mb-6">
     <h2 class="text-sm font-semibold text-body mb-1">Approval Reminders</h2>
@@ -3452,6 +3491,27 @@ async function testSlackConfig() {
   var resp = await fetch('/admin/config/slack/test', {method: 'POST'});
   var data = await resp.json();
   showEmailBanner(data);
+}
+
+// ── Attestation Settings ─────────────────────────────────────────────────────────
+async function saveAttestationConfig() {
+  var fields = {
+    'attestation.aup_text': document.getElementById('attestation-aup').value,
+    'attestation.handover_reminder_enabled': document.getElementById('attestation-reminder-enabled').checked ? 'true' : 'false',
+    'attestation.handover_reminder_days': document.getElementById('attestation-reminder-days').value || '3',
+  };
+  var errors = [];
+  for (var key in fields) {
+    var resp = await fetch('/admin/config/' + key, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: fields[key]}),
+    });
+    if (!resp.ok) errors.push(key);
+  }
+  showEmailBanner(errors.length === 0
+    ? {ok: true,  message: 'Attestation settings saved.'}
+    : {ok: false, message: 'Failed to save: ' + errors.join(', ')});
 }
 
 function showEmailBanner(data) {

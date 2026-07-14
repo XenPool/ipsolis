@@ -164,6 +164,22 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "contract.renewal_reminder_email",
         ],
     },
+    {
+        "name": "attestation-handover-reminders",
+        "task": "tasks.workflows.attestation_reminders.check_overdue_handovers",
+        "cadence": "Daily 08:30 Europe/Berlin",
+        "queue": "notifications",
+        "description": (
+            "Re-emails the signed handover link for handover artifacts still "
+            "unacknowledged past attestation.handover_reminder_days. Opt-in; "
+            "deduped per window via last_reminder_at. Revocation certificates "
+            "are evidence-only and never reminded."
+        ),
+        "config_keys": [
+            "attestation.handover_reminder_enabled",
+            "attestation.handover_reminder_days",
+        ],
+    },
 
     # ── Hourly ──────────────────────────────────────────────────────────
     {

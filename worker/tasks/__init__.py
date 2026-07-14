@@ -16,6 +16,7 @@ _include = [
     "tasks.workflows.approval_auto_decline",
     "tasks.workflows.drift_reconcile",
     "tasks.workflows.contract_renewals",
+    "tasks.workflows.attestation_reminders",
     "tasks.workflows.cost_threshold_alerter",
     "tasks.workflows.cost_report_snapshot",
     "tasks.workflows.audit_retention",
@@ -89,6 +90,7 @@ app.conf.update(
         "tasks.workflows.approval_auto_decline.*": {"queue": "notifications"},
         "tasks.workflows.cost_threshold_alerter.*": {"queue": "notifications"},
         "tasks.workflows.contract_renewals.*": {"queue": "notifications"},
+        "tasks.workflows.attestation_reminders.*": {"queue": "notifications"},
         "tasks.workflows.cost_report_snapshot.*": {"queue": "default"},
         "tasks.workflows.certification_notifications.*": {"queue": "notifications"},
         "tasks.workflows.certification_reminders.*": {"queue": "notifications"},
@@ -152,6 +154,13 @@ app.conf.update(
         "contract-renewal-reminders": {
             "task": "tasks.workflows.contract_renewals.check_contract_renewals",
             "schedule": crontab(hour=8, minute=15),  # Daily at 08:15 Europe/Berlin
+            "options": {"queue": "notifications"},
+        },
+        # Daily overdue handover-acknowledgment reminders (opt-in via
+        # attestation.handover_reminder_enabled).
+        "attestation-handover-reminders": {
+            "task": "tasks.workflows.attestation_reminders.check_overdue_handovers",
+            "schedule": crontab(hour=8, minute=30),  # Daily at 08:30 Europe/Berlin
             "options": {"queue": "notifications"},
         },
         # Stream new audit_log rows to the configured SIEM endpoint
