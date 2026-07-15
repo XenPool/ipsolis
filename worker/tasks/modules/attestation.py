@@ -209,6 +209,6 @@ def _email_link(db, to_email, to_name, artifact_id, *, subject_kind, asset) -> N
                 "<p>Save or print the page for your records; the link is signed.</p>"
             )
         from tasks.modules.notifications import _production_send_html_email, MAIL_FROM
-        _production_send_html_email(db, [to_email], None, MAIL_FROM, subj, body)
+        _production_send_html_email(db, [to_email], None, get_config(db, "email.from", MAIL_FROM), subj, body)
     except Exception as exc:  # noqa: BLE001 — delivery must never break the flow
         logger.warning("attestation email failed for artifact %s: %s", artifact_id, exc)

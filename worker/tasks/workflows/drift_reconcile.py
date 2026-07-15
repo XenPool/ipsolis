@@ -289,7 +289,7 @@ def _alert(db, summary, new_findings) -> None:
                 f"<pre style='font-size:13px'>{lines}</pre>"
                 "<p>See <b>Operations → Drift</b> in the admin UI.</p>"
             )
-            _production_send_html_email(db, [to_addr], None, MAIL_FROM, subj, body)
+            _production_send_html_email(db, [to_addr], None, get_config(db, "email.from", MAIL_FROM), subj, body)
     except Exception as exc:  # noqa: BLE001
         logger.warning("drift: email alert failed: %s", exc)
 

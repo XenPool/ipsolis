@@ -112,6 +112,6 @@ def _send_reminder(db, r, days_left: int, to_addr: str) -> None:
             "</table>"
             "<p>See <b>Licenses &amp; Contracts</b> in the admin UI.</p>"
         )
-        _production_send_html_email(db, [to_addr], None, MAIL_FROM, subj, body)
+        _production_send_html_email(db, [to_addr], None, get_config(db, "email.from", MAIL_FROM), subj, body)
     except Exception as exc:  # noqa: BLE001 — delivery must never break the task
         logger.warning("contract renewal reminder email failed for %s: %s", r["id"], exc)

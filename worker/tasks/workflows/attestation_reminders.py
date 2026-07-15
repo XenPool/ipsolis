@@ -101,6 +101,6 @@ def _remind(db, r) -> None:
             "<p>The link is signed and works without a portal login.</p>"
         )
         from tasks.modules.notifications import _production_send_html_email, MAIL_FROM
-        _production_send_html_email(db, [to_email], None, MAIL_FROM, subj, body)
+        _production_send_html_email(db, [to_email], None, get_config(db, "email.from", MAIL_FROM), subj, body)
     except Exception as exc:  # noqa: BLE001
         logger.warning("attestation reminder email failed for %s: %s", r["id"], exc)
