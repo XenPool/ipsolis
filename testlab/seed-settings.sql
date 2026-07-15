@@ -46,8 +46,22 @@ BEGIN
             ('secret.vault.namespace',        '',                                                  false, 'Testlab: dev mode is single-namespace; leave empty.'),
 
             -- ── Teams notifications (point at mock; mode left disabled) ──
+            -- WARNING: if you run REAL Teams/SMTP in this DEV instance, this
+            -- overwrites teams.webhook_url with the mock. Skip these rows (or
+            -- re-set your real values) if you want to keep real delivery.
             ('teams.mode',                    'disabled',                                          false, 'Testlab: leave disabled until you want to verify card formatting.'),
-            ('teams.webhook_url',             'http://host.docker.internal:9000/teams',            true,  'Testlab: mock-receiver Teams webhook URL.')
+            ('teams.webhook_url',             'http://host.docker.internal:9000/teams',            true,  'Testlab: mock-receiver Teams webhook URL.'),
+
+            -- ── Slack notifications (point at mock; mode left disabled) ──
+            ('slack.mode',                    'disabled',                                          false, 'Testlab: enable to verify Block Kit delivery against the mock.'),
+            ('slack.webhook_url',             'http://host.docker.internal:9000/slack',            true,  'Testlab: mock-receiver Slack incoming-webhook URL.'),
+
+            -- ── Entra group provisioning via mock Graph (entra_group target) ──
+            ('graph.tenant_id',               'mock-tenant',                                       false, 'Testlab: any value — the mock Graph ignores the tenant.'),
+            ('graph.client_id',               'mock-client',                                       false, 'Testlab: any value — the mock Graph ignores client auth.'),
+            ('graph.client_secret',           'mock-secret',                                       true,  'Testlab: any value — the mock Graph ignores the secret.'),
+            ('graph.base_url',                'http://host.docker.internal:9000/graph/v1.0',       false, 'Testlab: mock Graph base URL (default = real graph.microsoft.com/v1.0).'),
+            ('graph.token_url',               'http://host.docker.internal:9000/graph/token',      false, 'Testlab: mock Graph token endpoint (default = login.microsoftonline.com).')
         ) AS t(key, value, is_secret, description)
     LOOP
         INSERT INTO app_config (key, value, is_secret, description)
@@ -67,4 +81,5 @@ SELECT key,
        is_secret
 FROM app_config
 WHERE key LIKE 'siem.%' OR key LIKE 'secret.vault.%' OR key LIKE 'teams.%'
+   OR key LIKE 'slack.%' OR key LIKE 'graph.%'
 ORDER BY key;

@@ -81,6 +81,71 @@ async def servicenow(request: Request) -> dict[str, str]:
     return {"result": "queued"}
 
 
+@app.post("/slack")
+async def slack(request: Request) -> Response:
+    """Pretend to be a Slack Incoming Webhook (returns the literal ``ok``)."""
+    await _record(request, "/slack")
+    return Response(content="ok", media_type="text/plain")
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Mock Microsoft Graph — just enough for the entra_group access target:
+# an app-only token, a user-id resolve, and group member add/remove.
+# Point ipSolis at it via graph.token_url / graph.base_url (testlab seed).
+# Member ops are recorded under /graph/members so tests can assert them.
+# ──────────────────────────────────────────────────────────────────────
+
+@app.post("/graph/token")
+async def graph_token(request: Request) -> dict[str, Any]:
+    await _record(request, "/graph/token")
+    return {"token_type": "Bearer", "expires_in": 3600, "access_token": "mock-graph-token"}
+
+
+@app.get("/graph/v1.0/users")
+async def graph_users_filter(request: Request) -> dict[str, Any]:
+    # $filter fallback lookup — echo a deterministic id for the filtered user.
+    await _record(request, "/graph/users")
+    return {"value": [{"id": "u-filtered"}]}
+
+
+@app.get("/graph/v1.0/users/{ident}")
+async def graph_user(ident: str, request: Request) -> dict[str, Any]:
+    await _record(request, "/graph/users")
+    # Deterministic id derived from the principal so add/remove correlate.
+    return {"id": f"u-{ident.lower()}"}
+
+
+async def _record_member_op(request: Request, op: str, group: str, user: str) -> None:
+    body_bytes = await request.body()
+    _recent.append({
+        "ts": time.time(), "path": "/graph/members", "method": request.method,
+        "headers": {k.lower(): v for k, v in request.headers.items()},
+        "query": {"op": op, "group": group, "user": user},
+        "body": body_bytes.decode("utf-8", "replace") if body_bytes else "",
+    })
+    _counts["/graph/members"] = _counts.get("/graph/members", 0) + 1
+
+
+@app.post("/graph/v1.0/groups/{gid}/members/$ref")
+async def graph_add_member(gid: str, request: Request) -> Response:
+    import json as _json
+    body = await request.body()
+    uid = ""
+    try:
+        ref = _json.loads(body).get("@odata.id", "")
+        uid = ref.rsplit("/", 1)[-1]
+    except Exception:  # noqa: BLE001
+        pass
+    await _record_member_op(request, "add", gid, uid)
+    return Response(status_code=204)
+
+
+@app.delete("/graph/v1.0/groups/{gid}/members/{uid}/$ref")
+async def graph_remove_member(gid: str, uid: str, request: Request) -> Response:
+    await _record_member_op(request, "remove", gid, uid)
+    return Response(status_code=204)
+
+
 @app.get("/recent")
 async def recent(path: str | None = None, limit: int = 20) -> dict[str, Any]:
     items = list(_recent)

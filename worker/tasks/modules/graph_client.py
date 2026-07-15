@@ -32,16 +32,24 @@ _TIMEOUT = 20
 _token_cache: dict[tuple[str, str], tuple[str, float]] = {}
 
 
-def _graph_config(db: Session) -> tuple[str, str, str]:
+def _graph_config(db: Session) -> tuple[str, str, str, str, str]:
+    """Return (tenant, client, secret, base_url, token_url).
+
+    ``base_url`` / ``token_url`` default to the real Microsoft Graph endpoints
+    but can be overridden via ``graph.base_url`` / ``graph.token_url`` — used by
+    the testlab to point provisioning at a mock Graph (see docker-compose.testlab).
+    """
     from tasks.modules.config_reader import get_config
     from tasks.modules.secrets import get_secret_config
     tenant = (get_config(db, "graph.tenant_id", "") or "").strip()
     client = (get_config(db, "graph.client_id", "") or "").strip()
     secret = (get_secret_config(db, "graph.client_secret", "") or "").strip()
-    return tenant, client, secret
+    base_url = (get_config(db, "graph.base_url", _GRAPH) or _GRAPH).strip().rstrip("/")
+    token_url = (get_config(db, "graph.token_url", "") or "").strip()
+    return tenant, client, secret, base_url, token_url
 
 
-def _graph_token(tenant_id: str, client_id: str, client_secret: str) -> str:
+def _graph_token(tenant_id: str, client_id: str, client_secret: str, token_url: str = "") -> str:
     """Acquire (and cache) an app-only Graph token via client_credentials."""
     key = (tenant_id, client_id)
     now = time.time()
@@ -49,7 +57,7 @@ def _graph_token(tenant_id: str, client_id: str, client_secret: str) -> str:
     if cached and cached[1] - 60 > now:
         return cached[0]
 
-    url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+    url = token_url or f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
     data = urllib.parse.urlencode({
         "grant_type": "client_credentials",
         "client_id": client_id,
@@ -93,16 +101,16 @@ def _graph_request(method: str, url: str, token: str, body: dict | None = None) 
             return e.code, {"raw": raw.decode("utf-8", "replace")[:300]}
 
 
-def _resolve_user_id(token: str, principal: str) -> str:
+def _resolve_user_id(token: str, base_url: str, principal: str) -> str:
     """Resolve an email / UPN to the Entra user's object id."""
     ident = urllib.parse.quote(principal, safe="")
-    status, body = _graph_request("GET", f"{_GRAPH}/users/{ident}?$select=id", token)
+    status, body = _graph_request("GET", f"{base_url}/users/{ident}?$select=id", token)
     if status == 200 and body.get("id"):
         return body["id"]
     # Fallback: filter on mail / UPN (covers guest / alias mismatches).
     p = principal.replace("'", "''")
     filt = urllib.parse.quote(f"mail eq '{p}' or userPrincipalName eq '{p}'", safe="")
-    status, body = _graph_request("GET", f"{_GRAPH}/users?$filter={filt}&$select=id", token)
+    status, body = _graph_request("GET", f"{base_url}/users?$filter={filt}&$select=id", token)
     values = body.get("value") or []
     if status == 200 and values:
         return values[0]["id"]
@@ -110,22 +118,23 @@ def _resolve_user_id(token: str, principal: str) -> str:
 
 
 def _client(db: Session) -> tuple[str, str]:
-    tenant, client, secret = _graph_config(db)
+    """Return (access_token, base_url), raising if not configured."""
+    tenant, client, secret, base_url, token_url = _graph_config(db)
     if not (tenant and client and secret):
         raise RuntimeError(
             "Entra group provisioning is not configured — set graph.tenant_id / "
             "graph.client_id / graph.client_secret (Settings → Compliance)."
         )
-    return _graph_token(tenant, client, secret), tenant
+    return _graph_token(tenant, client, secret, token_url), base_url
 
 
 def graph_add_member(db: Session, group_id: str, principal: str) -> str:
     """Add ``principal`` to the Entra group (idempotent). Returns the user id."""
-    token, _ = _client(db)
-    uid = _resolve_user_id(token, principal)
-    body = {"@odata.id": f"{_GRAPH}/directoryObjects/{uid}"}
+    token, base_url = _client(db)
+    uid = _resolve_user_id(token, base_url, principal)
+    body = {"@odata.id": f"{base_url}/directoryObjects/{uid}"}
     status, resp = _graph_request(
-        "POST", f"{_GRAPH}/groups/{group_id}/members/$ref", token, body,
+        "POST", f"{base_url}/groups/{group_id}/members/$ref", token, body,
     )
     if status in (200, 204):
         return uid
@@ -138,10 +147,10 @@ def graph_add_member(db: Session, group_id: str, principal: str) -> str:
 
 def graph_remove_member(db: Session, group_id: str, principal: str) -> str:
     """Remove ``principal`` from the Entra group (idempotent). Returns the user id."""
-    token, _ = _client(db)
-    uid = _resolve_user_id(token, principal)
+    token, base_url = _client(db)
+    uid = _resolve_user_id(token, base_url, principal)
     status, resp = _graph_request(
-        "DELETE", f"{_GRAPH}/groups/{group_id}/members/{uid}/$ref", token,
+        "DELETE", f"{base_url}/groups/{group_id}/members/{uid}/$ref", token,
     )
     if status in (200, 204, 404):  # 404 = not a member → idempotent
         return uid
