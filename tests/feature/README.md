@@ -74,6 +74,7 @@ cd tests/feature && python -m pytest -q
 | Teams delivery (real, no mock) | `test_teams.py` | `POST /admin/config/teams/test` → one real card to the live Teams webhook, asserts `ok:true` (2xx read-back); skips if Teams disabled |
 | Attestation emission (worker) | `test_attestation_emit.py` | opted-in type: provision → worker emits **handover** (then acked via its own emitted token); delete → worker emits **revocation** cert |
 | Access certification | `test_certification.py` | campaign scope → pending reviews; signed `/review/{token}` confirm keeps access; token revoke pulls the entra grant on **mock Graph** |
+| HR leaver (bulk revoke) | `test_leaver.py` | `POST /hr/leaver` (scope `hr:leaver`) revokes all active orders at once — entra grant pulled on **mock Graph**, idempotent, 401/403 auth guards |
 
 **Revoke tests don't poll order status:** the cancel route flips the order to
 `cancelled` (terminal) *before* the worker finishes revoking to `revoked`, so

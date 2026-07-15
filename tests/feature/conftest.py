@@ -341,6 +341,7 @@ def _purge(db):
         "DELETE FROM orders WHERE lower(user_email) LIKE %s OR asset_type_id IN (SELECT id FROM asset_types WHERE name LIKE %s)",
         "DELETE FROM order_groups WHERE lower(recipient_email) LIKE %s OR bundle_name LIKE %s",
         "DELETE FROM scim_identities WHERE lower(user_email) LIKE %s",
+        "DELETE FROM hr_leaver_events WHERE lower(user_email) LIKE %s",
         "DELETE FROM assignment_rules WHERE name LIKE %s",
         "DELETE FROM bundle_positions WHERE bundle_id IN (SELECT id FROM bundles WHERE name LIKE %s)",
         "DELETE FROM bundles WHERE name LIKE %s",
@@ -371,6 +372,7 @@ def _purge(db):
         (email_like, like),                  # orders
         (email_like, like),                  # order_groups
         (email_like,),                       # scim_identities
+        (email_like,),                       # hr_leaver_events
         (like,),                             # assignment_rules
         (like,),                             # bundle_positions
         (like,),                             # bundles
