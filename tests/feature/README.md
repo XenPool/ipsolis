@@ -76,6 +76,14 @@ cd tests/feature && python -m pytest -q
 | Access certification | `test_certification.py` | campaign scope → pending reviews; signed `/review/{token}` confirm keeps access; token revoke pulls the entra grant on **mock Graph** |
 | HR leaver (bulk revoke) | `test_leaver.py` | `POST /hr/leaver` (scope `hr:leaver`) revokes all active orders at once — entra grant pulled on **mock Graph**, idempotent, 401/403 auth guards |
 | Point-in-time access report | `test_access_report.py` | `GET /admin/access-report` replays `order_change_log` — live shows today's grant, `as_of` yesterday is empty, principal filter + CSV export |
+| Cost report (contract seat math) | `test_cost_report.py` | `GET /admin/cost-report` `by_contract` — exact Model-A per-seat price / allocated / shelfware / utilisation, and seat over-allocation |
+
+**Free-tier user ceiling (25):** without a commercial license the instance caps
+active end-user identities at **25** (distinct `orders.user_email` with a
+non-terminal order), and ~14 real users already sit on that budget in DEV. The
+full suite runs near the ceiling, so a new slice must keep its **peak** active
+users small: reuse a couple of emails rather than minting many, and delete or
+revoke its orders on teardown to hand the slots back (see `test_cost_report.py`).
 
 **Revoke tests don't poll order status:** the cancel route flips the order to
 `cancelled` (terminal) *before* the worker finishes revoking to `revoked`, so
