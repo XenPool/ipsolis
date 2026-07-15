@@ -62,15 +62,20 @@ celerybeat-schedule.db
 celerybeat.pid
 
 # ─────────────────────────────────────────
-# Internal maintainer notes (local only — never commit / never publish)
+# Internal maintainer notes / planning (local only — never commit / never publish)
 # ─────────────────────────────────────────
 docs/internal/
+tasks/lessons.md
+# Codebase audit + backlog working docs (contain competitor / strategy notes)
+AUDIT.md
+AUDIT-FINDINGS.md
 
 # ─────────────────────────────────────────
 # Claude Code (local tool state — never commit)
 # ─────────────────────────────────────────
 .claude/settings.json
 .claude/settings.local.json
+.claude/*.lock
 
 # ─────────────────────────────────────────
 # IDE & OS

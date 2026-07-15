@@ -785,13 +785,25 @@ def _empty_runbook_slots() -> list[dict]:
     return [{"action": a, "label": l, "runbook": None} for a, l in _RUNBOOK_SLOTS]
 
 
+async def _load_contracts_for_form(db: AsyncSession) -> list[dict]:
+    """Software contracts for the asset-type form's License/Contract picker."""
+    rows = (await db.execute(text(
+        "SELECT id, vendor, product, currency, licensed_seats "
+        "FROM software_contracts ORDER BY vendor, product"
+    ))).mappings().all()
+    return [dict(r) for r in rows]
+
+
 @router.get("/asset-types/new", response_class=HTMLResponse)
-async def asset_type_new_form(request: Request) -> HTMLResponse:
+async def asset_type_new_form(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> HTMLResponse:
     return templates.TemplateResponse(
         request, "ui/asset_type_form.html",
         {
             "asset_type": None,
             "runbook_slots": _empty_runbook_slots(),
+            "contracts": await _load_contracts_for_form(db),
             "active_page": "asset-types",
         },
     )
@@ -811,6 +823,7 @@ async def asset_type_edit_form(
         {
             "asset_type": t,
             "runbook_slots": await _load_runbook_slots(db, type_id),
+            "contracts": await _load_contracts_for_form(db),
             "active_page": "asset-types",
         },
     )
@@ -1138,6 +1151,31 @@ async def settings_page(
     teams_rows = teams_result.scalars().all()
     teams_config = {r.key: (_MASK if r.is_secret else (r.value or "")) for r in teams_rows}
 
+    # Load slack.* config keys
+    slack_result = await db.execute(
+        select(AppConfig).where(AppConfig.key.like("slack.%")).order_by(AppConfig.key)
+    )
+    slack_rows = slack_result.scalars().all()
+    slack_config = {r.key: (_MASK if r.is_secret else (r.value or "")) for r in slack_rows}
+
+    # Load attestation.* config keys
+    attestation_result = await db.execute(
+        select(AppConfig).where(AppConfig.key.like("attestation.%")).order_by(AppConfig.key)
+    )
+    attestation_config = {r.key: (r.value or "") for r in attestation_result.scalars().all()}
+
+    # Load scim.* config keys
+    scim_result = await db.execute(
+        select(AppConfig).where(AppConfig.key.like("scim.%")).order_by(AppConfig.key)
+    )
+    scim_config = {r.key: (r.value or "") for r in scim_result.scalars().all()}
+
+    # Load graph.* config keys (Entra provisioning); mask the secret.
+    graph_result = await db.execute(
+        select(AppConfig).where(AppConfig.key.like("graph.%")).order_by(AppConfig.key)
+    )
+    graph_config = {r.key: (_MASK if r.is_secret else (r.value or "")) for r in graph_result.scalars().all()}
+
     # Load siem.* config keys
     siem_result = await db.execute(
         select(AppConfig).where(AppConfig.key.like("siem.%")).order_by(AppConfig.key)
@@ -1228,6 +1266,10 @@ async def settings_page(
         {"vars": masked_vars, "ad_config": ad_config, "portal_auth_config": portal_auth_config,
          "email_config": email_config, "email_templates": email_templates,
          "teams_config": teams_config,
+         "slack_config": slack_config,
+         "attestation_config": attestation_config,
+         "scim_config": scim_config,
+         "graph_config": graph_config,
          "siem_config": siem_config,
          "approval_config": approval_config,
          "otel_config": otel_config,
@@ -1276,6 +1318,66 @@ async def cost_report_page(request: Request) -> HTMLResponse:
         request,
         "ui/cost_report.html",
         {"active_page": "cost-report"},
+    )
+
+
+@router.get("/contracts", response_class=HTMLResponse)
+async def contracts_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ui/contracts.html",
+        {"active_page": "contracts"},
+    )
+
+
+@router.get("/attestations", response_class=HTMLResponse)
+async def attestations_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ui/attestations.html",
+        {"active_page": "attestations"},
+    )
+
+
+@router.get("/onboarding", response_class=HTMLResponse)
+async def onboarding_page(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
+    flag = (await db.execute(
+        select(AppConfig.value).where(AppConfig.key == "onboarding.eval_on_first_login")
+    )).scalar_one_or_none()
+    return templates.TemplateResponse(
+        request,
+        "ui/onboarding.html",
+        {
+            "active_page": "onboarding",
+            "eval_on_first_login": (flag or "false").strip().lower() in ("1", "true", "yes", "on"),
+        },
+    )
+
+
+@router.get("/setup-wizard", response_class=HTMLResponse)
+async def setup_wizard_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ui/setup_wizard.html",
+        {"active_page": "setup-wizard"},
+    )
+
+
+@router.get("/operations", response_class=HTMLResponse)
+async def operations_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ui/operations.html",
+        {"active_page": "operations"},
+    )
+
+
+@router.get("/access-report", response_class=HTMLResponse)
+async def access_report_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "ui/access_report.html",
+        {"active_page": "access-report"},
     )
 
 

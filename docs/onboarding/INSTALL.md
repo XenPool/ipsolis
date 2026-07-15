@@ -233,16 +233,16 @@ docker compose exec api alembic upgrade head
 
 ## Backup & Restore
 
-Backups are configured in **Admin → Maintenance → Backup**.  
-Files land in `./backups/` on the host and can also be pushed to S3.
+Backups are configured in **Admin → Maintenance → Backup** (scheduled or on demand).
+Files land in `./backups/` on the host as gzipped SQL dumps
+(`xp_backup_<timestamp>.sql.gz`) and can also be pushed to S3.
 
-Manual backup at any time:
-
-```bash
-docker compose exec api python -c "
-from app.tasks import backup_database; backup_database()
-"
-```
+- **On-demand backup:** **Admin → Maintenance → Backup → Back up now**.
+- **Restore an earlier backup (same instance):** **Admin → Maintenance → Backups →
+  Restore**. You confirm by typing the filename; a pre-restore safety backup is taken
+  automatically before the data is overwritten.
+- **Disaster recovery onto a fresh host:** follow the
+  [DR runbook](../DR-RUNBOOK.md) ([Deutsch](../DR-RUNBOOK.de.md)).
 
 ---
 

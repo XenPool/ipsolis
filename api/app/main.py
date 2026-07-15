@@ -15,9 +15,12 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.config import AppConfig
 from app.routes import (
-    admin, admin_api_tokens, admin_approval_delegations, admin_auth,
-    admin_certifications, admin_cost_report, admin_license, admin_maintenance,
-    admin_modules, admin_runbooks, admin_seed_export, admin_self, admin_setup,
+    admin, admin_access_report, admin_api_tokens, admin_approval_delegations, admin_auth,
+    admin_attestations, admin_bundles, admin_certifications, admin_contracts, admin_cost_report,
+    admin_license, admin_maintenance,
+    admin_migration, admin_modules, admin_operations, admin_runbooks, admin_seed_export,
+    attestation_external,
+    admin_self, admin_setup,
     admin_standalone_runbooks, admin_users,
     approvals_external, assets, auth,
     certifications_external,
@@ -206,6 +209,10 @@ app.include_router(admin_api_tokens.router)
 app.include_router(admin_users.router)
 app.include_router(admin_self.router)
 app.include_router(admin_cost_report.router)
+app.include_router(admin_contracts.router)
+app.include_router(admin_attestations.router)
+app.include_router(admin_bundles.router)
+app.include_router(admin_access_report.router)
 app.include_router(admin_certifications.router)
 app.include_router(certifications_external.router)
 app.include_router(portal_certifications.router)
@@ -215,10 +222,13 @@ app.include_router(scim.router)
 app.include_router(admin_setup.router)
 app.include_router(admin_approval_delegations.router)
 app.include_router(admin_seed_export.router)
+app.include_router(admin_migration.router)
+app.include_router(admin_operations.router)
 app.include_router(admin_auth.router)  # admin login/logout — no auth, before ui.router
 app.include_router(ui.router)
 app.include_router(auth.router)   # login / callback / logout — before portal
 app.include_router(portal.router)
 app.include_router(portal_delegations.router)
 app.include_router(approvals_external.router)  # tokenized /approve/{token} (no auth required)
+app.include_router(attestation_external.router)  # tokenized /attestation/{token} (no auth required)
 app.include_router(metrics_route.router)        # /metrics (Prometheus)

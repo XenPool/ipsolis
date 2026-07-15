@@ -366,6 +366,96 @@ async def portal_new_order_form(
     })
 
 
+@router.get("/packages", response_class=HTMLResponse)
+async def portal_packages(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
+):
+    """Self-service catalog of orderable bundles ("packages")."""
+    from app.models.bundle import Bundle, BundlePosition
+    bundles = (await db.execute(
+        select(Bundle).where(Bundle.is_active.is_(True), Bundle.catalog_visible.is_(True))
+        .order_by(Bundle.name)
+    )).scalars().all()
+    # Resolve position asset-type names for display.
+    out = []
+    for b in bundles:
+        positions = (await db.execute(
+            select(BundlePosition).where(BundlePosition.bundle_id == b.id)
+            .order_by(BundlePosition.sort_order, BundlePosition.id)
+        )).scalars().all()
+        at_ids = [p.asset_type_id for p in positions]
+        names = {}
+        if at_ids:
+            for at in (await db.execute(
+                select(AssetType).where(AssetType.id.in_(at_ids))
+            )).scalars().all():
+                names[at.id] = at.name
+        out.append({
+            "id": b.id, "name": b.name, "description": b.description,
+            "lines": [{"name": names.get(p.asset_type_id, "?"), "required": p.required}
+                      for p in positions],
+        })
+    return templates.TemplateResponse("portal/packages.html", {
+        "request": request, "active_page": "packages",
+        "user": current_user, "bundles": out,
+    })
+
+
+@router.post("/bundles/{bundle_id}/order")
+async def portal_order_bundle(
+    bundle_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
+) -> dict:
+    """Order a catalog bundle for the logged-in user."""
+    from app.models.bundle import Bundle
+    from app.services.bundle_order import order_bundle
+    bundle = await db.get(Bundle, bundle_id)
+    if not bundle or not bundle.is_active or not bundle.catalog_visible:
+        raise HTTPException(status_code=404, detail="Package not found")
+    email = (current_user.get("email") or "").strip()
+    if not email or (current_user.get("oid") or "").lower() == "anonymous":
+        raise HTTPException(status_code=403, detail="Sign in to order a package")
+    summary = await order_bundle(
+        db, bundle=bundle,
+        recipient_email=email, recipient_name=current_user.get("name") or email,
+        requester_email=email, requester_name=current_user.get("name") or email,
+        origin="bundle_catalog",
+        actor=portal_actor_by(current_user, "portal_order_bundle"),
+    )
+    return {
+        "ok": True, "group_id": summary["group_id"],
+        "ordered": len(summary["ordered"]), "skipped": len(summary["skipped"]),
+        "items": summary["ordered"], "skipped_items": summary["skipped"],
+    }
+
+
+@router.get("/my-team")
+async def portal_my_team(
+    request: Request,
+    current_user: dict = Depends(require_portal_auth),
+) -> dict:
+    """Return the logged-in user's AD direct reports for the "order for a team
+    member" picker.
+
+    Best-effort: returns an empty list (never an error) when AD isn't
+    configured, the lookup fails, or the user has no reports — the order form
+    then degrades gracefully to the free-text owner field.
+    """
+    from app.utils.ad_lookup import lookup_direct_reports
+    email = (current_user or {}).get("email") or ""
+    if not email:
+        return {"success": True, "reports": []}
+    result = lookup_direct_reports(email)
+    if not result.get("success"):
+        logger.info("Portal my-team: AD lookup for %s degraded: %s", email, result.get("error"))
+        return {"success": True, "reports": []}
+    return {"success": True, "reports": result.get("reports", [])}
+
+
 def _validate_order_attrs(
     form_data,
     attr_defs: list[dict],
@@ -565,20 +655,32 @@ async def portal_create_order(
     needs_any_approval = needs_manager_approval or needs_owner_approval
 
     manager_info = None
+    manager_self_approved = False
     if needs_manager_approval:
-        from app.utils.ad_lookup import lookup_manager
-        mgr_result = lookup_manager(user_email)
-        if not mgr_result.get("success"):
-            return await _render_error(
-                "Could not look up your manager information in Active Directory. Please contact support."
-            )
-        manager_info = mgr_result.get("manager")
-        if manager_info is None:
-            return await _render_error(
-                "This asset can only be ordered through management approval but there is "
-                "currently no manager configured in Active Directory for your account. "
-                "Please contact support."
-            )
+        from app.utils.ad_lookup import lookup_manager, is_owner_managed_by
+        # A2: a manager ordering *for their own report* has already exercised
+        # managerial authority, so the manager-approval step is implicitly
+        # satisfied. Guard: verify against AD that the requester really is the
+        # owner's manager (a requester can't self-authorise for an arbitrary
+        # owner). Only when the relationship is confirmed do we skip the
+        # normal requester-manager lookup.
+        if is_deputy:
+            verify = is_owner_managed_by(user_email, owner_email)
+            if verify.get("success") and verify.get("is_manager"):
+                manager_self_approved = True
+        if not manager_self_approved:
+            mgr_result = lookup_manager(user_email)
+            if not mgr_result.get("success"):
+                return await _render_error(
+                    "Could not look up your manager information in Active Directory. Please contact support."
+                )
+            manager_info = mgr_result.get("manager")
+            if manager_info is None:
+                return await _render_error(
+                    "This asset can only be ordered through management approval but there is "
+                    "currently no manager configured in Active Directory for your account. "
+                    "Please contact support."
+                )
 
     # Determine initial status
     if needs_any_approval:
@@ -683,7 +785,20 @@ async def portal_create_order(
         # below doesn't add duplicates of manager / owner approvers.
         seen_emails: set[str] = set()
 
-        if needs_manager_approval and manager_info:
+        if needs_manager_approval and manager_self_approved:
+            # A2: record the manager approval as already granted, attributed to
+            # the ordering manager (the requester). ``sod_exempt`` so the SoD
+            # self-approval guard doesn't flag it. It still counts toward any
+            # N-of-M quorum via the normal bucket logic below.
+            db.add(OrderApproval(
+                order_id=order.id, approver_type="manager",
+                approver_email=user_email, approver_name=user_name,
+                status="approved", sod_exempt=True,
+                decided_at=datetime.now(timezone.utc),
+                comment="Auto-approved: order placed by the recipient's manager.",
+            ))
+            seen_emails.add(user_email.lower())
+        elif needs_manager_approval and manager_info:
             db.add(await _make_approval(
                 "manager",
                 manager_info["email"],
@@ -759,15 +874,65 @@ async def portal_create_order(
         if not needs_any_approval and (rule_approvers or classification_extra):
             order.status = OrderStatus.PENDING_APPROVAL
 
-        # Send approval request emails via Celery
-        from celery import Celery
-        celery_app = Celery(broker=settings.CELERY_BROKER_URL)
-        celery_app.send_task(
-            "tasks.workflows.dynamic_runner.send_approval_requests",
-            args=[order.id],
-            queue="provision",
-        )
-        logger.info("Portal: Order %s created with pending approval, user=%s", order.id, order.user_email)
+        # A2: audit the manager self-approval so the tamper-evident trail
+        # records that the ordering manager provided the sign-off.
+        if manager_self_approved:
+            _mgr_row = (await db.execute(
+                select(OrderApproval).where(
+                    OrderApproval.order_id == order.id,
+                    OrderApproval.approver_type == "manager",
+                    OrderApproval.approver_email == user_email,
+                )
+            )).scalars().first()
+            if _mgr_row:
+                await aaudit(
+                    db, "order_approval", _mgr_row.id, "approved",
+                    new={
+                        "approver_email": user_email,
+                        "approver_type": "manager",
+                        "auto": "manager_ordered_for_report",
+                        "owner_email": owner_email,
+                    },
+                    by=portal_actor_by(current_user, "portal_create_order"),
+                )
+
+        # The created approvals may already satisfy the order's quorum — e.g.
+        # the only requirement was manager approval and the ordering manager
+        # self-satisfied it (A2). Reuse the same bucket/quorum evaluation the
+        # decision path uses; if every group is met, advance the order now
+        # instead of parking it in pending_approval with no one left to act.
+        from app.utils.approval_decision import _compute_bucket_state
+        _all_appr = (await db.execute(
+            select(OrderApproval).where(OrderApproval.order_id == order.id)
+        )).scalars().all()
+
+        if _all_appr and _compute_bucket_state(_all_appr, asset_type).all_met:
+            _now = datetime.now(timezone.utc)
+            for _a in _all_appr:
+                if _a.status == "pending":
+                    _a.status = "superseded"
+                    _a.decided_at = _now
+            from celery import Celery
+            _celery_app = Celery(broker=settings.CELERY_BROKER_URL)
+            # Advances status (SCHEDULED + reserve, or PROCESSING + stash
+            # dispatch ids); does not commit.
+            await _post_approval_dispatch(order, db, _celery_app)
+            if getattr(order, "_pending_dispatch_id", None) is not None:
+                _immediate_dispatch = True  # tail dispatches _new_order_id below
+            logger.info(
+                "Portal: order %s fully approved on creation (manager self-approval) — advancing to %s",
+                order.id, order.status.value,
+            )
+        else:
+            # Send approval request emails via Celery to the pending approvers.
+            from celery import Celery
+            celery_app = Celery(broker=settings.CELERY_BROKER_URL)
+            celery_app.send_task(
+                "tasks.workflows.dynamic_runner.send_approval_requests",
+                args=[order.id],
+                queue="provision",
+            )
+            logger.info("Portal: Order %s created with pending approval, user=%s", order.id, order.user_email)
 
     elif is_future:
         # Future-dated: reserve asset now, dispatch runbook later on start date

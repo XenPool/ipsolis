@@ -37,9 +37,17 @@
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Retention
     </button>
+    <button onclick="showTab('drift')" id="tab-btn-drift"
+            class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
+      Drift
+    </button>
     <button onclick="showTab('seed')" id="tab-btn-seed"
             class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
       Seed
+    </button>
+    <button onclick="showTab('migration')" id="tab-btn-migration"
+            class="tab-btn px-4 py-2 text-sm font-medium border-b-2 border-transparent text-muted hover:text-body">
+      Migration
     </button>
   </nav>
 </div>
@@ -261,7 +269,11 @@
   <!-- Schedule panel -->
   <div class="bg-surface rounded-lg border border-token-border p-5 mb-6 max-w-3xl">
     <div class="flex items-center justify-between mb-3">
-      <h3 class="text-sm font-semibold text-body">Scheduled backups</h3>
+      <div class="flex items-center gap-2">
+        <h3 class="text-sm font-semibold text-body">Scheduled backups</h3>
+        <span id="backup-encryption-badge" class="hidden text-[10px] px-1.5 py-0.5 rounded font-medium"
+              title="Whether backup files are encrypted at-rest (set BACKUP_ENCRYPTION_KEY in .env)."></span>
+      </div>
       <label class="flex items-center gap-2 text-xs text-muted">
         <input type="checkbox" id="schedule-enabled" class="rounded border-token-border">
         Enabled
@@ -606,6 +618,65 @@
   <div id="cleanup-result" class="mt-4 max-w-3xl"></div>
 </div>
 
+<!-- ── Tab: Drift reconciliation ────────────────────────────────────────── -->
+<div id="tab-drift" class="hidden">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-sm font-semibold text-body">Drift reconciliation</h2>
+    <button onclick="runDriftNow()" id="drift-run-btn"
+            class="px-3 py-1.5 text-xs font-medium rounded border border-token-border text-body hover:bg-surface-raised disabled:opacity-50">
+      Run scan now
+    </button>
+  </div>
+
+  <div class="bg-surface rounded-lg border border-token-border p-6 mb-4 max-w-3xl">
+    <p class="text-xs text-muted mb-5 leading-relaxed">
+      Periodically re-reads the AD groups that <strong>drift-monitored</strong> asset types provision
+      into and compares actual membership against what ipSolis granted (from the order change log over
+      active orders). Divergences — <em>missing access</em> and <em>out-of-band</em> — are written to
+      <code class="px-1 py-0.5 bg-surface-raised rounded text-[11px]">drift_findings</code>, audit-logged
+      (so they stream to the SIEM), and surfaced on <strong>Operations → Drift</strong>. Enable per type
+      via <em>Monitor for access drift</em> on the asset-type form.
+    </p>
+
+    <label class="flex items-center gap-2 text-sm cursor-pointer mb-5">
+      <input type="checkbox" id="drift-enabled" class="rounded border-token-border">
+      <span class="font-medium text-body">Enable scheduled drift scans</span>
+    </label>
+
+    <div class="grid grid-cols-2 gap-4 mb-5">
+      <div>
+        <label class="block text-xs text-muted mb-1">Schedule (cron)</label>
+        <input type="text" id="drift-cron" placeholder="0 3 * * *"
+               class="w-full font-mono rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5">
+        <span class="block text-[11px] text-muted/70 mt-1">UTC. Default <code>0 3 * * *</code> = daily 03:00.</span>
+      </div>
+      <div>
+        <label class="block text-xs text-muted mb-1">Remediation mode</label>
+        <select id="drift-mode"
+                class="w-full rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5">
+          <option value="detect_only">Detect only (record + alert)</option>
+          <option value="auto_remediate">Auto-remediate (re-grant / revoke in AD)</option>
+        </select>
+        <span class="block text-[11px] text-muted/70 mt-1">
+          Auto-remediate writes to AD: re-adds missing members, removes out-of-band ones.
+        </span>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted mb-5">
+      <span>Monitored asset types: <strong id="drift-monitored-types" class="text-body">–</strong></span>
+      <span>Open findings: <strong id="drift-open-findings" class="text-body">–</strong></span>
+      <span>Last scan: <strong id="drift-last-run" class="text-body">never</strong></span>
+    </div>
+
+    <button onclick="saveDrift()" id="drift-save-btn"
+            class="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">
+      Save
+    </button>
+    <div id="drift-result" class="mt-4 hidden px-4 py-3 rounded text-sm"></div>
+  </div>
+</div>
+
 <!-- ── Tab: Seed ────────────────────────────────────────────────────────── -->
 <div id="tab-seed" class="hidden">
   <div class="bg-surface rounded-lg border border-token-border p-5 max-w-3xl">
@@ -625,12 +696,120 @@
   </div>
 </div>
 
+<!-- ── Tab: Migration ───────────────────────────────────────────────────── -->
+<div id="tab-migration" class="hidden">
+  <div class="bg-surface rounded-lg border border-token-border p-5 max-w-3xl">
+    <h2 class="text-sm font-semibold text-body mb-1">Configuration migration (JSON)</h2>
+    <p class="text-xs text-muted mb-4">
+      Move <strong>asset definitions</strong> and <strong>pool instances</strong> to another
+      instance as one JSON file. Import is <strong>insert-only</strong> — an existing name is
+      skipped, never overwritten, so re-importing is safe. Runtime state (orders, approvals,
+      pool status) is not included; for full disaster recovery use <strong>Backups</strong>.
+    </p>
+
+    <a href="/admin/migration/export"
+       class="inline-block px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+      Export config (download JSON)
+    </a>
+
+    <div class="border-t border-token-border mt-5 pt-5">
+      <h3 class="text-sm font-semibold text-body mb-1">Import</h3>
+      <p class="text-xs text-muted mb-3">
+        Select a config JSON exported from another instance. Keep <em>Dry run</em> on first to
+        preview what would be created before writing anything.
+      </p>
+      <div class="flex flex-wrap items-center gap-4">
+        <input type="file" id="migration-file" accept="application/json,.json"
+               class="text-sm text-muted file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-surface-raised file:text-body hover:file:bg-surface">
+        <label class="flex items-center gap-1.5 text-xs text-muted select-none">
+          <input type="checkbox" id="migration-dry-run" checked class="rounded border-token-border">
+          Dry run (preview only)
+        </label>
+        <button type="button" onclick="importConfig()" id="migration-import-btn"
+                class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+          Import
+        </button>
+      </div>
+      <div id="migration-result" class="mt-4 hidden px-4 py-3 rounded text-sm"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Configuration migration (import) ───────────────────────────────────
+  function _escMig(s) {
+    return (s || '').replace(/[&<>"']/g, function(c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  function _showMigResult(html, isError) {
+    var el = document.getElementById('migration-result');
+    el.className = 'mt-4 px-4 py-3 rounded text-sm border ' + (isError
+      ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30'
+      : 'bg-green-50 text-green-700 border-green-200 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/30');
+    el.innerHTML = html;
+    el.classList.remove('hidden');
+  }
+  function _renderMigSummary(d) {
+    var at = d.asset_types || {}, pool = d.asset_pool || {};
+    var verb = d.dry_run ? 'Would create' : 'Created';
+    var lines = [
+      '<strong>' + (d.dry_run ? 'Dry run — no changes written.' : 'Import complete.') + '</strong>',
+      verb + ' <strong>' + (at.created || 0) + '</strong> asset definition(s) — skipped '
+        + (at.skipped_existing || 0) + ' existing, ' + (at.invalid || 0) + ' invalid.',
+      verb + ' <strong>' + (pool.created || 0) + '</strong> pool instance(s) — skipped '
+        + (pool.skipped_existing || 0) + ' existing, ' + (pool.skipped_no_type || 0) + ' with unknown type.',
+    ];
+    if (at.invalid_detail && at.invalid_detail.length) {
+      lines.push('<div class="mt-2 text-xs">Invalid: '
+        + at.invalid_detail.map(function(x) { return _escMig(x.name) + ' (' + _escMig(x.reason) + ')'; }).join('; ')
+        + '</div>');
+    }
+    _showMigResult(lines.join('<br>'), false);
+  }
+  async function importConfig() {
+    var fileEl = document.getElementById('migration-file');
+    var btn = document.getElementById('migration-import-btn');
+    document.getElementById('migration-result').classList.add('hidden');
+    if (!fileEl.files || !fileEl.files.length) {
+      _showMigResult('Select a JSON file first.', true);
+      return;
+    }
+    var dryRun = document.getElementById('migration-dry-run').checked;
+    var raw;
+    try { raw = await fileEl.files[0].text(); }
+    catch (e) { _showMigResult('Could not read the file.', true); return; }
+    var doc;
+    try { doc = JSON.parse(raw); }
+    catch (e) { _showMigResult('Not valid JSON: ' + _escMig(e.message || String(e)), true); return; }
+    btn.disabled = true;
+    try {
+      var resp = await fetch('/admin/migration/import?dry_run=' + (dryRun ? 'true' : 'false'), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(doc),
+      });
+      var data = await resp.json().catch(function() { return {}; });
+      if (!resp.ok) {
+        _showMigResult('Import failed (HTTP ' + resp.status + ')'
+          + (data.detail ? ': ' + _escMig(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : ''), true);
+        return;
+      }
+      _renderMigSummary(data);
+    } catch (e) {
+      _showMigResult('Import error: ' + _escMig(e.message || String(e)), true);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+</script>
+
 <script>
   var REFRESH_INTERVAL_MS = 30000;
   var refreshTimer = null;
 
   function showTab(name) {
-    ['health', 'license', 'backups', 'queue', 'schedule', 'retention', 'seed'].forEach(function(n) {
+    ['health', 'license', 'backups', 'queue', 'schedule', 'retention', 'drift', 'seed', 'migration'].forEach(function(n) {
       var panel = document.getElementById('tab-' + n);
       var btn = document.getElementById('tab-btn-' + n);
       if (!panel || !btn) return;
@@ -650,6 +829,74 @@
     if (name === 'queue')     loadQueue();
     if (name === 'schedule')  loadBeatSchedule();
     if (name === 'retention') loadRetention();
+    if (name === 'drift')     loadDrift();
+  }
+
+  // ── Drift reconciliation ───────────────────────────────────────────────
+  async function loadDrift() {
+    try {
+      var resp = await fetch('/admin/maintenance/drift');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      var d = await resp.json();
+      document.getElementById('drift-enabled').checked = !!d.enabled;
+      document.getElementById('drift-cron').value = d.schedule_cron || '0 3 * * *';
+      document.getElementById('drift-mode').value = d.remediation_mode || 'detect_only';
+      document.getElementById('drift-monitored-types').textContent = d.monitored_types;
+      document.getElementById('drift-open-findings').textContent = d.open_findings;
+      document.getElementById('drift-last-run').textContent =
+        d.last_run ? new Date(d.last_run).toLocaleString() : 'never';
+    } catch (e) {
+      banner('Failed to load drift config: ' + e, 'error');
+    }
+  }
+
+  function driftResult(msg, kind) {
+    var el = document.getElementById('drift-result');
+    el.className = 'mt-4 px-4 py-3 rounded text-sm ' +
+      (kind === 'error' ? 'bg-red-50 text-red-700 border border-red-200'
+                        : 'bg-green-50 text-green-700 border border-green-200');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+  }
+
+  async function saveDrift() {
+    var btn = document.getElementById('drift-save-btn');
+    btn.disabled = true;
+    try {
+      var resp = await fetch('/admin/maintenance/drift', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: document.getElementById('drift-enabled').checked,
+          schedule_cron: document.getElementById('drift-cron').value.trim(),
+          remediation_mode: document.getElementById('drift-mode').value,
+        }),
+      });
+      var body = await resp.json().catch(function() { return {}; });
+      if (!resp.ok) throw new Error(body.detail || ('HTTP ' + resp.status));
+      driftResult('Drift settings saved.', 'ok');
+      loadDrift();
+    } catch (e) {
+      driftResult('Save failed: ' + e, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function runDriftNow() {
+    var btn = document.getElementById('drift-run-btn');
+    btn.disabled = true;
+    try {
+      var resp = await fetch('/admin/maintenance/drift/run-now', { method: 'POST' });
+      var body = await resp.json().catch(function() { return {}; });
+      if (!resp.ok) throw new Error(body.detail || ('HTTP ' + resp.status));
+      driftResult('Drift scan enqueued (task ' + (body.task_id || '?') + '). '
+        + 'Findings appear on Operations → Drift once it completes.', 'ok');
+    } catch (e) {
+      driftResult('Failed to enqueue scan: ' + e, 'error');
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   // ── Recurring Tasks (Beat schedule) — read-only catalog ────────────────
@@ -1318,6 +1565,17 @@
       document.getElementById('schedule-cron').value = cron;
       applyCronToFields(cron);
       updateCronHuman();
+      var badge = document.getElementById('backup-encryption-badge');
+      if (badge) {
+        if (data.encrypted_at_rest) {
+          badge.textContent = '🔒 Encrypted at-rest';
+          badge.className = 'text-[10px] px-1.5 py-0.5 rounded font-medium bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300';
+        } else {
+          badge.textContent = 'Not encrypted at-rest';
+          badge.className = 'text-[10px] px-1.5 py-0.5 rounded font-medium bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300';
+        }
+        badge.classList.remove('hidden');
+      }
     } catch (err) {
       banner('Failed to load schedule: ' + err, 'error');
     }

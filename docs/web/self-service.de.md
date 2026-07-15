@@ -15,15 +15,19 @@ Das Self-Service-Portal ermöglicht es Mitarbeitenden, IT-Assets anzufordern, de
 
 ## Authentifizierung
 
-Das Portal unterstützt drei Authentifizierungsmodi, die unter **Admin → Settings → Entra ID** konfiguriert werden:
+Ob das Portal einen Login erfordert, steuert **Login zum Zugriff auf das Portal erforderlich** (**Admin → Settings → Authentifizierung**):
 
-| Modus | Verhalten |
+- **Aus** — das Portal ist offen; alle Benutzer teilen sich eine anonyme Identität. Geeignet für Tests oder rein interne Bereitstellungen ohne SSO.
+- **An** — Benutzer müssen sich anmelden, bevor sie den Katalog durchsuchen oder Bestellungen aufgeben können.
+
+Bei aktiviertem Login unterstützt ip·Solis zwei Arten von Anmeldemethoden, die kombiniert werden können:
+
+| Methode | Verhalten |
 |---|---|
-| `disabled` | Das Portal ist offen; alle Benutzer teilen sich eine anonyme Identität. Geeignet für Tests oder rein interne Bereitstellungen ohne SSO |
-| `entra_only` | Entra ID (Azure AD) SSO erforderlich. Benutzer melden sich mit ihrem Microsoft-365-Konto an |
-| `entra_with_onprem` | Entra ID SSO plus eine lokale LDAP-Mitgliedschaftsprüfung. Der Benutzer muss sowohl in Entra authentifiziert als auch in der konfigurierten AD-Gruppe vorhanden sein |
+| **OIDC Single Sign-On** | Ein oder mehrere standardbasierte OpenID-Connect-Identity-Provider — jeder kompatible IdP (Microsoft Entra ID, Okta, Ping, Google, Keycloak, Authentik, Zitadel, …). Jeder Provider konfiguriert sich selbst aus dem Discovery-Dokument seines Issuers; hinzufügen unter **Admin → Settings → Authentifizierung → OIDC Providers**. Der Callback lautet `/portal/auth/<provider>/callback`. |
+| **On-Prem LDAP** | Optionale Anmeldung mit Benutzername/Passwort gegen Ihr Active Directory / LDAP (`auth.ldap_enabled`) — für Umgebungen ohne Cloud-SSO. |
 
-Wenn SSO aktiviert ist, wird die E-Mail-Adresse des Benutzers automatisch aufgelöst. Die Vorgesetzten-Suche für das Genehmigungs-Routing nutzt dieselbe AD-Verbindung.
+Sind mehrere Anmeldemethoden aktiv, sehen die Benutzer eine Auswahl; bei genau einer geht es direkt dorthin. Nach erfolgreicher Anmeldung wird die E-Mail-Adresse des Benutzers automatisch aufgelöst. Die Vorgesetzten-Suche für das Genehmigungs-Routing nutzt dieselbe AD-/LDAP-Verbindung.
 
 ---
 
@@ -54,6 +58,12 @@ Wenn für den Asset-Typ ein `max_per_user`-Limit festgelegt ist, gibt das Portal
 ### Kostenprognose pro Bestellung
 
 Wenn für einen Asset-Typ `monthly_cost` konfiguriert ist, zeigt das Bestellformular die voraussichtlichen Gesamtkosten (`monthly_cost × months_requested`) an, bevor der Benutzer absendet. Diese erscheinen in der Karte **Access & Duration**.
+
+---
+
+## Ein Paket bestellen *(Pro)*
+
+Über einzelne Assets hinaus bietet die Seite **Pakete** fertige Bundles — eine kuratierte Zugriffs-Zusammenstellung, mit einem Klick bestellt (z. B. die Standard-Ausstattung einer Rolle). Bereits vorhandene Elemente werden automatisch übersprungen; der Rest durchläuft als einzelne Bestellungen den normalen Genehmigungs- und Provisionierungs-Flow. Welche Pakete hier erscheinen, steuern Administratoren je Bundle; siehe [Lifecycle → Onboarding-Bundles](./lifecycle#onboarding-bundles-pro).
 
 ---
 
@@ -269,3 +279,9 @@ Wird ein Benutzer als Austretender gekennzeichnet (über einen HR-Webhook oder S
 ## Mehrsprachige Unterstützung
 
 Die Portal-UI ist in **Englisch, Deutsch, Französisch, Spanisch und Italienisch** verfügbar. Die aktive Sprache wird aus dem `Accept-Language`-Header des Browsers erkannt und kann über eine Sprachauswahl überschrieben werden. Alle Beschriftungen, Validierungsmeldungen, E-Mail-Vorlagen und Leerzustände sind lokalisiert.
+
+---
+
+## Barrierefreiheit
+
+Das Portal erfüllt die strukturellen Grundlagen von **BITV 2.0 / EN 301 549** — einen Sprunglink zum Inhalt, semantische Landmarks und Beschriftungen, einen tastatursichtbaren Fokus-Indikator, Benachrichtigungs-Badges als Live-Regionen und ein Dokument-`lang`, das der gewählten Sprache folgt (relevant für Ausschreibungen der öffentlichen Hand). Damit sind die strukturellen Essentials abgedeckt; eine formale Barrierefreiheitserklärung und ein externer Konformitätstest sind ein separater Schritt je Deployment.

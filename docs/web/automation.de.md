@@ -17,12 +17,12 @@ Jeder Asset-Typ wird mit einer von drei Automatisierungsstrategien konfiguriert,
 
 ### Gruppenzugriff
 
-ip·Solis fügt den Benutzer zu einer oder mehreren Active-Directory- oder Entra-ID-Gruppen hinzu oder entfernt ihn daraus. Es ist kein PowerShell-Scripting erforderlich. Konfigurieren Sie die Gruppenziele im Asset-Typ unter **Targets**.
+ip·Solis fügt den Benutzer zu einer oder mehreren **Active-Directory**-Gruppen hinzu oder entfernt ihn daraus. Es ist kein PowerShell-Scripting erforderlich. Konfigurieren Sie die Gruppenziele im Asset-Typ unter **Targets**.
 
 Jedes Ziel legt fest:
-- **Type** — AD-Gruppe, Entra-ID-Gruppe
-- **Identifier** — der Gruppen-DN oder die Objekt-ID
-- **Principal source** — ob das AD-Konto oder die Entra-UPN des Benutzers für die Mitgliedschaft verwendet wird
+- **Type** — AD-Gruppe. *(Entra-ID-Gruppen- und RDS-Collection-Ziele sind geplant — coming soon; heute wird nur die AD-Gruppe ausgeführt.)*
+- **Identifier** — der Gruppen-DN (unterstützt den Platzhalter `{asset_name}`, der zur Bereitstellungszeit durch das zugewiesene Asset ersetzt wird)
+- **Principal source** — welche Nutzer der Bestellung zur Gruppe hinzugefügt werden: der Antragsteller, die zusätzlichen RDP-Nutzer, die Admin-Nutzer oder alle
 
 ### Runbook
 

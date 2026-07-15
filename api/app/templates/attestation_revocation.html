@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Revocation certificate – {{ app_title }}</title>
+  {% include "_partials/theme_head.html" %}
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { background: #fff !important; }
+    }
+  </style>
+</head>
+<body class="bg-surface-raised text-body min-h-screen">
+  <div class="max-w-xl mx-auto px-4 py-8 sm:py-12">
+    <header class="mb-6 flex items-center gap-3">
+      {% if app_logo %}
+      <img src="/portal/logo" alt="" style="max-height: 32px; max-width: 120px;">
+      {% endif %}
+      <h1 class="text-base font-semibold text-heading">{{ app_title }} — Revocation / disposal certificate</h1>
+    </header>
+
+    <div class="bg-surface rounded-lg border border-token-border p-5 sm:p-6">
+      <div class="rounded bg-surface-raised/60 border border-token-border px-3 py-2 mb-4 text-xs text-muted">
+        This document attests that the access below was removed from Active Directory / the target
+        systems by {{ app_title }}. Certificate #{{ artifact.id }} — issued {{ artifact.created_at.strftime("%Y-%m-%d %H:%M UTC") }}.
+      </div>
+
+      <dl class="grid grid-cols-1 sm:grid-cols-3 gap-y-2 gap-x-4 text-sm border-y border-token-border py-4 mb-4">
+        <dt class="text-xs font-medium text-muted/70 uppercase tracking-wide">Asset</dt>
+        <dd class="text-body sm:col-span-2">{{ snap.get('asset_type_name') or '(unknown)' }}</dd>
+
+        {% if snap.get('asset_name') %}
+        <dt class="text-xs font-medium text-muted/70 uppercase tracking-wide">Instance</dt>
+        <dd class="text-body sm:col-span-2 font-mono text-xs">{{ snap.get('asset_name') }}</dd>
+        {% endif %}
+
+        <dt class="text-xs font-medium text-muted/70 uppercase tracking-wide">User</dt>
+        <dd class="text-body sm:col-span-2">{{ snap.get('user_name') }} &lt;{{ snap.get('user_email') }}&gt;</dd>
+
+        <dt class="text-xs font-medium text-muted/70 uppercase tracking-wide">Revoked</dt>
+        <dd class="text-body sm:col-span-2">{{ snap.get('revoked_at') }}</dd>
+
+        <dt class="text-xs font-medium text-muted/70 uppercase tracking-wide">Order</dt>
+        <dd class="text-body sm:col-span-2 font-mono text-xs">#{{ artifact.order_id }}</dd>
+      </dl>
+
+      <p class="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Access removed</p>
+      {% if snap.get('removed') %}
+      <table class="w-full text-xs border border-token-border rounded overflow-hidden">
+        <thead class="bg-surface-raised text-muted">
+          <tr>
+            <th class="px-2 py-1.5 text-left font-medium">Type</th>
+            <th class="px-2 py-1.5 text-left font-medium">Target</th>
+            <th class="px-2 py-1.5 text-left font-medium">Principal</th>
+            <th class="px-2 py-1.5 text-left font-medium">State</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-token-border">
+          {% for r in snap.get('removed') %}
+          <tr>
+            <td class="px-2 py-1.5">{{ r.get('target_type') }}</td>
+            <td class="px-2 py-1.5 font-mono">{{ r.get('identifier') }}</td>
+            <td class="px-2 py-1.5">{{ r.get('principal') }}</td>
+            <td class="px-2 py-1.5">{{ 'removed' if r.get('state') == 'rolled_back' else r.get('state') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-xs text-muted/70">No group/target membership was recorded for this access (e.g. instance
+        deletion only). The removal completed via the asset's deprovision runbook.</p>
+      {% endif %}
+
+      <div class="no-print mt-6 flex justify-end">
+        <button onclick="window.print()"
+                class="px-4 py-2 rounded bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">
+          Print / save as PDF
+        </button>
+      </div>
+    </div>
+
+    <p class="text-xs text-muted/70 mt-4 text-center">
+      Certificate #{{ artifact.id }} · signed link · {{ app_title }}
+    </p>
+  </div>
+</body>
+</html>

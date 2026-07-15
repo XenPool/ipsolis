@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}Setup Wizard – {{ app_title }}{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-start justify-between gap-4">
+  <div>
+    <h1 class="text-lg font-semibold text-heading">Setup Wizard</h1>
+    <p class="text-xs text-muted/70 mt-1 max-w-2xl">
+      Get this instance ready, step by step. Each step links to where you configure it and, where
+      applicable, a one-click <strong>Test</strong>. You can skip and come back anytime — this guides,
+      it doesn't block. Status is read live from your configuration.
+    </p>
+  </div>
+  <div class="flex items-center gap-2">
+    <button onclick="loadWizard()" id="recheck-btn"
+       class="px-4 py-2 bg-surface-raised text-body text-sm font-medium rounded hover:bg-surface border border-token-border whitespace-nowrap">
+      Re-check
+    </button>
+    <a href="/ui/"
+       class="px-4 py-2 text-sm text-muted hover:text-body whitespace-nowrap">Skip to dashboard →</a>
+  </div>
+</div>
+
+<!-- Progress -->
+<div id="wizard-progress" class="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+
+<div id="wizard-done-banner" class="hidden mb-6 px-4 py-3 rounded bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/30 text-sm text-green-800 dark:text-green-200"></div>
+
+<!-- Essential steps -->
+<h2 class="text-sm font-semibold text-heading mb-2">Essential</h2>
+<div id="steps-essential" class="space-y-3 mb-8">
+  <div class="text-sm text-muted/70">Loading…</div>
+</div>
+
+<!-- Recommended steps -->
+<h2 class="text-sm font-semibold text-heading mb-2">Recommended</h2>
+<div id="steps-recommended" class="space-y-3"></div>
+
+<script>
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, function(c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+  });
+}
+
+// Checklist keys that map to an existing "test connection" endpoint.
+var TEST_ENDPOINTS = {
+  email: '/admin/config/email/test',
+  ad:    '/admin/config/ad/test',
+  teams: '/admin/config/teams/test',
+  siem:  '/admin/config/siem/test',
+};
+
+var _firstTodoAssigned = false;
+
+async function loadWizard() {
+  var resp = await fetch('/admin/setup/state');
+  if (!resp.ok) {
+    document.getElementById('steps-essential').innerHTML =
+      '<div class="text-sm text-red-600">Failed to load setup state (HTTP ' + resp.status + ').</div>';
+    return;
+  }
+  var data = await resp.json();
+  renderProgress(data);
+  _firstTodoAssigned = false;
+  renderSteps('steps-essential', (data.items || []).filter(function(i) { return i.tier === 'essential'; }));
+  renderSteps('steps-recommended', (data.items || []).filter(function(i) { return i.tier === 'recommended'; }));
+
+  var banner = document.getElementById('wizard-done-banner');
+  if (data.essential && data.essential.done === data.essential.total) {
+    banner.innerHTML = '<strong>Essential setup complete.</strong> Your instance is ready to use'
+      + (data.complete ? ' — recommended items are done too. 🎉' : '. Recommended items below are optional but improve the experience.');
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
+function renderProgress(data) {
+  var e = data.essential || {done: 0, total: 0};
+  var r = data.recommended || {done: 0, total: 0};
+  function bar(label, done, total, color) {
+    var pct = total ? Math.round((done / total) * 100) : 0;
+    return '<div class="bg-surface rounded-lg border border-token-border p-4">'
+      + '<div class="flex items-center justify-between text-xs mb-2"><span class="font-medium text-body">' + label + '</span>'
+      + '<span class="text-muted">' + done + ' / ' + total + '</span></div>'
+      + '<div class="h-2 rounded bg-surface-raised overflow-hidden"><div class="h-full ' + color + '" style="width:' + pct + '%"></div></div>'
+      + '</div>';
+  }
+  document.getElementById('wizard-progress').innerHTML =
+    bar('Essential', e.done, e.total, 'bg-blue-600')
+    + bar('Recommended', r.done, r.total, 'bg-purple-500');
+}
+
+function renderSteps(containerId, items) {
+  var el = document.getElementById(containerId);
+  if (!items.length) { el.innerHTML = '<div class="text-sm text-muted/70">Nothing here.</div>'; return; }
+  el.innerHTML = items.map(function(it) {
+    var isNext = false;
+    if (!it.done && it.tier === 'essential' && !_firstTodoAssigned) {
+      isNext = true; _firstTodoAssigned = true;
+    }
+    var statusBadge = it.done
+      ? '<span class="inline-flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-300"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>Done</span>'
+      : '<span class="text-xs font-medium text-muted/70">Not configured</span>';
+    var testBtn = TEST_ENDPOINTS[it.key]
+      ? '<button onclick="testStep(\'' + it.key + '\')" id="test-btn-' + it.key + '"'
+        + ' class="px-3 py-1.5 text-xs rounded border border-token-border text-body hover:bg-surface-raised">Test connection</button>'
+      : '';
+    var border = isNext ? 'border-blue-400 dark:border-blue-500/50 ring-1 ring-blue-200 dark:ring-blue-500/20' : 'border-token-border';
+    return '<div class="bg-surface rounded-lg border ' + border + ' p-4">'
+      + '<div class="flex items-start justify-between gap-4">'
+      +   '<div class="min-w-0">'
+      +     '<div class="flex items-center gap-2">'
+      +       '<span class="text-sm font-medium text-heading">' + escapeHtml(it.label) + '</span>'
+      +       (isNext ? '<span class="text-[10px] uppercase tracking-wider bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded">Next</span>' : '')
+      +     '</div>'
+      +     '<p class="text-xs text-muted/80 mt-1">' + escapeHtml(it.hint) + '</p>'
+      +     '<div id="test-result-' + it.key + '" class="hidden mt-2 text-xs"></div>'
+      +   '</div>'
+      +   '<div class="flex-shrink-0 text-right space-y-2">'
+      +     '<div>' + statusBadge + '</div>'
+      +     '<div class="flex items-center gap-2 justify-end">'
+      +       testBtn
+      +       '<a href="' + escapeHtml(it.link) + '" target="_blank" class="px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 whitespace-nowrap">Configure →</a>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+async function testStep(key) {
+  var endpoint = TEST_ENDPOINTS[key];
+  if (!endpoint) return;
+  var btn = document.getElementById('test-btn-' + key);
+  var res = document.getElementById('test-result-' + key);
+  if (btn) { btn.disabled = true; btn.textContent = 'Testing…'; }
+  try {
+    var resp = await fetch(endpoint, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+    var data = await resp.json().catch(function() { return {}; });
+    var ok = data.ok;
+    var msg = data.message || (resp.ok ? 'OK' : ('HTTP ' + resp.status));
+    var cls = (ok === true) ? 'text-green-700 dark:text-green-300'
+            : (ok === false) ? 'text-red-700 dark:text-red-300'
+            : 'text-muted';
+    var icon = (ok === true) ? '✓ ' : (ok === false) ? '✗ ' : 'ℹ ';
+    res.className = 'mt-2 text-xs ' + cls;
+    res.textContent = icon + msg;
+    res.classList.remove('hidden');
+  } catch (e) {
+    res.className = 'mt-2 text-xs text-red-700 dark:text-red-300';
+    res.textContent = '✗ ' + escapeHtml(e.message || String(e));
+    res.classList.remove('hidden');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Test connection'; }
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadWizard);
+</script>
+{% endblock %}

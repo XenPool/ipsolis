@@ -15,15 +15,19 @@ The self-service portal lets employees request IT assets, track order status, ex
 
 ## Authentication
 
-The portal supports three authentication modes, configured under **Admin → Settings → Entra ID**:
+Whether the portal requires a login is controlled by **Require login to access the portal** (**Admin → Settings → Authentication**):
 
-| Mode | Behaviour |
+- **Off** — the portal is open and all users share an anonymous identity. Suitable for testing or internal-only deployments without SSO.
+- **On** — users must sign in before they can browse the catalog or place orders.
+
+When login is required, ip·Solis supports two kinds of login method, which can be combined:
+
+| Method | Behaviour |
 |---|---|
-| `disabled` | Portal is open; all users share an anonymous identity. Suitable for testing or internal-only deployments without SSO |
-| `entra_only` | Entra ID (Azure AD) SSO required. Users sign in with their Microsoft 365 account |
-| `entra_with_onprem` | Entra ID SSO plus an on-premises LDAP membership check. The user must be both authenticated in Entra and present in the configured AD group |
+| **OIDC single sign-on** | One or more standards-based OpenID Connect identity providers — any compliant IdP (Microsoft Entra ID, Okta, Ping, Google, Keycloak, Authentik, Zitadel, …). Each provider self-configures from its issuer's discovery document; add them under **Admin → Settings → Authentication → OIDC Providers**. The callback is `/portal/auth/<provider>/callback`. |
+| **On-prem LDAP** | Optional username/password login against your Active Directory / LDAP (`auth.ldap_enabled`), for environments without cloud SSO. |
 
-When SSO is enabled, the user's email address is resolved automatically. Manager lookup for approval routing uses the same AD connection.
+When more than one login method is enabled, users see a chooser; with exactly one, they go straight to it. On successful login the user's email address is resolved automatically. Manager lookup for approval routing uses the same AD / LDAP connection.
 
 ---
 
@@ -54,6 +58,12 @@ If the asset type has a `max_per_user` limit set, the portal returns an error if
 ### Per-Order Cost Projection
 
 When an asset type has a `monthly_cost` configured, the order form shows the projected total (`monthly_cost × months_requested`) before the user submits. This appears in the **Access & Duration** card.
+
+---
+
+## Ordering a Package *(Pro)*
+
+Beyond single assets, the **Packages** page offers ready-made bundles — a curated set of access ordered in one click (e.g. a role's standard toolkit). Items the user already has are skipped automatically; the rest go through the normal approval and provisioning flow as individual orders. Which packages appear here is controlled per bundle by administrators; see [Lifecycle → Onboarding Bundles](./lifecycle#onboarding-bundles-pro).
 
 ---
 
@@ -269,3 +279,9 @@ If a user is flagged as a leaver (via HR webhook or SCIM), they are blocked from
 ## Multi-Language Support
 
 The portal UI is available in **English, German, French, Spanish, and Italian**. The active locale is detected from the browser's `Accept-Language` header and can be overridden via a language selector. All labels, validation messages, email templates, and empty states are localized.
+
+---
+
+## Accessibility
+
+The portal follows the structural basics of **BITV 2.0 / EN 301 549** — a skip-to-content link, semantic landmarks and labels, a keyboard-visible focus indicator, live-region notification badges, and a document `lang` that follows the selected language (relevant for public-sector procurement). This closes the structural essentials; a formal accessibility statement and external conformance test are a separate step per deployment.

@@ -68,6 +68,10 @@ class AssetTypeCreate(BaseModel):
     help_text: str | None = None
     is_active: bool = True
     show_on_dashboard: bool = False
+    drift_monitor: bool = False
+    contract_id: int | None = None
+    requires_handover_ack: bool = False
+    emit_revocation_certificate: bool = False
     category: AssetCategory = AssetCategory.PLATFORM_ACCESS
     config: list[dict[str, Any]] | None = None
     assignment_model: str = "assigned_personal"
@@ -105,6 +109,10 @@ class AssetTypeUpdate(BaseModel):
     help_text: str | None = None
     is_active: bool | None = None
     show_on_dashboard: bool | None = None
+    drift_monitor: bool | None = None
+    contract_id: int | None = None
+    requires_handover_ack: bool | None = None
+    emit_revocation_certificate: bool | None = None
     category: AssetCategory | None = None
     config: list[dict[str, Any]] | None = None
     assignment_model: str | None = None

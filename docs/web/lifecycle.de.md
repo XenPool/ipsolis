@@ -15,7 +15,7 @@ ip·Solis verwaltet den gesamten Lebenszyklus von IT-Assets — von der initiale
 
 ## Zuweisungsmodelle
 
-Jeder Asset-Typ wird mit einem von drei Zuweisungsmodellen konfiguriert, die bestimmen, wie Assets zugeteilt werden.
+Jeder Asset-Typ wird mit einem von zwei Zuweisungsmodellen konfiguriert, die bestimmen, wie Assets zugeteilt werden.
 
 ### Capacity-Pooled
 
@@ -24,12 +24,6 @@ Ein gemeinsam genutzter Pool austauschbarer Assets. Wenn ein Benutzer eines anfo
 Typischer Einsatz: virtuelle Desktops, VPN-Konten, gemeinsam genutzte Server.
 
 **Benutzerkontingent** (`max_per_user`) — begrenzt optional, wie viele Instanzen ein einzelner Benutzer gleichzeitig halten darf. Gezählt über alle nicht-terminalen Bestellzustände hinweg.
-
-### Dedicated-Shared
-
-Ein festes Asset, das gleichzeitig von mehreren Benutzern genutzt wird. Keine Erschöpfung — jede Bestellung dieses Typs verweist auf dieselbe gemeinsam genutzte Ressource. Die Deprovisionierung entfernt den Zugriff des Benutzers, lässt das Asset selbst jedoch unangetastet.
-
-Typischer Einsatz: Jump-Hosts, gemeinsam genutzte Anwendungsserver, Team-Dateifreigaben.
 
 ### Assigned-Personal
 
@@ -66,7 +60,7 @@ Wichtige Felder:
 | Feld | Beschreibung |
 |---|---|
 | **Kategorie** | Gruppiert Asset-Typen im Portal-Katalog |
-| **Zuweisungsmodell** | Capacity-pooled, dedicated-shared oder assigned-personal |
+| **Zuweisungsmodell** | Capacity-pooled oder assigned-personal |
 | **Automatisierungsstrategie** | Gruppenzugriff, Runbook oder Composite — siehe [Automatisierung & Runbooks](./automation) |
 | **Deprovisionierungsrichtlinie** | Was passiert, wenn ein Asset zurückgegeben wird oder abläuft |
 | **Pool-Kapazität** | Maximale Pool-Größe; Kapazitätswarnungen erscheinen auf dem Dashboard bei ≥80 % / ≥95 % Auslastung |
@@ -132,6 +126,25 @@ Ein täglicher Beat-Task sendet Erinnerungs-E-Mails zu konfigurierbaren Zeitabst
 ### Portal-Überprüfungswarteschlange
 
 Prüfer mit Entra-ID-SSO können ihre Überprüfungswarteschlange auch unter `/portal/certifications` aufrufen — kein separates Admin-Konto erforderlich.
+
+---
+
+## Onboarding-Bundles *(Pro)*
+
+Ein **Bundle** fasst bestehende Asset-Definitionen zu einem Paket zusammen — die Standard-Ausstattung eines neuen Mitarbeiters (Laptop, VDI, M365-Gruppen, …), als Einheit bestellt. Bundles definieren keine neuen Assets; jede **Position** referenziert einen Asset-Typ (erforderlich oder optional, mit optionaler Attribut-Vorbelegung).
+
+Eine **Zuweisungsregel** bildet Benutzerattribute (Abteilung, Kostenstelle, Titel, …) auf ein Bundle ab und nutzt denselben UND/ODER/NICHT-Bedingungseditor wie die bedingten Genehmigungsregeln. Es gibt keinen lokalen Benutzerspeicher, daher ist die Regelauswertung eine reine Funktion über ein Attribut-Dictionary — aufgelöst aus dem AD, per SCIM geliefert oder manuell eingegeben.
+
+Die Bestellung eines Bundles erzeugt **eine Auftragsgruppe** mit einer Bestellung je auflösbarer Position, über die normalen Genehmigungs- und Ausführungspfade — Genehmigung pro Position, Kapazität, Runbooks und Audit funktionieren unverändert. Sie ist **idempotent**: Ein Asset-Typ, den der Benutzer bereits aktiv besitzt, wird übersprungen. Ein Bundle kann ausgelöst werden über:
+
+- **Onboarding**-Admin — *für einen Benutzer auswerten* (Attribute auflösen, passende Bundles + zu bestellende Positionen vorschauen), dann bestellen
+- den Self-Service-**Pakete**-Katalog — ein Benutzer bestellt ein Paket für sich selbst
+- einen **SCIM-Joiner** (siehe [Integrationen → SCIM](./integrations#scim-20-pro))
+- die **erste Portal-Anmeldung** eines Benutzers (Opt-in, `onboarding.eval_on_first_login`)
+
+Bundles und Regeln verwalten Sie unter **Onboarding**.
+
+> **Design-Hinweis:** ip·Solis hat sein Auftragsmodell bewusst *nicht* in einen verpflichtenden Header invertiert. Eine Einzelbestellung bleibt exakt wie zuvor (keine Gruppe); ein schlanker `order_group`-Header existiert nur für Multi-Item-Anfragen — so ergänzen Bundles Funktionalität, ohne den bewährten Einzelbestell-Pfad anzutasten.
 
 ---
 

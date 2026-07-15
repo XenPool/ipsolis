@@ -15,7 +15,7 @@ ip·Solis manages the full lifecycle of IT assets — from initial assignment th
 
 ## Assignment Models
 
-Every asset type is configured with one of three assignment models that determine how assets are allocated.
+Every asset type is configured with one of two assignment models that determine how assets are allocated.
 
 ### Capacity-Pooled
 
@@ -24,12 +24,6 @@ A shared pool of fungible assets. When a user requests one, ip·Solis picks an a
 Typical use: virtual desktops, VPN accounts, shared servers.
 
 **Per-user quota** (`max_per_user`) — optionally limits how many instances a single user can hold simultaneously. Counted across all non-terminal order states.
-
-### Dedicated-Shared
-
-A fixed asset shared by multiple users simultaneously. No depletion — every order for this type points at the same shared resource. Deprovisioning removes the user's access but leaves the asset untouched.
-
-Typical use: jump hosts, shared application servers, team file shares.
 
 ### Assigned-Personal
 
@@ -66,7 +60,7 @@ Key fields:
 | Field | Description |
 |---|---|
 | **Category** | Groups asset types in the portal catalog |
-| **Assignment model** | Capacity-pooled, dedicated-shared, or assigned-personal |
+| **Assignment model** | Capacity-pooled or assigned-personal |
 | **Automation strategy** | Group Access, Runbook, or Composite — see [Automation & Runbooks](./automation) |
 | **Deprovision policy** | What happens when an asset is returned or expired |
 | **Pool capacity** | Maximum pool size; capacity warnings appear on the dashboard at ≥80% / ≥95% fill |
@@ -132,6 +126,25 @@ A daily Beat task sends reminder emails at configurable offsets before the due d
 ### Portal Review Queue
 
 Reviewers with Entra ID SSO can also access their review queue at `/portal/certifications` — no separate admin account required.
+
+---
+
+## Onboarding Bundles *(Pro)*
+
+A **bundle** groups existing asset definitions into a package — a new hire's standard kit (laptop, VDI, M365 groups, …) ordered as a unit. Bundles define no new assets; each **position** references an asset type (required or optional, with an optional attribute pre-fill).
+
+An **assignment rule** maps user attributes (department, cost center, title, …) to a bundle, reusing the same AND/OR/NOT condition editor as the conditional approval rules. There is no local user store, so rule evaluation is a pure function over an attribute dictionary — resolved from AD, supplied via SCIM, or entered manually.
+
+Ordering a bundle creates **one order group** with one order per resolvable position, through the normal approval and execution paths — so per-item approval, capacity, runbooks, and audit all work unchanged. It is **idempotent**: an asset type the user already actively holds is skipped. A bundle can be triggered from:
+
+- **Onboarding** admin — *evaluate for a user* (resolve their attributes, preview the matched bundles + which items would be ordered), then order
+- the self-service **Packages** catalog — a user orders a package for themselves
+- a **SCIM joiner** (see [Integrations → SCIM](./integrations#scim-20-pro))
+- a user's **first portal login** (opt-in, `onboarding.eval_on_first_login`)
+
+Manage bundles and rules under **Onboarding**.
+
+> **Design note:** ip·Solis deliberately did *not* invert its order model into a mandatory header. A single order stays exactly as before (no group); a lightweight `order_group` header exists only for multi-item requests — so bundles add capability without touching the proven single-order path.
 
 ---
 

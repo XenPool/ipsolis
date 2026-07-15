@@ -1,0 +1,27 @@
+{# Shared sub-nav for the Reports hub. Included at the top of each report
+   page's content block so the five governance reports share one tab bar and
+   collapse to a single "Reports" sidebar entry. `active_page` highlights the
+   current tab; certification / leaver tabs follow the same feature flags the
+   sidebar uses. #}
+<div class="mb-6 border-b border-token-border">
+  <nav class="flex flex-wrap gap-1 -mb-px">
+    <a href="/ui/access-report"
+       class="px-3 py-2 text-sm font-medium border-b-2 {% if active_page == 'access-report' %}border-blue-600 text-blue-700 dark:text-blue-300{% else %}border-transparent text-muted hover:text-body{% endif %}">Access</a>
+    <a href="/ui/cost-report"
+       class="px-3 py-2 text-sm font-medium border-b-2 {% if active_page == 'cost-report' %}border-blue-600 text-blue-700 dark:text-blue-300{% else %}border-transparent text-muted hover:text-body{% endif %}">Cost</a>
+    <a href="/ui/contracts"
+       class="px-3 py-2 text-sm font-medium border-b-2 {% if active_page == 'contracts' %}border-blue-600 text-blue-700 dark:text-blue-300{% else %}border-transparent text-muted hover:text-body{% endif %}">Licenses</a>
+    <a href="/ui/attestations"
+       class="px-3 py-2 text-sm font-medium border-b-2 {% if active_page == 'attestations' %}border-blue-600 text-blue-700 dark:text-blue-300{% else %}border-transparent text-muted hover:text-body{% endif %}">Attestations</a>
+    {% if has_certifications %}
+    <a href="/ui/certifications"
+       class="px-3 py-2 text-sm font-medium border-b-2 {% if active_page == 'certifications' %}border-blue-600 text-blue-700 dark:text-blue-300{% else %}border-transparent text-muted hover:text-body{% endif %}">Certifications</a>
+    {% endif %}
+    {% if has_leaver_events %}
+    <a href="/ui/leaver-events"
+       class="px-3 py-2 text-sm font-medium border-b-2 {% if active_page == 'leaver-events' %}border-blue-600 text-blue-700 dark:text-blue-300{% else %}border-transparent text-muted hover:text-body{% endif %}">Leaver Events</a>
+    {% endif %}
+    <a href="/ui/audit-log"
+       class="px-3 py-2 text-sm font-medium border-b-2 {% if active_page == 'audit-log' %}border-blue-600 text-blue-700 dark:text-blue-300{% else %}border-transparent text-muted hover:text-body{% endif %}">Audit Log</a>
+  </nav>
+</div>

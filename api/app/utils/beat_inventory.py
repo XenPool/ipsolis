@@ -148,6 +148,38 @@ BEAT_INVENTORY: list[BeatEntry] = [
         ),
         "config_keys": ["license.warning_email"],
     },
+    {
+        "name": "contract-renewal-reminders",
+        "task": "tasks.workflows.contract_renewals.check_contract_renewals",
+        "cadence": "Daily 08:15 Europe/Berlin",
+        "queue": "notifications",
+        "description": (
+            "Emails a reminder for each software contract entering its "
+            "renewal notice window (renewal_date − notice_period_days). "
+            "Opt-in; deduped per window via last_renewal_reminder_at. "
+            "Recipient falls back to health.alert_email."
+        ),
+        "config_keys": [
+            "contract.renewal_reminder_enabled",
+            "contract.renewal_reminder_email",
+        ],
+    },
+    {
+        "name": "attestation-handover-reminders",
+        "task": "tasks.workflows.attestation_reminders.check_overdue_handovers",
+        "cadence": "Daily 08:30 Europe/Berlin",
+        "queue": "notifications",
+        "description": (
+            "Re-emails the signed handover link for handover artifacts still "
+            "unacknowledged past attestation.handover_reminder_days. Opt-in; "
+            "deduped per window via last_reminder_at. Revocation certificates "
+            "are evidence-only and never reminded."
+        ),
+        "config_keys": [
+            "attestation.handover_reminder_enabled",
+            "attestation.handover_reminder_days",
+        ],
+    },
 
     # ── Hourly ──────────────────────────────────────────────────────────
     {
@@ -239,6 +271,25 @@ BEAT_INVENTORY: list[BeatEntry] = [
             "maintenance.schedule_enabled",
             "maintenance.schedule_cron",
             "maintenance.backup_retention_count",
+        ],
+    },
+    {
+        "name": "drift-scheduler",
+        "task": "tasks.workflows.drift_reconcile.check_drift_schedule",
+        "cadence": "Every minute (fires per ``drift.schedule_cron``)",
+        "queue": "reclaim",
+        "description": (
+            "Gated on ``drift.enabled``; when ``drift.schedule_cron`` is "
+            "due, enqueues ``reconcile_drift`` — which diffs actual AD "
+            "group membership against what ipSolis granted for "
+            "``drift_monitor`` asset types, records divergences to "
+            "``drift_findings``, and (in ``auto_remediate`` mode) "
+            "re-grants / revokes. Dedups on ``drift.last_run``."
+        ),
+        "config_keys": [
+            "drift.enabled",
+            "drift.schedule_cron",
+            "drift.remediation_mode",
         ],
     },
     {

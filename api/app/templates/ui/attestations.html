@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}Attestations – {{ app_title }}{% endblock %}
+
+{% block content %}
+{% include "_partials/hub_tabs_reports.html" %}
+
+<div class="mb-6">
+  <h1 class="text-lg font-semibold text-heading">Attestations</h1>
+  <p class="text-xs text-muted/70 mt-1 max-w-3xl">
+    Signed <strong>handover</strong> acknowledgments (Übergabeprotokoll — recipient confirms receipt on
+    provisioning) and <strong>revocation</strong> / disposal certificates (evidence of removed access on
+    revoke / expiry). Emitted automatically for asset types with the matching flag; enable per type on the
+    <a href="/ui/asset-types" class="text-blue-600 hover:underline">Asset Definitions</a> form. Each row's
+    viewer link opens the exact signed page the recipient sees.
+  </p>
+</div>
+
+<div id="tiles" class="grid grid-cols-3 gap-3 mb-5 max-w-xl"></div>
+
+<div class="flex items-center gap-2 mb-3 text-sm">
+  <label class="text-xs text-muted">Kind</label>
+  <select id="f-kind" onchange="load()" class="rounded border border-token-border bg-surface text-body text-sm px-2 py-1">
+    <option value="">All</option>
+    <option value="handover">Handover</option>
+    <option value="revocation">Revocation</option>
+  </select>
+  <label class="text-xs text-muted ml-3">Status</label>
+  <select id="f-status" onchange="load()" class="rounded border border-token-border bg-surface text-body text-sm px-2 py-1">
+    <option value="">All</option>
+    <option value="pending">Pending</option>
+    <option value="acknowledged">Acknowledged</option>
+    <option value="emitted">Emitted</option>
+  </select>
+</div>
+
+<div class="bg-surface rounded-lg border border-token-border overflow-x-auto">
+  <table class="w-full text-sm min-w-[860px]">
+    <thead class="bg-surface-raised text-xs uppercase text-muted">
+      <tr>
+        <th class="px-3 py-3 text-left font-medium">Kind</th>
+        <th class="px-3 py-3 text-left font-medium">Asset type</th>
+        <th class="px-3 py-3 text-left font-medium">Recipient</th>
+        <th class="px-3 py-3 text-left font-medium">Order</th>
+        <th class="px-3 py-3 text-left font-medium">Status</th>
+        <th class="px-3 py-3 text-left font-medium">Created</th>
+        <th class="px-3 py-3 text-right font-medium">View</th>
+      </tr>
+    </thead>
+    <tbody id="rows" class="divide-y divide-token-border">
+      <tr><td colspan="7" class="px-4 py-8 text-center text-muted/70">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+function escapeHtml(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function fmtDate(s) { return s ? new Date(s).toLocaleString() : '—'; }
+
+function kindBadge(k) {
+  var cls = k === 'revocation' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-blue-50 text-blue-700 border-blue-200';
+  return '<span class="px-1.5 py-0.5 rounded text-[11px] font-medium border ' + cls + '">' + escapeHtml(k) + '</span>';
+}
+function statusBadge(s) {
+  var map = {
+    pending: 'bg-amber-50 text-amber-700 border-amber-200',
+    acknowledged: 'bg-green-50 text-green-700 border-green-200',
+    emitted: 'bg-surface-raised text-muted border-token-border'
+  };
+  return '<span class="px-1.5 py-0.5 rounded text-[11px] font-medium border ' + (map[s] || map.emitted) + '">' + escapeHtml(s) + '</span>';
+}
+
+async function load() {
+  var tbody = document.getElementById('rows');
+  var params = new URLSearchParams();
+  var k = document.getElementById('f-kind').value;
+  var st = document.getElementById('f-status').value;
+  if (k) params.set('kind', k);
+  if (st) params.set('status', st);
+  var data;
+  try {
+    var resp = await fetch('/admin/attestations?' + params.toString());
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    data = await resp.json();
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-red-600">Failed to load: ' + escapeHtml(e.message) + '</td></tr>';
+    return;
+  }
+  var c = data.counts || {};
+  document.getElementById('tiles').innerHTML =
+    tile('Pending acks', c.pending || 0, 'amber') +
+    tile('Acknowledged', c.acknowledged || 0, 'green') +
+    tile('Revocation certs', c.emitted || 0, 'slate');
+
+  var items = data.items || [];
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-muted/70">No attestations yet. They appear here once an asset type with a handover / revocation flag completes an order.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(function(a) {
+    return '<tr>'
+      + '<td class="px-3 py-2">' + kindBadge(a.kind) + '</td>'
+      + '<td class="px-3 py-2 text-body">' + escapeHtml(a.asset_type_name || '—') + '</td>'
+      + '<td class="px-3 py-2 text-muted">' + escapeHtml(a.recipient_name || '') + ' &lt;' + escapeHtml(a.recipient_email || '') + '&gt;'
+        + (a.acknowledged_by ? '<div class="text-[11px] text-muted/60">ack by ' + escapeHtml(a.acknowledged_by) + '</div>' : '') + '</td>'
+      + '<td class="px-3 py-2 font-mono text-xs text-muted">' + (a.order_id ? '#' + a.order_id : '—') + '</td>'
+      + '<td class="px-3 py-2">' + statusBadge(a.status) + '</td>'
+      + '<td class="px-3 py-2 text-muted whitespace-nowrap">' + fmtDate(a.created_at) + '</td>'
+      + '<td class="px-3 py-2 text-right"><a href="' + a.view_url + '" target="_blank" class="text-blue-600 hover:underline text-xs">Open →</a></td>'
+      + '</tr>';
+  }).join('');
+}
+
+function tile(label, value, color) {
+  var ring = {amber:'text-amber-600', green:'text-green-600', slate:'text-body'}[color] || 'text-body';
+  return '<div class="bg-surface rounded-lg border border-token-border px-4 py-3">'
+    + '<div class="text-2xl font-semibold ' + ring + '">' + value + '</div>'
+    + '<div class="text-xs text-muted/70 mt-0.5">' + label + '</div></div>';
+}
+
+load();
+</script>
+{% endblock %}

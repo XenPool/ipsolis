@@ -48,10 +48,28 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import text
+
 from app.database import get_db
 from app.models.order import Order
 from app.utils.api_tokens import token_has_scope, verify_raw_token, mark_used
 from app.utils.leaver import process_leaver
+
+
+async def _joiner_enabled(db: AsyncSession) -> bool:
+    row = (await db.execute(
+        text("SELECT value FROM app_config WHERE key = 'scim.joiner_enabled'")
+    )).first()
+    return bool(row) and (row[0] or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+async def _mover_mode(db: AsyncSession) -> str:
+    """Return the mover reconciliation mode: disabled | additions_only | reconcile."""
+    row = (await db.execute(
+        text("SELECT value FROM app_config WHERE key = 'scim.mover_mode'")
+    )).first()
+    mode = ((row[0] if row else None) or "disabled").strip().lower()
+    return mode if mode in ("additions_only", "reconcile") else "disabled"
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +116,32 @@ _USER_SCHEMA = {
             "name": "externalId", "type": "string", "multiValued": False,
             "required": False, "caseExact": True, "mutability": "readWrite",
             "returned": "default",
+        },
+    ],
+}
+
+_GROUP_RESOURCE_TYPE = {
+    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"],
+    "id": "Group",
+    "name": "Group",
+    "endpoint": "/Groups",
+    "description": "Group (read-only shim — ip·Solis models group membership in AD, not SCIM)",
+    "schema": "urn:ietf:params:scim:schemas:core:2.0:Group",
+}
+
+_GROUP_SCHEMA = {
+    "id": "urn:ietf:params:scim:schemas:core:2.0:Group",
+    "name": "Group",
+    "description": "Core SCIM 2.0 Group schema (read-only in ip·Solis)",
+    "attributes": [
+        {
+            "name": "displayName", "type": "string", "multiValued": False,
+            "required": True, "caseExact": False, "mutability": "readOnly",
+            "returned": "default",
+        },
+        {
+            "name": "members", "type": "complex", "multiValued": True,
+            "required": False, "mutability": "readOnly", "returned": "default",
         },
     ],
 }
@@ -194,8 +238,8 @@ async def resource_types(
     await _scim_auth(request, db, write=False)
     return {
         "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
-        "totalResults": 1,
-        "Resources": [_USER_RESOURCE_TYPE],
+        "totalResults": 2,
+        "Resources": [_USER_RESOURCE_TYPE, _GROUP_RESOURCE_TYPE],
     }
 
 
@@ -206,26 +250,28 @@ async def schemas(
     await _scim_auth(request, db, write=False)
     return {
         "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
-        "totalResults": 1,
-        "Resources": [_USER_SCHEMA],
+        "totalResults": 2,
+        "Resources": [_USER_SCHEMA, _GROUP_SCHEMA],
     }
 
 
 # ── Users — list / read / create / update / delete ──────────────────────────
 
-def _user_resource(email: str, display_name: str | None = None) -> dict:
+def _user_resource(
+    email: str, display_name: str | None = None, *,
+    active: bool = True, external_id: str | None = None,
+) -> dict:
     """Render a SCIM User resource for an ip·Solis user.
 
-    The ``id`` is the lowercase email — stable, unique, and guaranteed
-    to exist for any user who's interacted with ip·Solis. ``externalId``
-    isn't tracked since we don't store users; SCIM clients map their
-    own external id to ``userName`` (which equals ``id`` here).
+    The ``id`` is the lowercase email — stable, unique, and guaranteed to exist
+    for any user who's interacted with ip·Solis. ``active`` / ``externalId`` come
+    from the SCIM identity projection when present (else active defaults True).
     """
-    return {
+    res: dict[str, Any] = {
         "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
         "id": email,
         "userName": email,
-        "active": True,
+        "active": active,
         "displayName": display_name or email,
         "emails": [{"value": email, "primary": True, "type": "work"}],
         "meta": {
@@ -233,6 +279,35 @@ def _user_resource(email: str, display_name: str | None = None) -> dict:
             "location": f"/scim/v2/Users/{email}",
         },
     }
+    if external_id:
+        res["externalId"] = external_id
+    return res
+
+
+async def _all_user_resources(db: AsyncSession) -> list[dict[str, Any]]:
+    """Build the candidate set for in-memory filtering.
+
+    Merges distinct ``orders.user_email`` (with the latest name) and the SCIM
+    identity projection (name / active / externalId). Keyed by lowercased email.
+    Used only for complex filters; simple ``userName eq`` and unfiltered lists
+    take DB-paginated fast paths.
+    """
+    merged: dict[str, dict[str, Any]] = {}
+    order_rows = (await db.execute(text(
+        "SELECT DISTINCT ON (lower(user_email)) lower(user_email) AS email, user_name AS name "
+        "FROM orders ORDER BY lower(user_email), id DESC"
+    ))).all()
+    for email, name in order_rows:
+        merged[email] = {"email": email, "name": name, "active": True, "external_id": None}
+    ident_rows = (await db.execute(text(
+        "SELECT lower(user_email) AS email, display_name, active, external_id FROM scim_identities"
+    ))).all()
+    for email, dname, active, ext in ident_rows:
+        row = merged.setdefault(email, {"email": email, "name": None, "active": True, "external_id": None})
+        row["name"] = row.get("name") or dname
+        row["active"] = bool(active)
+        row["external_id"] = ext
+    return sorted(merged.values(), key=lambda r: r["email"])
 
 
 @router.get("/Users")
@@ -243,68 +318,77 @@ async def list_users(
     startIndex: int = Query(default=1, ge=1),
     count: int = Query(default=100, ge=0, le=200),
 ) -> dict:
-    """List users (= distinct ``orders.user_email`` values).
+    """List users, with full SCIM filter-grammar support (RFC 7644 §3.4.2.2).
 
-    Filters: only ``userName eq "<email>"`` is supported. Anything
-    else returns the unfiltered list with a ``Warning`` header.
-    Implementing the full SCIM filter grammar is queued for slice 2.
+    Users are derived from ``orders.user_email`` + the SCIM identity projection.
+    A ``userName``/``id``/``emails eq`` filter takes an indexed single-lookup
+    fast path; any other filter is parsed to an AST and evaluated in memory over
+    the full user set. A malformed filter returns 400 ``invalidFilter``.
     """
     await _scim_auth(request, db, write=False)
 
-    target_email: str | None = None
-    if filter:
-        # Naive parse — sufficient for the most common Okta / SailPoint pattern.
-        f = filter.strip()
-        for keyword in ('userName eq "', 'username eq "', 'emails eq "'):
-            if f.lower().startswith(keyword.lower()):
-                tail = f[len(keyword):]
-                if tail.endswith('"'):
-                    target_email = tail[:-1].strip().lower()
-                    break
+    from app.utils.scim_filter import (
+        SCIMFilterError, evaluate, parse_filter, simple_email_equality,
+    )
 
-    if target_email:
-        rows = await db.execute(
-            select(Order.user_email, Order.user_name)
-            .where(func.lower(Order.user_email) == target_email)
-            .order_by(Order.id.desc())
-            .limit(1)
-        )
-        row = rows.first()
-        if row is None:
-            return {
-                "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
-                "totalResults": 0,
-                "startIndex": startIndex,
-                "itemsPerPage": 0,
-                "Resources": [],
-            }
-        email_l = row[0].lower()
+    def _list(resources: list[dict], total: int) -> dict:
         return {
             "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
-            "totalResults": 1,
+            "totalResults": total,
             "startIndex": startIndex,
-            "itemsPerPage": 1,
-            "Resources": [_user_resource(email_l, row[1])],
+            "itemsPerPage": len(resources),
+            "Resources": resources,
         }
 
-    # Unfiltered list — distinct lowercased emails, paginated.
-    total_q = select(func.count(distinct(func.lower(Order.user_email))))
-    total = (await db.execute(total_q)).scalar_one()
+    if filter:
+        try:
+            node = parse_filter(filter)
+        except SCIMFilterError as exc:
+            return _scim_error(400, f"Invalid filter: {exc}", scim_type="invalidFilter")
 
-    page_q = (
+        # Fast path — the ubiquitous single-user lookup.
+        email = simple_email_equality(node)
+        if email is not None:
+            row = (await db.execute(
+                select(Order.user_email, Order.user_name)
+                .where(func.lower(Order.user_email) == email)
+                .order_by(Order.id.desc()).limit(1)
+            )).first()
+            if row is not None:
+                return _list([_user_resource(row[0].lower(), row[1])], 1)
+            # May still exist as a SCIM projection with no orders yet.
+            from app.models.scim_identity import ScimIdentity
+            ident = (await db.execute(
+                select(ScimIdentity).where(func.lower(ScimIdentity.user_email) == email)
+            )).scalars().first()
+            if ident is None:
+                return _list([], 0)
+            return _list([_user_resource(
+                ident.user_email.lower(), ident.display_name,
+                active=ident.active, external_id=ident.external_id,
+            )], 1)
+
+        # General path — parse + evaluate over the full user set.
+        candidates = await _all_user_resources(db)
+        matched = [r for r in candidates if evaluate(node, r)]
+        total = len(matched)
+        page = matched[max(0, startIndex - 1): max(0, startIndex - 1) + count]
+        return _list(
+            [_user_resource(r["email"], r["name"], active=r["active"], external_id=r["external_id"])
+             for r in page],
+            total,
+        )
+
+    # Unfiltered list — distinct lowercased emails, DB-paginated.
+    total = (await db.execute(
+        select(func.count(distinct(func.lower(Order.user_email))))
+    )).scalar_one()
+    rows = (await db.execute(
         select(distinct(func.lower(Order.user_email)).label("email"))
         .order_by(func.lower(Order.user_email))
-        .offset(max(0, startIndex - 1))
-        .limit(count)
-    )
-    rows = (await db.execute(page_q)).all()
-    return {
-        "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
-        "totalResults": int(total or 0),
-        "startIndex": startIndex,
-        "itemsPerPage": len(rows),
-        "Resources": [_user_resource(r[0]) for r in rows],
-    }
+        .offset(max(0, startIndex - 1)).limit(count)
+    )).all()
+    return _list([_user_resource(r[0]) for r in rows], int(total or 0))
 
 
 @router.get("/Users/{user_id}")
@@ -334,27 +418,33 @@ async def create_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Acknowledge a SCIM Create — no-op storage, returns the resource.
+    """SCIM Create → joiner.
 
-    ip·Solis users live in Entra ID / AD; SCIM Create from Okta is
-    accepted to keep IDP integrations clean (Okta marks the user as
-    "provisioned in ipSolis"), but we don't actually create anything.
-    The user becomes real in ip·Solis when they make their first order.
+    Persists the identity projection and, when ``scim.joiner_enabled`` is on,
+    evaluates assignment rules for the user's attributes and orders the matched
+    bundles (idempotent — asset types the user already holds are skipped).
+    Opt-in and gated: with the flag off this is the previous accept-only no-op,
+    so existing IdP integrations are unaffected.
     """
-    await _scim_auth(request, db, write=True)
+    actor = await _scim_auth(request, db, write=True)
     try:
         payload = await request.json()
     except Exception:
         return _scim_error(400, "Body must be valid JSON")
 
-    email = (
-        payload.get("userName")
-        or _first_email(payload.get("emails"))
-    )
-    if not email:
+    from app.services.scim_provisioning import extract_scim_attrs, run_joiner, upsert_identity
+    ext = extract_scim_attrs(payload)
+    if not ext["email"]:
         return _scim_error(400, "userName or emails[].value required", scim_type="invalidValue")
 
-    return _user_resource(email.strip().lower(), payload.get("displayName"))
+    ident, is_new, reactivated, _old = await upsert_identity(db, ext, raw=payload)
+    if ext["active"] and (is_new or reactivated) and await _joiner_enabled(db):
+        await run_joiner(
+            db, email=ext["email"], display_name=ext["display_name"],
+            attributes=ext["attributes"], actor=f"api:scim ({actor})",
+        )
+    await db.commit()
+    return _user_resource(ext["email"], ext["display_name"])
 
 
 @router.put("/Users/{user_id}")
@@ -375,10 +465,38 @@ async def replace_user(
     except Exception:
         return _scim_error(400, "Body must be valid JSON")
 
-    email_l = (user_id or "").strip().lower()
+    from app.services.scim_provisioning import (
+        extract_scim_attrs, run_joiner, run_mover, upsert_identity,
+    )
+    ext = extract_scim_attrs(payload)
+    if not ext["email"]:
+        ext["email"] = (user_id or "").strip().lower()
+    email_l = ext["email"]
+
     active = payload.get("active", True)
     if active is False:
+        # Mark the projection inactive + run the leaver flow.
+        await upsert_identity(db, ext, raw=payload)
+        await db.commit()
         await _maybe_run_leaver(db, email=email_l, actor=actor, raw=payload)
+        return _user_resource(email_l, payload.get("displayName"))
+
+    # Active replace — upsert projection; capture pre-change attrs to detect a mover.
+    ident, is_new, reactivated, old_attrs = await upsert_identity(db, ext, raw=payload)
+    if (is_new or reactivated) and await _joiner_enabled(db):
+        await run_joiner(
+            db, email=email_l, display_name=ext["display_name"],
+            attributes=ext["attributes"], actor=f"api:scim ({actor})",
+        )
+    elif not is_new and not reactivated and ext["attributes"] != old_attrs:
+        mode = await _mover_mode(db)
+        if mode != "disabled":
+            await db.commit()  # persist the new projection before reconciling
+            await run_mover(
+                db, email=email_l, display_name=ext["display_name"],
+                attributes=ext["attributes"], actor=f"api:scim ({actor})", mode=mode,
+            )
+    await db.commit()
     return _user_resource(email_l, payload.get("displayName"))
 
 
@@ -419,6 +537,25 @@ async def patch_user(
 
     if triggered_leaver:
         await _maybe_run_leaver(db, email=email_l, actor=actor, raw=payload)
+        return _user_resource(email_l)
+
+    # Attribute-change PATCH → mover reconciliation (existing identity only).
+    from app.models.scim_identity import ScimIdentity
+    from app.services.scim_provisioning import patch_ops_to_attrs, run_mover
+    ident = (await db.execute(
+        select(ScimIdentity).where(func.lower(ScimIdentity.user_email) == email_l)
+    )).scalars().first()
+    if ident is not None:
+        new_attrs, changed = patch_ops_to_attrs(dict(ident.attributes or {}), operations)
+        if changed:
+            ident.attributes = new_attrs
+            await db.commit()
+            mode = await _mover_mode(db)
+            if mode != "disabled":
+                await run_mover(
+                    db, email=email_l, display_name=ident.display_name,
+                    attributes=new_attrs, actor=f"api:scim ({actor})", mode=mode,
+                )
 
     return _user_resource(email_l)
 
@@ -435,6 +572,46 @@ async def delete_user(
     if not email_l:
         return _scim_error(400, "User id (email) required")
     await _maybe_run_leaver(db, email=email_l, actor=actor, raw=None)
+
+
+# ── Groups (read-only shim) ──────────────────────────────────────────────────
+# ip·Solis models group membership in AD (managed by target_executor), not in
+# SCIM. These endpoints exist only so IdP provisioning configs that probe
+# /Groups get valid empty responses instead of 404s. Writes are refused.
+
+@router.get("/Groups")
+async def list_groups(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    startIndex: int = Query(default=1, ge=1),
+    count: int = Query(default=100, ge=0, le=200),
+) -> dict:
+    """Read-only shim — ip·Solis exposes no SCIM groups (empty list)."""
+    await _scim_auth(request, db, write=False)
+    return {
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
+        "totalResults": 0,
+        "startIndex": startIndex,
+        "itemsPerPage": 0,
+        "Resources": [],
+    }
+
+
+@router.get("/Groups/{group_id}")
+async def get_group(request: Request, group_id: str, db: AsyncSession = Depends(get_db)):
+    await _scim_auth(request, db, write=False)
+    return _scim_error(404, f"Group {group_id!r} not found — ip·Solis models groups in AD, not SCIM")
+
+
+@router.api_route("/Groups", methods=["POST"])
+@router.api_route("/Groups/{group_id}", methods=["PUT", "PATCH", "DELETE"])
+async def groups_write_unsupported(request: Request, db: AsyncSession = Depends(get_db)):
+    """Group writes are not supported — membership is managed in AD."""
+    await _scim_auth(request, db, write=True)
+    return _scim_error(
+        501, "Group provisioning is not supported; ip·Solis manages group membership in AD.",
+        scim_type="mutability",
+    )
 
 
 async def _maybe_run_leaver(

@@ -36,41 +36,66 @@ Konfiguration unter **Admin → Einstellungen → Active Directory**:
 
 ---
 
-## Microsoft Entra ID (Azure AD) SSO
+## Portal-SSO — OpenID Connect (OIDC)
 
+Die Portal-Anmeldung nutzt standardbasiertes **OpenID Connect**. Sie registrieren einen oder mehrere Identity-Provider (jeder kompatible IdP — **Microsoft Entra ID**, Okta, Ping, Google, Keycloak, Authentik, Zitadel, …); jeder konfiguriert sich selbst aus dem Discovery-Dokument seines Issuers. Ob überhaupt ein Login erforderlich ist, steuert **Login zum Zugriff auf das Portal erforderlich** (siehe [Self-Service → Authentifizierung](./self-service#authentifizierung)).
 
-Entra ID stellt die SSO-Authentifizierung für das Self-Service-Portal bereit. Wenn `entra.mode` auf `entra_only` oder `entra_with_onprem` gesetzt ist, werden Benutzer auf die Microsoft-Anmeldeseite umgeleitet und mit einer verifizierten Identität zum Portal zurückgeleitet.
-
-Konfiguration unter **Admin → Einstellungen → Entra ID**:
+Provider hinzufügen unter **Admin → Einstellungen → Authentifizierung → OIDC Providers**. Je Provider:
 
 | Einstellung | Beschreibung |
 |---|---|
-| Tenant-ID | Ihr Azure-AD-Tenant |
-| Client-ID | Client-ID der App-Registrierung |
-| Client-Secret | Secret der App-Registrierung |
-| Redirect-URI | Muss mit der registrierten Redirect-URI im Azure-Portal übereinstimmen |
-| Domänen-Allowlist | Optional: Anmeldung auf bestimmte E-Mail-Domänen beschränken |
-| Modus | `disabled` / `entra_only` / `entra_with_onprem` |
+| Provider ID | Kleinbuchstaben-Slug (`a–z0-9_-`), erscheint in der Callback-URL; nach Anlage nicht änderbar |
+| Anzeigename | Erscheint in der Login-Auswahl (z. B. „Entra ID") |
+| Issuer-URL | Der IdP-Issuer; Discovery wird aus `<issuer>/.well-known/openid-configuration` gelesen (Entra: `https://login.microsoftonline.com/<tenant>/v2.0`, Okta: `https://<org>.okta.com`, Google: `https://accounts.google.com`) |
+| Client-ID / Secret | Aus der IdP-App-Registrierung |
+| Redirect-URI | Wird aus dem Portal-Host als `/portal/auth/<provider>/callback` abgeleitet — genau diese URI in der IdP-App registrieren |
+| Domänen-Allowlist | Optionale kommaseparierte UPN-/E-Mail-Domänen-Allowlist |
 
-Verwenden Sie **Entra-Zugangsdaten testen**, um die Client-Zugangsdaten vor dem Speichern über eine Token-Flow-Prüfung zu verifizieren.
+Verwenden Sie **Test** an einem Provider, um vor dem Speichern zu prüfen, ob dessen Discovery-Dokument erreichbar ist. On-Prem-LDAP-Anmeldung (Benutzername/Passwort) kann zusätzlich zu OIDC angeboten werden (`auth.ldap_enabled`).
+
+---
+
+## Entra-ID-Gruppenprovisionierung — Microsoft Graph *(Pro)*
+
+Über die Entra-ID-*Anmeldung* (OIDC oben) hinaus kann ip·Solis Mitgliedschaft in **Entra-(Cloud-only-)Sicherheitsgruppen** als Zugriffsziel *provisionieren* — für M365-/Cloud-only-Kunden ohne On-Prem-AD. Ein Asset-Typ mit einem `entra_group`-Zugriffsziel gewährt/entzieht die Mitgliedschaft bei Bestellung und Widerruf, genau wie eine AD-Gruppe.
+
+Konfiguration unter **Admin → Einstellungen → Compliance → Entra-Gruppenprovisionierung**:
+
+| Einstellung | Beschreibung |
+|---|---|
+| Tenant-ID / Client-ID | Eine **dedizierte App-Registrierung** (getrennt von der OIDC-Anmelde-App) |
+| Client-Secret | Als Secret gespeichert; Secret-Store-Referenzen werden unterstützt |
+
+Die App-Registrierung benötigt die Anwendungsberechtigungen **`GroupMember.ReadWrite.All`** + **`User.Read.All`** (mit Admin-Zustimmung). Am Asset-Typ ist der Gruppen-`identifier` die **Objekt-ID** (GUID) der Entra-Gruppe. Grant/Revoke sind idempotent und werden im selben Order-Change-Log wie AD-Gruppen erfasst. Mit **Anmeldedaten testen** prüfen Sie den Client-Credentials-Flow.
 
 ---
 
 ## SCIM 2.0 *(Pro)*
 
-ip·Solis stellt unter `/scim/v2/*` einen Leaver-fokussierten SCIM-2.0-Endpunkt für Identity Provider bereit, die SCIM-Deprovisionierung unterstützen. Kompatibel mit Okta, SailPoint und Ping.
+ip·Solis stellt unter `/scim/v2/*` einen vollständigen **Joiner-/Mover-/Leaver-**SCIM-2.0-Endpunkt bereit — ein Drop-in-Provisionierungsziel für Okta, SailPoint und Ping.
 
-Die unterstützten Operationen, die den Leaver-Flow auslösen, sind:
+**Leaver** (immer aktiv):
 
 - `DELETE /scim/v2/Users/{id}` — löst die vollständige Leaver-Verarbeitung aus
-- `PATCH /scim/v2/Users/{id}` mit `active=false` — löst die vollständige Leaver-Verarbeitung aus
-- `PUT /scim/v2/Users/{id}` mit `active=false` — löst die vollständige Leaver-Verarbeitung aus
+- `PATCH` / `PUT /scim/v2/Users/{id}` mit `active=false` — löst die vollständige Leaver-Verarbeitung aus
 
-Create-, Read- und Update-Operationen werden bestätigt, sind aber wirkungslos (No-Op) (ip·Solis speichert keine Benutzerkonten — Benutzer werden erst real, wenn sie ihre erste Bestellung aufgeben).
+**Joiner** (Opt-in, `scim.joiner_enabled`): Ein SCIM-**Create** (`POST /Users`) — oder eine Reaktivierung — mappt die SCIM-Attribute des Benutzers (Core + Enterprise-Extension: `department`, `costCenter`, `employeeNumber`, `organization`, `title`) auf ip·Solis-Attribute, wertet Ihre [Zuweisungsregeln](./lifecycle#onboarding-bundles-pro) aus und bestellt die passenden [Bundles](./lifecycle#onboarding-bundles-pro). Idempotent — bereits vorhandene Asset-Typen werden übersprungen.
 
-**Authentifizierung**: Erstellen Sie unter **Admin → API-Token** ein Token mit den Scopes `scim:read` + `scim:write` und fügen Sie es in die Konnektor-Konfiguration Ihres IDP ein.
+**Mover** (`scim.mover_mode`): Bei einer Attribut-Änderung (`PUT`-Replace oder `PATCH`) wertet ip·Solis die Regeln gegen die neuen Attribute neu aus und gleicht die Berechtigungen ab:
 
-Siehe [Lifecycle & Asset-Pool → HR-Leaver-Flow](./lifecycle#hr-leaver-flow) für das vollständige Leaver-Verhalten.
+- `disabled` — Attribut-Änderungen werden ignoriert
+- `additions_only` — neu berechtigte Bundles bestellen; nie widerrufen
+- `reconcile` — Additions **plus** Widerruf von Berechtigungen, die nicht mehr passen
+
+Der Auto-Revoke ist strikt auf **regel-/SCIM-provisionierte** Zugriffe beschränkt; Self-Service- und manuell erstellte Bestellungen werden nie automatisch widerrufen. Da ip·Solis keinen lokalen Benutzerspeicher hat, nutzt das Mover-Diffing eine minimale Last-Seen-**Identitätsprojektion** (`scim_identities`), die bei jedem SCIM-Write gepflegt wird.
+
+**Listenfilter**: `GET /Users?filter=` unterstützt die vollständige Grammatik nach RFC 7644 §3.4.2.2 — Vergleichsoperatoren `eq ne co sw ew gt ge lt le`, Präsenz `pr`, logisch `and` / `or` / `not` und geklammerte Gruppierung. Ein fehlerhafter Filter liefert `400 invalidFilter`.
+
+**Gruppen**: `/Groups` ist ein Read-Only-Shim (leere Liste) — ip·Solis modelliert Gruppen-Mitgliedschaft im Active Directory, nicht in SCIM.
+
+**Authentifizierung**: Erstellen Sie unter **Admin → API-Token** ein Token mit den Scopes `scim:read` + `scim:write` und fügen Sie es in den IdP-Konnektor ein. Joiner / Mover aktivieren Sie unter **Einstellungen → Compliance → SCIM**.
+
+Siehe [Lifecycle & Asset-Pool → HR-Leaver-Flow](./lifecycle#hr-leaver-flow) für das Leaver-Verhalten und [Onboarding-Bundles](./lifecycle#onboarding-bundles-pro) für die Regel-Engine.
 
 ---
 
@@ -283,7 +308,7 @@ SSL-Zertifikatsabfragen werden über stdin-Injektion automatisch beantwortet, so
 
 Die SCCM-Integration ermöglicht automatisierte OS-Deployment-Workflows:
 
-- **Task-Sequence-Trigger** — Starten einer SCCM-Task-Sequence für ein bestimmtes Gerät über WinRM
+- **Task-Sequence-Trigger** — Starten einer SCCM-Task-Sequence für ein bestimmtes Gerät
 - **Geräteimport** — Hinzufügen eines Computerdatensatzes zu SCCM über die AdminService-REST-API (Kerberos-Authentifizierung)
 - **Gerätelöschung** — Entfernen eines Computerdatensatzes nach der Außerbetriebnahme
 - **Status-Polling** — der Celery-Workflow `sccm_probe` fragt SCCM nach dem Abschlussstatus der Task-Sequence ab und versetzt den Bestellstatus entsprechend weiter
@@ -293,7 +318,6 @@ Konfiguration unter **Admin → Einstellungen → SCCM**:
 | Einstellung | Beschreibung |
 |---|---|
 | SCCM-Server | Hostname des Site-Servers |
-| WinRM-Endpunkt | WinRM-Verbindungsstring |
 | AdminService-URL | `https://<server>/AdminService/v1.0` |
 | Kerberos-Principal | UPN des Dienstkontos |
 | Kerberos-Passwort | Passwort des Dienstkontos |
@@ -343,6 +367,19 @@ Wie Sie sich authentifizieren, hängt von Ihrer Mailplattform ab:
 Token-basiertes SMTP (`XOAUTH2`) und herstellerspezifische Versand-APIs sind bewusst nicht
 implementiert: Sie erfordern provider-spezifische Token-Verarbeitung und eine zweite
 Konfigurationsfläche — bei geringem Mehrwert gegenüber einem Relay.
+
+---
+
+## Chat-Benachrichtigungen — Microsoft Teams & Slack *(Pro)*
+
+Genehmigungsanfragen (und Erinnerungen) können parallel zur E-Mail an **Microsoft Teams** und/oder **Slack** gesendet werden. Beide tragen denselben kanal-agnostischen **Ein-Klick-Genehmigungslink** (ein signiertes Token — der Genehmiger entscheidet ohne Portal-Login), sodass eine Anfrage gleichzeitig per E-Mail, Teams und Slack ankommen kann.
+
+| Kanal | Einstellung | Zustellung |
+|---|---|---|
+| Teams | `teams.mode` + Workflows-Webhook-URL | Adaptive Card (mit @Mention des Genehmigers, damit Teams eine echte Benachrichtigung auslöst) |
+| Slack | `slack.mode` + Incoming-Webhook-URL | Block-Kit-Nachricht |
+
+Beide konfigurieren Sie unter **Admin → Einstellungen** (Teams- und Slack-Karten), jeweils mit einem **Test-senden**-Button. Sie laufen unabhängig — das Aktivieren von Slack beeinflusst Teams nicht, und keiner ersetzt die E-Mail. Dieselben Kanäle tragen auch Zertifizierungs- und Kostenschwellen-Benachrichtigungen.
 
 ---
 

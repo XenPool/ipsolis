@@ -1,0 +1,69 @@
+{% extends "portal/base_portal.html" %}
+
+{% block title %}{{ app_title }}{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-lg font-semibold text-heading" data-i18n="portal.packages.title">Packages</h1>
+  <p class="text-sm text-muted/70 mt-1" data-i18n="portal.packages.subtitle">
+    Order a ready-made bundle of access in one step. Items you already have are skipped automatically.
+  </p>
+</div>
+
+<div id="pkg-banner" class="hidden mb-4 px-4 py-3 rounded text-sm"></div>
+
+{% if not bundles %}
+<div class="bg-surface rounded-lg border border-token-border p-8 text-center text-sm text-muted/70"
+     data-i18n="portal.packages.empty">
+  No packages are available right now.
+</div>
+{% else %}
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  {% for b in bundles %}
+  <div class="bg-surface rounded-lg border border-token-border p-5 flex flex-col">
+    <h2 class="text-sm font-semibold text-body">{{ b.name }}</h2>
+    {% if b.description %}<p class="text-xs text-muted/70 mt-1">{{ b.description }}</p>{% endif %}
+    <ul class="mt-3 space-y-1 flex-1">
+      {% for it in b.lines %}
+      <li class="text-xs text-body flex items-center gap-2">
+        <svg class="w-3.5 h-3.5 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+        <span>{{ it.name }}</span>
+        {% if not it.required %}<span class="text-[10px] text-muted/60" data-i18n="portal.packages.optional">(optional)</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    <button onclick="orderPkg({{ b.id }}, this)"
+            class="mt-4 px-4 py-2 rounded bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+            data-i18n="portal.packages.order_btn">Order package</button>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<script>
+function pkgBanner(msg, ok) {
+  var el = document.getElementById('pkg-banner');
+  el.className = 'mb-4 px-4 py-3 rounded text-sm ' +
+    (ok ? 'bg-green-50 text-green-800 border border-green-200 dark:bg-green-500/10 dark:text-green-200'
+        : 'bg-red-50 text-red-800 border border-red-200 dark:bg-red-500/10 dark:text-red-200');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  window.scrollTo(0, 0);
+}
+async function orderPkg(id, btn) {
+  btn.disabled = true;
+  try {
+    var r = await fetch('/portal/bundles/' + id + '/order', {method: 'POST', headers: {'Content-Type': 'application/json'}});
+    var d = await r.json().catch(function(){ return {}; });
+    if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+    var t = (window.t ? window.t('portal.packages.ordered') : 'Ordered {n} item(s){skip}.');
+    var skip = d.skipped ? (window.t ? ' ' + window.t('portal.packages.skipped', {n: d.skipped}) : ' (' + d.skipped + ' already held)') : '';
+    pkgBanner(t.replace('{n}', d.ordered).replace('{skip}', skip), true);
+  } catch (e) {
+    pkgBanner((window.t ? window.t('portal.packages.order_failed') : 'Order failed') + ': ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+  }
+}
+</script>
+{% endblock %}
