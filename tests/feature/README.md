@@ -78,6 +78,7 @@ cd tests/feature && python -m pytest -q
 | Point-in-time access report | `test_access_report.py` | `GET /admin/access-report` replays `order_change_log` — live shows today's grant, `as_of` yesterday is empty, principal filter + CSV export |
 | Cost report (contract seat math) | `test_cost_report.py` | `GET /admin/cost-report` `by_contract` — exact Model-A per-seat price / allocated / shelfware / utilisation, and seat over-allocation |
 | Deprovision policies (pool asset) | `test_deprovision.py` | `assigned_personal`: provision reserves a Free asset → `busy`; delete returns it to `Free` (`return_to_pool`) or flags `Reinstall` (`return_to_pool_reinstall`) |
+| Modify order action | `test_modify.py` | a `modify` order atomically revokes + re-grants: one remove + one add on **mock Graph**, order `delivered`, change log shows original grant `rolled_back` + fresh grant `success` |
 
 **Free-tier user ceiling (25):** without a commercial license the instance caps
 active end-user identities at **25** (distinct `orders.user_email` with a
