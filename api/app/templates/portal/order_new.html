@@ -224,6 +224,20 @@
     {% endfor %}
   </div>
 
+  <!-- Order justification (shown / required per asset definition) -->
+  <div id="justification-section" class="hidden bg-surface rounded-lg border border-token-border p-5">
+    <h2 class="text-sm font-semibold text-body mb-1" data-i18n="portal.order_new.justification_label">Justification</h2>
+    <p class="text-xs text-muted/70 mb-3" data-i18n="portal.order_new.justification_hint">
+      Briefly explain why you need this access. The approver will see it.
+    </p>
+    <textarea name="justification" id="justification-input" rows="3"
+              data-i18n-attr-placeholder="portal.order_new.justification_placeholder"
+              placeholder="Why do you need this access?"
+              class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">{{ form.justification if form and form.justification else '' }}</textarea>
+    <span id="justification-required-badge" class="hidden text-[11px] text-red-500 mt-1 inline-block"
+          data-i18n="portal.order_new.justification_required_badge">Required for this asset.</span>
+  </div>
+
   <!-- Requester (pre-filled from login, read-only) -->
   <div class="bg-surface rounded-lg border border-token-border p-5">
     <h2 class="text-sm font-semibold text-body mb-4" data-i18n="portal.order_new.section_requester">Requester</h2>
@@ -552,6 +566,8 @@ var _allowRdpUsers        = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if
 var _allowAdminUsers      = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.allow_admin_users else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
 var _requiresManagerApproval = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.requires_manager_approval else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
 var _requiresOwnerApproval   = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.requires_owner_approval else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
+var _collectJustification    = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.collect_justification else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
+var _justificationRequired   = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.justification_required else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
 
 function updateUserListsSection() {
   var checked = document.querySelector('[name="asset_type_id"]:checked');
@@ -560,6 +576,19 @@ function updateUserListsSection() {
   var adminSection = document.getElementById('admin-section');
   if (rdpSection)   { rdpSection.classList.toggle('hidden',   !typeId || !_allowRdpUsers[typeId]); }
   if (adminSection) { adminSection.classList.toggle('hidden', !typeId || !_allowAdminUsers[typeId]); }
+}
+
+function updateJustificationSection() {
+  var checked = document.querySelector('[name="asset_type_id"]:checked');
+  var typeId = checked ? parseInt(checked.value) : null;
+  var section = document.getElementById('justification-section');
+  var input = document.getElementById('justification-input');
+  var badge = document.getElementById('justification-required-badge');
+  var collect = !!(typeId && _collectJustification[typeId]);
+  var required = collect && !!_justificationRequired[typeId];
+  if (section) section.classList.toggle('hidden', !collect);
+  if (input) input.required = required;   // native + our submit guard
+  if (badge) badge.classList.toggle('hidden', !required);
 }
 
 // ── Attribute section per asset type ─────────────────────────────────────────────
@@ -660,6 +689,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('[name="asset_type_id"]').forEach(function(r) {
     r.addEventListener('change', updateAttrSection);
     r.addEventListener('change', updateUserListsSection);
+    r.addEventListener('change', updateJustificationSection);
     r.addEventListener('change', updateHelpSection);
     r.addEventListener('change', updateApprovalNotice);
   });
@@ -690,6 +720,15 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
         alert('Please confirm the owner with "+ Add" or clear the field.');
         deputyInput.focus();
+        return;
+      }
+      // Block if a required justification is empty (server also enforces this)
+      var justInput = document.getElementById('justification-input');
+      if (justInput && justInput.required && !justInput.value.trim()) {
+        e.preventDefault();
+        var msg = (window.i18n && i18n.t) ? i18n.t('portal.order_new.justification_required_error') : '';
+        alert(msg || 'Please provide a justification for this request.');
+        justInput.focus();
         return;
       }
       document.querySelectorAll('.attr-section.hidden input, .attr-section.hidden select').forEach(function(el) {
@@ -759,6 +798,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Set initial state
   updateAttrSection();
   updateUserListsSection();
+  updateJustificationSection();
   updateHelpSection();
   updateApprovalNotice();
   applyCatalogFilter();

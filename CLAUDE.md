@@ -104,12 +104,13 @@ Enum types (e.g. `order_action`, `asset_status`) already exist in the DB — use
 `op.execute(raw SQL)` instead of `op.create_table()` with `sa.Enum` to avoid
 `DuplicateObject` errors.
 
-Current head: `0012_onboarding_first_login.py`. On-disk chain: `0001` squashed initial
+Current head: `0013_order_justification.py`. On-disk chain: `0001` squashed initial
 schema → `0002` → `0003` (portal auth OIDC registry) → `0004` drift reconciliation →
 `0005` software contracts → `0006` slack config → `0007` attestation artifacts →
 `0008` onboarding bundles + order groups → `0009` SCIM identity projection →
-`0010` SCIM mover config → `0011` Graph (Entra) config → `0012` onboarding first-login.
-`0004`–`0012` are all additive (new tables + nullable columns + seeded config; no backfill).
+`0010` SCIM mover config → `0011` Graph (Entra) config → `0012` onboarding first-login →
+`0013` order justification (opt-in per-type free-text reason shown to the approver).
+`0004`–`0013` are all additive (new tables + nullable columns + seeded config; no backfill).
 
 ### Template changes require image rebuild
 `api/app/templates/` and `api/app/routes/` are baked into the `ipsolis-api` image, not

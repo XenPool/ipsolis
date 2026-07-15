@@ -136,6 +136,11 @@ class Order(Base):
     # Fehlermeldung bei Status FAILED
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Free-text business justification entered by the requester (shown to the
+    # approver). Collected only when the asset type opts in
+    # (asset_types.collect_justification); may be required.
+    justification: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Timestamp when the expiry reminder was sent (idempotency flag)
     expiry_reminder_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

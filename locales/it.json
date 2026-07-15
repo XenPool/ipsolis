@@ -161,6 +161,11 @@
       "revoke_body": "ip·Solis rimuoverà subito l'accesso dell'utente tramite il runbook di deprovisioning della risorsa. La riga di revisione passa a <code class=\"font-mono\">revoked</code>."
     },
     "order_new": {
+      "justification_label": "Motivazione",
+      "justification_hint": "Spiega brevemente perché ti serve questo accesso. L'approvatore la vedrà.",
+      "justification_placeholder": "Perché ti serve questo accesso?",
+      "justification_required_badge": "Obbligatorio per questa risorsa.",
+      "justification_required_error": "Fornisci una motivazione per questa richiesta.",
       "page_title": "Richiedi nuovo accesso",
       "section_asset_type": "Definizione asset",
       "section_options": "Opzioni",

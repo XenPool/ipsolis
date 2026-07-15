@@ -99,6 +99,8 @@ class AssetTypeCreate(BaseModel):
     approval_rules: list[dict[str, Any]] | None = None
     min_approvals_required: int | None = None
     requires_approval_on_modify: bool = False
+    collect_justification: bool = False
+    justification_required: bool = False
     eligible_requestors_dn: str | None = None
     logo: str | None = None
 
@@ -140,6 +142,8 @@ class AssetTypeUpdate(BaseModel):
     approval_rules: list[dict[str, Any]] | None = None
     min_approvals_required: int | None = None
     requires_approval_on_modify: bool | None = None
+    collect_justification: bool | None = None
+    justification_required: bool | None = None
     eligible_requestors_dn: str | None = None
     logo: str | None = None
 

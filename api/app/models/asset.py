@@ -167,6 +167,17 @@ class AssetType(Base):
     requires_approval_on_modify: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Business justification (opt-in per type). When collect_justification is on,
+    # the portal order form shows a free-text justification field (shown to the
+    # approver on the decision page + in approval notifications). When
+    # justification_required is also on, it is mandatory (server-enforced in the
+    # portal). Only meaningful together — required has no effect without collect.
+    collect_justification: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    justification_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     # Optional AD group DN restricting who can request this asset type.
     # NULL = any domain user can request.
     eligible_requestors_dn: Mapped[str | None] = mapped_column(

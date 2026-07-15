@@ -36,6 +36,7 @@ class OrderCreate(BaseModel):
     action: OrderAction = OrderAction.PROVISION
     snow_req: str | None = None
     config: dict[str, Any] | None = None
+    justification: str | None = None
 
     @field_validator("requested_until")
     @classmethod
@@ -72,6 +73,7 @@ class OrderRead(BaseModel):
     celery_task_id: str | None
     config: dict[str, Any] | None
     error_message: str | None
+    justification: str | None = None
     created_at: datetime
     updated_at: datetime
     steps: list[OrderStepRead] = []
@@ -97,3 +99,4 @@ class WebhookPayload(BaseModel):
     requested_from: datetime
     requested_until: datetime
     config: dict[str, Any] | None = None
+    justification: str | None = None

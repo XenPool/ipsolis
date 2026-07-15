@@ -142,6 +142,7 @@ def build_approval_card(
     from_date: str = "",
     until_date: str = "",
     app_title: str = "ip·Solis",
+    justification: str = "",
 ) -> dict[str, Any]:
     """Build an Adaptive Card for an approval request.
 
@@ -163,6 +164,8 @@ def build_approval_card(
         facts.append({"title": "From", "value": from_date})
     if until_date:
         facts.append({"title": "Until", "value": until_date})
+    if justification and justification.strip():
+        facts.append({"title": "Justification", "value": justification.strip()})
 
     # Use the approver's display name as the <at> placeholder. When the
     # Workflow template forwards msteams.entities, Teams renders this as a

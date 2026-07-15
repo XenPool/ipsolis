@@ -353,6 +353,7 @@ def send_approval_request(
     from_date: str = "",
     until_date: str = "",
     approval_url: str = "",
+    justification: str = "",
 ) -> dict:
     """Sends an approval request email to a manager or application owner."""
     from tasks.modules.config_reader import get_config
@@ -372,6 +373,7 @@ def send_approval_request(
         "from_date": from_date,
         "until_date": until_date,
         "approval_url": approval_url or "",
+        "justification": justification or "",
     }
 
     subject, body = _render_template(db, "approval_request", variables)

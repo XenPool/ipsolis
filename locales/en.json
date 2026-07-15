@@ -161,6 +161,11 @@
       "revoke_body": "ip·Solis will immediately remove the user's access via the asset's deprovision runbook. The review row moves to <code class=\"font-mono\">revoked</code>."
     },
     "order_new": {
+      "justification_label": "Justification",
+      "justification_hint": "Briefly explain why you need this access. The approver will see it.",
+      "justification_placeholder": "Why do you need this access?",
+      "justification_required_badge": "Required for this asset.",
+      "justification_required_error": "Please provide a justification for this request.",
       "page_title": "Request New Access",
       "section_asset_type": "Asset Definition",
       "section_options": "Options",

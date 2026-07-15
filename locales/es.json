@@ -161,6 +161,11 @@
       "revoke_body": "ip·Solis eliminará de inmediato el acceso del usuario a través del runbook de desaprovisionamiento del recurso. La fila de revisión pasa a <code class=\"font-mono\">revoked</code>."
     },
     "order_new": {
+      "justification_label": "Justificación",
+      "justification_hint": "Explique brevemente por qué necesita este acceso. El aprobador la verá.",
+      "justification_placeholder": "¿Por qué necesita este acceso?",
+      "justification_required_badge": "Obligatorio para este recurso.",
+      "justification_required_error": "Indique una justificación para esta solicitud.",
       "page_title": "Solicitar nuevo acceso",
       "section_asset_type": "Definición de activo",
       "section_options": "Opciones",
