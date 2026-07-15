@@ -72,6 +72,7 @@ cd tests/feature && python -m pytest -q
 | Composite order | `test_composite.py` | `POST /orders` → dynamic_runner composite → entra grant on **mock Graph** (GROUP_TARGETS) + asset-bound runbook step (RUNBOOK); both effects asserted |
 | LDAP portal login (real AD) | `test_ldap.py` | `POST /portal/auth/ldap` → bogus creds 401; the configured bind account → 302 + session cookie (real NTLM bind vs winsrv1) |
 | Teams delivery (real, no mock) | `test_teams.py` | `POST /admin/config/teams/test` → one real card to the live Teams webhook, asserts `ok:true` (2xx read-back); skips if Teams disabled |
+| Attestation emission (worker) | `test_attestation_emit.py` | opted-in type: provision → worker emits **handover** (then acked via its own emitted token); delete → worker emits **revocation** cert |
 
 **Revoke tests don't poll order status:** the cancel route flips the order to
 `cancelled` (terminal) *before* the worker finishes revoking to `revoked`, so
