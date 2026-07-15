@@ -61,6 +61,33 @@ Die Tabelle `order_change_log` erfasst jede Mutation eines Auftrags als separate
 
 ---
 
+## Zugriffs-Drift-Abgleich *(Pro)*
+
+ip·Solis gewährt AD-Gruppenmitgliedschaft nach dem Fire-and-forget-Prinzip; von sich aus kann es nicht erkennen, ob jemand **außerhalb der Reihe** (out of band) einer verwalteten Gruppe hinzugefügt oder aus einer entfernt wurde, die es gewährt hat. Die Drift-Abgleich-Aufgabe schließt diese Lücke.
+
+Aktivieren Sie **Auf Zugriffs-Drift überwachen** pro Asset-Typ und setzen Sie Zeitplan und Modus unter **Wartung → Drift-Abgleich**. Bei jedem Lauf liest ip·Solis die tatsächliche AD-Mitgliedschaft jeder überwachten Gruppe neu und vergleicht sie mit dem Provisionierten (aus dem Order-Change-Log):
+
+- **fehlender Zugriff** — ip·Solis hat gewährt, der Benutzer ist aber nicht mehr in der Gruppe
+- **out-of-band** — der Benutzer ist in der Gruppe, ip·Solis hat den Zugriff aber nie gewährt
+
+Befunde erscheinen unter **Operations → Drift**, werden auditiert (und an Ihr SIEM gestreamt) und können eine Best-Effort-E-Mail-/Teams-Benachrichtigung auslösen. Zwei Modi:
+
+- `detect_only` — erfassen + benachrichtigen (Standard)
+- `auto_remediate` — fehlende Mitglieder zusätzlich neu gewähren und out-of-band-Mitglieder per AD widerrufen
+
+---
+
+## Attestierungs-Artefakte *(Pro)*
+
+Zwei ISO-27001-relevante Nachweis-Artefakte, beide pro Asset-Typ optional und als **signierte HTML-Seiten** ausgeliefert (Archivierung per Browser-Druck — keine PDF-Abhängigkeit):
+
+- **Übergabeprotokoll** — bei der Provisionierung erhält der Empfänger einen signierten Link, um den Erhalt (und eine optionale Nutzungsrichtlinie) zu bestätigen. Die Bestätigung wird persistiert und auditiert. Eine optionale Erinnerung mahnt überfällige Bestätigungen an.
+- **Widerrufs-/Entsorgungszertifikat** — bei Widerruf oder Ablauf eine signierte Bescheinigung darüber, was entfernt wurde (welche Gruppen, welche Instanz, wann) — Audit-Nachweis für Offboarding / Asset-Entsorgung, automatisch ausgestellt.
+
+Der signierte Link funktioniert ohne Portal-Login (derselbe Mechanismus wie der Zertifizierungs-Review-Link) und läuft nach 90 Tagen ab. Ausgestellte Artefakte sehen Sie unter **Berichte → Attestierungen**; aktivieren Sie die Flags an jeder Asset-Definition und setzen Sie den AUP-Text unter **Einstellungen**.
+
+---
+
 ## Datenklassifizierung auf Feldebene
 
 Attribute von Asset-Typen können mit einer Datenklassifizierung versehen werden:

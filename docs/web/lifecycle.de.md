@@ -129,6 +129,25 @@ Prüfer mit Entra-ID-SSO können ihre Überprüfungswarteschlange auch unter `/p
 
 ---
 
+## Onboarding-Bundles *(Pro)*
+
+Ein **Bundle** fasst bestehende Asset-Definitionen zu einem Paket zusammen — die Standard-Ausstattung eines neuen Mitarbeiters (Laptop, VDI, M365-Gruppen, …), als Einheit bestellt. Bundles definieren keine neuen Assets; jede **Position** referenziert einen Asset-Typ (erforderlich oder optional, mit optionaler Attribut-Vorbelegung).
+
+Eine **Zuweisungsregel** bildet Benutzerattribute (Abteilung, Kostenstelle, Titel, …) auf ein Bundle ab und nutzt denselben UND/ODER/NICHT-Bedingungseditor wie die bedingten Genehmigungsregeln. Es gibt keinen lokalen Benutzerspeicher, daher ist die Regelauswertung eine reine Funktion über ein Attribut-Dictionary — aufgelöst aus dem AD, per SCIM geliefert oder manuell eingegeben.
+
+Die Bestellung eines Bundles erzeugt **eine Auftragsgruppe** mit einer Bestellung je auflösbarer Position, über die normalen Genehmigungs- und Ausführungspfade — Genehmigung pro Position, Kapazität, Runbooks und Audit funktionieren unverändert. Sie ist **idempotent**: Ein Asset-Typ, den der Benutzer bereits aktiv besitzt, wird übersprungen. Ein Bundle kann ausgelöst werden über:
+
+- **Onboarding**-Admin — *für einen Benutzer auswerten* (Attribute auflösen, passende Bundles + zu bestellende Positionen vorschauen), dann bestellen
+- den Self-Service-**Pakete**-Katalog — ein Benutzer bestellt ein Paket für sich selbst
+- einen **SCIM-Joiner** (siehe [Integrationen → SCIM](./integrations#scim-20-pro))
+- die **erste Portal-Anmeldung** eines Benutzers (Opt-in, `onboarding.eval_on_first_login`)
+
+Bundles und Regeln verwalten Sie unter **Onboarding**.
+
+> **Design-Hinweis:** ip·Solis hat sein Auftragsmodell bewusst *nicht* in einen verpflichtenden Header invertiert. Eine Einzelbestellung bleibt exakt wie zuvor (keine Gruppe); ein schlanker `order_group`-Header existiert nur für Multi-Item-Anfragen — so ergänzen Bundles Funktionalität, ohne den bewährten Einzelbestell-Pfad anzutasten.
+
+---
+
 ## HR-Austrittsprozess
 
 Wenn ein Benutzer die Organisation verlässt, entzieht ip·Solis automatisch alle seine aktiven Zugriffe. Der Austrittsprozess wird über einen von zwei Einstiegspunkten ausgelöst:

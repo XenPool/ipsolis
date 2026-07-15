@@ -55,21 +55,47 @@ Use **Test** on a provider to verify its discovery document is reachable before 
 
 ---
 
+## Entra ID group provisioning — Microsoft Graph *(Pro)*
+
+Beyond Entra ID *login* (OIDC above), ip·Solis can *provision* **Entra (cloud-only) security-group** membership as an access target — for M365 / cloud-only customers who don't run on-prem AD. An asset type with an `entra_group` access target grants/revokes membership on order and revoke, exactly like an AD group.
+
+Configure under **Admin → Settings → Compliance → Entra Group Provisioning**:
+
+| Setting | Description |
+|---|---|
+| Tenant ID / Client ID | A **dedicated app registration** (distinct from the OIDC sign-in app) |
+| Client secret | Stored as a secret; secret-store references supported |
+
+The app registration needs Application permissions **`GroupMember.ReadWrite.All`** + **`User.Read.All`** (admin-consented). On the asset type, the group `identifier` is the Entra group's **object id** (GUID). Grant/revoke are idempotent and recorded in the same order change log as AD groups. Use **Test Credentials** to verify the client-credentials flow.
+
+---
+
 ## SCIM 2.0 *(Pro)*
 
-ip·Solis exposes a leaver-focused SCIM 2.0 endpoint at `/scim/v2/*` for identity providers that support SCIM deprovisioning. Compatible with Okta, SailPoint, and Ping.
+ip·Solis exposes a full **joiner / mover / leaver** SCIM 2.0 endpoint at `/scim/v2/*` — a drop-in provisioning target for Okta, SailPoint, and Ping.
 
-The supported operations that trigger the leaver flow are:
+**Leaver** (always on):
 
 - `DELETE /scim/v2/Users/{id}` — triggers full leaver processing
-- `PATCH /scim/v2/Users/{id}` with `active=false` — triggers full leaver processing
-- `PUT /scim/v2/Users/{id}` with `active=false` — triggers full leaver processing
+- `PATCH` / `PUT /scim/v2/Users/{id}` with `active=false` — triggers full leaver processing
 
-Create, read, and update operations are acknowledged but no-op (ip·Solis does not store user accounts — users become real when they make their first order).
+**Joiner** (opt-in, `scim.joiner_enabled`): a SCIM **Create** (`POST /Users`) — or a reactivation — maps the user's SCIM attributes (core + enterprise extension: `department`, `costCenter`, `employeeNumber`, `organization`, `title`) to ip·Solis attributes, evaluates your [assignment rules](./lifecycle#onboarding-bundles-pro), and orders the matched [bundles](./lifecycle#onboarding-bundles-pro). Idempotent — asset types the user already holds are skipped.
 
-**Authentication**: mint a token with `scim:read` + `scim:write` scopes from **Admin → API Tokens** and paste it into your IDP connector configuration.
+**Mover** (`scim.mover_mode`): when an attribute change arrives (`PUT` replace or `PATCH`), ip·Solis re-evaluates the rules against the new attributes and reconciles entitlements:
 
-See [Lifecycle & Asset Pool → HR Leaver Flow](./lifecycle#hr-leaver-flow) for the full leaver behaviour.
+- `disabled` — attribute changes are ignored
+- `additions_only` — order newly-entitled bundles; never revoke
+- `reconcile` — additions **plus** revoke entitlements the user no longer matches
+
+Auto-revoke is strictly limited to **rule / SCIM-provisioned** access; self-service and manually-placed orders are never auto-revoked. Because ip·Solis has no local user store, mover diffing uses a minimal last-seen **identity projection** (`scim_identities`) populated on each SCIM write.
+
+**List filters**: `GET /Users?filter=` supports the full RFC 7644 §3.4.2.2 grammar — comparison operators `eq ne co sw ew gt ge lt le`, presence `pr`, logical `and` / `or` / `not`, and parenthesised grouping. A malformed filter returns `400 invalidFilter`.
+
+**Groups**: `/Groups` is a read-only shim (empty list) — ip·Solis models group membership in Active Directory, not SCIM.
+
+**Authentication**: mint a token with `scim:read` + `scim:write` scopes from **Admin → API Tokens** and paste it into your IdP connector. Enable joiner / mover under **Settings → Compliance → SCIM**.
+
+See [Lifecycle & Asset Pool → HR Leaver Flow](./lifecycle#hr-leaver-flow) for leaver behaviour and [Onboarding bundles](./lifecycle#onboarding-bundles-pro) for the rule engine.
 
 ---
 
@@ -282,7 +308,7 @@ SSL certificate prompts are auto-answered via stdin injection so scripts don't h
 
 SCCM integration enables automated OS deployment workflows:
 
-- **Task sequence triggers** — kick off an SCCM task sequence for a specific device via WinRM
+- **Task sequence triggers** — kick off an SCCM task sequence for a specific device
 - **Device import** — add a computer record to SCCM via the AdminService REST API (Kerberos auth)
 - **Device delete** — remove a computer record after decommissioning
 - **Status polling** — the `sccm_probe` Celery workflow polls SCCM for task sequence completion status and advances the order state accordingly
@@ -292,7 +318,6 @@ Configure in **Admin → Settings → SCCM**:
 | Setting | Description |
 |---|---|
 | SCCM server | Site server hostname |
-| WinRM endpoint | WinRM connection string |
 | AdminService URL | `https://<server>/AdminService/v1.0` |
 | Kerberos principal | Service account UPN |
 | Kerberos password | Service account password |
@@ -342,6 +367,19 @@ How you authenticate depends on your mail platform:
 Token-based SMTP (`XOAUTH2`) and vendor send APIs are intentionally not implemented: they
 require provider-specific token handling and a second configuration surface, for little gain
 over a relay.
+
+---
+
+## Chat notifications — Microsoft Teams & Slack *(Pro)*
+
+Approval requests (and reminders) can post to **Microsoft Teams** and/or **Slack** in parallel with email. Both carry the same channel-agnostic **one-click approve link** (a signed token — the approver decides without a portal login), so a request can arrive by email, Teams, and Slack at once.
+
+| Channel | Setting | Delivery |
+|---|---|---|
+| Teams | `teams.mode` + Workflows webhook URL | Adaptive Card (with an @mention of the approver so Teams raises a real notification) |
+| Slack | `slack.mode` + Incoming Webhook URL | Block Kit message |
+
+Configure both under **Admin → Settings** (Teams and Slack cards), each with a **Send Test** button. They run independently — enabling Slack does not affect Teams, and neither replaces email. The same channels carry certification and cost-threshold notifications.
 
 ---
 

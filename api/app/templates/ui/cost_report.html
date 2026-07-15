@@ -3,6 +3,7 @@
 {% block title %}Cost Report – {{ app_title }}{% endblock %}
 
 {% block content %}
+{% include "_partials/hub_tabs_reports.html" %}
 <div class="mb-6 flex items-start justify-between gap-4">
   <div>
     <h1 class="text-lg font-semibold text-heading">Cost Report</h1>
@@ -112,6 +113,28 @@
     <tbody id="thresholds-body" class="divide-y divide-token-border">
       <tr><td colspan="7" class="px-4 py-6 text-center text-muted/70 text-sm">Loading…</td></tr>
     </tbody>
+  </table>
+</div>
+
+<!-- ── Software contracts / licenses (Model A utilization) ───────────────── -->
+<div id="contracts-section" class="hidden mt-8 bg-surface rounded-lg border border-token-border overflow-x-auto">
+  <div class="px-4 py-3 border-b border-token-border flex items-center justify-between">
+    <h2 class="text-sm font-semibold text-heading">Licenses &amp; Contracts — seat utilization</h2>
+    <a href="/ui/contracts" class="text-xs text-blue-600 hover:underline">Manage →</a>
+  </div>
+  <table class="min-w-[900px] w-full text-sm">
+    <thead class="bg-surface-raised text-xs uppercase text-muted">
+      <tr>
+        <th class="px-3 py-2 text-left font-medium">Vendor / Product</th>
+        <th class="px-3 py-2 text-right font-medium">Seat / mo</th>
+        <th class="px-3 py-2 text-right font-medium">Seats</th>
+        <th class="px-3 py-2 text-right font-medium">Used</th>
+        <th class="px-3 py-2 text-right font-medium">Allocated</th>
+        <th class="px-3 py-2 text-right font-medium">Shelfware</th>
+        <th class="px-3 py-2 text-left font-medium">Renewal</th>
+      </tr>
+    </thead>
+    <tbody id="contracts-body" class="divide-y divide-token-border"></tbody>
   </table>
 </div>
 
@@ -225,6 +248,41 @@ async function loadReport() {
   _renderMetaBanner();
   showView(_currentView);
   renderThresholds();
+  renderContracts();
+}
+
+function renderContracts() {
+  var section = document.getElementById('contracts-section');
+  var body = document.getElementById('contracts-body');
+  var list = (_reportData && _reportData.by_contract) || [];
+  if (!list.length) { section.classList.add('hidden'); return; }
+  section.classList.remove('hidden');
+  function m(v, cur) { return v == null ? '—' : Number(v).toFixed(2) + ' ' + (cur || ''); }
+  body.innerHTML = list.map(function(c) {
+    var util = c.utilization == null ? 'unlimited'
+      : (c.consumption + '/' + c.licensed_seats + ' · ' + Math.round(c.utilization * 100) + '%'
+         + (c.over_allocated ? ' ⚠' : ''));
+    var utilCls = c.over_allocated ? 'text-red-600 font-medium'
+      : (c.utilization != null && c.utilization >= 0.9 ? 'text-amber-600' : 'text-muted');
+    var shelf = c.shelfware_monthly;
+    var shelfCell = shelf == null ? '<span class="text-muted/50">—</span>'
+      : (shelf > 0 ? '<span class="text-amber-600">' + m(shelf, c.currency) + '</span>' : m(0, c.currency));
+    var ren = c.renewal_date
+      ? (c.renewal_date + (c.days_to_renewal != null
+          ? (c.days_to_renewal < 0 ? ' <span class="text-red-600">(overdue)</span>'
+             : (c.days_to_renewal <= 30 ? ' <span class="text-amber-600">(' + c.days_to_renewal + 'd)</span>' : ''))
+          : ''))
+      : '<span class="text-muted/50">—</span>';
+    return '<tr>'
+      + '<td class="px-3 py-2 text-body">' + (c.vendor + ' — ' + c.product).replace(/[&<>]/g, '') + '</td>'
+      + '<td class="px-3 py-2 text-right font-mono">' + m(c.seat_price_monthly, c.currency) + '</td>'
+      + '<td class="px-3 py-2 text-right">' + (c.licensed_seats == null ? '∞' : c.licensed_seats) + '</td>'
+      + '<td class="px-3 py-2 text-right ' + utilCls + '">' + util + '</td>'
+      + '<td class="px-3 py-2 text-right">' + m(c.allocated_monthly, c.currency) + '</td>'
+      + '<td class="px-3 py-2 text-right">' + shelfCell + '</td>'
+      + '<td class="px-3 py-2">' + ren + '</td>'
+      + '</tr>';
+  }).join('');
 }
 
 function _populateCurrencySelector() {

@@ -14,23 +14,26 @@
                  text-muted hover:text-body hover:bg-surface-raised transition-colors"
           data-i18n-attr-aria-label="portal.language.aria_open"
           aria-haspopup="menu"
-          onclick="const m=this.nextElementSibling; m.classList.toggle('hidden');">
-    <span data-lang-flag class="inline-block w-4 h-3 rounded-sm overflow-hidden shadow-sm ring-1 ring-black/5"></span>
+          aria-expanded="false"
+          aria-controls="portal-lang-menu"
+          onclick="const m=this.nextElementSibling; m.classList.toggle('hidden'); this.setAttribute('aria-expanded', String(!m.classList.contains('hidden')));">
+    <span data-lang-flag class="inline-block w-4 h-3 rounded-sm overflow-hidden shadow-sm ring-1 ring-black/5" aria-hidden="true"></span>
     <span data-lang-code class="uppercase tracking-wider">en</span>
-    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
     </svg>
   </button>
 
-  <div data-lang-menu
+  <div data-lang-menu id="portal-lang-menu"
        class="hidden absolute right-0 bottom-full mb-1 w-40 rounded-md
               bg-surface border border-token-border shadow-lg z-50 py-1"
        role="menu">
 
     <button type="button" data-lang="en"
+            role="menuitem"
             class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-body
                    hover:bg-surface-raised transition-colors">
-      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none">
+      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none" aria-hidden="true" focusable="false">
         <rect width="60" height="36" fill="#012169"/>
         <path d="M0 0 L60 36 M60 0 L0 36" stroke="#fff" stroke-width="7"/>
         <path d="M0 0 L60 36 M60 0 L0 36" stroke="#C8102E" stroke-width="3"/>
@@ -41,9 +44,10 @@
     </button>
 
     <button type="button" data-lang="de"
+            role="menuitem"
             class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-body
                    hover:bg-surface-raised transition-colors">
-      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none">
+      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none" aria-hidden="true" focusable="false">
         <rect width="60" height="12" y="0"  fill="#000"/>
         <rect width="60" height="12" y="12" fill="#DD0000"/>
         <rect width="60" height="12" y="24" fill="#FFCE00"/>
@@ -52,9 +56,10 @@
     </button>
 
     <button type="button" data-lang="fr"
+            role="menuitem"
             class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-body
                    hover:bg-surface-raised transition-colors">
-      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none">
+      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none" aria-hidden="true" focusable="false">
         <rect width="20" height="36" x="0"  fill="#002654"/>
         <rect width="20" height="36" x="20" fill="#FFFFFF"/>
         <rect width="20" height="36" x="40" fill="#CE1126"/>
@@ -63,9 +68,10 @@
     </button>
 
     <button type="button" data-lang="es"
+            role="menuitem"
             class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-body
                    hover:bg-surface-raised transition-colors">
-      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none">
+      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none" aria-hidden="true" focusable="false">
         <rect width="60" height="9"  y="0"  fill="#AA151B"/>
         <rect width="60" height="18" y="9"  fill="#F1BF00"/>
         <rect width="60" height="9"  y="27" fill="#AA151B"/>
@@ -74,9 +80,10 @@
     </button>
 
     <button type="button" data-lang="it"
+            role="menuitem"
             class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-body
                    hover:bg-surface-raised transition-colors">
-      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none">
+      <svg viewBox="0 0 60 36" class="w-5 h-3 rounded-sm overflow-hidden ring-1 ring-black/10 flex-shrink-0" preserveAspectRatio="none" aria-hidden="true" focusable="false">
         <rect width="20" height="36" x="0"  fill="#009246"/>
         <rect width="20" height="36" x="20" fill="#FFFFFF"/>
         <rect width="20" height="36" x="40" fill="#CE2B37"/>
@@ -117,7 +124,11 @@
         const lang = btn.getAttribute("data-lang");
         window.i18n.setLanguage(lang);
         const menu = btn.closest("[data-lang-menu]");
-        if (menu) menu.classList.add("hidden");
+        if (menu) {
+          menu.classList.add("hidden");
+          const trigger = menu.parentElement.querySelector("[data-lang-trigger]");
+          if (trigger) trigger.setAttribute("aria-expanded", "false");
+        }
       });
     });
 
@@ -127,7 +138,11 @@
 
     document.addEventListener("click", function (e) {
       document.querySelectorAll("[data-lang-switcher] [data-lang-menu]").forEach(function (menu) {
-        if (!menu.parentElement.contains(e.target)) menu.classList.add("hidden");
+        if (!menu.parentElement.contains(e.target)) {
+          menu.classList.add("hidden");
+          const trigger = menu.parentElement.querySelector("[data-lang-trigger]");
+          if (trigger) trigger.setAttribute("aria-expanded", "false");
+        }
       });
     });
   }

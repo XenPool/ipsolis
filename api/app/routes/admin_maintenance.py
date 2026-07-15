@@ -45,7 +45,18 @@ _WRITE_GATE = require_role("admin")
 BACKUP_DIR = Path("/app/backups")
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
-_SAFE_NAME = re.compile(r"^xp_backup_\d{8}_\d{6}\.sql\.gz$")
+_SAFE_NAME = re.compile(r"^xp_backup_(?:pre_restore_)?\d{8}_\d{6}\.sql\.gz(?:\.enc)?$")
+
+
+def _backup_suffix() -> str:
+    """Return the filename suffix for a new backup.
+
+    The ``.enc`` suffix is the single source of truth for whether a backup is
+    encrypted: the worker encrypts iff the target name ends in ``.enc`` and the
+    restore path decrypts on the same signal. Driven by whether an at-rest
+    backup key is configured.
+    """
+    return ".sql.gz.enc" if settings.BACKUP_ENCRYPTION_KEY.strip() else ".sql.gz"
 
 
 def _get_celery():
@@ -236,7 +247,7 @@ async def create_backup(
 ) -> dict:
     """Creates a pending db_backups row and enqueues the worker task."""
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"xp_backup_{ts}.sql.gz"
+    filename = f"xp_backup_{ts}{_backup_suffix()}"
 
     created_by = _session_user(request)
     backup = DbBackup(
@@ -365,7 +376,7 @@ async def restore_backup(
     # Reserve the safety-backup row before kicking the worker.
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     safety = DbBackup(
-        filename=f"xp_backup_pre_restore_{ts}.sql.gz",
+        filename=f"xp_backup_pre_restore_{ts}{_backup_suffix()}",
         status="pending",
         trigger="pre_restore",
         created_by=_session_user(request),
@@ -870,6 +881,9 @@ async def get_schedule(db: AsyncSession = Depends(get_db)) -> dict:
     return {
         "enabled": (cfg.get("backup.enabled") or "false").lower() in ("1", "true", "yes", "on"),
         "cron":    cfg.get("backup.schedule_cron") or "0 2 * * *",
+        # Read-only: whether backups are encrypted at-rest (driven by the
+        # BACKUP_ENCRYPTION_KEY infra secret, not editable from the UI).
+        "encrypted_at_rest": bool(settings.BACKUP_ENCRYPTION_KEY.strip()),
     }
 
 
@@ -950,6 +964,71 @@ async def test_alert(db: AsyncSession = Depends(get_db)) -> dict:
         queue="default",
     )
     return {"enqueued": True, "task_id": result.id, "recipient": to_addr}
+
+
+# ── Drift reconciliation ──────────────────────────────────────────────────────
+
+_DRIFT_MODES = ("detect_only", "auto_remediate")
+
+
+class DriftConfigUpdate(BaseModel):
+    enabled: bool | None = None
+    schedule_cron: str | None = None
+    remediation_mode: str | None = None
+
+
+@router.get("/drift")
+async def get_drift_config(db: AsyncSession = Depends(get_db)) -> dict:
+    rows = await db.execute(text(
+        "SELECT key, value FROM app_config WHERE key IN ("
+        "'drift.enabled', 'drift.schedule_cron', 'drift.remediation_mode', 'drift.last_run')"
+    ))
+    cfg = {k: v for k, v in rows.all()}
+    # Surfacing the opt-in count makes the "enabled but nothing happens"
+    # case obvious: drift only scans groups provisioned by a drift_monitor type.
+    n = await db.execute(text("SELECT COUNT(*) FROM asset_types WHERE drift_monitor = true"))
+    open_f = await db.execute(text("SELECT COUNT(*) FROM drift_findings WHERE status = 'open'"))
+    return {
+        "enabled": (cfg.get("drift.enabled") or "false").lower() in ("1", "true", "yes", "on"),
+        "schedule_cron": cfg.get("drift.schedule_cron") or "0 3 * * *",
+        "remediation_mode": cfg.get("drift.remediation_mode") or "detect_only",
+        "last_run": cfg.get("drift.last_run") or None,
+        "monitored_types": int(n.scalar() or 0),
+        "open_findings": int(open_f.scalar() or 0),
+    }
+
+
+@router.put("/drift", dependencies=[_WRITE_GATE])
+async def set_drift_config(
+    payload: DriftConfigUpdate, db: AsyncSession = Depends(get_db)
+) -> dict:
+    if payload.schedule_cron is not None:
+        cron = payload.schedule_cron.strip()
+        if not cron:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "schedule_cron must not be empty")
+        _validate_cron(cron)
+        await _upsert_cfg(db, "drift.schedule_cron", cron)
+    if payload.remediation_mode is not None:
+        if payload.remediation_mode not in _DRIFT_MODES:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"remediation_mode must be one of {_DRIFT_MODES}",
+            )
+        await _upsert_cfg(db, "drift.remediation_mode", payload.remediation_mode)
+    if payload.enabled is not None:
+        await _upsert_cfg(db, "drift.enabled", "true" if payload.enabled else "false")
+    await db.commit()
+    return {"success": True}
+
+
+@router.post("/drift/run-now", dependencies=[_WRITE_GATE])
+async def run_drift_now() -> dict:
+    """Enqueue an immediate drift scan (honours the configured remediation mode)."""
+    celery = _get_celery()
+    result = celery.send_task(
+        "tasks.workflows.drift_reconcile.reconcile_drift", queue="reclaim"
+    )
+    return {"enqueued": True, "task_id": result.id}
 
 
 @router.post("/updates/check-now", dependencies=[_WRITE_GATE])

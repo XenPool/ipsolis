@@ -128,6 +128,12 @@ class AssetType(Base):
     monthly_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     cost_center: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Optional binding to a vendor software contract (SoftwareContract).
+    # When set, the cost report prices this type per-seat from the contract
+    # (Model A) instead of ``monthly_cost``. SET NULL on contract delete.
+    contract_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("software_contracts.id", ondelete="SET NULL"), nullable=True
+    )
     # Lifecycle
     lifecycle_ttl_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     lifecycle_renewable: Mapped[bool] = mapped_column(
@@ -165,6 +171,23 @@ class AssetType(Base):
     # NULL = any domain user can request.
     eligible_requestors_dn: Mapped[str | None] = mapped_column(
         String(500), nullable=True
+    )
+    # Per-type opt-in for drift / out-of-band reconciliation. When true (and
+    # the global `drift.enabled` switch is on), the drift Beat task compares
+    # this type's ad_group targets against actual AD membership.
+    drift_monitor: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Attestation artifacts (ISO-27001 evidence, opt-in per type):
+    # requires_handover_ack — on `provisioned`, email the recipient a signed
+    # handover (Übergabeprotokoll) link to acknowledge receipt / AUP.
+    # emit_revocation_certificate — on revoke/expire, emit a signed disposal
+    # attestation of what was removed. Neither blocks the order flow.
+    requires_handover_ack: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    emit_revocation_certificate: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
     # Logo image stored as data URL (base64-encoded)
     logo: Mapped[str | None] = mapped_column(Text, nullable=True)

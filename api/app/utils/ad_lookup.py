@@ -272,6 +272,176 @@ async def _msldap_lookup_manager(identifier: str, ad_config: dict) -> dict:
         await client.disconnect()
 
 
+def _ldap_escape_filter(value: str) -> str:
+    """Escape a value for safe interpolation into an LDAP search filter (RFC 4515).
+
+    Needed when we put a distinguishedName (which may contain parentheses,
+    commas, backslashes) into a ``(manager=<dn>)`` filter.
+    """
+    out = []
+    for ch in value:
+        if ch == "\\":
+            out.append("\\5c")
+        elif ch == "*":
+            out.append("\\2a")
+        elif ch == "(":
+            out.append("\\28")
+        elif ch == ")":
+            out.append("\\29")
+        elif ch == "\x00":
+            out.append("\\00")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def lookup_direct_reports(identifier: str) -> dict:
+    """Return the direct reports (team) of a manager from Active Directory.
+
+    The inverse of :func:`lookup_manager`: resolve the manager's DN, then
+    find every user whose ``manager`` attribute points at it.
+
+    Returns:
+        {"success": True, "reports": [{"email", "display_name", "sam_account"}, ...]}
+        {"success": False, "error": str}
+    """
+    if not identifier.strip():
+        return {"success": False, "error": "Empty input"}
+    ad_config = _get_ad_config()
+    if not ad_config:
+        return {"success": False, "error": "Active Directory is not configured. Configure AD via Admin > Settings > Active Directory."}
+    return _msldap_direct_reports_sync(identifier, ad_config)
+
+
+def is_owner_managed_by(requester_email: str, owner_email: str) -> dict:
+    """Verify that ``requester_email`` is the AD manager of ``owner_email``.
+
+    Used to gate the "manager orders on behalf of a report" flow: the
+    relationship is confirmed against AD (the requester can't just claim to
+    be someone's manager). Returns a dict so callers can distinguish a
+    genuine "not the manager" from an AD error.
+
+    Returns:
+        {"success": True, "is_manager": bool}
+        {"success": False, "error": str}
+    """
+    if not requester_email.strip() or not owner_email.strip():
+        return {"success": False, "error": "Empty input"}
+    if requester_email.strip().lower() == owner_email.strip().lower():
+        # Ordering for yourself is not a manager-for-report relationship.
+        return {"success": True, "is_manager": False}
+    mgr = lookup_manager(owner_email)
+    if not mgr.get("success"):
+        return {"success": False, "error": mgr.get("error", "AD lookup failed")}
+    manager = mgr.get("manager")
+    if not manager:
+        return {"success": True, "is_manager": False}
+    mgr_email = (manager.get("email") or "").strip().lower()
+    return {"success": True, "is_manager": mgr_email == requester_email.strip().lower()}
+
+
+def _msldap_direct_reports_sync(identifier: str, ad_config: dict) -> dict:
+    """Synchronous wrapper around the async direct-reports lookup."""
+    try:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(asyncio.run, _msldap_direct_reports(identifier, ad_config))
+                return future.result(timeout=15)
+        else:
+            return asyncio.run(_msldap_direct_reports(identifier, ad_config))
+    except Exception as e:
+        logger.error("AD direct-reports lookup failed for '%s': %s", identifier, e)
+        return {"success": False, "error": f"AD connection error: {e}"}
+
+
+async def _msldap_direct_reports(identifier: str, ad_config: dict) -> dict:
+    """Resolve the manager's DN, then page through users whose ``manager`` = that DN."""
+    from msldap.commons.factory import LDAPConnectionFactory
+    from urllib.parse import quote
+
+    server_host = ad_config["server"]
+    server_port = ad_config["port"]
+    base_dn = ad_config["base_dn"]
+    bind_user = ad_config["username"]
+    bind_password = ad_config["password"]
+    domain = ad_config["domain"]
+    use_ssl = ad_config.get("use_ssl", False)
+
+    if "@" in identifier:
+        ldap_filter = f"(|(mail={identifier})(userPrincipalName={identifier}))"
+    else:
+        sam = identifier.split("\\")[-1] if "\\" in identifier else identifier
+        ldap_filter = f"(sAMAccountName={sam})"
+
+    scheme = "ldaps+ntlm-password" if use_ssl else "ldap+ntlm-password"
+    user_escaped = quote(f"{domain}\\{bind_user}" if domain else bind_user, safe="")
+    pass_escaped = quote(bind_password, safe="")
+    url = f"{scheme}://{user_escaped}:{pass_escaped}@{server_host}:{server_port}"
+
+    factory = LDAPConnectionFactory.from_url(url)
+    client = factory.get_client()
+    await client.connect()
+
+    try:
+        # Step 1: resolve the manager's distinguishedName.
+        mgr_dn = None
+        async for entry, err in client.pagedsearch(ldap_filter, ["distinguishedName"], tree=base_dn):
+            if err:
+                return {"success": False, "error": str(err)}
+            if not entry:
+                continue
+            a = entry.get("attributes") or {}
+            dn = a.get("distinguishedName")
+            if isinstance(dn, list):
+                dn = dn[0] if dn else None
+            mgr_dn = str(dn) if dn else None
+            break
+
+        if not mgr_dn:
+            return {"success": False, "error": f"User '{identifier}' not found in AD"}
+
+        # Step 2: find every user whose manager attribute points at that DN.
+        reports_filter = f"(manager={_ldap_escape_filter(mgr_dn)})"
+        attrs = ["mail", "displayName", "sAMAccountName", "userPrincipalName"]
+        reports: list[dict] = []
+        async for entry, err in client.pagedsearch(reports_filter, attrs, tree=base_dn):
+            if err:
+                return {"success": False, "error": str(err)}
+            if not entry:
+                continue
+            a = entry.get("attributes") or {}
+
+            def _attr(key):
+                v = a.get(key)
+                if isinstance(v, list):
+                    v = v[0] if v else None
+                if v is None or v == "" or v == b"":
+                    return None
+                if isinstance(v, bytes):
+                    return v.decode("utf-8", errors="replace")
+                return str(v)
+
+            email = _attr("mail") or _attr("userPrincipalName")
+            if not email:
+                continue
+            reports.append({
+                "email": email,
+                "display_name": _attr("displayName") or email,
+                "sam_account": _attr("sAMAccountName") or "",
+            })
+
+        reports.sort(key=lambda r: (r["display_name"] or "").lower())
+        return {"success": True, "reports": reports}
+    finally:
+        await client.disconnect()
+
+
 def check_group_membership(identifier: str, group_dn: str) -> dict:
     """
     Check if a user is a member of an AD group (recursive/transitive).

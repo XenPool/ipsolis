@@ -238,7 +238,7 @@
     <input type="hidden" name="user_email" value="{{ user.email }}">
 
     <!-- Owner (optional, must be a valid AD user) -->
-    <details class="mt-4" {% if form and form.owner_email %}open{% endif %}>
+    <details class="mt-4" ontoggle="onDeputyToggle(this)" {% if form and form.owner_email %}open{% endif %}>
       <summary class="text-xs text-muted cursor-pointer hover:text-body select-none" data-i18n="portal.order_new.deputy_toggle">
         + Specify owner (optional)
       </summary>
@@ -255,6 +255,16 @@
             <button type="button" onclick="removeDeputy()" class="text-green-400 hover:text-red-500 font-bold leading-none">&times;</button>
           </div>
           {% endif %}
+        </div>
+
+        <!-- Team picker: the requester's AD direct reports, quick-selectable.
+             Any valid domain user can still be typed in the input below. -->
+        <div id="team-picker" class="mb-2 hidden">
+          <div class="text-[11px] font-medium text-muted mb-1">
+            <span data-i18n="portal.order_new.team_label">Your team</span>
+            <span class="text-muted/70 font-normal ml-1" data-i18n="portal.order_new.team_hint">— pick a report, or type anyone below</span>
+          </div>
+          <div id="team-picker-list" class="flex flex-wrap gap-1.5"></div>
         </div>
 
         <div id="deputy-input-row" class="flex gap-2 items-start {% if form and form.owner_email %}hidden{% endif %}">
@@ -457,6 +467,29 @@ async function addUser(type) {
   document.getElementById(type + '-validate-result').innerHTML = '';
 }
 
+function _escTeam(s) {
+  return (s || '').replace(/[&<>"']/g, function(c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+  });
+}
+
+// Set the owner (from validated free-text or a team-picker click) and flip the
+// UI into the "chip" state.
+function _setOwner(email, name) {
+  document.getElementById('owner-name-hidden').value = name || '';
+  document.getElementById('owner-email-hidden').value = email || '';
+  var chip = document.getElementById('deputy-chip');
+  chip.innerHTML =
+    '<div class="inline-flex items-center gap-2 bg-green-50 border border-green-200 rounded-full px-3 py-1 text-sm">'
+    + '<span class="text-green-800">' + _escTeam(email) + '</span>'
+    + '<button type="button" onclick="removeDeputy()" class="text-green-400 hover:text-red-500 font-bold leading-none">\xd7</button>'
+    + '</div>';
+  chip.classList.remove('hidden');
+  document.getElementById('deputy-input-row').classList.add('hidden');
+  var tp = document.getElementById('team-picker');
+  if (tp) tp.classList.add('hidden');
+}
+
 async function addDeputy() {
   var input = document.getElementById('deputy-input');
   var val = input.value.trim();
@@ -465,17 +498,7 @@ async function addDeputy() {
   var result = await _validateUserFetch(val, 'deputy-validate-result');
   if (!result.valid) return;
 
-  document.getElementById('owner-name-hidden').value = result.name || '';
-  document.getElementById('owner-email-hidden').value = result.email || val;
-
-  var chip = document.getElementById('deputy-chip');
-  chip.innerHTML =
-    '<div class="inline-flex items-center gap-2 bg-green-50 border border-green-200 rounded-full px-3 py-1 text-sm">'
-    + '<span class="text-green-800">' + (result.email || val) + '</span>'
-    + '<button type="button" onclick="removeDeputy()" class="text-green-400 hover:text-red-500 font-bold leading-none">\xd7</button>'
-    + '</div>';
-  chip.classList.remove('hidden');
-  document.getElementById('deputy-input-row').classList.add('hidden');
+  _setOwner(result.email || val, result.name || '');
   input.value = '';
   document.getElementById('deputy-validate-result').innerHTML = '';
 }
@@ -486,6 +509,41 @@ function removeDeputy() {
   document.getElementById('deputy-chip').innerHTML = '';
   document.getElementById('deputy-chip').classList.add('hidden');
   document.getElementById('deputy-input-row').classList.remove('hidden');
+  var tp = document.getElementById('team-picker');
+  if (tp && tp.dataset.hasMembers === '1') tp.classList.remove('hidden');
+}
+
+// ── Team picker (AD direct reports) ────────────────────────────────────────
+var _teamLoaded = false;
+function onDeputyToggle(details) {
+  if (details && details.open) loadTeam();
+}
+async function loadTeam() {
+  if (_teamLoaded) return;          // fetch once per page load
+  _teamLoaded = true;
+  var tp = document.getElementById('team-picker');
+  var list = document.getElementById('team-picker-list');
+  if (!tp || !list) return;
+  try {
+    var resp = await fetch('/portal/my-team');
+    if (!resp.ok) return;
+    var data = await resp.json();
+    var reports = (data && data.reports) || [];
+    if (!reports.length) return;    // no reports → picker stays hidden, free-text only
+    list.innerHTML = reports.map(function(r) {
+      var label = r.display_name || r.email;
+      return '<button type="button"'
+        + ' onclick="_setOwner(' + JSON.stringify(r.email).replace(/"/g, '&quot;') + ',' + JSON.stringify(label).replace(/"/g, '&quot;') + ')"'
+        + ' class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-token-border bg-surface text-body text-xs hover:bg-surface-raised">'
+        + '<span>' + _escTeam(label) + '</span>'
+        + '</button>';
+    }).join('');
+    tp.dataset.hasMembers = '1';
+    // Only reveal if an owner isn't already chosen.
+    if (!document.getElementById('owner-email-hidden').value) {
+      tp.classList.remove('hidden');
+    }
+  } catch (e) { /* graceful: leave the free-text input */ }
 }
 
 // ── User list visibility per asset type ────────────────────────────────────────

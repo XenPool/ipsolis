@@ -46,6 +46,22 @@ Wenn für einen Asset-Typ ein `monthly_cost` konfiguriert ist, zeigt das Bestell
 
 ---
 
+## Software-Lizenzen & Verträge *(Pro)*
+
+Über einen frei gesetzten `monthly_cost` pro Platz hinaus kann ip·Solis den **echten Herstellervertrag** hinter einem Asset-Typ abbilden. Ein **Vertrag** (Hersteller, Produkt, Vertragswert, Abrechnungsintervall, lizenzierte Plätze, Verlängerungsdatum, Kündigungsfrist) bindet **einen Vertrag an viele Asset-Typen**.
+
+Ist ein Typ an einen Vertrag gebunden, bepreist der Kostenbericht jede aktive Bestellung mit dem **Pro-Platz-Satz** des Vertrags — `Vertragswert ÷ Abrechnungsintervall ÷ Plätze` — statt mit dem pauschalen `monthly_cost`. Der Verbrauch ist die Summe der aktiven Bestellungen über **alle** gebundenen Typen und liefert:
+
+- **Auslastung** — belegte vs. lizenzierte Plätze
+- **Shelfware** — ungenutzte Plätze × Platzpreis (bezahlte Kapazität, die niemand nutzt)
+- **Überbelegung** — mehr aktive Bestellungen als lizenzierte Plätze (wird ausgewiesen, blockiert aber nie eine Bestellung)
+
+Das ist *Modell A* — der tatsächliche Verbrauch wird verrechnet; ungenutzte Kapazität wird ausgewiesen, nicht auf die Verbraucher umgelegt. Verträge und Live-Auslastung finden Sie unter **Berichte → Lizenzen & Verträge**; die Bindung eines Asset-Typs an einen Vertrag erfolgt in dessen Definitionsformular.
+
+Eine tägliche, optionale **Verlängerungserinnerung** mailt, sobald ein Vertrag sein Fenster `Verlängerungsdatum − Kündigungsfrist` erreicht — so verpassen Sie keine Kündigungsfrist.
+
+---
+
 ## Währungsumrechnung
 
 Wenn Asset-Typen in unterschiedlichen Währungen bepreist sind, kann der Kostenbericht alles in eine einzige kanonische Berichtswährung umrechnen.

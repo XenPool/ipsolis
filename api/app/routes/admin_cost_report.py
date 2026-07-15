@@ -200,12 +200,33 @@ async def _load_snapshot_views(
     return by_view
 
 
+# SQL fragment: the effective monthly per-seat cost of an asset type.
+# When the type is bound to a software contract with a positive seat count,
+# the price is the contract's monthly value / seats (Model A); otherwise it
+# falls back to the type's own ``monthly_cost``. Ditto for currency.
+_EFFECTIVE_UNIT_SQL = """
+    CASE WHEN sc.id IS NOT NULL AND sc.licensed_seats > 0
+         THEN (CASE sc.billing_interval
+                   WHEN 'annual'    THEN sc.contract_value / 12.0
+                   WHEN 'quarterly' THEN sc.contract_value / 3.0
+                   ELSE sc.contract_value END) / sc.licensed_seats
+         ELSE at.monthly_cost END
+"""
+_EFFECTIVE_CURRENCY_SQL = """
+    CASE WHEN sc.id IS NOT NULL AND sc.licensed_seats > 0
+         THEN sc.currency ELSE at.currency END
+"""
+# A type is "priced" if it has a monthly_cost OR a per-seat contract binding.
+_PRICED_PREDICATE = "(at.monthly_cost IS NOT NULL OR (sc.id IS NOT NULL AND sc.licensed_seats > 0))"
+
+
 async def _query_active_orders(db: AsyncSession) -> list[dict[str, Any]]:
     """Return one dict per active order joined with asset-type cost data
-    and the requester AD snapshot. Excludes orders against asset types
-    that have no ``monthly_cost`` set — those are untracked.
+    and the requester AD snapshot. Excludes orders against asset types that
+    are unpriced — neither a ``monthly_cost`` nor a per-seat contract binding.
+    Contract-bound types are priced at the contract's per-seat rate (Model A).
     """
-    sql = """
+    sql = f"""
         SELECT
             o.id            AS order_id,
             o.user_email,
@@ -223,11 +244,15 @@ async def _query_active_orders(db: AsyncSession) -> list[dict[str, Any]]:
             at.id           AS asset_type_id,
             at.name         AS asset_type_name,
             at.cost_center  AS provider_cost_center,
-            at.currency,
-            at.monthly_cost
+            {_EFFECTIVE_CURRENCY_SQL} AS currency,
+            {_EFFECTIVE_UNIT_SQL}     AS monthly_cost,
+            sc.id           AS contract_id,
+            sc.vendor       AS contract_vendor,
+            sc.product      AS contract_product
         FROM orders o
         JOIN asset_types at ON at.id = o.asset_type_id
-        WHERE at.monthly_cost IS NOT NULL
+        LEFT JOIN software_contracts sc ON sc.id = at.contract_id
+        WHERE {_PRICED_PREDICATE}
           AND o.status::text = ANY(:active_statuses)
         ORDER BY at.cost_center NULLS LAST, at.name, o.id
     """
@@ -235,7 +260,11 @@ async def _query_active_orders(db: AsyncSession) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for r in rows.mappings().all():
         unit = float(r["monthly_cost"]) if r["monthly_cost"] is not None else 0.0
+        unit = round(unit, 2)
         out.append({
+            "contract_id":           r["contract_id"],
+            "contract_vendor":       r["contract_vendor"],
+            "contract_product":      r["contract_product"],
             "order_id":              r["order_id"],
             "user_email":            r["user_email"],
             "user_name":             r["user_name"],
@@ -255,6 +284,77 @@ async def _query_active_orders(db: AsyncSession) -> list[dict[str, Any]]:
             "currency":              r["currency"] or "",
             "unit_monthly_cost":     unit,
             "monthly_total":         unit,
+        })
+    return out
+
+
+# Divisor from a contract's billing interval INTO a monthly value.
+_BILLING_DIVISOR = {"monthly": 1, "quarterly": 3, "annual": 12}
+
+
+async def _query_contracts_view(db: AsyncSession) -> list[dict[str, Any]]:
+    """Per-contract Model-A utilisation view (live only, not snapshotted).
+
+    For each software contract: seat consumption (active orders across all
+    bound asset types), the per-seat monthly price, the amount actually
+    allocated (consumption × seat price), and the unused-seat *shelfware*
+    (unrecovered under Model A). Also seat over-allocation and renewal aging.
+    """
+    rows = (await db.execute(text(
+        f"""
+        SELECT sc.id, sc.vendor, sc.product, sc.currency, sc.billing_interval,
+               sc.contract_value, sc.licensed_seats, sc.renewal_date,
+               sc.notice_period_days, sc.auto_renew,
+               COALESCE(NULLIF(sc.cost_center, ''), '(unassigned)') AS cost_center,
+               COUNT(o.id) AS consumption,
+               COUNT(DISTINCT at.id) AS bound_type_count
+        FROM software_contracts sc
+        LEFT JOIN asset_types at ON at.contract_id = sc.id
+        LEFT JOIN orders o
+               ON o.asset_type_id = at.id AND o.status::text = ANY(:active_statuses)
+        GROUP BY sc.id
+        ORDER BY sc.vendor, sc.product
+        """
+    ), {"active_statuses": list(_ACTIVE_ORDER_STATUSES)})).mappings().all()
+
+    today = _date.today()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        div = _BILLING_DIVISOR.get(r["billing_interval"], 1) or 1
+        monthly_value = round(float(r["contract_value"]) / div, 2)
+        seats = r["licensed_seats"]
+        consumption = int(r["consumption"] or 0)
+        seat_price = round(monthly_value / seats, 2) if seats and seats > 0 else None
+        if seat_price is not None and seats:
+            allocated = round(seat_price * consumption, 2)
+            shelfware = round(seat_price * max(0, seats - consumption), 2)
+            utilization = round(consumption / seats, 4)
+            over_allocated = consumption > seats
+        else:
+            allocated = None
+            shelfware = None
+            utilization = None
+            over_allocated = False
+        out.append({
+            "contract_id": r["id"],
+            "vendor": r["vendor"],
+            "product": r["product"],
+            "currency": r["currency"],
+            "cost_center": r["cost_center"],
+            "billing_interval": r["billing_interval"],
+            "contract_value": float(r["contract_value"]),
+            "monthly_value": monthly_value,
+            "licensed_seats": seats,
+            "bound_type_count": int(r["bound_type_count"] or 0),
+            "consumption": consumption,
+            "seat_price_monthly": seat_price,
+            "allocated_monthly": allocated,
+            "shelfware_monthly": shelfware,
+            "utilization": utilization,
+            "over_allocated": over_allocated,
+            "renewal_date": r["renewal_date"].isoformat() if r["renewal_date"] else None,
+            "days_to_renewal": (r["renewal_date"] - today).days if r["renewal_date"] else None,
+            "auto_renew": r["auto_renew"],
         })
     return out
 
@@ -392,13 +492,17 @@ async def cost_report(
         for v in by_provider_at.values()
     ]
     # Asset definitions priced but with zero active orders — surface them
-    # as 0-row entries so admins see the type is configured.
-    sql_unused = """
-        SELECT id, name, COALESCE(NULLIF(cost_center, ''), '(unassigned)') AS cost_center,
-               currency, monthly_cost
-        FROM asset_types
-        WHERE monthly_cost IS NOT NULL
-          AND id NOT IN (
+    # as 0-row entries so admins see the type is configured. Contract-bound
+    # types are priced at the per-seat rate (Model A), same as active orders.
+    sql_unused = f"""
+        SELECT at.id, at.name,
+               COALESCE(NULLIF(at.cost_center, ''), '(unassigned)') AS cost_center,
+               {_EFFECTIVE_CURRENCY_SQL} AS currency,
+               {_EFFECTIVE_UNIT_SQL}     AS monthly_cost
+        FROM asset_types at
+        LEFT JOIN software_contracts sc ON sc.id = at.contract_id
+        WHERE {_PRICED_PREDICATE}
+          AND at.id NOT IN (
             SELECT asset_type_id FROM orders
             WHERE status::text = ANY(:active_statuses)
           )
@@ -410,7 +514,7 @@ async def cost_report(
             "asset_type_id": u["id"],
             "asset_type_name": u["name"],
             "currency": u["currency"] or "",
-            "unit_monthly_cost": float(u["monthly_cost"]),
+            "unit_monthly_cost": round(float(u["monthly_cost"]), 2) if u["monthly_cost"] is not None else 0.0,
             "active_orders": 0,
             "unique_users": 0,
             "projected_monthly_total": 0.0,
@@ -510,11 +614,17 @@ async def cost_report(
         meta["fx_canonical"] = target_cur
         meta["fx_excluded_currencies"] = sorted(excluded)
 
+    # Per-contract utilisation (Model A) — always live, independent of the
+    # as_of snapshot path (contracts aren't snapshotted). FX is not applied
+    # here; each contract reports in its own currency.
+    by_contract = await _query_contracts_view(db)
+
     return {
         "rows": legacy_rows_out,
         "totals": totals,
         "by_consumer_cost_center": by_consumer_cc,
         "by_consumer_department":  by_consumer_dept,
+        "by_contract": by_contract,
         "meta": meta,
     }
 

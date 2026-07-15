@@ -235,8 +235,15 @@ def _grant_ad_group(identifier: str, principal: str, db: Session, *, target: dic
 
 
 def _grant_entra_group(identifier: str, principal: str, db: Session, *, target: dict | None = None) -> dict:
-    """Adds principal to the Entra group identified by identifier (MS Graph)."""
-    raise NotImplementedError("Entra group grant not yet implemented")
+    """Adds principal to the Entra (cloud-only) group via Microsoft Graph.
+
+    ``identifier`` is the Entra group object id (GUID); ``principal`` an
+    email / UPN. Idempotent (already-a-member is treated as success).
+    """
+    from tasks.modules.graph_client import graph_add_member
+    uid = graph_add_member(db, identifier, principal)
+    logger.info("Entra group grant OK: %s → %s (uid=%s)", principal, identifier, uid)
+    return {"success": True, "user_id": uid}
 
 
 def _revoke_ad_group(identifier: str, principal: str, db: Session) -> dict:
@@ -269,8 +276,72 @@ def _revoke_ad_group(identifier: str, principal: str, db: Session) -> dict:
 
 
 def _revoke_entra_group(identifier: str, principal: str, db: Session) -> dict:
-    """Removes principal from Entra group identifier."""
-    raise NotImplementedError("Entra group revoke not yet implemented")
+    """Removes principal from the Entra (cloud-only) group via Microsoft Graph.
+
+    ``identifier`` is the Entra group object id (GUID). Idempotent
+    (not-a-member is treated as success).
+    """
+    from tasks.modules.graph_client import graph_remove_member
+    uid = graph_remove_member(db, identifier, principal)
+    logger.info("Entra group revoke OK: %s ← %s (uid=%s)", principal, identifier, uid)
+    return {"success": True, "user_id": uid}
+
+
+def _ldap_filter_escape(value: str) -> str:
+    """Escape a value for safe interpolation into an LDAP filter (RFC 4515)."""
+    return "".join(
+        {"\\": "\\5c", "*": "\\2a", "(": "\\28", ")": "\\29", "\x00": "\\00"}.get(ch, ch)
+        for ch in value
+    )
+
+
+def list_ad_group_members(identifier: str, db: Session) -> list[dict]:
+    """Return the direct **user** members of an AD group (by its DN).
+
+    Uses ``(&(objectClass=user)(memberOf=<groupDN>))`` — direct membership
+    only, which is exactly what ipSolis manages via ``_grant_ad_group``.
+    Each member: ``{"sam": ..., "mail": ..., "dn": ...}``. Used by the drift
+    reconciliation task to compare actual AD membership against what ipSolis
+    provisioned.
+    """
+    import asyncio
+    from msldap.commons.factory import LDAPConnectionFactory
+
+    url, base_dn = _build_msldap_url(db)
+
+    async def _do():
+        factory = LDAPConnectionFactory.from_url(url)
+        client = factory.get_client()
+        await client.connect()
+        try:
+            filt = f"(&(objectClass=user)(memberOf={_ldap_filter_escape(identifier)}))"
+            attrs = ["sAMAccountName", "mail", "userPrincipalName", "distinguishedName"]
+            members: list[dict] = []
+            async for entry, err in client.pagedsearch(filt, attrs, tree=base_dn):
+                if err:
+                    raise ValueError(f"LDAP member search error: {err}")
+                if not entry:
+                    continue
+                a = entry.get("attributes") or {}
+
+                def _g(k):
+                    v = a.get(k)
+                    if isinstance(v, list):
+                        v = v[0] if v else None
+                    if isinstance(v, bytes):
+                        return v.decode("utf-8", errors="replace")
+                    return str(v) if v else None
+
+                members.append({
+                    "sam": _g("sAMAccountName"),
+                    "mail": _g("mail") or _g("userPrincipalName"),
+                    "dn": _g("distinguishedName"),
+                })
+            return members
+        finally:
+            await client.disconnect()
+
+    return asyncio.run(_do())
 
 
 _GRANT_HANDLERS: dict[str, object] = {

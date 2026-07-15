@@ -1,0 +1,10 @@
+# Host-side E2E test dependencies (NOT installed in the ipsolis containers).
+# Playwright drives a real browser on the host/CI runner against the running
+# docker-compose stack at http://localhost:8000.
+#
+#   python -m venv .venv-e2e
+#   .venv-e2e\Scripts\Activate.ps1        # Windows
+#   pip install -r tests/e2e/requirements.txt
+#   playwright install chromium
+pytest>=8.0.0
+pytest-playwright>=0.5.0

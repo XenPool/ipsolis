@@ -1,0 +1,9 @@
+{# Shared sub-nav for the Inventory hub (Asset Definitions + Personal Assets). #}
+<div class="mb-6 border-b border-token-border">
+  <nav class="flex flex-wrap gap-1 -mb-px">
+    <a href="/ui/asset-types"
+       class="px-3 py-2 text-sm font-medium border-b-2 {% if active_page == 'asset-types' %}border-blue-600 text-blue-700 dark:text-blue-300{% else %}border-transparent text-muted hover:text-body{% endif %}">Asset Definitions</a>
+    <a href="/ui/asset-pool"
+       class="px-3 py-2 text-sm font-medium border-b-2 {% if active_page == 'asset-pool' %}border-blue-600 text-blue-700 dark:text-blue-300{% else %}border-transparent text-muted hover:text-body{% endif %}">Personal Assets</a>
+  </nav>
+</div>

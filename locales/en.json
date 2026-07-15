@@ -6,7 +6,9 @@
       "my_approvals": "My Approvals",
       "delegations": "Delegations",
       "certifications": "Access Reviews",
-      "request_access": "Request Access"
+      "request_access": "Request Access",
+      "aria_label": "Main navigation",
+      "packages": "Packages"
     },
     "user": {
       "sign_out": "Sign out"
@@ -170,6 +172,8 @@
       "deputy_toggle": "+ Specify owner (optional)",
       "deputy_label": "Owner",
       "deputy_hint": "sAMAccountName or email · must be a valid domain user",
+      "team_label": "Your team",
+      "team_hint": "— pick a report, or type anyone below",
       "user_placeholder": "j.doe or j.doe@company.com",
       "rdp_hint": "Users with Remote Desktop access (sAMAccountName or email)",
       "admin_hint": "Users with local administrator access on the VM",
@@ -245,6 +249,20 @@
       "deprovision_heading": "Deprovision",
       "deprovision_hint": "Ends access and returns the asset to the pool. This action cannot be undone.",
       "deprovision_button": "Deprovision now"
+    },
+    "a11y": {
+      "skip_to_content": "Skip to main content",
+      "sidebar": "Sidebar"
+    },
+    "packages": {
+      "title": "Packages",
+      "subtitle": "Order a ready-made bundle of access in one step. Items you already have are skipped automatically.",
+      "empty": "No packages are available right now.",
+      "optional": "(optional)",
+      "order_btn": "Order package",
+      "ordered": "Ordered {n} item(s){skip}.",
+      "skipped": "({n} already held)",
+      "order_failed": "Order failed"
     }
   }
 }

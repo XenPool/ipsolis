@@ -6,7 +6,9 @@
       "my_approvals": "Mes approbations",
       "delegations": "Délégations",
       "certifications": "Revues d'accès",
-      "request_access": "Demander l'accès"
+      "request_access": "Demander l'accès",
+      "aria_label": "Navigation principale",
+      "packages": "Packages"
     },
     "user": {
       "sign_out": "Déconnexion"
@@ -170,6 +172,8 @@
       "deputy_toggle": "+ Indiquer un titulaire (facultatif)",
       "deputy_label": "Titulaire",
       "deputy_hint": "sAMAccountName ou e-mail · doit être un utilisateur du domaine valide",
+      "team_label": "Votre équipe",
+      "team_hint": "— choisissez un collaborateur, ou saisissez ci-dessous",
       "user_placeholder": "j.dupont ou j.dupont@entreprise.fr",
       "rdp_hint": "Utilisateurs avec accès Bureau à distance (sAMAccountName ou e-mail)",
       "admin_hint": "Utilisateurs avec droits d'administrateur local sur la VM",
@@ -245,6 +249,20 @@
       "deprovision_heading": "Désapprovisionner",
       "deprovision_hint": "Met fin à l'accès et retourne l'actif au pool. Cette action est irréversible.",
       "deprovision_button": "Désapprovisionner maintenant"
+    },
+    "a11y": {
+      "skip_to_content": "Aller au contenu principal",
+      "sidebar": "Barre latérale"
+    },
+    "packages": {
+      "title": "Packages",
+      "subtitle": "Commandez un package d'accès prêt à l'emploi en une étape. Les éléments que vous possédez déjà sont ignorés automatiquement.",
+      "empty": "Aucun package n'est disponible pour le moment.",
+      "optional": "(optionnel)",
+      "order_btn": "Commander le package",
+      "ordered": "{n} élément(s) commandé(s){skip}.",
+      "skipped": "({n} déjà détenu(s))",
+      "order_failed": "Échec de la commande"
     }
   }
 }

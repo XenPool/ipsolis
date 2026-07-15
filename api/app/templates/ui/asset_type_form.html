@@ -82,6 +82,52 @@
           </span>
         </label>
       </div>
+      <div>
+        <label class="flex items-start gap-2 text-sm cursor-pointer">
+          <input type="checkbox" name="drift_monitor" value="true" id="at-drift-monitor"
+                 {% if asset_type and asset_type.drift_monitor %}checked{% endif %}
+                 class="mt-0.5 rounded border-token-border text-blue-600 focus:ring-blue-400">
+          <span>
+            <span class="font-medium text-body">Monitor for access drift</span>
+            <span class="block text-xs text-muted/70 mt-0.5">
+              Periodically re-reads the AD groups this type provisions into and flags divergence between
+              what ipSolis granted and actual membership — <em>missing access</em> (granted but removed in AD)
+              and <em>out-of-band</em> (added directly, never granted here). Findings surface on
+              <strong>Operations → Drift</strong>; the scan schedule and detect-vs-auto-remediate mode are
+              set globally under Maintenance → Drift reconciliation.
+            </span>
+          </span>
+        </label>
+      </div>
+      <div>
+        <label class="flex items-start gap-2 text-sm cursor-pointer">
+          <input type="checkbox" name="requires_handover_ack" value="true" id="at-handover-ack"
+                 {% if asset_type and asset_type.requires_handover_ack %}checked{% endif %}
+                 class="mt-0.5 rounded border-token-border text-blue-600 focus:ring-blue-400">
+          <span>
+            <span class="font-medium text-body">Require handover acknowledgment</span>
+            <span class="block text-xs text-muted/70 mt-0.5">
+              On provisioning, email the recipient a signed <em>Übergabeprotokoll</em> link to acknowledge
+              receipt (and the acceptable-use policy, if set under Settings). Outstanding / completed acks
+              are tracked under <strong>Reports → Attestations</strong>. Nothing is blocked.
+            </span>
+          </span>
+        </label>
+      </div>
+      <div>
+        <label class="flex items-start gap-2 text-sm cursor-pointer">
+          <input type="checkbox" name="emit_revocation_certificate" value="true" id="at-revocation-cert"
+                 {% if asset_type and asset_type.emit_revocation_certificate %}checked{% endif %}
+                 class="mt-0.5 rounded border-token-border text-blue-600 focus:ring-blue-400">
+          <span>
+            <span class="font-medium text-body">Emit revocation certificate</span>
+            <span class="block text-xs text-muted/70 mt-0.5">
+              On revoke / expiry, issue a signed HTML disposal attestation of what was removed (audit
+              evidence, archivable via print). Emitted automatically — no acknowledgment needed.
+            </span>
+          </span>
+        </label>
+      </div>
     </div>
 
     <!-- Logo + live tile preview -->
@@ -333,6 +379,24 @@
                  placeholder="e.g. CC-IT-2100"
                  class="w-48 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono">
         </div>
+      </div>
+      <div class="mt-3">
+        <label class="block text-xs text-muted mb-1">License / Contract</label>
+        {% set _cid = (asset_type.contract_id if asset_type and asset_type.contract_id else None) %}
+        <select name="contract_id" id="at-contract-id"
+                class="w-full max-w-lg rounded border border-token-border bg-surface text-body text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <option value="">— none (use Monthly cost above) —</option>
+          {% for c in contracts %}
+          <option value="{{ c.id }}" {% if _cid == c.id %}selected{% endif %}>
+            {{ c.vendor }} — {{ c.product }} ({{ c.currency }}{% if c.licensed_seats %}, {{ c.licensed_seats }} seats{% else %}, unlimited{% endif %})
+          </option>
+          {% endfor %}
+        </select>
+        <p class="text-[11px] text-muted/60 mt-1 leading-snug">
+          Bind this type to a vendor contract (<a href="/ui/contracts" class="text-blue-600 hover:underline">manage licenses</a>).
+          When set, the cost report prices each active order at the contract's <strong>per-seat</strong> rate
+          (contract value ÷ seats) instead of the Monthly cost above, and tracks seat utilization / shelfware.
+        </p>
       </div>
     </div>
 
@@ -621,7 +685,7 @@
             <select name="target_type[]"
                     class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
               <option value="ad_group" {% if tgt.type == 'ad_group' %}selected{% endif %}>AD Group</option>
-              <option value="entra_group" {% if tgt.type == 'entra_group' %}selected{% endif %} disabled>Entra Group (coming soon)</option>
+              <option value="entra_group" {% if tgt.type == 'entra_group' %}selected{% endif %}>Entra Group</option>
               <option value="rds_collection" {% if tgt.type == 'rds_collection' %}selected{% endif %} disabled>RDS Collection (coming soon)</option>
               <option value="other" {% if tgt.type == 'other' %}selected{% endif %} disabled>Other (coming soon)</option>
             </select>
@@ -648,7 +712,7 @@
             <select name="target_type[]"
                     class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">
               <option value="ad_group">AD Group</option>
-              <option value="entra_group" disabled>Entra Group (coming soon)</option>
+              <option value="entra_group">Entra Group</option>
               <option value="rds_collection" disabled>RDS Collection (coming soon)</option>
               <option value="other" disabled>Other (coming soon)</option>
             </select>
@@ -1467,7 +1531,7 @@ function addTargetRow() {
     '<select name="target_type[]"'
     + ' class="col-span-3 rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-400">'
     + '<option value="ad_group">AD Group</option>'
-    + '<option value="entra_group" disabled>Entra Group (coming soon)</option>'
+    + '<option value="entra_group">Entra Group</option>'
     + '<option value="rds_collection" disabled>RDS Collection (coming soon)</option>'
     + '<option value="other" disabled>Other (coming soon)</option>'
     + '</select>'
@@ -2026,6 +2090,11 @@ async function submitForm() {
     help_text: form.querySelector('[name="help_text"]').value.trim() || null,
     is_active: form.querySelector('[name="is_active"]').checked,
     show_on_dashboard: form.querySelector('[name="show_on_dashboard"]').checked,
+    drift_monitor: form.querySelector('[name="drift_monitor"]').checked,
+    requires_handover_ack: form.querySelector('[name="requires_handover_ack"]').checked,
+    emit_revocation_certificate: form.querySelector('[name="emit_revocation_certificate"]').checked,
+    contract_id: form.querySelector('[name="contract_id"]').value
+      ? parseInt(form.querySelector('[name="contract_id"]').value, 10) : null,
     category: form.querySelector('[name="category"]:checked').value,
     assignment_model: assignmentModel,
     pool_capacity: form.querySelector('[name="pool_capacity"]').value

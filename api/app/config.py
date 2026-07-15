@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     WEBHOOK_SECRET_TOKEN: str = "change_me_webhook_secret"
     ADMIN_API_KEY: str = "change_me_admin_key_min_32_chars"
 
+    # Optional passphrase for encrypting DB backups at-rest. When set, new
+    # backups are written as ``*.sql.gz.enc`` (AES-256-CBC via openssl) and the
+    # restore path decrypts automatically. MUST be kept OUTSIDE the database
+    # (it is an infra secret in .env, never in app_config) — app_config, and
+    # therefore the credentials it holds, live inside the backup itself, so the
+    # key can't be recoverable from the thing it protects. Empty = backups stay
+    # plaintext (back-compat). Losing this key makes encrypted backups
+    # unrecoverable.
+    BACKUP_ENCRYPTION_KEY: str = ""
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",")]

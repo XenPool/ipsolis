@@ -26,6 +26,61 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/portal", tags=["auth"])
 
 
+async def _maybe_first_login_onboarding(db: AsyncSession, email: str, name: str | None) -> None:
+    """Opt-in: on a user's first portal login, evaluate assignment rules and
+    order the matched bundles (idempotent). Best-effort — never blocks login.
+
+    Gated by ``onboarding.eval_on_first_login`` and a **zero-orders** check, so
+    it fires once (once the user has any order the gate closes). AD attributes
+    are resolved fresh; the bundle-order service handles idempotency.
+    """
+    try:
+        import asyncio
+
+        from sqlalchemy import func, select, text
+
+        from app.models.config import AppConfig
+        from app.models.order import Order
+
+        flag = (await db.execute(
+            select(AppConfig.value).where(AppConfig.key == "onboarding.eval_on_first_login")
+        )).scalar_one_or_none()
+        if (flag or "false").strip().lower() not in ("1", "true", "yes", "on"):
+            return
+        if not email:
+            return
+        # First login = no orders yet.
+        has_order = (await db.execute(
+            select(Order.id).where(func.lower(Order.user_email) == email.lower()).limit(1)
+        )).first()
+        if has_order:
+            return
+
+        from app.services.bundle_order import order_bundle
+        from app.services.onboarding import build_user_context, evaluate_assignment_rules
+        from app.utils.ad_lookup import lookup_user
+
+        ad = await asyncio.to_thread(lookup_user, email)
+        attrs = {k: ad.get(k) for k in
+                 ("department", "cost_center", "company", "employee_id", "title")
+                 if ad.get(k) is not None} if ad.get("success") else {}
+        matched = await evaluate_assignment_rules(db, build_user_context(attrs))
+        if not matched:
+            return
+        from app.models.bundle import Bundle
+        for m in matched:
+            bundle = await db.get(Bundle, m["bundle_id"])
+            if bundle and bundle.is_active:
+                await order_bundle(
+                    db, bundle=bundle, recipient_email=email, recipient_name=name or email,
+                    requester_email=email, requester_name=name or email,
+                    origin="rule_based", actor="api:onboarding:first_login",
+                )
+        logger.info("[auth] first-login onboarding: %s matched %d bundle(s)", email, len(matched))
+    except Exception as exc:  # noqa: BLE001 — onboarding must never break login
+        logger.warning("[auth] first-login onboarding failed for %s: %s", email, exc)
+
+
 def _auth_error(request: Request, title: str, message: str, status: int):
     return templates.TemplateResponse(
         request, "portal/auth_error.html",
@@ -116,6 +171,7 @@ async def portal_ldap_login(
     request: Request,
     username: str = Form(""),
     password: str = Form(""),
+    db: AsyncSession = Depends(get_db),
 ):
     """Authenticate portal user via LDAP bind (on-prem AD)."""
     result = authenticate_user(username, password)
@@ -138,6 +194,7 @@ async def portal_ldap_login(
     }
     logger.info("[auth/ldap] Login successful: %s (%s)", result["name"], result["email"])
 
+    await _maybe_first_login_onboarding(db, result["email"], result.get("name"))
     next_url = request.session.pop("login_next", "/portal/")
     return RedirectResponse(url=next_url, status_code=302)
 
@@ -203,6 +260,7 @@ async def portal_auth_callback(
     request.session["portal_user"] = user
     logger.info("[auth] Login successful via '%s': %s (%s)", provider_id, user.get("name"), user.get("email"))
 
+    await _maybe_first_login_onboarding(db, user.get("email") or "", user.get("name"))
     next_url = request.session.pop("login_next", "/portal/")
     return RedirectResponse(url=next_url, status_code=302)
 

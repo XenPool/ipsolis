@@ -61,6 +61,12 @@ When an asset type has a `monthly_cost` configured, the order form shows the pro
 
 ---
 
+## Ordering a Package *(Pro)*
+
+Beyond single assets, the **Packages** page offers ready-made bundles — a curated set of access ordered in one click (e.g. a role's standard toolkit). Items the user already has are skipped automatically; the rest go through the normal approval and provisioning flow as individual orders. Which packages appear here is controlled per bundle by administrators; see [Lifecycle → Onboarding Bundles](./lifecycle#onboarding-bundles-pro).
+
+---
+
 ## Approval Workflow
 
 Orders that require approval enter a `pending_approval` state. The portal displays the current approval status on the order detail page. Provisioning does not begin until all required approvals are collected (subject to quorum — see below).
@@ -273,3 +279,9 @@ If a user is flagged as a leaver (via HR webhook or SCIM), they are blocked from
 ## Multi-Language Support
 
 The portal UI is available in **English, German, French, Spanish, and Italian**. The active locale is detected from the browser's `Accept-Language` header and can be overridden via a language selector. All labels, validation messages, email templates, and empty states are localized.
+
+---
+
+## Accessibility
+
+The portal follows the structural basics of **BITV 2.0 / EN 301 549** — a skip-to-content link, semantic landmarks and labels, a keyboard-visible focus indicator, live-region notification badges, and a document `lang` that follows the selected language (relevant for public-sector procurement). This closes the structural essentials; a formal accessibility statement and external conformance test are a separate step per deployment.

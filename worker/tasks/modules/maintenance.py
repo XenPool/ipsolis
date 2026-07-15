@@ -195,7 +195,18 @@ def _run_backup_sync(db, backup_id: int, trigger: str = "manual") -> dict:
     if pg["password"]:
         env["PGPASSWORD"] = pg["password"]
 
-    # pg_dump custom format + gzip for smaller file + atomic write (.part)
+    # pg_dump plain format + gzip for smaller file + atomic write (.part).
+    # When the target name ends in ``.enc`` the gzip stream is additionally
+    # piped through ``openssl enc`` (AES-256-CBC, pbkdf2) so the credentials
+    # inside app_config are never written to disk in clear. The ``.enc`` suffix
+    # is the single source of truth (chosen by the api when a backup key is
+    # configured); the key itself comes from BACKUP_ENCRYPTION_KEY in the env.
+    encrypt = target.name.endswith(".enc")
+    if encrypt and not (os.environ.get("BACKUP_ENCRYPTION_KEY") or "").strip():
+        raise RuntimeError(
+            "BACKUP_ENCRYPTION_KEY is not set but an encrypted backup "
+            f"({filename}) was requested"
+        )
     tmp = target.with_suffix(target.suffix + ".part")
     cmd = [
         "pg_dump",
@@ -210,16 +221,39 @@ def _run_backup_sync(db, backup_id: int, trigger: str = "manual") -> dict:
     try:
         with open(tmp, "wb") as out:
             dump = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
-            gzip_p = subprocess.Popen(["gzip", "-c"], stdin=dump.stdout, stdout=out)
-            dump.stdout.close()
-            _, dump_err = dump.communicate(timeout=3600)
-            gzip_p.communicate(timeout=60)
-            if dump.returncode != 0:
-                raise RuntimeError(
-                    "pg_dump failed: " + (dump_err.decode("utf-8", errors="replace")[:2000])
+            if encrypt:
+                gzip_p = subprocess.Popen(["gzip", "-c"], stdin=dump.stdout, stdout=subprocess.PIPE)
+                enc_p = subprocess.Popen(
+                    ["openssl", "enc", "-aes-256-cbc", "-pbkdf2", "-salt",
+                     "-pass", "env:BACKUP_ENCRYPTION_KEY"],
+                    stdin=gzip_p.stdout, stdout=out, stderr=subprocess.PIPE, env=env,
                 )
-            if gzip_p.returncode != 0:
-                raise RuntimeError("gzip failed")
+                dump.stdout.close()
+                gzip_p.stdout.close()
+                _, dump_err = dump.communicate(timeout=3600)
+                gzip_p.wait(timeout=60)
+                _, enc_err = enc_p.communicate(timeout=120)
+                if dump.returncode != 0:
+                    raise RuntimeError(
+                        "pg_dump failed: " + (dump_err.decode("utf-8", errors="replace")[:2000])
+                    )
+                if gzip_p.returncode != 0:
+                    raise RuntimeError("gzip failed")
+                if enc_p.returncode != 0:
+                    raise RuntimeError(
+                        "openssl encrypt failed: " + (enc_err.decode("utf-8", errors="replace")[:500])
+                    )
+            else:
+                gzip_p = subprocess.Popen(["gzip", "-c"], stdin=dump.stdout, stdout=out)
+                dump.stdout.close()
+                _, dump_err = dump.communicate(timeout=3600)
+                gzip_p.communicate(timeout=60)
+                if dump.returncode != 0:
+                    raise RuntimeError(
+                        "pg_dump failed: " + (dump_err.decode("utf-8", errors="replace")[:2000])
+                    )
+                if gzip_p.returncode != 0:
+                    raise RuntimeError("gzip failed")
 
         tmp.rename(target)
         size = target.stat().st_size
@@ -391,14 +425,24 @@ def run_restore(self, backup_id: int, safety_backup_id: int) -> dict:
             env["PGPASSWORD"] = pg["password"]
         # bash -c keeps the pipeline simple; both binaries are guaranteed
         # to exist in the worker image (debian + apt postgres-client).
+        # Encrypted backups (``.enc``) are decrypted first with the same
+        # openssl parameters used to write them; the key comes from
+        # BACKUP_ENCRYPTION_KEY in the env (a missing/wrong key makes openssl
+        # exit non-zero, surfacing as restore_failed).
+        psql_cmd = (
+            f"psql --host '{pg['host']}' --port '{pg['port']}' "
+            f"--username '{pg['user']}' --dbname '{target_dbname}' "
+            f"--quiet --set ON_ERROR_STOP=1"
+        )
+        if target_filename.endswith(".enc"):
+            pipeline = (
+                f"openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_ENCRYPTION_KEY "
+                f"-in '{target_path}' | gunzip -c | {psql_cmd}"
+            )
+        else:
+            pipeline = f"gunzip -c '{target_path}' | {psql_cmd}"
         proc = subprocess.run(
-            [
-                "bash", "-c",
-                f"gunzip -c '{target_path}' | psql "
-                f"--host '{pg['host']}' --port '{pg['port']}' "
-                f"--username '{pg['user']}' --dbname '{target_dbname}' "
-                f"--quiet --set ON_ERROR_STOP=1",
-            ],
+            ["bash", "-c", pipeline],
             env=env,
             capture_output=True,
             timeout=3600,

@@ -3,6 +3,7 @@
 {% block title %}Asset Definitions – {{ app_title }}{% endblock %}
 
 {% block content %}
+{% include "_partials/hub_tabs_inventory.html" %}
 {% set _can_write_asset_types = admin_role_at_least(request, 'admin') %}
 <div class="mb-6 flex items-center justify-between">
   <h1 class="text-lg font-semibold text-heading">Asset Definitions</h1>

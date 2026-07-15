@@ -61,6 +61,33 @@ The `order_change_log` table captures every mutation to an order as a separate d
 
 ---
 
+## Access Drift Reconciliation *(Pro)*
+
+ip·Solis grants AD group membership fire-and-forget; on its own it can't tell you whether someone was added to a managed group **out of band**, or removed from one it granted. The drift reconciliation task closes that gap.
+
+Enable **Monitor for access drift** per asset type, then set the schedule and mode under **Maintenance → Drift reconciliation**. On each run, ip·Solis re-reads the actual AD membership of every monitored group and compares it against what it provisioned (from the order change log):
+
+- **missing access** — ip·Solis granted it, but the user is no longer in the group
+- **out-of-band** — the user is in the group, but ip·Solis never granted it
+
+Findings land on **Operations → Drift**, are audit-logged (and streamed to your SIEM), and can trigger a best-effort email / Teams alert. Two modes:
+
+- `detect_only` — record + alert (default)
+- `auto_remediate` — also re-grant missing members and revoke out-of-band ones via AD
+
+---
+
+## Attestation Artifacts *(Pro)*
+
+Two ISO-27001-relevant evidence artifacts, both opt-in per asset type and delivered as **signed HTML pages** (archival via browser print — no PDF dependency):
+
+- **Handover acknowledgment (Übergabeprotokoll)** — on provisioning, the recipient gets a signed link to confirm receipt (and an optional acceptable-use policy). The acknowledgment is persisted and audit-logged. An opt-in reminder chases overdue acknowledgments.
+- **Revocation / disposal certificate** — on revoke or expiry, a signed attestation of what was removed (which groups, which instance, when) — audit evidence for offboarding / asset disposal, emitted automatically.
+
+The signed link works without a portal login (same mechanism as the certification review link) and expires after 90 days. Review issued artifacts under **Reports → Attestations**; enable the flags on each asset definition and set the AUP text under **Settings**.
+
+---
+
 ## Field-Level Data Classification
 
 Asset type attributes can be tagged with a data classification:

@@ -14,6 +14,9 @@ _include = [
     "tasks.workflows.license_check",
     "tasks.workflows.approval_reminders",
     "tasks.workflows.approval_auto_decline",
+    "tasks.workflows.drift_reconcile",
+    "tasks.workflows.contract_renewals",
+    "tasks.workflows.attestation_reminders",
     "tasks.workflows.cost_threshold_alerter",
     "tasks.workflows.cost_report_snapshot",
     "tasks.workflows.audit_retention",
@@ -86,6 +89,8 @@ app.conf.update(
         "tasks.workflows.approval_reminders.*": {"queue": "notifications"},
         "tasks.workflows.approval_auto_decline.*": {"queue": "notifications"},
         "tasks.workflows.cost_threshold_alerter.*": {"queue": "notifications"},
+        "tasks.workflows.contract_renewals.*": {"queue": "notifications"},
+        "tasks.workflows.attestation_reminders.*": {"queue": "notifications"},
         "tasks.workflows.cost_report_snapshot.*": {"queue": "default"},
         "tasks.workflows.certification_notifications.*": {"queue": "notifications"},
         "tasks.workflows.certification_reminders.*": {"queue": "notifications"},
@@ -124,6 +129,13 @@ app.conf.update(
             "schedule": crontab(minute="*"),  # Every minute
             "options": {"queue": "default"},
         },
+        # Drift / out-of-band reconciliation (opt-in via drift.enabled; cron
+        # honoured from drift.schedule_cron — checker runs every minute).
+        "drift-scheduler": {
+            "task": "tasks.workflows.drift_reconcile.check_drift_schedule",
+            "schedule": crontab(minute="*"),  # Every minute (cron gate inside)
+            "options": {"queue": "reclaim"},
+        },
         # Health probe transitions → email alerts
         "maintenance-health-alert": {
             "task": "tasks.modules.maintenance.check_health_and_alert",
@@ -135,6 +147,21 @@ app.conf.update(
             "task": "tasks.workflows.license_check.check_license_expiry",
             "schedule": crontab(hour=8, minute=0),  # Daily at 08:00 Europe/Berlin
             "options": {"queue": "default"},
+        },
+        # Daily software-contract renewal reminders (opt-in via
+        # contract.renewal_reminder_enabled). Fires when a contract enters its
+        # notice-period window.
+        "contract-renewal-reminders": {
+            "task": "tasks.workflows.contract_renewals.check_contract_renewals",
+            "schedule": crontab(hour=8, minute=15),  # Daily at 08:15 Europe/Berlin
+            "options": {"queue": "notifications"},
+        },
+        # Daily overdue handover-acknowledgment reminders (opt-in via
+        # attestation.handover_reminder_enabled).
+        "attestation-handover-reminders": {
+            "task": "tasks.workflows.attestation_reminders.check_overdue_handovers",
+            "schedule": crontab(hour=8, minute=30),  # Daily at 08:30 Europe/Berlin
+            "options": {"queue": "notifications"},
         },
         # Stream new audit_log rows to the configured SIEM endpoint
         "siem-stream-audit-log": {

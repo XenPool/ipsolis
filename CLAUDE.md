@@ -22,7 +22,7 @@ operators, and a webhook receiver for ServiceNow integration.
 | Admin Auth | Session login + `ADMIN_API_KEY` header |
 | Active Directory | `msldap` (NTLM signing / Kerberos) |
 | Virtualization | XenServer/XCP-ng + VMware vSphere (PowerShell / PowerCLI) |
-| OS Deployment | SCCM (WinRM + AdminService REST) |
+| OS Deployment | SCCM (AdminService REST) |
 | Email | Python `smtplib` |
 | Container | Docker / Docker Compose |
 | Reverse Proxy | Nginx (TLS termination) |
@@ -104,8 +104,12 @@ Enum types (e.g. `order_action`, `asset_status`) already exist in the DB — use
 `op.execute(raw SQL)` instead of `op.create_table()` with `sa.Enum` to avoid
 `DuplicateObject` errors.
 
-Current head: `0003_portal_auth_oidc_registry.py` (on-disk chain is `0001` squashed
-initial schema → `0002` → `0003`).
+Current head: `0012_onboarding_first_login.py`. On-disk chain: `0001` squashed initial
+schema → `0002` → `0003` (portal auth OIDC registry) → `0004` drift reconciliation →
+`0005` software contracts → `0006` slack config → `0007` attestation artifacts →
+`0008` onboarding bundles + order groups → `0009` SCIM identity projection →
+`0010` SCIM mover config → `0011` Graph (Entra) config → `0012` onboarding first-login.
+`0004`–`0012` are all additive (new tables + nullable columns + seeded config; no backfill).
 
 ### Template changes require image rebuild
 `api/app/templates/` and `api/app/routes/` are baked into the `ipsolis-api` image, not
@@ -142,7 +146,12 @@ runtime; no build step needed.
 | `api/app/config.py` | Pydantic Settings (env vars) |
 | `api/app/database.py` | SQLAlchemy async engine + session |
 | `api/app/templates_instance.py` | Shared Jinja2 env + live `app_config` globals (title, logo) |
-| `api/app/models/` | ORM models (asset, order, approval, runbook, config, audit, standalone_runbook, ps_module, script_module, global_var, change_log, db_backup) |
+| `api/app/models/` | ORM models (asset, order, approval, runbook, config, audit, standalone_runbook, ps_module, script_module, global_var, change_log, db_backup, drift_finding, software_contract, attestation_artifact, bundle, assignment_rule, order_group, scim_identity) |
+| `api/app/routes/admin_contracts.py` · `admin_attestations.py` · `admin_bundles.py` · `attestation_external.py` | Software contracts CRUD · attestation read API · bundles/rules CRUD + evaluate/order · tokenized `/attestation/{token}` pages |
+| `api/app/services/onboarding.py` · `bundle_order.py` · `scim_provisioning.py` | Rule-eval service · self-contained bundle-order service (portal untouched) · SCIM joiner/mover glue |
+| `api/app/utils/scim_filter.py` · `attestation_token.py` | SCIM filter grammar parser/evaluator · attestation signed-token |
+| `worker/tasks/modules/graph_client.py` · `slack_notify.py` · `attestation.py` | MS Graph (Entra group) client · Slack Block Kit sender · attestation emission |
+| `worker/tasks/workflows/drift_reconcile.py` · `contract_renewals.py` · `attestation_reminders.py` | Beat tasks: AD drift scan/remediate · contract renewal reminders · overdue handover-ack reminders |
 | `api/app/routes/admin.py` | Admin CRUD (asset types, pool, orders, config) |
 | `api/app/routes/admin_auth.py` | Admin login/logout (session cookie) |
 | `api/app/routes/admin_modules.py` | PS module management (Gallery + upload) |
@@ -219,7 +228,7 @@ Dashboard tiles (Admin UI `/ui/`) count Free / In use / Failed / Reinstall / Mai
 - **Active Directory**: `msldap` (NTLM signing / Kerberos) for user validation, manager
   lookup, group membership. Deeper AD integration (e.g. Quest Active Roles) via
   PS modules + runbooks
-- **SCCM**: WinRM for task-sequence triggers; AdminService REST (Kerberos auth) for
+- **SCCM**: AdminService REST (Kerberos auth) for task-sequence triggers and
   device import/delete; status polled by `sccm_probe` workflow
 - **SMTP**: Python `smtplib` for all notifications (approvals, reminders, alerts)
 - **Entra ID**: MSAL for portal SSO; `POST /admin/config/entra/test` verifies credentials
@@ -248,6 +257,15 @@ Dashboard tiles (Admin UI `/ui/`) count Free / In use / Failed / Reinstall / Mai
 | `script_modules` | In-app PowerShell script editor storage |
 | `global_vars` | Shared variables available to runbooks and scripts |
 | `db_backups` | Maintenance backup metadata (filename, size, created_at) |
+| `drift_findings` | AD access-drift findings (`missing_access` / `out_of_band`, remediation state) |
+| `software_contracts` | Vendor software contracts (seats, renewal); `asset_types.contract_id` binds 1:N |
+| `attestation_artifacts` | Signed handover acks + revocation certificates |
+| `bundles` / `bundle_positions` | Onboarding bundles + their asset-type positions |
+| `assignment_rules` | User-attribute condition → bundle (approval-rule condition format) |
+| `order_groups` | Lightweight optional multi-item header; `orders.order_group_id` nullable (NULL for single orders) |
+| `scim_identities` | Last-seen SCIM attribute projection (joiner/mover diffing) |
+
+**New `app_config` key families** (all opt-in, seeded disabled): `drift.*` (enabled / schedule_cron / remediation_mode), `contract.renewal_reminder_*`, `slack.mode` / `slack.webhook_url`, `attestation.*` (aup_text / handover_reminder_*), `scim.joiner_enabled` / `scim.mover_mode`, `graph.tenant_id` / `graph.client_id` / `graph.client_secret` (Entra provisioning), `onboarding.eval_on_first_login`.
 
 ## Conventions
 
@@ -255,7 +273,7 @@ Dashboard tiles (Admin UI `/ui/`) count Free / In use / Failed / Reinstall / Mai
 - **Step tracking**: `worker/tasks/modules/step_helper.py`
 - **Admin auth**: `require_admin_key` accepts either `X-Admin-Key: <ADMIN_API_KEY>` header or an authenticated admin session cookie
 - **Portal auth**: generic OIDC (`app/utils/oidc.py`) over a provider registry in `app_config` (`idp.<id>.*`). Gated by `portal.auth_required` (false = portal open with shared anonymous identity; true = login required). Each enabled `idp.<id>` provider self-configures from its issuer's discovery doc; `auth.ldap_enabled` additionally offers on-prem LDAP login. Callback is parametric: `/portal/auth/{provider_id}/callback`. (Replaced the Entra-only MSAL path; `entra.*` keys are retired.)
-- **`dynamic_runner`, `standalone_runner`, `ps_module_installer`, `sccm_probe`, `maintenance`** must be listed in `include=[]` in `worker/tasks/__init__.py` or Beat tasks won't register
+- **`dynamic_runner`, `standalone_runner`, `ps_module_installer`, `sccm_probe`, `maintenance`, `drift_reconcile`, `contract_renewals`, `attestation_reminders`** must be listed in `include=[]` in `worker/tasks/__init__.py` or Beat tasks won't register; the api mirrors the Beat schedule in `app/utils/beat_inventory.py` (keep in sync — the Recurring Tasks tab reads it)
 - **Worker queues**: `default` (maintenance), `provision` (orders + standalone + installs), `reclaim` (expiry checks), `notifications` (email)
 - **Timezone**: Celery configured for `Europe/Berlin`; DB timestamps stored in UTC
 - **No mock mode**: all external systems (AD, SMTP, vSphere, XenServer, SCCM, Entra ID) must point at real test environments — there is no built-in mocking
