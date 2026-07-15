@@ -294,6 +294,9 @@ def tokens():
         def attestation(self, aid: int) -> str:
             return _mint({"aid": int(aid), "exp": int(time.time()) + 3600, "v": 1, "kind": "attestation"})
 
+        def review(self, rid: int) -> str:
+            return _mint({"rid": int(rid), "exp": int(time.time()) + 3600, "v": 1, "kind": "cert_review"})
+
     return Tokens()
 
 
@@ -342,6 +345,8 @@ def _purge(db):
         "DELETE FROM bundle_positions WHERE bundle_id IN (SELECT id FROM bundles WHERE name LIKE %s)",
         "DELETE FROM bundles WHERE name LIKE %s",
         "DELETE FROM software_contracts WHERE vendor LIKE %s",
+        # Certification campaigns (reviews cascade on campaign + order delete)
+        "DELETE FROM certification_campaigns WHERE name LIKE %s",
         # Runbooks + script modules (must precede asset_types: runbook_definitions
         # FK asset_type_id). Children first, then parents, then the modules.
         "DELETE FROM standalone_runbook_run_steps WHERE run_id IN (SELECT id FROM standalone_runbook_runs WHERE runbook_id IN (SELECT id FROM standalone_runbooks WHERE name LIKE %s))",
@@ -370,6 +375,7 @@ def _purge(db):
         (like,),                             # bundle_positions
         (like,),                             # bundles
         (like,),                             # software_contracts
+        (like,),                             # certification_campaigns
         (like,),                             # standalone_runbook_run_steps
         (like,),                             # standalone_runbook_runs
         (like,),                             # standalone_runbook_steps
