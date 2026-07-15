@@ -61,6 +61,7 @@ BASE_URL = _cfg("IPSOLIS_URL", "http://localhost:8000").rstrip("/")
 MOCK_URL = _cfg("IPSOLIS_MOCK_URL", "http://localhost:9000").rstrip("/")
 ADMIN_KEY = _cfg("ADMIN_API_KEY")
 SECRET_KEY = _cfg("API_SECRET_KEY")
+WEBHOOK_TOKEN = _cfg("WEBHOOK_SECRET_TOKEN", "change_me_webhook_secret")
 _DB = dict(
     host=_cfg("IPSOLIS_DB_HOST", "localhost"),
     port=int(_cfg("IPSOLIS_DB_PORT", "5432")),
@@ -241,6 +242,33 @@ def ad() -> AD:
     return a
 
 
+# ── Worker exec (run a Celery Beat task synchronously inside the worker) ──────
+# Same `docker compose exec worker python -` mechanism as AD, but with no AD
+# dependency — used to drive Beat tasks (expiry/reclaim) against the live stack.
+
+class WorkerExec:
+    def run(self, script: str, timeout: int = 180) -> str:
+        p = subprocess.run(
+            ["docker", "compose", "exec", "-T", "worker", "python", "-"],
+            cwd=str(_REPO_ROOT), input=script, capture_output=True, text=True, timeout=timeout)
+        if p.returncode != 0:
+            raise RuntimeError(f"worker exec failed: {(p.stderr or p.stdout)[-400:]}")
+        for line in reversed(p.stdout.splitlines()):
+            if line.startswith("RESULT="):
+                return line[len("RESULT="):]
+        raise RuntimeError(f"no RESULT from worker: {p.stdout[-400:]} / {p.stderr[-200:]}")
+
+
+@pytest.fixture(scope="session")
+def worker() -> WorkerExec:
+    w = WorkerExec()
+    try:
+        w.run("print('RESULT=ok')")
+    except Exception as e:  # noqa: BLE001
+        pytest.skip(f"worker container not reachable ({type(e).__name__})")
+    return w
+
+
 # ── Signed-token minter (same format as app.utils.*_token) ───────────────────
 
 def _b64url(data: bytes) -> str:
@@ -314,6 +342,15 @@ def _purge(db):
         "DELETE FROM bundle_positions WHERE bundle_id IN (SELECT id FROM bundles WHERE name LIKE %s)",
         "DELETE FROM bundles WHERE name LIKE %s",
         "DELETE FROM software_contracts WHERE vendor LIKE %s",
+        # Runbooks + script modules (must precede asset_types: runbook_definitions
+        # FK asset_type_id). Children first, then parents, then the modules.
+        "DELETE FROM standalone_runbook_run_steps WHERE run_id IN (SELECT id FROM standalone_runbook_runs WHERE runbook_id IN (SELECT id FROM standalone_runbooks WHERE name LIKE %s))",
+        "DELETE FROM standalone_runbook_runs WHERE runbook_id IN (SELECT id FROM standalone_runbooks WHERE name LIKE %s)",
+        "DELETE FROM standalone_runbook_steps WHERE runbook_id IN (SELECT id FROM standalone_runbooks WHERE name LIKE %s)",
+        "DELETE FROM standalone_runbooks WHERE name LIKE %s",
+        "DELETE FROM runbook_steps WHERE runbook_id IN (SELECT id FROM runbook_definitions WHERE name LIKE %s)",
+        "DELETE FROM runbook_definitions WHERE name LIKE %s",
+        "DELETE FROM script_modules WHERE name LIKE %s",
         "DELETE FROM asset_pool WHERE name LIKE %s",
         "DELETE FROM asset_types WHERE name LIKE %s",
     ]
@@ -333,6 +370,13 @@ def _purge(db):
         (like,),                             # bundle_positions
         (like,),                             # bundles
         (like,),                             # software_contracts
+        (like,),                             # standalone_runbook_run_steps
+        (like,),                             # standalone_runbook_runs
+        (like,),                             # standalone_runbook_steps
+        (like,),                             # standalone_runbooks
+        (like,),                             # runbook_steps
+        (like,),                             # runbook_definitions
+        (like,),                             # script_modules
         (like,),                             # asset_pool
         (like,),                             # asset_types
     ]

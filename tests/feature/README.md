@@ -61,8 +61,31 @@ cd tests/feature && python -m pytest -q
 | Slack delivery | `test_notifications.py` | admin Slack test → Block Kit message reaches the **mock-receiver** |
 | AD group grant (real AD) | `test_ad_group.py` | order → worker → target_executor → **real DC**; auto-creates group, asserts member present |
 | Drift detection (real AD) | `test_ad_group.py` | out-of-band member injected → `reconcile_drift` (detect_only) records an out_of_band finding; managed member never flagged |
+| Entra group **revoke** (full chain) | `test_entra_group.py` | `DELETE /orders` → delete runbook → target_executor → graph_client → **mock Graph**; asserts a member-**remove** for the same group+user that was added |
+| AD group **revoke** (real AD) | `test_ad_group.py` | provisioned order deleted (`deprovision_policy=access_only`) → **real DC** removes the member; change-log grant row flips `success → rolled_back`. Own isolated group so it can't disturb grant/drift |
+| Capacity enforcement | `test_capacity.py` | `pool_capacity` full → 2nd order 409; `max_per_user` blocks the same user (409) but not a different one |
+| ServiceNow webhook HMAC | `test_webhook.py` | `POST /webhook/servicenow` — valid `sha256=HMAC(body, WEBHOOK_SECRET_TOKEN)` → 201; bad sig → 401; no auth → 401; duplicate `servicenow_ref` → 409 |
+| Expiry / reclaim Beat | `test_expiry.py` | busy pool asset past `expires_at` → `check_expiring_assets` (run in the worker) flips the order to `expired` and creates a `delete` reclaim order |
+| Standalone runbook (ad-hoc) | `test_runbooks.py` | multi-step trigger → all steps `success` in order; self-contained pwsh modules, no external system |
+| Standalone runbook (failure) | `test_runbooks.py` | critical step fails → run `failed`, later steps `skipped`, `always_run` finaliser still runs |
+| Standalone runbook (cron) | `test_runbooks.py` | `check_cron_schedules` (run in the worker) dispatches a due `* * * * *` runbook → scheduled run → `success` |
+| Composite order | `test_composite.py` | `POST /orders` → dynamic_runner composite → entra grant on **mock Graph** (GROUP_TARGETS) + asset-bound runbook step (RUNBOOK); both effects asserted |
 
-**Slice 4 (planned):** entra_group *revoke* through a delete order; AD group
-revoke via a delete order + deprovision policy; LDAP portal login with a testlab
-AD user (`auth.ldap_enabled=true`); Teams delivery assertion (real webhook,
-read-back via 202) — kept separate so real Teams config is never redirected.
+**Revoke tests don't poll order status:** the cancel route flips the order to
+`cancelled` (terminal) *before* the worker finishes revoking to `revoked`, so
+the tests assert the real effect (mock member-remove / AD membership gone /
+change-log `rolled_back`) instead of racing the status column.
+
+**Default `max_per_user` is 1** — a webhook/capacity test that needs several
+orders for one email must raise it on the asset type, or the per-user guard
+masks the 409 you meant to assert (e.g. dup-ref idempotency).
+
+Runbook/composite tests use **self-contained pwsh script modules** — each prints
+exactly one JSON object and exits 0, so the runner decides success from the
+`success` field with no external system in the loop. The purge covers
+`script_modules` / `standalone_runbooks*` / `runbook_definitions+steps`
+(deleted before `asset_types` — `runbook_definitions` FKs `asset_type_id`).
+
+**Slice 7 (planned):** LDAP portal login with a testlab AD user
+(`auth.ldap_enabled=true`); Teams delivery assertion (real webhook, read-back
+via 202) — kept separate so real Teams config is never redirected.

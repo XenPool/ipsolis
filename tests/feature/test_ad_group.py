@@ -74,6 +74,77 @@ def test_ad_group_grant_via_order(ad, ad_grant):
     assert MANAGED_SAM in ad.members(GRP)
 
 
+REV_GRP = "CN=zz-test-adrevoke,CN=Users,DC=xenpool,DC=local"
+REV_EMAIL = "stefan@xenpool.de"  # granted then revoked through ipSolis
+REV_SAM = "stefan"
+
+
+def _wait_absent(ad, group_dn, sam, timeout=45):
+    """Poll AD until ``sam`` is no longer a member of the group, or timeout."""
+    import time
+    for _ in range(timeout):
+        if sam not in ad.members(group_dn):
+            return True
+        time.sleep(1)
+    return False
+
+
+@pytest.fixture(scope="module")
+def ad_revoke(api, ad):
+    """An access_only ad_group asset type with ``stefan`` granted through an
+    order (auto-creates its own isolated group). Deletes the group on teardown.
+    Separate group/order from ``ad_grant`` so the delete here can't disturb the
+    grant/drift tests."""
+    st, at = api.post("/admin/asset-types", json={
+        "name": f"{NS}-ad-revoke-type", "category": "application_access",
+        "assignment_model": "capacity_pooled", "automation_strategy": "group_only",
+        "deprovision_policy": "access_only",
+        "targets": [{"type": "ad_group", "identifier": REV_GRP,
+                     "principal_source": "requester", "create_if_missing": True}],
+    })
+    assert st == 201, at
+
+    now = datetime.now(timezone.utc)
+    st, o = api.post("/orders/", json={
+        "user_email": REV_EMAIL, "user_name": "Stefan",
+        "asset_type_id": at["id"],
+        "requested_from": now.isoformat(),
+        "requested_until": (now + timedelta(days=1)).isoformat()})
+    assert st == 201, o
+    od = _wait_order(api, o["id"])
+    assert od.get("status") in ("provisioned", "delivered"), od
+
+    yield {"atid": at["id"], "order_id": o["id"]}
+
+    try:
+        ad.delete_group(REV_GRP)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def test_ad_group_revoke_via_delete_order(api, db, query, ad, ad_revoke):
+    """Full revoke chain: DELETE a provisioned order → delete runbook →
+    target_executor → real DC removes the member (deprovision_policy=access_only).
+    Order status isn't polled (the cancel route flips it to ``cancelled`` before
+    the worker revokes); AD membership + the change-log revoke event are asserted.
+    """
+    # precondition: stefan was granted by the order
+    assert REV_SAM in ad.members(REV_GRP)
+
+    st, _ = api.delete(f"/orders/{ad_revoke['order_id']}")
+    assert st == 204
+
+    assert _wait_absent(ad, REV_GRP, REV_SAM), \
+        f"{REV_SAM} still in {REV_GRP} after delete-order revoke"
+
+    # revoke inverts the original grant in place: its change-log row flips
+    # state success → rolled_back (target_executor.revoke doesn't add a new row)
+    rows = query(
+        "SELECT action, state FROM order_change_log "
+        "WHERE identifier=%s AND order_id=%s ORDER BY id DESC", (REV_GRP, ad_revoke["order_id"]))
+    assert any(a == "grant" and s == "rolled_back" for a, s in rows), rows
+
+
 def test_drift_detects_out_of_band_member(api, db, query, ad, ad_grant):
     # inject an out-of-band member (added outside ipSolis)
     ad.add_out_of_band(GRP, OOB_SAM)
