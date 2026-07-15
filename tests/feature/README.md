@@ -82,6 +82,7 @@ cd tests/feature && python -m pytest -q
 | Scheduled orders (Beat) | `test_scheduled.py` | `check_scheduled_orders` (run in the worker) leaves a future-dated `scheduled` order untouched, but dispatches + provisions one whose start has passed (entra grant on **mock Graph**) |
 | Certification auto-revoke (Beat) | `test_cert_autorevoke.py` | overdue campaign + `auto_revoke_on_overdue` → `scan_and_remind` (in the worker) flips the pending review to `auto_revoked` and pulls the entra grant on **mock Graph** |
 | Contract renewal reminder (Beat) | `test_contract_renewal.py` | a contract inside its notice window → `check_contract_renewals` stamps `last_renewal_reminder_at` once; a second tick dedups |
+| Attestation ack reminder (Beat) | `test_attestation_reminder.py` | a handover pending past the window → `check_overdue_handovers` stamps `last_reminder_at` once; a second tick dedups |
 
 **Free-tier user ceiling (25):** without a commercial license the instance caps
 active end-user identities at **25** (distinct `orders.user_email` with a

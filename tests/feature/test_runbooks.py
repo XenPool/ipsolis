@@ -102,9 +102,12 @@ def test_cron_schedules_due_runbook(api, worker, db, query, modules):
         "import json\n"
         "from tasks.workflows.standalone_runner import check_cron_schedules\n"
         "print('RESULT='+json.dumps(check_cron_schedules()))\n")
-    assert json.loads(out).get("dispatched", 0) >= 1
+    assert isinstance(json.loads(out).get("dispatched", 0), int)
 
-    # our runbook got a scheduled run (trigger='scheduled')
+    # our runbook got a scheduled run (trigger='scheduled'). Either this manual
+    # call dispatched it, or the real Beat scheduler (which also ticks every
+    # minute) already did within this minute — the dedup means our call then
+    # reports dispatched=0, but a scheduled run still exists either way.
     rows = query(
         "SELECT status FROM standalone_runbook_runs "
         "WHERE runbook_id=%s AND trigger='scheduled' ORDER BY id DESC", (rbid,))
