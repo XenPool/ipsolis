@@ -70,6 +70,8 @@ cd tests/feature && python -m pytest -q
 | Standalone runbook (failure) | `test_runbooks.py` | critical step fails → run `failed`, later steps `skipped`, `always_run` finaliser still runs |
 | Standalone runbook (cron) | `test_runbooks.py` | `check_cron_schedules` (run in the worker) dispatches a due `* * * * *` runbook → scheduled run → `success` |
 | Composite order | `test_composite.py` | `POST /orders` → dynamic_runner composite → entra grant on **mock Graph** (GROUP_TARGETS) + asset-bound runbook step (RUNBOOK); both effects asserted |
+| LDAP portal login (real AD) | `test_ldap.py` | `POST /portal/auth/ldap` → bogus creds 401; the configured bind account → 302 + session cookie (real NTLM bind vs winsrv1) |
+| Teams delivery (real, no mock) | `test_teams.py` | `POST /admin/config/teams/test` → one real card to the live Teams webhook, asserts `ok:true` (2xx read-back); skips if Teams disabled |
 
 **Revoke tests don't poll order status:** the cancel route flips the order to
 `cancelled` (terminal) *before* the worker finishes revoking to `revoked`, so
@@ -86,6 +88,7 @@ exactly one JSON object and exits 0, so the runner decides success from the
 `script_modules` / `standalone_runbooks*` / `runbook_definitions+steps`
 (deleted before `asset_types` — `runbook_definitions` FKs `asset_type_id`).
 
-**Slice 7 (planned):** LDAP portal login with a testlab AD user
-(`auth.ldap_enabled=true`); Teams delivery assertion (real webhook, read-back
-via 202) — kept separate so real Teams config is never redirected.
+The **Teams** test is the only one that sends a real outward message — one test
+card to the live channel via the admin test endpoint. It is deliberately never
+pointed at the mock (unlike Slack/Graph), matching how Teams runs in this DEV
+instance, and skips cleanly when Teams is disabled.
