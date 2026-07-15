@@ -12,7 +12,7 @@ start, so a `docker compose pull && docker compose up -d` is the only
 operator step. See [`docs/UPGRADING.md`](docs/UPGRADING.md) (TODO) for
 the full upgrade procedure including DB backup recommendations.
 
-## [Unreleased]
+## [0.7.0] — 2026-07-15
 
 ### Added
 - **Drift / out-of-band reconciliation (AD).** A Beat task periodically re-reads the AD groups that
@@ -73,6 +73,21 @@ the full upgrade procedure including DB backup recommendations.
   `order_groups` + nullable `orders.order_group_id`; SCIM identity projection; SCIM mover config;
   Graph (`graph.*`) config; onboarding first-login config. All additive (new tables + nullable
   columns + seeded config); no backfill of existing rows.
+
+### Fixed
+- **Feature-alert emails** now send from the configured `email.from` address instead of the
+  container's `MAIL_FROM` default, so drift / contract-renewal / attestation alerts match the
+  rest of the platform's outgoing mail identity.
+
+### Testing
+- **Autonomous feature-test harness (`tests/feature/`).** A self-contained integration suite
+  (58 tests) drives the running stack end-to-end over HTTP + DB and a testlab mock-receiver:
+  order lifecycle (provision / modify / revoke / all deprovision policies, capacity, scheduled,
+  ServiceNow-webhook HMAC), access provisioning against **real AD** and **mock Microsoft Graph**,
+  drift detection, approvals + certification (incl. auto-revoke), HR leaver, SCIM JML, onboarding
+  bundles, software-contract cost math + renewal, attestation emission/ack, cost & point-in-time
+  access reports, LDAP portal login, real Teams delivery, and every Beat cycle. Namespaced and
+  self-cleaning; not shipped in the runtime image.
 
 ## [0.6.15] — 2026-06-30
 
