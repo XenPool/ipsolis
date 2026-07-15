@@ -84,6 +84,7 @@ cd tests/feature && python -m pytest -q
 | Contract renewal reminder (Beat) | `test_contract_renewal.py` | a contract inside its notice window → `check_contract_renewals` stamps `last_renewal_reminder_at` once; a second tick dedups |
 | Attestation ack reminder (Beat) | `test_attestation_reminder.py` | a handover pending past the window → `check_overdue_handovers` stamps `last_reminder_at` once; a second tick dedups |
 | Stuck-revoke recovery (Beat) | `test_recover_revoking.py` | a step-less `revoking`/`delete` order (lost task) → `recover_stuck_revoking` re-dispatches it → order `revoked`, entra grant pulled on **mock Graph** |
+| Approval reminder (Beat) | `test_approval_reminder.py` | a pending approval older than `reminder_after_hours` → `scan_and_remind` bumps `reminder_count` + stamps `last_reminded_at` once; a second tick dedups |
 
 **Free-tier user ceiling (25):** without a commercial license the instance caps
 active end-user identities at **25** (distinct `orders.user_email` with a
