@@ -51,7 +51,12 @@ cd tests/feature && python -m pytest -q
 | SCIM joiner + leaver | `test_scim.py` | joiner orders a bundle (owner-approval type → parks, no dispatch); leaver revokes |
 | Onboarding bundles + rules | `test_bundles.py` | CRUD, rule eval, idempotency skip |
 | Software contracts (Model-A) | `test_contracts.py` | per-seat math (annual/quarterly/unlimited), validation |
+| Approval via signed link | `test_approval.py` | `/approve/{token}` approve → order advances; decline → order rejected; bad token → 410 |
+| Attestation handover ack | `test_approval.py` | `/attestation/{token}` GET + POST → status acknowledged |
+| Entra group grant (full chain) | `test_entra_group.py` | order → worker → target_executor → graph_client → **mock Graph**; asserts member-add on the mock |
+| Slack delivery | `test_notifications.py` | admin Slack test → Block Kit message reaches the **mock-receiver** |
 
-**Slice 2 (planned):** order → approval-via-token → provision → revoke;
-entra_group grant/revoke via mock Graph (through an order); drift reconcile
-against real AD; Slack/Teams delivery assertions against the mock-receiver.
+**Slice 3 (planned):** entra_group *revoke* through a delete order; drift
+reconcile against **real AD** (`@requires_ad`, testlab `winsrv1.xenpool.local`);
+LDAP portal login with a testlab AD user; Teams delivery assertion (real webhook,
+read-back via 202) — kept separate so real Teams config is never redirected.
