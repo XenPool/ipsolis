@@ -308,7 +308,7 @@ SSL certificate prompts are auto-answered via stdin injection so scripts don't h
 
 SCCM integration enables automated OS deployment workflows:
 
-- **Task sequence triggers** — kick off an SCCM task sequence for a specific device via WinRM
+- **Task sequence triggers** — kick off an SCCM task sequence for a specific device
 - **Device import** — add a computer record to SCCM via the AdminService REST API (Kerberos auth)
 - **Device delete** — remove a computer record after decommissioning
 - **Status polling** — the `sccm_probe` Celery workflow polls SCCM for task sequence completion status and advances the order state accordingly
@@ -318,7 +318,6 @@ Configure in **Admin → Settings → SCCM**:
 | Setting | Description |
 |---|---|
 | SCCM server | Site server hostname |
-| WinRM endpoint | WinRM connection string |
 | AdminService URL | `https://<server>/AdminService/v1.0` |
 | Kerberos principal | Service account UPN |
 | Kerberos password | Service account password |

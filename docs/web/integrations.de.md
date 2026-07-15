@@ -308,7 +308,7 @@ SSL-Zertifikatsabfragen werden über stdin-Injektion automatisch beantwortet, so
 
 Die SCCM-Integration ermöglicht automatisierte OS-Deployment-Workflows:
 
-- **Task-Sequence-Trigger** — Starten einer SCCM-Task-Sequence für ein bestimmtes Gerät über WinRM
+- **Task-Sequence-Trigger** — Starten einer SCCM-Task-Sequence für ein bestimmtes Gerät
 - **Geräteimport** — Hinzufügen eines Computerdatensatzes zu SCCM über die AdminService-REST-API (Kerberos-Authentifizierung)
 - **Gerätelöschung** — Entfernen eines Computerdatensatzes nach der Außerbetriebnahme
 - **Status-Polling** — der Celery-Workflow `sccm_probe` fragt SCCM nach dem Abschlussstatus der Task-Sequence ab und versetzt den Bestellstatus entsprechend weiter
@@ -318,7 +318,6 @@ Konfiguration unter **Admin → Einstellungen → SCCM**:
 | Einstellung | Beschreibung |
 |---|---|
 | SCCM-Server | Hostname des Site-Servers |
-| WinRM-Endpunkt | WinRM-Verbindungsstring |
 | AdminService-URL | `https://<server>/AdminService/v1.0` |
 | Kerberos-Principal | UPN des Dienstkontos |
 | Kerberos-Passwort | Passwort des Dienstkontos |

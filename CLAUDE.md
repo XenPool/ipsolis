@@ -22,7 +22,7 @@ operators, and a webhook receiver for ServiceNow integration.
 | Admin Auth | Session login + `ADMIN_API_KEY` header |
 | Active Directory | `msldap` (NTLM signing / Kerberos) |
 | Virtualization | XenServer/XCP-ng + VMware vSphere (PowerShell / PowerCLI) |
-| OS Deployment | SCCM (WinRM + AdminService REST) |
+| OS Deployment | SCCM (AdminService REST) |
 | Email | Python `smtplib` |
 | Container | Docker / Docker Compose |
 | Reverse Proxy | Nginx (TLS termination) |
@@ -228,7 +228,7 @@ Dashboard tiles (Admin UI `/ui/`) count Free / In use / Failed / Reinstall / Mai
 - **Active Directory**: `msldap` (NTLM signing / Kerberos) for user validation, manager
   lookup, group membership. Deeper AD integration (e.g. Quest Active Roles) via
   PS modules + runbooks
-- **SCCM**: WinRM for task-sequence triggers; AdminService REST (Kerberos auth) for
+- **SCCM**: AdminService REST (Kerberos auth) for task-sequence triggers and
   device import/delete; status polled by `sccm_probe` workflow
 - **SMTP**: Python `smtplib` for all notifications (approvals, reminders, alerts)
 - **Entra ID**: MSAL for portal SSO; `POST /admin/config/entra/test` verifies credentials
