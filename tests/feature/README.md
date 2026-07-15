@@ -39,9 +39,13 @@ cd tests/feature && python -m pytest -q
 - **Signed tokens** — the harness mints the same HMAC approval / attestation
   tokens the app does (from `API_SECRET_KEY`), so link-based flows complete
   without reading a mailbox.
-- **`@requires_ad`** (planned, slice 2) — AD-dependent tests (drift, real
-  ad_group grant/revoke) run against the testlab AD (`winsrv1.xenpool.local`) in
-  DEV and are skipped where AD is unavailable.
+- **Real AD** — AD-dependent tests (real `ad_group` grant, drift detection) run
+  against the testlab DC (`winsrv1.xenpool.local`). The host isn't domain-joined,
+  so AD ops execute inside the worker container (the `ad` fixture shells into
+  `docker compose exec worker`); the whole file is skipped when AD is unreachable.
+  Tests use an isolated auto-created zz-test group + existing test users
+  (`john`, `jupp`) and delete the group on teardown. Drift runs in **detect_only**
+  so the system-wide scan can never mutate a real monitored group.
 
 ## Coverage
 
@@ -55,8 +59,10 @@ cd tests/feature && python -m pytest -q
 | Attestation handover ack | `test_approval.py` | `/attestation/{token}` GET + POST → status acknowledged |
 | Entra group grant (full chain) | `test_entra_group.py` | order → worker → target_executor → graph_client → **mock Graph**; asserts member-add on the mock |
 | Slack delivery | `test_notifications.py` | admin Slack test → Block Kit message reaches the **mock-receiver** |
+| AD group grant (real AD) | `test_ad_group.py` | order → worker → target_executor → **real DC**; auto-creates group, asserts member present |
+| Drift detection (real AD) | `test_ad_group.py` | out-of-band member injected → `reconcile_drift` (detect_only) records an out_of_band finding; managed member never flagged |
 
-**Slice 3 (planned):** entra_group *revoke* through a delete order; drift
-reconcile against **real AD** (`@requires_ad`, testlab `winsrv1.xenpool.local`);
-LDAP portal login with a testlab AD user; Teams delivery assertion (real webhook,
+**Slice 4 (planned):** entra_group *revoke* through a delete order; AD group
+revoke via a delete order + deprovision policy; LDAP portal login with a testlab
+AD user (`auth.ldap_enabled=true`); Teams delivery assertion (real webhook,
 read-back via 202) — kept separate so real Teams config is never redirected.

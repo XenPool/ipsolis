@@ -24,6 +24,7 @@ import hashlib
 import hmac
 import json
 import os
+import subprocess
 import time
 from pathlib import Path
 
@@ -166,6 +167,80 @@ def mock() -> Mock:
     return m
 
 
+# ── Real Active Directory (via `docker compose exec worker`) ─────────────────
+# The host isn't domain-joined and msldap lives in the worker image, so AD
+# operations run inside the worker container. Each helper feeds a short script
+# to `python -` over stdin and parses a single ``RESULT=<json>`` line.
+
+class AD:
+    def _run(self, script: str, timeout: int = 120) -> str:
+        p = subprocess.run(
+            ["docker", "compose", "exec", "-T", "worker", "python", "-"],
+            cwd=str(_REPO_ROOT), input=script, capture_output=True, text=True, timeout=timeout)
+        if p.returncode != 0:
+            raise RuntimeError(f"worker exec failed: {(p.stderr or p.stdout)[-400:]}")
+        for line in reversed(p.stdout.splitlines()):
+            if line.startswith("RESULT="):
+                return line[len("RESULT="):]
+        raise RuntimeError(f"no RESULT from worker: {p.stdout[-400:]} / {p.stderr[-200:]}")
+
+    def members(self, group_dn: str) -> list[str]:
+        """sAMAccountNames of direct user members of the group (lowercased)."""
+        out = self._run(
+            "import json\n"
+            "from tasks.modules.db import get_worker_session\n"
+            "from tasks.modules.target_executor import list_ad_group_members\n"
+            f"ms=list_ad_group_members({group_dn!r}, get_worker_session())\n"
+            "print('RESULT='+json.dumps([ (m.get('sam') or '').lower() for m in ms ]))\n")
+        return json.loads(out)
+
+    def add_out_of_band(self, group_dn: str, principal: str) -> None:
+        """Add a principal to the group *outside* ipSolis (simulates drift)."""
+        self._run(
+            "from tasks.modules.db import get_worker_session\n"
+            "from tasks.modules.target_executor import _grant_ad_group\n"
+            f"_grant_ad_group({group_dn!r}, {principal!r}, get_worker_session(), "
+            "target={'create_if_missing': True})\n"
+            "print('RESULT=ok')\n")
+
+    def delete_group(self, group_dn: str) -> None:
+        """Best-effort delete of a test group (teardown)."""
+        self._run(
+            "import asyncio\n"
+            "from tasks.modules.db import get_worker_session\n"
+            "from tasks.modules.target_executor import _build_msldap_url\n"
+            "from msldap.commons.factory import LDAPConnectionFactory\n"
+            f"dn={group_dn!r}\n"
+            "async def _d():\n"
+            "    c=LDAPConnectionFactory.from_url(_build_msldap_url(get_worker_session())[0]).get_client()\n"
+            "    await c.connect()\n"
+            "    try:\n"
+            "        await c.delete(dn)\n"
+            "    finally:\n"
+            "        await c.disconnect()\n"
+            "asyncio.run(_d())\n"
+            "print('RESULT=ok')\n")
+
+    def run_drift(self) -> dict:
+        """Run the drift reconciliation task synchronously in the worker."""
+        out = self._run(
+            "import json\n"
+            "from tasks.workflows.drift_reconcile import reconcile_drift\n"
+            "print('RESULT='+json.dumps(reconcile_drift()))\n", timeout=180)
+        return json.loads(out)
+
+
+@pytest.fixture(scope="session")
+def ad() -> AD:
+    a = AD()
+    try:  # probe: bind + a harmless member read
+        a.members("CN=Users,CN=Builtin,DC=xenpool,DC=local")
+    except Exception as e:  # noqa: BLE001
+        pytest.skip(f"real AD not reachable from worker ({type(e).__name__}); "
+                    "skipping @requires_ad tests")
+    return a
+
+
 # ── Signed-token minter (same format as app.utils.*_token) ───────────────────
 
 def _b64url(data: bytes) -> str:
@@ -229,6 +304,8 @@ def _purge(db):
         "  WHERE og.origin='scim' OR at.name LIKE %s OR lower(o.user_email) LIKE %s)",
         "DELETE FROM order_approvals WHERE order_id IN (SELECT o.id FROM orders o LEFT JOIN asset_types at ON at.id=o.asset_type_id WHERE at.name LIKE %s OR lower(o.user_email) LIKE %s)",
         "DELETE FROM order_steps WHERE order_id IN (SELECT o.id FROM orders o LEFT JOIN asset_types at ON at.id=o.asset_type_id WHERE at.name LIKE %s OR lower(o.user_email) LIKE %s)",
+        "DELETE FROM order_change_log WHERE identifier LIKE %s OR order_id IN (SELECT o.id FROM orders o LEFT JOIN asset_types at ON at.id=o.asset_type_id WHERE at.name LIKE %s OR lower(o.user_email) LIKE %s)",
+        "DELETE FROM drift_findings WHERE identifier LIKE %s",
         "DELETE FROM attestation_artifacts WHERE lower(recipient_email) LIKE %s",
         "DELETE FROM orders WHERE lower(user_email) LIKE %s OR asset_type_id IN (SELECT id FROM asset_types WHERE name LIKE %s)",
         "DELETE FROM order_groups WHERE lower(recipient_email) LIKE %s OR bundle_name LIKE %s",
@@ -242,19 +319,22 @@ def _purge(db):
     ]
     like = f"{NS}%"
     email_like = f"{NS}%@%"
+    contains = f"%{NS}%"  # matches zz-test anywhere (e.g. inside an AD group DN)
     params = [
-        (like, email_like),
-        (like, email_like), (like, email_like),
-        (email_like,),
-        (email_like, like),
-        (email_like, like),
-        (email_like,),
-        (like,),
-        (like,),
-        (like,),
-        (like,),
-        (like,),
-        (like,),
+        (like, email_like),                  # UPDATE asset_pool
+        (like, email_like), (like, email_like),  # order_approvals, order_steps
+        (contains, like, email_like),        # order_change_log
+        (contains,),                         # drift_findings
+        (email_like,),                       # attestation_artifacts
+        (email_like, like),                  # orders
+        (email_like, like),                  # order_groups
+        (email_like,),                       # scim_identities
+        (like,),                             # assignment_rules
+        (like,),                             # bundle_positions
+        (like,),                             # bundles
+        (like,),                             # software_contracts
+        (like,),                             # asset_pool
+        (like,),                             # asset_types
     ]
     with db.cursor() as cur:
         for sql, p in zip(sqls, params):
