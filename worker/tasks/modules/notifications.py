@@ -353,6 +353,7 @@ def send_approval_request(
     from_date: str = "",
     until_date: str = "",
     approval_url: str = "",
+    justification: str = "",
 ) -> dict:
     """Sends an approval request email to a manager or application owner."""
     from tasks.modules.config_reader import get_config
@@ -372,6 +373,7 @@ def send_approval_request(
         "from_date": from_date,
         "until_date": until_date,
         "approval_url": approval_url or "",
+        "justification": justification or "",
     }
 
     subject, body = _render_template(db, "approval_request", variables)
@@ -814,11 +816,15 @@ def _production_send_html_email(
     from email.mime.text import MIMEText
 
     from tasks.modules.config_reader import get_config, get_config_int
+    from tasks.modules.secrets import get_secret_config
 
     smtp_host = get_config(db, "email.smtp_server", "localhost")
     smtp_port = get_config_int(db, "email.smtp_port", 25)
     smtp_user = get_config(db, "email.username", "")
-    smtp_password = get_config(db, "email.password", "")
+    # External-secret aware: an `email.password` stored as a vault://… / ccp://…
+    # reference is resolved at read time, matching the "Test SMTP" endpoint and
+    # every other integration credential (AD / SCCM / Teams / Slack).
+    smtp_password = get_secret_config(db, "email.password", "")
     from_name = get_config(db, "email.from_name", MAIL_FROM_NAME)
 
     all_recipients = list(recipients)

@@ -137,6 +137,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Content-Security-Policy (opt-in air-gap hardening; off by default) ────────
+if settings.CSP_ENABLED:
+    @app.middleware("http")
+    async def add_csp_header(request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("Content-Security-Policy", settings.CSP_POLICY)
+        return response
+
+
 # ── App-config refresh (per-worker TTL, keeps multi-worker setups in sync) ────
 _CONFIG_SYNC_PATHS = ("/ui", "/portal", "/admin")
 

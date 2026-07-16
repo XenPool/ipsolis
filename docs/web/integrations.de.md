@@ -309,7 +309,7 @@ SSL-Zertifikatsabfragen werden über stdin-Injektion automatisch beantwortet, so
 Die SCCM-Integration ermöglicht automatisierte OS-Deployment-Workflows:
 
 - **Task-Sequence-Trigger** — Starten einer SCCM-Task-Sequence für ein bestimmtes Gerät
-- **Geräteimport** — Hinzufügen eines Computerdatensatzes zu SCCM über die AdminService-REST-API (Kerberos-Authentifizierung)
+- **Geräteanlage (in SCCM)** — Anlegen eines Computerdatensatzes *in* SCCM über die AdminService-REST-API (Kerberos-Authentifizierung). Dies ist ein ausgehender Schreibvorgang während der Provisionierung; ip·Solis liest/importiert derzeit **keine** bestehenden Geräte *aus* einer SCCM-Collection in den Asset-Pool.
 - **Gerätelöschung** — Entfernen eines Computerdatensatzes nach der Außerbetriebnahme
 - **Status-Polling** — der Celery-Workflow `sccm_probe` fragt SCCM nach dem Abschlussstatus der Task-Sequence ab und versetzt den Bestellstatus entsprechend weiter
 
@@ -386,6 +386,8 @@ Beide konfigurieren Sie unter **Admin → Einstellungen** (Teams- und Slack-Kart
 ## Externe Secret-Backends
 
 Ersetzen Sie Klartext-Zugangsdaten in `app_config` durch Referenzen auf einen externen Secret-Manager. ip·Solis löst Referenzen beim Lesen auf, mit einem prozesslokalen Cache mit 60-Sekunden-TTL.
+
+Die Auflösung ist **opt-in pro Zugangsdatum**: ein als Klartext eingetragener Wert bleibt Klartext; nur als Referenz gespeicherte Werte werden aufgelöst. Sie gilt für jedes zur Laufzeit gelesene Integrations-Credential — Active Directory, SMTP, SCCM, OIDC sowie die Teams-/Slack-Webhooks. Sie gilt **nicht** für Admin-Login-Konten: deren Passwörter liegen als Einweg-Hash vor (nie im Klartext), es gibt also nichts zu externalisieren.
 
 Unterstützte Backends:
 

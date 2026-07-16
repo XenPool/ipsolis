@@ -128,6 +128,7 @@ async def create_order(
         action=payload.action,
         status=OrderStatus.PENDING,
         config=payload.config,
+        justification=(payload.justification or None),
         **requester_attrs,
     )
     db.add(order)

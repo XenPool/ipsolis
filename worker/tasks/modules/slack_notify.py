@@ -71,6 +71,7 @@ def build_approval_message(
     from_date: str = "",
     until_date: str = "",
     app_title: str = "ip·Solis",
+    justification: str = "",
 ) -> dict[str, Any]:
     """Build a Block Kit payload for an approval request (parallel of the Teams card)."""
     greeting = f"Hi {approver_name}," if approver_name else "Hi,"
@@ -82,6 +83,8 @@ def build_approval_message(
         fields.append({"type": "mrkdwn", "text": f"*From:*\n{from_date}"})
     if until_date:
         fields.append({"type": "mrkdwn", "text": f"*Until:*\n{until_date}"})
+    if justification and justification.strip():
+        fields.append({"type": "mrkdwn", "text": f"*Justification:*\n{justification.strip()}"})
 
     headline = f"{app_title} — Access request awaiting approval"
     blocks: list[dict[str, Any]] = [

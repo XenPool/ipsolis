@@ -78,6 +78,7 @@ def scan_and_remind() -> dict:
                   oa.reminder_count,
                   o.user_email, o.user_name,
                   o.requested_from, o.requested_until,
+                  o.justification,
                   at.name AS asset_type_name
                 FROM order_approvals oa
                 JOIN orders      o  ON o.id  = oa.order_id
@@ -117,6 +118,7 @@ def scan_and_remind() -> dict:
                 app_title=app_title,
                 is_reminder=True,
                 reminder_count=(r.reminder_count or 0) + 1,
+                justification=(r.justification or ""),
             )
             if email_ok:
                 reminded += 1

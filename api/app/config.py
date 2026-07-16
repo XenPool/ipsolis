@@ -32,6 +32,23 @@ class Settings(BaseSettings):
     # unrecoverable.
     BACKUP_ENCRYPTION_KEY: str = ""
 
+    # Air-gap hardening (opt-in). When true, every response carries a
+    # Content-Security-Policy. The default policy is self-only for assets +
+    # 'unsafe-inline' for script/style (the UI has many inline handlers/blocks,
+    # so a strict nonce CSP is out of scope). Off by default so it never breaks
+    # an admin-set external ``app_logo_url``; hardened/air-gapped sites enable it.
+    CSP_ENABLED: bool = False
+    CSP_POLICY: str = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "font-src 'self'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'self'; "
+        "base-uri 'self'"
+    )
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",")]

@@ -1,0 +1,43 @@
+/*
+ * Tailwind entry for the build-time compile (see api/tailwind.config.js).
+ * Output → app/static/css/app.css, served locally at /static/css/app.css.
+ *
+ * Inter is self-hosted (air-gap): the woff2 are vendored into
+ * /static/vendor/fonts/ by the Docker "assets" builder stage. The `latin`
+ * subset (U+0000–00FF …) covers en/de/es/fr/it — all shipped locales,
+ * including German umlauts and Romance accents. font-display: swap keeps the
+ * former Google-Fonts rendering behaviour.
+ */
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/vendor/fonts/inter-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/static/vendor/fonts/inter-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/static/vendor/fonts/inter-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/vendor/fonts/inter-700.woff2') format('woff2');
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

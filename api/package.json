@@ -1,0 +1,17 @@
+{
+  "name": "ipsolis-ui-assets",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Build-time UI assets for ip·Solis (compiled Tailwind CSS + vendored htmx/Monaco/Inter). Runs only during the Docker image build so the runtime is fully air-gapped — the browser loads nothing from external origins.",
+  "scripts": {
+    "build:css": "tailwindcss -i static-src/input.css -o app/static/css/app.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17"
+  },
+  "dependencies": {
+    "htmx.org": "2.0.4",
+    "monaco-editor": "0.45.0",
+    "@fontsource/inter": "^5.1.0"
+  }
+}

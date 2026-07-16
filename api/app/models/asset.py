@@ -113,6 +113,13 @@ class AssetType(Base):
     deprovision_policy: Mapped[str] = mapped_column(
         String(30), nullable=False, default="access_only", server_default="access_only"
     )
+    # How much of the per-order execution steps the self-service portal shows the
+    # end user: "off" (default) — no step list, just the overall order status;
+    # "detailed" — step names + status + timing (generic failure message);
+    # "debug" — the above plus raw step log_output + error text.
+    portal_step_visibility: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="off", server_default="off"
+    )
     # Personal assignment: how is the instance provisioned?
     personal_provisioning_strategy: Mapped[str | None] = mapped_column(
         String(30), nullable=True
@@ -165,6 +172,17 @@ class AssetType(Base):
     # satisfies the order. NULL / 0 / >= total = "all required" (default).
     min_approvals_required: Mapped[int | None] = mapped_column(Integer, nullable=True)
     requires_approval_on_modify: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Business justification (opt-in per type). When collect_justification is on,
+    # the portal order form shows a free-text justification field (shown to the
+    # approver on the decision page + in approval notifications). When
+    # justification_required is also on, it is mandatory (server-enforced in the
+    # portal). Only meaningful together — required has no effect without collect.
+    collect_justification: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    justification_required: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
     # Optional AD group DN restricting who can request this asset type.

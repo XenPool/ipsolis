@@ -72,6 +72,7 @@ def build_approval_card(
     from_date: str = "",
     until_date: str = "",
     app_title: str = "ip·Solis",
+    justification: str = "",
 ) -> dict[str, Any]:
     """Build an Adaptive Card payload for an approval request.
 
@@ -93,6 +94,8 @@ def build_approval_card(
         facts.append({"title": "From", "value": from_date})
     if until_date:
         facts.append({"title": "Until", "value": until_date})
+    if justification and justification.strip():
+        facts.append({"title": "Justification", "value": justification.strip()})
 
     # See worker/tasks/modules/teams_notify.py for the rationale on using the
     # approver's name as the <at> placeholder rather than a synthetic token.

@@ -161,6 +161,11 @@
       "revoke_body": "ip·Solis entzieht den Zugriff sofort über das Deprovisionierungs-Runbook des Assets. Die Prüfzeile wechselt zu <code class=\"font-mono\">revoked</code>."
     },
     "order_new": {
+      "justification_label": "Begründung",
+      "justification_hint": "Erläutern Sie kurz, warum Sie diesen Zugriff benötigen. Der Genehmiger sieht sie.",
+      "justification_placeholder": "Warum benötigen Sie diesen Zugriff?",
+      "justification_required_badge": "Für dieses Asset erforderlich.",
+      "justification_required_error": "Bitte geben Sie eine Begründung für diese Anfrage an.",
       "page_title": "Neuen Zugang anfordern",
       "section_asset_type": "Asset-Definition",
       "section_options": "Optionen",
@@ -203,6 +208,8 @@
       "catalog_clear_filters": "Zurücksetzen"
     },
     "order_detail": {
+      "step_log_label": "Log:",
+      "step_error_label": "Fehler:",
       "order_prefix": "Bestellung",
       "created_label": "Erstellt:",
       "processing_banner": "Bestellung wird bearbeitet – Seite aktualisiert sich automatisch …",

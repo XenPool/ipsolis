@@ -104,12 +104,14 @@ Enum types (e.g. `order_action`, `asset_status`) already exist in the DB — use
 `op.execute(raw SQL)` instead of `op.create_table()` with `sa.Enum` to avoid
 `DuplicateObject` errors.
 
-Current head: `0012_onboarding_first_login.py`. On-disk chain: `0001` squashed initial
+Current head: `0014_portal_step_visibility.py`. On-disk chain: `0001` squashed initial
 schema → `0002` → `0003` (portal auth OIDC registry) → `0004` drift reconciliation →
 `0005` software contracts → `0006` slack config → `0007` attestation artifacts →
 `0008` onboarding bundles + order groups → `0009` SCIM identity projection →
-`0010` SCIM mover config → `0011` Graph (Entra) config → `0012` onboarding first-login.
-`0004`–`0012` are all additive (new tables + nullable columns + seeded config; no backfill).
+`0010` SCIM mover config → `0011` Graph (Entra) config → `0012` onboarding first-login →
+`0013` order justification (opt-in per-type free-text reason shown to the approver) →
+`0014` portal step visibility (per-type off/detailed/debug for the portal step list).
+`0004`–`0014` are all additive (new tables + nullable columns + seeded config; no backfill).
 
 ### Template changes require image rebuild
 `api/app/templates/` and `api/app/routes/` are baked into the `ipsolis-api` image, not
@@ -133,10 +135,20 @@ reachable without a session.
 `lifecycle_renewable` must be declared as `Boolean` (not `Integer`) in the ORM model —
 required for asyncpg compatibility.
 
-### Tailwind via CDN (JIT)
-The UI uses `cdn.tailwindcss.com` (see `_partials/theme_head.html`). All utility classes —
-including dynamic colors like `bg-purple-50` and arbitrary grid widths — resolve at
-runtime; no build step needed.
+### Tailwind compiled at build time (air-gapped runtime)
+The runtime is **air-gapped**: the browser loads nothing from external CDNs — all CSS/JS/fonts
+are served from the ipSolis host. Tailwind is **compiled during the Docker image build** (a
+`node:20-alpine` "assets" stage in `api/Dockerfile` runs the Tailwind CLI) into
+`api/app/static/css/app.css`; htmx, the Monaco editor, and the Inter font are vendored under
+`api/app/static/vendor/`. Config lives in `api/tailwind.config.js` (⚠ **Tailwind v3**, matching the
+former Play-CDN — do not upgrade to v4) + `api/static-src/input.css`; the CSS variables + dark-init
+are in `_partials/theme_vars.html` (included by `theme_head.html` and the standalone auth pages).
+**Content globs include `app/routes/**/*.py`** because status-badge Tailwind classes are assembled
+in Python (`_STATUS_COLORS`/`_STEP_COLORS`/`_ASSET_STATUS_COLORS` in `routes/ui.py`+`routes/portal.py`);
+the badge color matrix is also in the `safelist`. When you add a template/class that a scan can't
+see (Python- or JS-assembled), extend the safelist or it will be missing from `app.css`. A change to
+templates/classes needs an api image rebuild (the CSS is baked in, not bind-mounted). Vendored assets
+are produced in the image build — **not committed** to the repo.
 
 ## Key File Paths
 

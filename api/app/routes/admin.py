@@ -886,6 +886,20 @@ async def tier_status_endpoint(db: AsyncSession = Depends(get_db)) -> dict:
 # fail silently at provision time — reject them at save).
 _ALLOWED_TARGET_TYPES = {"ad_group", "entra_group"}
 
+# How much of the per-order execution steps the portal shows the end user.
+_ALLOWED_STEP_VISIBILITY = {"off", "detailed", "debug"}
+
+
+def _validate_step_visibility(value: str | None) -> None:
+    if value is not None and value not in _ALLOWED_STEP_VISIBILITY:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Invalid portal_step_visibility {value!r}. "
+                f"Allowed: {sorted(_ALLOWED_STEP_VISIBILITY)}."
+            ),
+        )
+
 
 def _validate_target_types(targets: list[dict] | None) -> None:
     for t in targets or []:
@@ -919,6 +933,7 @@ async def create_asset_type(
             detail=f"Asset type {payload.name!r} already exists",
         )
     _validate_target_types(payload.targets)
+    _validate_step_visibility(payload.portal_step_visibility)
     violations = validate_asset_type(
         category=payload.category.value,
         assignment_model=payload.assignment_model,
@@ -968,6 +983,9 @@ async def create_asset_type(
         approval_rules=payload.approval_rules or None,
         min_approvals_required=payload.min_approvals_required,
         requires_approval_on_modify=payload.requires_approval_on_modify,
+        collect_justification=payload.collect_justification,
+        justification_required=payload.justification_required,
+        portal_step_visibility=payload.portal_step_visibility,
         eligible_requestors_dn=payload.eligible_requestors_dn or None,
         logo=payload.logo or None,
     )
@@ -1091,6 +1109,13 @@ async def update_asset_type(
         asset_type.min_approvals_required = payload.min_approvals_required or None
     if payload.requires_approval_on_modify is not None:
         asset_type.requires_approval_on_modify = payload.requires_approval_on_modify
+    if payload.collect_justification is not None:
+        asset_type.collect_justification = payload.collect_justification
+    if payload.justification_required is not None:
+        asset_type.justification_required = payload.justification_required
+    if payload.portal_step_visibility is not None:
+        _validate_step_visibility(payload.portal_step_visibility)
+        asset_type.portal_step_visibility = payload.portal_step_visibility
     asset_type.eligible_requestors_dn = payload.eligible_requestors_dn or None
     asset_type.logo = payload.logo or None
     if payload.show_on_dashboard is not None:
@@ -1180,6 +1205,9 @@ async def clone_asset_type(
         approval_rules=src.approval_rules,
         min_approvals_required=src.min_approvals_required,
         requires_approval_on_modify=src.requires_approval_on_modify,
+        collect_justification=src.collect_justification,
+        justification_required=src.justification_required,
+        portal_step_visibility=src.portal_step_visibility,
         eligible_requestors_dn=src.eligible_requestors_dn,
         drift_monitor=src.drift_monitor,
         contract_id=src.contract_id,

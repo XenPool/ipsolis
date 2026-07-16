@@ -40,6 +40,11 @@
         <dd class="text-body sm:col-span-2 capitalize">
           {% if approval.approver_type == 'manager' %}Manager{% else %}Application owner{% endif %}
         </dd>
+
+        {% if order.justification %}
+        <dt class="text-xs font-medium text-muted/70 uppercase tracking-wide sm:col-span-1">Justification</dt>
+        <dd class="text-body sm:col-span-2 whitespace-pre-line">{{ order.justification }}</dd>
+        {% endif %}
       </dl>
 
       <form method="post" action="/approve/{{ token }}" class="space-y-4">
