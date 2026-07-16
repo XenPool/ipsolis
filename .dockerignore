@@ -26,6 +26,10 @@ TASKS.md
 # Compose / deploy descriptors (not needed inside the image)
 docker-compose*.yml
 
+# Node / UI-asset build cruft — the api image's "assets" builder stage installs
+# these fresh; a stray host node_modules must not enter the build context.
+**/node_modules/
+
 # Python / editor cruft
 **/__pycache__/
 **/*.py[cod]

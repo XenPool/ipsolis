@@ -135,10 +135,20 @@ reachable without a session.
 `lifecycle_renewable` must be declared as `Boolean` (not `Integer`) in the ORM model —
 required for asyncpg compatibility.
 
-### Tailwind via CDN (JIT)
-The UI uses `cdn.tailwindcss.com` (see `_partials/theme_head.html`). All utility classes —
-including dynamic colors like `bg-purple-50` and arbitrary grid widths — resolve at
-runtime; no build step needed.
+### Tailwind compiled at build time (air-gapped runtime)
+The runtime is **air-gapped**: the browser loads nothing from external CDNs — all CSS/JS/fonts
+are served from the ipSolis host. Tailwind is **compiled during the Docker image build** (a
+`node:20-alpine` "assets" stage in `api/Dockerfile` runs the Tailwind CLI) into
+`api/app/static/css/app.css`; htmx, the Monaco editor, and the Inter font are vendored under
+`api/app/static/vendor/`. Config lives in `api/tailwind.config.js` (⚠ **Tailwind v3**, matching the
+former Play-CDN — do not upgrade to v4) + `api/static-src/input.css`; the CSS variables + dark-init
+are in `_partials/theme_vars.html` (included by `theme_head.html` and the standalone auth pages).
+**Content globs include `app/routes/**/*.py`** because status-badge Tailwind classes are assembled
+in Python (`_STATUS_COLORS`/`_STEP_COLORS`/`_ASSET_STATUS_COLORS` in `routes/ui.py`+`routes/portal.py`);
+the badge color matrix is also in the `safelist`. When you add a template/class that a scan can't
+see (Python- or JS-assembled), extend the safelist or it will be missing from `app.css`. A change to
+templates/classes needs an api image rebuild (the CSS is baked in, not bind-mounted). Vendored assets
+are produced in the image build — **not committed** to the repo.
 
 ## Key File Paths
 
