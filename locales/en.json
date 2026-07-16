@@ -208,6 +208,8 @@
       "catalog_clear_filters": "Clear"
     },
     "order_detail": {
+      "step_log_label": "Log:",
+      "step_error_label": "Error:",
       "order_prefix": "Order",
       "created_label": "Created:",
       "processing_banner": "Order is being processed – page refreshes automatically …",

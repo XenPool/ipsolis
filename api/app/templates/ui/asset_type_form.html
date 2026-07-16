@@ -632,6 +632,24 @@
         </label>
       </div>
     </div>
+
+    <!-- Portal execution-step visibility -->
+    <div class="border-t border-token-border pt-5">
+      <label class="block text-xs font-medium text-muted mb-2" for="at-portal-step-visibility">
+        Execution steps in the portal
+      </label>
+      <p class="text-xs text-muted/70 mb-3">
+        Controls how much of an order's execution steps the requester sees in the self-service
+        portal. The overall order status is always shown.
+      </p>
+      {% set _vis = asset_type.portal_step_visibility if asset_type else 'off' %}
+      <select name="portal_step_visibility" id="at-portal-step-visibility"
+              class="w-full max-w-sm rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+        <option value="off"      {% if _vis == 'off' %}selected{% endif %}>Off — status only (default)</option>
+        <option value="detailed" {% if _vis == 'detailed' %}selected{% endif %}>Detailed — step names, status &amp; timing</option>
+        <option value="debug"    {% if _vis == 'debug' %}selected{% endif %}>Debug — full detail incl. raw logs &amp; errors</option>
+      </select>
+    </div>
     <script>
       // The "required" sub-toggle only makes sense when justification is collected.
       function toggleJustificationRequired() {
@@ -2134,6 +2152,7 @@ async function submitForm() {
     collect_justification: form.querySelector('[name="collect_justification"]').checked,
     justification_required: form.querySelector('[name="collect_justification"]').checked
       && form.querySelector('[name="justification_required"]').checked,
+    portal_step_visibility: form.querySelector('[name="portal_step_visibility"]').value,
     requires_handover_ack: form.querySelector('[name="requires_handover_ack"]').checked,
     emit_revocation_certificate: form.querySelector('[name="emit_revocation_certificate"]').checked,
     contract_id: form.querySelector('[name="contract_id"]').value

@@ -113,6 +113,13 @@ class AssetType(Base):
     deprovision_policy: Mapped[str] = mapped_column(
         String(30), nullable=False, default="access_only", server_default="access_only"
     )
+    # How much of the per-order execution steps the self-service portal shows the
+    # end user: "off" (default) — no step list, just the overall order status;
+    # "detailed" — step names + status + timing (generic failure message);
+    # "debug" — the above plus raw step log_output + error text.
+    portal_step_visibility: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="off", server_default="off"
+    )
     # Personal assignment: how is the instance provisioned?
     personal_provisioning_strategy: Mapped[str | None] = mapped_column(
         String(30), nullable=True

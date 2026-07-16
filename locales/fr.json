@@ -208,6 +208,8 @@
       "catalog_clear_filters": "Effacer"
     },
     "order_detail": {
+      "step_log_label": "Journal :",
+      "step_error_label": "Erreur :",
       "order_prefix": "Commande",
       "created_label": "Créé :",
       "processing_banner": "La commande est en cours de traitement – la page se rafraîchit automatiquement …",

@@ -208,6 +208,8 @@
       "catalog_clear_filters": "Zurücksetzen"
     },
     "order_detail": {
+      "step_log_label": "Log:",
+      "step_error_label": "Fehler:",
       "order_prefix": "Bestellung",
       "created_label": "Erstellt:",
       "processing_banner": "Bestellung wird bearbeitet – Seite aktualisiert sich automatisch …",

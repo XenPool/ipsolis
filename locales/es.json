@@ -208,6 +208,8 @@
       "catalog_clear_filters": "Limpiar"
     },
     "order_detail": {
+      "step_log_label": "Registro:",
+      "step_error_label": "Error:",
       "order_prefix": "Pedido",
       "created_label": "Creado:",
       "processing_banner": "El pedido se está procesando – la página se actualizará automáticamente …",

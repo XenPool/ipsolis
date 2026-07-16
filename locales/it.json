@@ -208,6 +208,8 @@
       "catalog_clear_filters": "Cancella"
     },
     "order_detail": {
+      "step_log_label": "Log:",
+      "step_error_label": "Errore:",
       "order_prefix": "Ordine",
       "created_label": "Creato:",
       "processing_banner": "L'ordine è in elaborazione – la pagina si aggiorna automaticamente …",

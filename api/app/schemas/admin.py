@@ -101,6 +101,7 @@ class AssetTypeCreate(BaseModel):
     requires_approval_on_modify: bool = False
     collect_justification: bool = False
     justification_required: bool = False
+    portal_step_visibility: str = "off"
     eligible_requestors_dn: str | None = None
     logo: str | None = None
 
@@ -144,6 +145,7 @@ class AssetTypeUpdate(BaseModel):
     requires_approval_on_modify: bool | None = None
     collect_justification: bool | None = None
     justification_required: bool | None = None
+    portal_step_visibility: str | None = None
     eligible_requestors_dn: str | None = None
     logo: str | None = None
 

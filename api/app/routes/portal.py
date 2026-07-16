@@ -1080,6 +1080,8 @@ async def portal_order_detail(
         "cost_projection": cost_projection,
         "status_colors": _STATUS_COLORS,
         "step_colors": _STEP_COLORS,
+        # Per-type step visibility: off (default) / detailed / debug.
+        "step_visibility": (asset_type.portal_step_visibility if asset_type else "off"),
         "today": date.today().isoformat(),
     })
 

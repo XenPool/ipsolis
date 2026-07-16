@@ -188,6 +188,11 @@
   </div>
 </div>
 
+{# Execution steps are opt-in per asset definition (portal_step_visibility):
+   'off' (default) shows nothing here — the overall order status above is the
+   only progress the requester sees; 'detailed' lists step name/status/timing;
+   'debug' additionally exposes the raw step log_output + error text. #}
+{% if step_visibility in ('detailed', 'debug') %}
 <!-- Steps Timeline -->
 <div class="mb-8">
   <h2 class="text-sm font-semibold text-body mb-3">
@@ -211,11 +216,23 @@
           {% if step.started_at %}<span><span data-i18n="portal.order_detail.step_start">Start:</span> {{ step.started_at.strftime("%H:%M:%S") }}</span>{% endif %}
           {% if item.duration %}<span><span data-i18n="portal.order_detail.step_duration">Duration:</span> {{ item.duration }}</span>{% endif %}
         </div>
-        {# End-users get a generic "step failed" badge — the raw step.error
-           often contains technical paths (e.g. LDAP DNs) that leak
-           infrastructure detail. Admin order_detail.html still shows the
-           full text for diagnostics. #}
+        {% if step_visibility == 'debug' %}
+        {# Debug mode — full diagnostics, incl. raw log/error text that may
+           contain technical paths (e.g. LDAP DNs). Opt-in per asset type. #}
+        {% if step.log_output %}
+        <p class="mt-1.5 text-xs text-muted bg-surface-raised rounded px-2 py-1 font-mono break-all whitespace-pre-wrap">
+          <span class="text-muted/60" data-i18n="portal.order_detail.step_log_label">Log:</span> {{ step.log_output }}
+        </p>
+        {% endif %}
         {% if step.error %}
+        <p class="mt-1.5 text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 rounded px-2 py-1 font-mono break-all whitespace-pre-wrap">
+          <span class="opacity-70" data-i18n="portal.order_detail.step_error_label">Error:</span> {{ step.error }}
+        </p>
+        {% endif %}
+        {% elif step.error %}
+        {# Detailed mode — end-users get a generic "step failed" badge; the raw
+           step.error often leaks infrastructure detail (admin view / debug mode
+           show the full text). #}
         <p class="mt-1.5 text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 rounded px-2 py-1"
            data-i18n="portal.order_detail.step_failed_generic">
           This step failed — contact IT for details.
@@ -231,6 +248,7 @@
   </div>
   {% endif %}
 </div>
+{% endif %}
 
 {% if order.status.value in ("delivered", "provisioned") and order.action.value == "provision" %}
 <div class="mt-6 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-700">
