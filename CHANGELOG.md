@@ -12,6 +12,32 @@ start, so a `docker compose pull && docker compose up -d` is the only
 operator step. See [`docs/UPGRADING.md`](docs/UPGRADING.md) (TODO) for
 the full upgrade procedure including DB backup recommendations.
 
+## [0.7.1] — 2026-07-16
+
+### Added
+- **Air-gapped runtime.** The browser now loads **nothing** from external CDNs — all CSS, JavaScript
+  and fonts are served from the ipSolis host. Tailwind is compiled during the Docker image build (a
+  `node:20-alpine` stage) into a local stylesheet; htmx, the Monaco script editor (whole `vs/` tree)
+  and the Inter font are vendored under `/static/vendor/`. Internet is required **only** to build the
+  image or `docker pull` a prebuilt one. Optional `CSP_ENABLED` flag adds a self-only
+  Content-Security-Policy; a CI guard fails the build if any external asset origin reappears. No
+  visual/behaviour change (one pre-existing latent bug fixed: the standalone auth pages now render
+  their surface colors). See the new *air-gapped runtime* note in the deployment guide.
+- **Order justification.** A free-text business justification, configurable **per asset definition**
+  (collect on/off + required yes/no), shown to the approver on the decision page and in the approval
+  email / Teams / Slack notifications.
+- **Portal execution-step visibility, per asset definition.** `off` (default — status only),
+  `detailed` (step names/status/timing), or `debug` (adds raw step logs/errors for diagnostics).
+
+### Fixed
+- **External-secret resolution for SMTP.** The worker's email send path now resolves an
+  `email.password` stored as a `vault://…` / `ccp://…` reference (previously only the *Test SMTP*
+  button did, so an externalized SMTP credential passed the test but failed on real sends).
+
+### Migration
+- Adds `0013` (order justification: `orders.justification` + two `asset_types` flags) and `0014`
+  (`asset_types.portal_step_visibility`). Both additive (nullable / defaulted columns; no backfill).
+
 ## [0.7.0] — 2026-07-15
 
 ### Added

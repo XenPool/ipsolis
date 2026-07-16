@@ -1369,7 +1369,7 @@ def upgrade() -> None:
 <p><strong>Requested period:</strong> {{from_date}} - {{until_date}}</p>
 <p>Please review and approve or decline this request in the Self-Service Portal:</p>
 <p><a href="{{approval_url}}" style="color:#BB0A30;font-weight:bold;">Review Request</a></p>',
-            '["company_name","approver_name","requester_name","requester_email","asset_type_name","from_date","until_date","approval_url"]',
+            '["company_name","approver_name","requester_name","requester_email","asset_type_name","from_date","until_date","approval_url","justification"]',
             true
         ),
         (

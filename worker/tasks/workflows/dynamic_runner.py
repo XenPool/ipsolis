@@ -1438,6 +1438,7 @@ def deliver_approval_notification(
     slack_webhook: str = "",
     is_reminder: bool = False,
     reminder_count: int = 0,
+    justification: str = "",
 ) -> tuple[bool, bool]:
     """Send a single approval notification (email + Teams + Slack if enabled).
 
@@ -1469,6 +1470,7 @@ def deliver_approval_notification(
         from_date=from_date,
         until_date=until_date,
         approval_url=approval_url,
+        justification=justification,
     )
     email_sent = True
     teams_sent = False
@@ -1492,6 +1494,7 @@ def deliver_approval_notification(
                 from_date=from_date,
                 until_date=until_date,
                 app_title=app_title,
+                justification=justification,
             )
             if is_reminder and reminder_count > 0:
                 # Bump the headline so the recipient sees this is a nudge,
@@ -1524,6 +1527,7 @@ def deliver_approval_notification(
                 from_date=from_date,
                 until_date=until_date,
                 app_title=app_title,
+                justification=justification,
             )
             if is_reminder and reminder_count > 0:
                 nudge = f"{app_title} — Reminder ({reminder_count}): access request awaiting approval"
@@ -1549,6 +1553,7 @@ def send_approval_requests(order_id: int) -> dict:
             text("""
                 SELECT o.user_email, o.user_name,
                        o.requested_from, o.requested_until,
+                       o.justification,
                        at.name as asset_type_name
                 FROM orders o
                 JOIN asset_types at ON at.id = o.asset_type_id
@@ -1608,6 +1613,7 @@ def send_approval_requests(order_id: int) -> dict:
                 slack_webhook=slack_webhook,
                 app_title=app_title,
                 is_reminder=False,
+                justification=(row.justification or ""),
             )
             if email_ok:
                 sent += 1

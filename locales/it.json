@@ -161,6 +161,11 @@
       "revoke_body": "ip·Solis rimuoverà subito l'accesso dell'utente tramite il runbook di deprovisioning della risorsa. La riga di revisione passa a <code class=\"font-mono\">revoked</code>."
     },
     "order_new": {
+      "justification_label": "Motivazione",
+      "justification_hint": "Spiega brevemente perché ti serve questo accesso. L'approvatore la vedrà.",
+      "justification_placeholder": "Perché ti serve questo accesso?",
+      "justification_required_badge": "Obbligatorio per questa risorsa.",
+      "justification_required_error": "Fornisci una motivazione per questa richiesta.",
       "page_title": "Richiedi nuovo accesso",
       "section_asset_type": "Definizione asset",
       "section_options": "Opzioni",
@@ -203,6 +208,8 @@
       "catalog_clear_filters": "Cancella"
     },
     "order_detail": {
+      "step_log_label": "Log:",
+      "step_error_label": "Errore:",
       "order_prefix": "Ordine",
       "created_label": "Creato:",
       "processing_banner": "L'ordine è in elaborazione – la pagina si aggiorna automaticamente …",

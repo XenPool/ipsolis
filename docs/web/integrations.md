@@ -309,7 +309,7 @@ SSL certificate prompts are auto-answered via stdin injection so scripts don't h
 SCCM integration enables automated OS deployment workflows:
 
 - **Task sequence triggers** — kick off an SCCM task sequence for a specific device
-- **Device import** — add a computer record to SCCM via the AdminService REST API (Kerberos auth)
+- **Device registration (into SCCM)** — create a computer record *in* SCCM via the AdminService REST API (Kerberos auth). This is an outbound write during provisioning; ip·Solis does not currently read/import existing devices *from* an SCCM collection into its asset pool.
 - **Device delete** — remove a computer record after decommissioning
 - **Status polling** — the `sccm_probe` Celery workflow polls SCCM for task sequence completion status and advances the order state accordingly
 
@@ -386,6 +386,8 @@ Configure both under **Admin → Settings** (Teams and Slack cards), each with a
 ## External Secret Backends
 
 Replace plaintext credentials in `app_config` with references to an external secret manager. ip·Solis resolves references at read time with a 60-second process-local TTL cache.
+
+Resolution is **opt-in per credential**: a value entered as plaintext stays plaintext; only values stored as a reference are dereferenced. It applies to every integration credential ip·Solis reads at runtime — Active Directory, SMTP, SCCM, OIDC, and the Teams/Slack webhooks. It does **not** apply to admin login accounts: those are stored as one-way password hashes (never plaintext), so there is nothing to externalize.
 
 Supported backends:
 

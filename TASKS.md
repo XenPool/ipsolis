@@ -9,6 +9,49 @@ Format: `[open]` / `[done]` / `[blocked]`. Add new tasks at the top of their sec
 > Tasks below down to _Portal accessibility_ were added on 2026-07-14 from the codebase audit
 > ([`AUDIT-FINDINGS.md`](AUDIT-FINDINGS.md)). Rough priority order, highest first.
 
+### [open] SCCM device onboarding — import devices *from* an SCCM collection into the asset pool
+
+**Added 2026-07-15.** Today ip·Solis only writes *to* SCCM during provisioning (register a device,
+add to collection, delete) — it cannot pull existing devices *from* an SCCM collection into its own
+`asset_pool` (inventory / onboarding sync). The marketing docs were corrected to state this
+explicitly ([`docs/web/integrations.md`](docs/web/integrations.md) / `.de.md` — "Device registration
+(into SCCM)"). This task is the reverse-direction feature.
+
+**Feasibility: small-to-medium — the hard ~70% already exists.** Reusable building blocks:
+- Authenticated AdminService **GET** (Kerberos `kinit` + `curl --negotiate`) — see
+  [`sccm_probe.py`](worker/tasks/workflows/sccm_probe.py) as the Python→pwsh template; config keys
+  `sccm.base_url/username/password/realm/kdc` already wired.
+- The exact read is already in the import module: `GET wmi/SMS_FullCollectionMembership?$filter=
+  CollectionID eq '<id>'` returns `ResourceID, Name` per member (drop the ResourceID clause used in
+  `scripts/modules/sccm/SCCM_-_Import_Device_And_Add_Collections.ps1`).
+- Bulk insert with duplicate-skip: `POST /admin/assets/bulk` ([`admin.py`](api/app/routes/admin.py))
+  and the JSON import ([`admin_migration.py`](api/app/routes/admin_migration.py)).
+- Admin "run-now" dispatch + synchronous result: `POST /drift/run-now` / the SCCM probe in
+  [`admin_maintenance.py`](api/app/routes/admin_maintenance.py).
+
+**MVP (recommended):** Settings → SCCM: a Collection-ID field + target Asset-Definition + a
+**"Sync from collection"** button → lists members, upserts `asset_pool` rows (name = device name,
+status `Free`, SCCM `ResourceID`/MAC into the existing `asset_metadata` JSON — no schema change),
+skips existing (idempotent), reports created/skipped/errors. Add a **dry-run/preview** first
+(mirror the migration import's `dry_run`).
+
+**Missing (~30%):** a "list collection members" op exposed to Python (new ~40-line PS module or a
+`tasks.workflows.sccm_sync.sync_collection` Celery task); a collection→asset-type **mapping**
+(config key or endpoint param — no such concept today; collections are only literal step params);
+the sync endpoint + UI button; re-sync idempotency (skip vs update).
+
+**Later stages:** scheduled Beat sync (opt-in, like drift); multiple collection→type mappings;
+reverse reconciliation (pool devices no longer in the collection → flag retired); an indexed
+`asset_pool.sccm_resource_id` column for clean re-sync/dedupe.
+
+**Decisions to make:** collection→type mapping (1:1 for MVP), idempotency (skip vs update),
+initial status (`Free` vs review), handling of removed devices.
+
+**Bonus doc fix:** [`docs/web/automation.md`](docs/web/automation.md) references `$VARS.'sccm.server'`
+but the real config key is `sccm.base_url` (no `sccm.server` key exists).
+
+---
+
 ### [descoped] Order groups — header/line-item model with header-level approval
 
 **Decision 2026-07-14 (see the Onboarding-bundles entry):** the full core-model inversion

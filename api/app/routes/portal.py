@@ -543,6 +543,7 @@ async def portal_create_order(
     requested_until: str = Form(...),
     rdp_users: list[str] = Form(default=[]),
     admin_users: list[str] = Form(default=[]),
+    justification: str = Form(""),
 ):
     # Read all form fields (for attr_* fields)
     form_data = await request.form()
@@ -576,6 +577,7 @@ async def portal_create_order(
                 "requested_from": requested_from, "requested_until": requested_until,
                 "rdp_users": [u for u in rdp_users if u.strip()],
                 "admin_users": [u for u in admin_users if u.strip()],
+                "justification": justification,
             },
         }, status_code=422)
 
@@ -619,6 +621,11 @@ async def portal_create_order(
         return await _render_error(
             f"No free assets available for \"{asset_type.name}\". Please try again later."
         )
+
+    # Business justification: required when the asset type opts in. This server
+    # check is authoritative (the portal JS mirrors it for UX only).
+    if asset_type.justification_required and not justification.strip():
+        return await _render_error("Please provide a justification for this request.")
 
     # Per-user quota check
     from app.utils.capacity import enforce_max_per_user
@@ -708,6 +715,7 @@ async def portal_create_order(
         action=OrderAction.PROVISION,
         status=initial_status,
         config=order_config,
+        justification=(justification.strip() or None) if asset_type.collect_justification else None,
         **requester_attrs,
     )
     db.add(order)
@@ -1072,6 +1080,8 @@ async def portal_order_detail(
         "cost_projection": cost_projection,
         "status_colors": _STATUS_COLORS,
         "step_colors": _STEP_COLORS,
+        # Per-type step visibility: off (default) / detailed / debug.
+        "step_visibility": (asset_type.portal_step_visibility if asset_type else "off"),
         "today": date.today().isoformat(),
     })
 

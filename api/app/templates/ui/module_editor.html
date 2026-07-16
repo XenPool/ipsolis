@@ -194,8 +194,8 @@
   </div>
 </div>
 
-<!-- Monaco CDN -->
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+<!-- Monaco (vendored locally for air-gapped runtime) -->
+<script src="/static/vendor/monaco/vs/loader.js"></script>
 <script>
 var MODULE_ID = {{ module.id if module else 'null' }};
 var editor;
@@ -223,7 +223,7 @@ var _globalVars = [];
 // Initial script content
 var INITIAL_CONTENT = {{ (module.script_content if module else "") | tojson }};
 
-require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
+require.config({ paths: { vs: '/static/vendor/monaco/vs' } });
 require(['vs/editor/editor.main'], function () {
   var lang = document.getElementById('mod-type').value;
   var monacoLang = lang === 'powershell' ? 'powershell' : (lang === 'python' ? 'python' : 'shell');

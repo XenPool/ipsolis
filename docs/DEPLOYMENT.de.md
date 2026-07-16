@@ -74,6 +74,28 @@ Der Server benötigt ausgehenden Zugriff auf:
 
 Eingehend: Die Ports **80** und **443** müssen von den Browsern Ihrer Benutzer erreichbar sein.
 
+Keines der obigen Ziele ist das öffentliche Internet — es sind ausschließlich Systeme in
+Ihrem eigenen Netzwerk. **Im Betrieb ist kein ausgehender Internetzugang erforderlich.**
+
+#### Air-gapped-Betrieb
+
+Der **Browser lädt nichts aus externen Quellen** — sämtliches CSS, JavaScript und Schriften
+(Tailwind, htmx, der Monaco-Skripteditor, die Inter-Schrift) werden zur Build-Zeit ins Image
+kompiliert/eingebettet und vom ipSolis-Host selbst ausgeliefert. Internet wird **nur** bei
+Installation/Update benötigt — d. h. zum Bauen des Images oder für `docker pull` eines
+vorgefertigten Images. Sobald das Image auf dem Host liegt, läuft ipSolis vollständig
+air-gapped.
+
+- Wenn Sie das Image selbst bauen, benötigt der Build (`docker compose build`) Internet, um
+  die Node-/Tailwind-Toolchain und die eingebetteten Assets zu holen. Der **laufende** Host
+  nicht.
+- Hinterlegen Sie ein Admin-**Logo** als hochgeladenes Bild / Data-URL, nicht als externe URL —
+  ein `app_logo_url`, das auf das öffentliche Internet zeigt, wäre die eine Browser-Anfrage,
+  die den Host verlässt.
+- Optionale Härtung: Setzen Sie `CSP_ENABLED=true` in `.env`, um eine `Content-Security-Policy`
+  (`default-src 'self'` für Assets) auszugeben, die versehentliche externe Requests blockiert.
+  Standardmäßig aus (würde ein externes `app_logo_url` blockieren).
+
 ---
 
 ## 2. Software beziehen
