@@ -290,6 +290,8 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
 
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
     client_max_body_size 2g;
 
     # WebSocket / HTMX support
@@ -308,6 +310,15 @@ server {
 ```
 
 > Use the same hostname in the certificate generation step (Option A/B/C above).
+
+> **HSTS:** the `Strict-Transport-Security` header (1 year, `includeSubDomains`) is set by
+> nginx on the HTTPS server block, so browsers never fall back to plain HTTP after the first
+> visit. It is intentionally *not* emitted by the api itself — the local dev stack (plain
+> HTTP on `:8000`, no nginx) stays unaffected. If you terminate TLS on your own load
+> balancer / reverse proxy instead of the bundled nginx, set the header there. Before
+> enabling `includeSubDomains`, make sure every subdomain of the ipSolis FQDN serves HTTPS.
+> Verify with `curl -sk -D - -o /dev/null https://<fqdn>/ui/login | grep -i strict`
+> (use a GET dump, not `curl -I` — the api answers `HEAD` with 405).
 
 ---
 
@@ -637,7 +648,7 @@ Run through this checklist to confirm everything works:
 - [ ] **Health check**: `curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health` returns `{"status": "ok"}`
 - [ ] *(optional)* **API tokens**: issue a per-integration token for any automation that previously used `X-Admin-Key`
 - [ ] *(optional)* **SIEM streaming**: configure under *Settings → Compliance* if you have Splunk / Sentinel / a generic webhook receiver
-- [ ] *(optional)* **Prometheus**: scrape `/metrics` from your monitoring; the dashboard ships in [docs/grafana/](grafana/)
+- [ ] *(optional)* **Prometheus**: scrape `/metrics` from your monitoring; the dashboard ships in `docs/grafana/` in this repository
 
 ---
 
