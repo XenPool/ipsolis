@@ -1,0 +1,306 @@
+{% extends "portal/base_portal.html" %}
+
+{% block title %}{{ app_title }}{% endblock %}
+
+{% block hero %}
+<section class="bg-surface border-b border-token-border">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-12 flex items-center gap-10">
+    <div class="flex-1 min-w-0 space-y-5">
+      <div>
+        <p id="home-today" class="text-sm font-medium text-muted mb-1 min-h-[1.25rem]"></p>
+        {% if first_name %}
+        <h1 id="home-greeting" class="text-2xl sm:text-3xl font-bold text-heading tracking-tight"
+            data-i18n="portal.home.greeting_day"
+            data-i18n-params='{"name": {{ first_name | tojson }}}'>Hello, {{ first_name }}</h1>
+        {% else %}
+        <h1 class="text-2xl sm:text-3xl font-bold text-heading tracking-tight" data-i18n="portal.home.welcome">Welcome</h1>
+        {% endif %}
+        <p class="text-muted mt-1" data-i18n="portal.home.subtitle">What do you need today?</p>
+      </div>
+
+      <form action="/portal/orders/new" method="get" role="search" class="flex gap-2 max-w-2xl">
+        <label for="home-search" class="sr-only" data-i18n="portal.home.search_label">Search the catalog</label>
+        <div class="relative flex-1 min-w-0">
+          <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/>
+          </svg>
+          <input id="home-search" type="search" name="q" autocomplete="off"
+                 placeholder="What do you need? e.g. VDI, VPN, Visio …"
+                 data-i18n-attr-placeholder="portal.home.search_placeholder"
+                 class="w-full h-12 rounded-xl border border-token-border bg-surface-raised text-body placeholder:text-muted/70 text-base pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <button type="submit"
+                class="h-12 px-5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
+                data-i18n="portal.home.search_button">Search</button>
+      </form>
+
+      {% if popular %}
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-sm text-muted mr-1" data-i18n="portal.home.popular">Frequently requested:</span>
+        {% for p in popular %}
+        <a href="/portal/orders/new?type={{ p.id }}"
+           class="px-3 py-1.5 rounded-full border border-token-border bg-surface-raised text-sm font-medium text-body hover:border-blue-400 hover:text-heading transition-colors">{{ p.name }}</a>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
+    {# Brand logo — the admin-uploaded logo (Settings → Branding) when set,
+       otherwise the ip·Solis wordmark. Decorative here (the header logo is the
+       accessible one), hence alt="". #}
+    <div class="hidden md:flex w-56 lg:w-72 shrink-0 items-center justify-center" aria-hidden="true">
+      {% if app_logo %}
+      <img src="/portal/logo" alt="" class="h-auto max-h-40 object-contain" style="width: {{ app_logo_size }}%;">
+      {% else %}
+      <img src="/static/logos/sunset_light.svg" alt="" class="block dark:hidden w-full h-auto">
+      <img src="/static/logos/sunset_dark.svg" alt="" class="hidden dark:block w-full h-auto">
+      {% endif %}
+    </div>
+  </div>
+</section>
+<script>
+  // Time-of-day greeting from the *browser's* clock (the server timezone may
+  // differ from the user's). Runs before i18n.js applies translations.
+  (function () {
+    var h = new Date().getHours();
+    var el = document.getElementById('home-greeting');
+    if (el && el.dataset.i18n.indexOf('portal.home.greeting_') === 0) {
+      el.setAttribute('data-i18n', 'portal.home.greeting_' + (h < 11 ? 'morning' : (h < 18 ? 'day' : 'evening')));
+      if (window.i18n && window.i18n.t) {
+        try { el.textContent = window.i18n.t(el.getAttribute('data-i18n'), JSON.parse(el.getAttribute('data-i18n-params') || '{}')); } catch (e) {}
+      }
+    }
+  })();
+  // Weekday + date in the portal language (re-rendered on language switch).
+  (function () {
+    function renderToday() {
+      var el = document.getElementById('home-today');
+      if (!el) return;
+      var lang = (window.i18n && window.i18n.getLanguage && window.i18n.getLanguage())
+                 || document.documentElement.lang || 'en';
+      try {
+        el.textContent = new Intl.DateTimeFormat(lang, {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}).format(new Date());
+      } catch (e) { el.textContent = new Date().toLocaleDateString(); }
+    }
+    renderToday();
+    document.addEventListener('i18n:changed', renderToday);
+    document.addEventListener('DOMContentLoaded', renderToday);
+  })();
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-10">
+
+  {% if is_new %}
+  <!-- ── First visit: guide instead of empty tables ─────────────────────── -->
+  <section aria-labelledby="home-welcome-h" class="bg-surface rounded-2xl border border-token-border p-6 sm:p-7 space-y-5">
+    <div>
+      <h2 id="home-welcome-h" class="text-lg font-semibold text-heading" data-i18n="portal.home.new_title">Get access in three steps</h2>
+      <p class="text-sm text-muted mt-1" data-i18n="portal.home.new_subtitle">You haven't requested anything yet. Here's how it works:</p>
+    </div>
+    <ol class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {% for n in (1, 2, 3) %}
+      <li class="flex gap-3.5 p-4 rounded-xl bg-surface-raised border border-token-border">
+        <span class="w-8 h-8 shrink-0 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300 flex items-center justify-center text-sm font-bold">{{ n }}</span>
+        <div>
+          <div class="text-sm font-semibold text-heading" data-i18n="portal.home.new_step{{ n }}_title">Step</div>
+          <div class="text-sm text-muted" data-i18n="portal.home.new_step{{ n }}_text"></div>
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    <div class="flex flex-wrap gap-3">
+      <a href="/portal/orders/new" class="px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700" data-i18n="portal.home.new_cta_catalog">Browse the catalog</a>
+      {% if bundle_count %}
+      <a href="/portal/packages" class="px-4 py-2.5 rounded-lg border border-token-border bg-surface text-sm font-semibold text-body hover:bg-surface-raised" data-i18n="portal.home.new_cta_packages">View packages</a>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if todos %}
+  <!-- ── To-dos ─────────────────────────────────────────────────────────── -->
+  <section aria-labelledby="home-todo-h" class="space-y-3">
+    <h2 id="home-todo-h" class="text-base font-semibold text-heading" data-i18n="portal.home.todo_title">To do</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {% for t in todos %}
+      <a href="{{ t.href }}" class="flex gap-3.5 items-start p-4 rounded-xl bg-surface border border-token-border hover:border-blue-400 transition-colors">
+        <span class="w-11 h-11 shrink-0 rounded-xl flex items-center justify-center {{ t.tint }}">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
+            d="{% if t.kind == 'approvals' %}M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z{% elif t.kind == 'reviews' %}M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z{% elif t.kind == 'expiring' %}M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z{% else %}M9 12l2 2 4-4M7 3h7l5 5v11a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z{% endif %}"/></svg>
+        </span>
+        <span class="min-w-0">
+          <span class="flex items-baseline gap-2">
+            <span class="text-2xl font-bold text-heading leading-none tabular-nums">{{ t.count }}</span>
+            <span class="text-sm font-semibold text-heading" data-i18n="portal.home.todo_{{ t.kind }}">{{ t.kind }}</span>
+          </span>
+          <span class="block text-xs text-muted mt-1 line-clamp-2">
+            {% if t.kind == 'approvals' %}
+              {% if t.days > 0 %}<span data-i18n="portal.home.todo_approvals_sub" data-i18n-params='{"days": {{ t.days }}}'></span>
+              {% else %}<span data-i18n="portal.home.todo_approvals_sub_today"></span>{% endif %}
+            {% elif t.kind == 'reviews' %}
+              {% if t.due %}<span data-i18n="portal.home.todo_reviews_sub" data-i18n-params='{"date": {{ t.due | tojson }}}'></span>{% endif %}
+            {% elif t.kind == 'expiring' %}
+              {% if t.days < 0 %}
+              <span data-i18n="portal.home.todo_expiring_sub_overdue" data-i18n-params='{"name": {{ t.name | tojson }}}'></span>
+              {% else %}
+              <span data-i18n="portal.home.todo_expiring_sub" data-i18n-params='{"name": {{ t.name | tojson }}, "days": {{ t.days }}}'></span>
+              {% endif %}
+            {% else %}
+              {{ t.name }}
+            {% endif %}
+          </span>
+        </span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if not is_new %}
+  <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+
+    <!-- ── My IT ──────────────────────────────────────────────────────────── -->
+    <section aria-labelledby="home-it-h" class="lg:col-span-3 bg-surface rounded-2xl border border-token-border overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-token-border">
+        <h2 id="home-it-h" class="text-base font-semibold text-heading">
+          <span data-i18n="portal.nav.my_it">My IT</span>
+          {% if my_it_total %}<span class="ml-1 text-sm font-normal text-muted">({{ my_it_total }})</span>{% endif %}
+        </h2>
+        <a href="/portal/my-it" class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline" data-i18n="portal.home.show_all">Show all →</a>
+      </div>
+      {% for item in my_it %}
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-4 {% if not loop.last %}border-b border-token-border{% endif %}">
+        {% if item.type.logo %}
+        <span class="w-11 h-11 shrink-0 rounded-xl bg-surface-raised border border-token-border flex items-center justify-center overflow-hidden">
+          <img src="/portal/asset-type-logo/{{ item.type.id }}" alt="" class="max-w-[32px] max-h-[32px] object-contain">
+        </span>
+        {% else %}
+        <span class="w-11 h-11 shrink-0 rounded-xl flex items-center justify-center text-sm font-bold {{ item.tint }}">{{ item.initials }}</span>
+        {% endif %}
+        <div class="flex-1 min-w-[180px]">
+          <div class="text-sm font-semibold text-heading">{{ item.type.name }}</div>
+          <div class="text-xs text-muted">
+            {% if item.hostname %}<span class="font-mono">{{ item.hostname }}</span> · {% endif %}<span data-i18n="portal.home.assignment_{{ item.type.assignment_model }}">{{ item.type.assignment_model }}</span>
+          </div>
+        </div>
+        <div class="w-40 shrink-0">
+          {% if item.days_left is not none %}
+          <div class="flex justify-between text-xs text-muted">
+            <span>{{ item.order.requested_until.strftime("%d.%m.%Y") }}</span>
+            {% if item.overdue %}
+            <span class="text-red-700 dark:text-red-300 font-semibold" data-i18n="portal.home.overdue">Expired</span>
+            {% else %}
+            <span class="{% if item.warn %}text-amber-700 dark:text-amber-300 font-semibold{% endif %}"
+                  data-i18n="portal.home.days_left" data-i18n-params='{"days": {{ item.days_left }}}'>{{ item.days_left }} d</span>
+            {% endif %}
+          </div>
+          <div class="h-1.5 mt-1.5 rounded-full bg-token-border overflow-hidden">
+            <div class="h-full rounded-full {% if item.overdue %}bg-red-500{% elif item.warn %}bg-amber-500{% else %}bg-blue-600{% endif %}" style="width: {{ item.pct }}%"></div>
+          </div>
+          {% else %}
+          <span class="text-xs text-muted" data-i18n="portal.home.unlimited">No end date</span>
+          {% endif %}
+        </div>
+        <a href="/portal/my-it/{{ item.order.id }}"
+           class="px-3.5 py-2 rounded-lg border border-token-border bg-surface-raised text-sm font-medium text-body hover:border-blue-400"
+           data-i18n="portal.home.manage">Manage</a>
+      </div>
+      {% else %}
+      <div class="px-5 py-10 text-center text-sm text-muted">
+        <span data-i18n="portal.my_it.empty">No active assets.</span>
+        <a href="/portal/orders/new" class="ml-1 text-blue-600 dark:text-blue-400 hover:underline" data-i18n="portal.common.request_access_now">Request access now →</a>
+      </div>
+      {% endfor %}
+    </section>
+
+    <!-- ── Running orders ─────────────────────────────────────────────────── -->
+    <section aria-labelledby="home-run-h" class="lg:col-span-2 bg-surface rounded-2xl border border-token-border overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-token-border">
+        <h2 id="home-run-h" class="text-base font-semibold text-heading" data-i18n="portal.home.running_title">Running orders</h2>
+        <a href="/portal/orders" class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline" data-i18n="portal.home.history">History →</a>
+      </div>
+      {% for r in running %}
+      <a href="/portal/orders/{{ r.order.id }}" class="block px-5 py-4 space-y-3 hover:bg-surface-raised transition-colors {% if not loop.last %}border-b border-token-border{% endif %}">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <span class="text-sm"><span class="text-muted font-mono">#{{ r.order.id }}</span> <span class="font-semibold text-heading">{{ r.type_name }}</span></span>
+          {% set st = r.order.status.value %}
+          <span class="px-2 py-0.5 rounded-full text-xs font-semibold
+            {% if st == 'pending_approval' %}bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300
+            {% elif st == 'scheduled' %}bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300
+            {% else %}bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300{% endif %}"
+            data-i18n="portal.home.run_status_{{ 'approval' if st == 'pending_approval' else ('scheduled' if st == 'scheduled' else 'provisioning') }}">{{ st }}</span>
+        </div>
+        <ol class="grid grid-cols-4 gap-1.5" aria-label="Progress" data-i18n-attr-aria-label="portal.home.progress">
+          {% for label_key in ('requested', 'approval', 'provisioning', 'ready') %}
+          {% set state = 'done' if loop.index0 < r.phase else ('current' if loop.index0 == r.phase else 'todo') %}
+          <li class="space-y-1.5" {% if state == 'current' %}aria-current="step"{% endif %}>
+            <div class="h-1.5 rounded-full {% if state == 'done' %}bg-green-500{% elif state == 'current' %}bg-blue-600{% else %}bg-token-border{% endif %}"></div>
+            <span class="block text-[11px] {% if state == 'current' %}font-semibold text-heading{% else %}text-muted{% endif %}" data-i18n="portal.home.phase_{{ label_key }}">{{ label_key }}</span>
+          </li>
+          {% endfor %}
+        </ol>
+        <div class="text-xs text-muted">
+          {% if st == 'scheduled' and r.order.requested_from %}
+            <span data-i18n="portal.home.run_scheduled_note" data-i18n-params='{"date": {{ r.order.requested_from.strftime("%d.%m.%Y") | tojson }}}'></span>
+          {% elif r.steps_total %}
+            <span data-i18n="portal.home.run_steps_note" data-i18n-params='{"done": {{ r.steps_done }}, "total": {{ r.steps_total }}}'></span>
+          {% else %}
+            <span data-i18n="portal.home.run_created_note" data-i18n-params='{"date": {{ r.order.created_at.strftime("%d.%m.%Y") | tojson }}}'></span>
+          {% endif %}
+        </div>
+      </a>
+      {% else %}
+      <div class="px-5 py-10 text-center text-sm text-muted" data-i18n="portal.home.running_empty">Nothing in progress.</div>
+      {% endfor %}
+    </section>
+  </div>
+  {% endif %}
+
+  {% if topics or bundle_count %}
+  <!-- ── Topics ─────────────────────────────────────────────────────────── -->
+  <section aria-labelledby="home-topics-h" class="space-y-3">
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <h2 id="home-topics-h" class="text-base font-semibold text-heading" data-i18n="portal.home.topics_title">Topics</h2>
+      <a href="/portal/orders/new" class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline" data-i18n="portal.home.full_catalog">Full catalog →</a>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
+      {% for c in topics %}
+      <a href="/portal/orders/new?category={{ c.key }}" class="flex flex-col gap-3 p-4 rounded-xl bg-surface border border-token-border hover:border-blue-400 transition-colors">
+        <span class="w-11 h-11 rounded-xl flex items-center justify-center {{ c.tint }}">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="{{ c.icon }}"/></svg>
+        </span>
+        <span>
+          <span class="block text-sm font-semibold text-heading" data-i18n="portal.home.topic_{{ c.key }}">{{ c.key }}</span>
+          <span class="block text-xs text-muted" data-i18n="portal.home.topic_count" data-i18n-params='{"n": {{ c.count }}}'>{{ c.count }}</span>
+        </span>
+      </a>
+      {% endfor %}
+      {% if bundle_count %}
+      <a href="/portal/packages" class="flex flex-col gap-3 p-4 rounded-xl bg-surface border border-token-border hover:border-blue-400 transition-colors">
+        <span class="w-11 h-11 rounded-xl flex items-center justify-center bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+        </span>
+        <span>
+          <span class="block text-sm font-semibold text-heading" data-i18n="portal.nav.packages">Packages</span>
+          <span class="block text-xs text-muted" data-i18n="portal.home.package_count" data-i18n-params='{"n": {{ bundle_count }}}'>{{ bundle_count }}</span>
+        </span>
+      </a>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- ── Recommended (HTMX, needs an AD lookup) ─────────────────────────── -->
+  <div id="home-recommended" class="empty:hidden"
+       hx-get="/portal/home/recommended" hx-trigger="load" hx-swap="innerHTML">
+    <section class="space-y-3" aria-busy="true">
+      <div class="h-5 w-48 rounded bg-token-border/60 animate-pulse"></div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {% for _ in range(4) %}<div class="h-40 rounded-xl bg-surface border border-token-border animate-pulse"></div>{% endfor %}
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

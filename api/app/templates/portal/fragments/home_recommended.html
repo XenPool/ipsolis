@@ -1,0 +1,48 @@
+{# HTMX fragment for the portal home page — see routes/portal.py::portal_home_recommended. #}
+<section aria-labelledby="home-rec-h" class="space-y-3">
+  <div>
+    <h2 id="home-rec-h" class="text-base font-semibold text-heading" data-i18n="portal.home.rec_title">Recommended for you</h2>
+    {% if department %}
+    <p class="text-sm text-muted" data-i18n="portal.home.rec_subtitle_dept" data-i18n-params='{"department": {{ department | tojson }}}'>{{ department }}</p>
+    {% else %}
+    <p class="text-sm text-muted" data-i18n="portal.home.rec_subtitle">Popular with your colleagues</p>
+    {% endif %}
+  </div>
+  <div class="grid grid-cols-1 sm:grid-cols-[repeat(auto-fit,minmax(250px,1fr))] gap-4">
+    {% for c in cards %}
+    <article class="flex flex-col gap-3 p-4 rounded-xl bg-surface border border-token-border">
+      <div class="flex items-center gap-3">
+        {% if c.kind == 'type' and c.has_logo %}
+        <span class="w-11 h-11 shrink-0 rounded-xl bg-surface-raised border border-token-border flex items-center justify-center overflow-hidden">
+          <img src="/portal/asset-type-logo/{{ c.id }}" alt="" class="max-w-[32px] max-h-[32px] object-contain">
+        </span>
+        {% else %}
+        <span class="w-11 h-11 shrink-0 rounded-xl flex items-center justify-center text-sm font-bold {{ c.tint }}">{{ c.initials }}</span>
+        {% endif %}
+        <div class="min-w-0">
+          <h3 class="text-sm font-semibold text-heading truncate" title="{{ c.name }}">{{ c.name }}</h3>
+          {% if c.kind == 'bundle' %}
+          <span class="text-xs text-muted" data-i18n="portal.home.rec_bundle_kind" data-i18n-params='{"n": {{ c.item_count }}}'>{{ c.item_count }}</span>
+          {% else %}
+          <span class="text-xs text-muted" data-i18n="portal.home.topic_{{ c.category }}">{{ c.category }}</span>
+          {% endif %}
+        </div>
+      </div>
+      <p class="text-xs text-muted flex-1 line-clamp-3">{% if c.kind == 'bundle' %}{{ c.items }}{% else %}{{ c.description }}{% endif %}</p>
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        {% if c.kind == 'bundle' %}
+        <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" data-i18n="portal.home.rec_badge_bundle">Package</span>
+        <a href="/portal/packages#bundle-{{ c.id }}" class="px-3.5 py-2 rounded-lg border border-token-border bg-surface-raised text-sm font-semibold text-body hover:border-blue-400" data-i18n="portal.home.rec_view">View</a>
+        {% elif c.sold_out %}
+        <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" data-i18n="portal.order_new.unavailable_badge">Unavailable</span>
+        {% else %}
+        <span class="px-2 py-0.5 rounded-full text-xs font-semibold
+          {% if c.approval == 'none' %}bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300{% else %}bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200{% endif %}"
+          data-i18n="portal.home.rec_badge_{{ {'static': 'approval', 'conditional': 'conditional', 'none': 'instant'}[c.approval] }}">{{ c.approval }}</span>
+        <a href="/portal/orders/new?type={{ c.id }}" class="px-3.5 py-2 rounded-lg border border-token-border bg-surface-raised text-sm font-semibold text-body hover:border-blue-400" data-i18n="portal.home.rec_request">Request</a>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>

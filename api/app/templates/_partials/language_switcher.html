@@ -25,7 +25,7 @@
   </button>
 
   <div data-lang-menu id="portal-lang-menu"
-       class="hidden absolute right-0 bottom-full mb-1 w-40 rounded-md
+       class="hidden absolute right-0 {% if lang_menu_down %}top-full mt-1{% else %}bottom-full mb-1{% endif %} w-40 rounded-md
               bg-surface border border-token-border shadow-lg z-50 py-1"
        role="menu">
 

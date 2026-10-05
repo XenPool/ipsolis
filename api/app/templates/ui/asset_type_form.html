@@ -630,6 +630,11 @@
           Make it a required field
           <span class="text-xs text-muted/70">(the order is blocked until a reason is given)</span>
         </label>
+        <p class="text-xs text-muted/70 ml-6 -mt-1">
+          Required only applies when the order actually goes to an approver — manager / app-owner
+          approval, a matching conditional approval rule, or data-classification routing. Without an
+          approver the field stays optional and is stored with the order for the audit trail.
+        </p>
       </div>
     </div>
 
