@@ -155,10 +155,399 @@ _STEP_COLORS = {
 }
 
 
-# ── Overview ───────────────────────────────────────────────────────────────────
+# ── Home (dashboard) ───────────────────────────────────────────────────────────
+
+# Orders still in flight — shown as "running" with a phase tracker on the home page.
+_RUNNING_STATUSES = (
+    OrderStatus.PENDING,
+    OrderStatus.PENDING_APPROVAL,
+    OrderStatus.SCHEDULED,
+    OrderStatus.PROCESSING,
+    OrderStatus.PROVISIONING,
+)
+# Active access/assets surface an "expires soon" to-do inside this window.
+_EXPIRY_WARN_DAYS = 30
+# Monogram tints for catalog/asset tiles without a logo (picked by type id).
+_HOME_TINTS = (
+    "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+    "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
+    "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300",
+    "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+    "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300",
+)
+# Home-page topic tiles in display order: (AssetCategory value, icon path, tint).
+_HOME_TOPICS = (
+    ("application_access",
+     "M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z",
+     _HOME_TINTS[0]),
+    ("platform_access",
+     "M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z",
+     _HOME_TINTS[1]),
+    ("data_access",
+     "M4 7c0-1.657 3.582-3 8-3s8 1.343 8 3-3.582 3-8 3-8-1.343-8-3zm0 0v10c0 1.657 3.582 3 8 3s8-1.343 8-3V7M4 12c0 1.657 3.582 3 8 3s8-1.343 8-3",
+     _HOME_TINTS[2]),
+    ("device_access",
+     "M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z",
+     _HOME_TINTS[3]),
+    ("infrastructure_access",
+     "M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01",
+     _HOME_TINTS[4]),
+)
+
+
+def _initials(name: str) -> str:
+    """Two-letter monogram for a catalog/asset tile without a logo."""
+    words = [w for w in (name or "").replace("-", " ").split() if w[:1].isalnum()]
+    if not words:
+        return "?"
+    if len(words) == 1:
+        return words[0][:2].upper()
+    return (words[0][0] + words[1][0]).upper()
+
+
+def _owned_orders_filter(email: str):
+    """Orders the user requested, owns, or took over via a delivered MODIFY order."""
+    _m = aliased(Order)
+    via_modify = (
+        select(_m.id).where(
+            _m.action == OrderAction.MODIFY,
+            _m.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED]),
+            _m.owner_email == email,
+            _m.assigned_asset_id == Order.assigned_asset_id,
+        ).exists()
+    )
+    return or_(Order.user_email == email, Order.owner_email == email, via_modify)
+
+
+def _aware(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _approval_mode(t: AssetType) -> str:
+    """``static`` — every order needs approval (manager / owner);
+    ``conditional`` — only if a rule or the data-classification policy fires
+    (decided per order at submit time); ``none`` — never."""
+    if t.requires_manager_approval or t.requires_owner_approval:
+        return "static"
+    from app.utils.classification_routing import asset_type_classifications
+    if t.approval_rules or asset_type_classifications(t):
+        return "conditional"
+    return "none"
+
 
 @router.get("/", response_class=HTMLResponse)
-async def portal_index(
+async def portal_home(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
+):
+    """Landing dashboard: to-dos, my IT, running orders, catalog topics.
+
+    The personalised "Recommended" section needs an AD lookup and loads
+    separately via HTMX (``/portal/home/recommended``) so it never blocks
+    the first paint.
+    """
+    from app.models.approval import OrderApproval
+    from app.models.attestation_artifact import AttestationArtifact
+    from app.models.bundle import Bundle
+    from app.models.certification import CertificationCampaign, CertificationReview
+    from app.utils.attestation_token import make_attestation_token
+
+    email = current_user["email"]
+    now = datetime.now(timezone.utc)
+
+    # ── My IT (active) + running orders ──────────────────────────────────────
+    active = list((await db.execute(
+        select(Order)
+        .where(_owned_orders_filter(email))
+        .where(Order.action == OrderAction.PROVISION)
+        .where(Order.status.in_([OrderStatus.DELIVERED, OrderStatus.PROVISIONED]))
+        .order_by(Order.requested_until.asc().nulls_last())
+    )).scalars().all())
+    running = list((await db.execute(
+        select(Order)
+        .options(selectinload(Order.steps))
+        .where(_owned_orders_filter(email))
+        .where(Order.status.in_(_RUNNING_STATUSES))
+        .order_by(Order.created_at.desc())
+        .limit(5)
+    )).scalars().all())
+    has_any_order = bool(active or running) or (await db.execute(
+        select(Order.id).where(_owned_orders_filter(email)).limit(1)
+    )).scalar_one_or_none() is not None
+
+    type_ids = {o.asset_type_id for o in active + running}
+    types_by_id: dict[int, AssetType] = {}
+    if type_ids:
+        for t in (await db.execute(
+            select(AssetType).where(AssetType.id.in_(type_ids))
+        )).scalars().all():
+            types_by_id[t.id] = t
+    asset_ids = [o.assigned_asset_id for o in active if o.assigned_asset_id]
+    asset_names: dict[int, str] = {}
+    if asset_ids:
+        asset_names = {r.id: r.name for r in await db.execute(
+            select(AssetPool.id, AssetPool.name).where(AssetPool.id.in_(asset_ids))
+        )}
+
+    my_it = []
+    expiring = []
+    for o in active:
+        t = types_by_id.get(o.asset_type_id)
+        if t is None:
+            continue
+        if t.assignment_model == "assigned_personal" and o.assigned_asset_id is None:
+            continue  # asset deleted — same rule as the My IT page
+        days_left = pct = None
+        if o.requested_until:
+            until = _aware(o.requested_until)
+            start = _aware(o.requested_from or o.created_at)
+            days_left = (until - now).days  # negative = overdue (expiry job not yet run)
+            span = (until - start).total_seconds()
+            pct = 100 if span <= 0 else max(0, min(100, round((now - start).total_seconds() / span * 100)))
+            if days_left <= _EXPIRY_WARN_DAYS:
+                expiring.append((days_left, o, t))
+        my_it.append({
+            "order": o,
+            "type": t,
+            "initials": _initials(t.name),
+            "tint": _HOME_TINTS[t.id % len(_HOME_TINTS)],
+            "hostname": asset_names.get(o.assigned_asset_id) if o.assigned_asset_id else None,
+            "days_left": days_left,
+            "pct": pct,
+            "warn": days_left is not None and days_left <= _EXPIRY_WARN_DAYS,
+            "overdue": days_left is not None and days_left < 0,
+        })
+
+    running_view = []
+    for o in running:
+        t = types_by_id.get(o.asset_type_id)
+        steps = list(o.steps or [])
+        running_view.append({
+            "order": o,
+            "type_name": t.name if t else "–",
+            # 4-phase tracker: 0 requested · 1 approval · 2 provisioning · 3 ready
+            "phase": 1 if o.status == OrderStatus.PENDING_APPROVAL else 2,
+            "steps_done": sum(1 for s in steps if s.status.value in ("success", "skipped")),
+            "steps_total": len(steps),
+        })
+
+    # ── To-dos ───────────────────────────────────────────────────────────────
+    appr_count, appr_oldest = (await db.execute(
+        select(sa_func.count(), sa_func.min(OrderApproval.created_at)).where(
+            OrderApproval.approver_email == email, OrderApproval.status == "pending",
+        )
+    )).one()
+    rev_count, rev_due = (await db.execute(
+        select(sa_func.count(), sa_func.min(CertificationCampaign.due_at))
+        .select_from(CertificationReview)
+        .join(CertificationCampaign, CertificationCampaign.id == CertificationReview.campaign_id)
+        .where(CertificationReview.reviewer_email == email, CertificationReview.status == "pending")
+    )).one()
+    handovers = list((await db.execute(
+        select(AttestationArtifact).where(
+            AttestationArtifact.kind == "handover",
+            AttestationArtifact.status == "pending",
+            sa_func.lower(AttestationArtifact.recipient_email) == email.lower(),
+        ).order_by(AttestationArtifact.created_at.desc()).limit(5)
+    )).scalars().all())
+
+    todos = []
+    if appr_count:
+        todos.append({
+            "kind": "approvals", "count": appr_count, "href": "/portal/approvals",
+            "days": (now - _aware(appr_oldest)).days if appr_oldest else 0,
+            "tint": "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300",
+        })
+    if rev_count:
+        todos.append({
+            "kind": "reviews", "count": rev_count, "href": "/portal/certifications",
+            "due": rev_due.strftime("%d.%m.%Y") if rev_due else "",
+            "tint": "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+        })
+    if expiring:
+        expiring.sort(key=lambda x: x[0])
+        days, o, t = expiring[0]
+        todos.append({
+            "kind": "expiring", "count": len(expiring), "href": f"/portal/my-it/{o.id}",
+            "name": t.name, "days": days,
+            "tint": "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+        })
+    if handovers:
+        h = handovers[0]
+        h_type = await db.get(AssetType, h.asset_type_id) if h.asset_type_id else None
+        todos.append({
+            "kind": "handover", "count": len(handovers),
+            "href": f"/attestation/{make_attestation_token(h.id)}",
+            "name": h_type.name if h_type else "",
+            "tint": "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300",
+        })
+
+    # ── Topics + popular requests ────────────────────────────────────────────
+    cat_counts = {
+        (c.value if hasattr(c, "value") else c): n
+        for c, n in (await db.execute(
+            select(AssetType.category, sa_func.count())
+            .where(AssetType.is_active.is_(True))
+            .group_by(AssetType.category)
+        )).all()
+    }
+    topics = [
+        {"key": key, "icon": icon, "tint": tint, "count": cat_counts[key]}
+        for key, icon, tint in _HOME_TOPICS if cat_counts.get(key)
+    ]
+    bundle_count = (await db.execute(
+        select(sa_func.count()).select_from(Bundle)
+        .where(Bundle.is_active.is_(True), Bundle.catalog_visible.is_(True))
+    )).scalar() or 0
+
+    popular = [
+        {"id": r.id, "name": r.name} for r in (await db.execute(
+            select(AssetType.id, AssetType.name)
+            .join(Order, Order.asset_type_id == AssetType.id)
+            .where(
+                AssetType.is_active.is_(True),
+                Order.action == OrderAction.PROVISION,
+                Order.created_at >= now - timedelta(days=90),
+            )
+            .group_by(AssetType.id, AssetType.name)
+            .order_by(sa_func.count().desc(), AssetType.name)
+            .limit(5)
+        )).all()
+    ]
+
+    # Greeting: the time-of-day variant is picked client-side (browser clock).
+    is_anonymous = (current_user.get("oid") or "").lower() == "anonymous"
+    first_name = "" if is_anonymous else (current_user.get("name") or "").split(" ")[0]
+
+    return templates.TemplateResponse("portal/home.html", {
+        "request": request,
+        "active_page": "home",
+        "user": current_user,
+        "first_name": first_name,
+        "is_new": not has_any_order,
+        "todos": todos,
+        "my_it": my_it[:5],
+        "my_it_total": len(my_it),
+        "running": running_view,
+        "topics": topics,
+        "bundle_count": bundle_count,
+        "popular": popular,
+    })
+
+
+@router.get("/home/recommended", response_class=HTMLResponse)
+async def portal_home_recommended(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_portal_auth),
+):
+    """HTMX fragment: "Recommended for you" cards (max 4).
+
+    1. Packages whose assignment rules match the user's AD attributes, are
+       self-orderable (catalog-visible) and still contain something the user
+       does not hold yet.
+    2. Topped up with the asset types most ordered in the user's department
+       over the last 180 days (whole organisation when the department is
+       unknown), minus what the user already holds or is not eligible for.
+
+    Returns an empty body when there is nothing to recommend — the
+    placeholder swaps itself out and the section disappears.
+    """
+    from app.models.bundle import Bundle
+    from app.services.onboarding import (
+        _active_asset_type_ids, build_user_context, evaluate_assignment_rules,
+        resolve_bundle_items,
+    )
+
+    email = current_user["email"]
+    is_anonymous = (current_user.get("oid") or "").lower() == "anonymous"
+    attrs: dict = {}
+    if not is_anonymous:
+        try:
+            res = await asyncio.to_thread(lookup_user, email)
+            if res.get("success"):
+                attrs = res
+        except Exception:  # noqa: BLE001 — an AD outage must not break the home page
+            logger.warning("portal home: AD lookup for recommendations failed", exc_info=True)
+    department = (attrs.get("department") or "").strip()
+
+    cards: list[dict] = []
+
+    # 1) Rule-matched, self-orderable packages.
+    if attrs:
+        matched = await evaluate_assignment_rules(db, build_user_context(attrs))
+        orderable = set((await db.execute(
+            select(Bundle.id).where(
+                Bundle.id.in_([m["bundle_id"] for m in matched] or [0]),
+                Bundle.is_active.is_(True), Bundle.catalog_visible.is_(True),
+            )
+        )).scalars().all())
+        for m in matched:
+            if m["bundle_id"] not in orderable:
+                continue
+            resolved = await resolve_bundle_items(db, m["bundle_id"], email)
+            open_items = [i for i in resolved["items"] if i["skip"] is None]
+            if not open_items:
+                continue
+            cards.append({
+                "kind": "bundle", "id": m["bundle_id"], "name": resolved["bundle_name"],
+                "initials": _initials(resolved["bundle_name"]),
+                "tint": _HOME_TINTS[1],
+                "item_count": len(open_items),
+                "items": ", ".join(i["asset_type_name"] for i in open_items[:4]),
+            })
+            if len(cards) >= 2:
+                break
+
+    # 2) Popular in the department (or overall), not yet held.
+    held = await _active_asset_type_ids(db, email)
+    q = (
+        select(Order.asset_type_id)
+        .where(
+            Order.action == OrderAction.PROVISION,
+            Order.created_at >= datetime.now(timezone.utc) - timedelta(days=180),
+        )
+        .group_by(Order.asset_type_id)
+        .order_by(sa_func.count().desc())
+        .limit(20)
+    )
+    if department:
+        q = q.where(Order.requester_department == department)
+    ranked = [tid for tid in (await db.execute(q)).scalars().all() if tid not in held]
+    if ranked and len(cards) < 4:
+        types = {t.id: t for t in (await db.execute(
+            select(AssetType).where(AssetType.id.in_(ranked), AssetType.is_active.is_(True))
+        )).scalars().all()}
+        candidates = [types[i] for i in ranked if i in types]
+        candidates = await asyncio.to_thread(_filter_eligible_asset_types, candidates, email)
+        candidates = candidates[: 4 - len(cards)]
+        unavailable = await _get_unavailable_type_ids(db, candidates)
+        for t in candidates:
+            cards.append({
+                "kind": "type", "id": t.id, "name": t.name,
+                "description": t.description or "",
+                "category": t.category.value if t.category else "",
+                "has_logo": bool(t.logo),
+                "initials": _initials(t.name),
+                "tint": _HOME_TINTS[t.id % len(_HOME_TINTS)],
+                "sold_out": t.id in unavailable,
+                "approval": _approval_mode(t),
+            })
+
+    if not cards:
+        return HTMLResponse("")
+    return templates.TemplateResponse("portal/fragments/home_recommended.html", {
+        "request": request,
+        "cards": cards,
+        "department": department,
+    })
+
+
+# ── Orders list ────────────────────────────────────────────────────────────────
+
+@router.get("/orders", response_class=HTMLResponse)
+async def portal_orders(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_portal_auth),
@@ -208,9 +597,9 @@ async def portal_index(
         )
         asset_names = {row.id: row.name for row in asset_rows}
 
-    return templates.TemplateResponse("portal/index.html", {
+    return templates.TemplateResponse("portal/orders.html", {
         "request": request,
-        "active_page": "overview",
+        "active_page": "orders",
         "user": current_user,
         "orders": orders,
         "asset_type_names": asset_type_names,
@@ -358,6 +747,7 @@ async def portal_new_order_form(
         "active_page": "new",
         "user": current_user,
         "asset_types": asset_types,
+        "approval_modes": {t.id: _approval_mode(t) for t in asset_types},
         "unavailable_ids": unavailable_ids,
         "today": date.today().isoformat(),
         "max_advance_days": max_advance_days,
@@ -548,7 +938,7 @@ async def portal_create_order(
     # Read all form fields (for attr_* fields)
     form_data = await request.form()
 
-    async def _render_error(msg: str):
+    async def _render_error(msg: str, require_justification: bool = False):
         types_result = await db.execute(
             select(AssetType).where(AssetType.is_active.is_(True)).order_by(AssetType.name)
         )
@@ -564,6 +954,10 @@ async def portal_create_order(
             "active_page": "new",
             "user": current_user,
             "asset_types": all_types,
+            "approval_modes": {t.id: _approval_mode(t) for t in all_types},
+            # A conditional rule fired at submit → the form must now treat the
+            # justification as required for this type.
+            "justification_forced_type": asset_type_id if require_justification else None,
             "unavailable_ids": await _get_unavailable_type_ids(db, all_types),
             "today": date.today().isoformat(),
             "max_advance_days": max_adv,
@@ -621,11 +1015,6 @@ async def portal_create_order(
         return await _render_error(
             f"No free assets available for \"{asset_type.name}\". Please try again later."
         )
-
-    # Business justification: required when the asset type opts in. This server
-    # check is authoritative (the portal JS mirrors it for UX only).
-    if asset_type.justification_required and not justification.strip():
-        return await _render_error("Please provide a justification for this request.")
 
     # Per-user quota check
     from app.utils.capacity import enforce_max_per_user
@@ -718,6 +1107,29 @@ async def portal_create_order(
         justification=(justification.strip() or None) if asset_type.collect_justification else None,
         **requester_attrs,
     )
+
+    # Business justification: required when the asset type opts in AND the
+    # order actually goes to an approver — static manager/owner approval, a
+    # matching conditional rule, or classification routing. Without an
+    # approver nobody would read it, so it stays optional. Authoritative; the
+    # portal JS mirrors the static part for UX only. Evaluated on the transient
+    # order (build_context needs no flushed row).
+    if asset_type.justification_required and not justification.strip():
+        from app.utils.approval_rules import build_context, evaluate_rules
+        from app.utils.classification_routing import (
+            classification_approvers, load_classification_policy,
+        )
+        goes_to_approval = (
+            needs_any_approval
+            or bool(evaluate_rules(asset_type.approval_rules, build_context(order, asset_type)))
+            or bool(classification_approvers(asset_type, await load_classification_policy(db)))
+        )
+        if goes_to_approval:
+            return await _render_error(
+                "This request needs approval — please provide a justification.",
+                require_justification=True,
+            )
+
     db.add(order)
     await db.flush()
 
@@ -1069,7 +1481,7 @@ async def portal_order_detail(
 
     return templates.TemplateResponse("portal/order_detail.html", {
         "request": request,
-        "active_page": "overview",
+        "active_page": "orders",
         "user": current_user,
         "order": order,
         "asset_type": asset_type,
@@ -1774,10 +2186,15 @@ async def _post_approval_dispatch(order: Order, db: AsyncSession, celery_app) ->
 
 @router.get("/nav-badges")
 async def portal_nav_badges(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_portal_auth),
 ) -> dict:
-    """Return pending-item counts for the three badged nav items."""
+    """Return pending-item counts for the three badged nav items, plus whether
+    the Approvals / Access Reviews nav items are relevant for this user at all
+    (ever had an approval or review, or is a delegate). The flags are cached in
+    the session so the next server-rendered page hides irrelevant items
+    without a flash; base_portal.html also applies them live."""
     from sqlalchemy import func as sa_func
     from app.models.approval import OrderApproval
     from app.models.approval_delegation import ApprovalDelegation
@@ -1809,10 +2226,30 @@ async def portal_nav_badges(
         ),
     )
 
+    approvals = approvals_q.scalar() or 0
+    certifications = reviews_q.scalar() or 0
+    is_approver = approvals > 0 or (await db.execute(
+        select(
+            exists().where(OrderApproval.approver_email == email)
+            | exists().where(
+                ApprovalDelegation.delegate_email == email,
+                ApprovalDelegation.revoked_at.is_(None),
+                ApprovalDelegation.until_at >= now,
+            )
+        )
+    )).scalar()
+    is_reviewer = certifications > 0 or (await db.execute(
+        select(exists().where(CertificationReview.reviewer_email == email))
+    )).scalar()
+    show = {"approvals": bool(is_approver), "certifications": bool(is_reviewer)}
+    if request.session.get("portal_nav") != show:
+        request.session["portal_nav"] = show
+
     return {
-        "approvals": approvals_q.scalar() or 0,
+        "approvals": approvals,
         "delegations": delegations_q.scalar() or 0,
-        "certifications": reviews_q.scalar() or 0,
+        "certifications": certifications,
+        "show": show,
     }
 
 

@@ -5,4 +5,4 @@
 {# Build-time-compiled Tailwind (+ self-hosted Inter @font-face). Replaces the
    former cdn.tailwindcss.com Play-CDN + inline tailwind.config — the runtime is
    air-gapped, so nothing loads from an external origin. See api/tailwind.config.js. #}
-<link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="/static/css/app.css?v={{ css_rev }}">

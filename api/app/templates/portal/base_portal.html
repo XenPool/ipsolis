@@ -14,7 +14,7 @@
     of English on every navigation. We hide translatable text while the
     `i18n-pending` class is present, i18n.js removes the class after apply(),
     and a 2 s safety timer removes it even if i18n.js fails to load so the
-    sidebar can't stay blank forever.
+    page can't stay blank forever.
   -->
   <script>document.documentElement.classList.add('i18n-pending');
     window.setTimeout(function(){ document.documentElement.classList.remove('i18n-pending'); }, 2000);
@@ -46,200 +46,196 @@
        mouse clicks). Scoped to the portal; admin UI is untouched. */
     a:focus-visible, button:focus-visible, [href]:focus-visible,
     input:focus-visible, select:focus-visible, textarea:focus-visible,
-    [tabindex]:focus-visible {
+    [tabindex]:focus-visible, summary:focus-visible {
       outline: 2px solid #2563eb; outline-offset: 2px; border-radius: 0.25rem;
     }
+    details.portal-menu > summary { list-style: none; }
+    details.portal-menu > summary::-webkit-details-marker { display: none; }
   </style>
 
   <script src="/static/vendor/htmx/htmx.min.js"></script>
   <script src="/static/js/i18n.js"></script>
 </head>
-<body class="h-full flex bg-surface-raised font-sans text-body">
+<body class="min-h-full flex flex-col bg-surface-raised font-sans text-body">
 
-  <!-- A11y: skip link — first focusable element, jumps past the sidebar. -->
+  <!-- A11y: skip link — first focusable element, jumps past the navigation. -->
   <a href="#main-content" class="skip-link" data-i18n="portal.a11y.skip_to_content">Skip to main content</a>
 
-  <!-- ── Left Sidebar ──────────────────────────────────────────────────────── -->
-  <aside class="w-56 bg-surface border-r border-token-border flex flex-col flex-shrink-0 min-h-full"
-         data-i18n-attr-aria-label="portal.a11y.sidebar" aria-label="Sidebar">
-
-    <!-- Logo / Brand -->
-    <div class="px-4 py-5 border-b border-token-border flex flex-col gap-3
-      {% if app_logo_position == 'center' %}items-center
-      {% elif app_logo_position == 'right' %}items-end
-      {% else %}items-start{% endif %}">
-      {% if app_logo %}
-        <a href="/portal/">
-          <img src="/portal/logo"
-               style="width: {{ app_logo_size }}%; max-width: 100%; max-height: 192px; object-fit: contain;"
-               alt="{{ app_title }}">
-        </a>
-        {% if app_logo_show_title == 'true' %}
-        <a href="/portal/"
-           style="font-size: {{ app_logo_title_size }}px;"
-           class="font-semibold text-muted leading-snug
-             {% if app_logo_position == 'center' %}text-center{% elif app_logo_position == 'right' %}text-right{% else %}text-left{% endif %}">
-          {{ app_title }}
-        </a>
-        {% endif %}
-      {% else %}
-        <a href="/portal/" class="block w-full">
-          <img src="/static/logos/sunset_light.svg" alt="{{ app_title }}"
-               class="block dark:hidden w-full h-auto object-contain">
-          <img src="/static/logos/sunset_dark.svg" alt="{{ app_title }}"
-               class="hidden dark:block w-full h-auto object-contain">
-        </a>
-        <a href="/portal/"
-           class="text-sm font-semibold text-muted leading-snug
-             {% if app_logo_position == 'center' %}text-center{% elif app_logo_position == 'right' %}text-right{% else %}text-left{% endif %}">
-          {{ app_title }}
-        </a>
-      {% endif %}
-    </div>
-
-    <!-- Navigation -->
-    <nav class="flex-1 px-3 py-4 space-y-0.5"
-         data-i18n-attr-aria-label="portal.nav.aria_label" aria-label="Main navigation">
-      <a href="/portal/"
-         class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'overview' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-        </svg>
-        <span data-i18n="portal.nav.my_orders">My Orders</span>
-      </a>
-      <a href="/portal/my-it"
-         class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'my-it' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-        </svg>
-        <span data-i18n="portal.nav.my_it">My IT</span>
-      </a>
-      <a href="/portal/approvals"
-         class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'approvals' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-        </svg>
-        <span data-i18n="portal.nav.my_approvals">My Approvals</span>
-        <span id="nav-badge-approvals" role="status" aria-live="polite" class="hidden ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-[18px] text-center tabular-nums"></span>
-      </a>
-      {# Delegations is always visible — the user might not be an approver
-         today but could be named as one tomorrow, and setting up the
-         proactive "while I'm OOO, route to Bob" delegation is a thing
-         they should be able to do without waiting for the first approval
-         to land in their queue. #}
-      <a href="/portal/delegations"
-         class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'delegations' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-        </svg>
-        <span data-i18n="portal.nav.delegations">Delegations</span>
-        <span id="nav-badge-delegations" role="status" aria-live="polite" class="hidden ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-semibold leading-[18px] text-center tabular-nums"></span>
-      </a>
-      {% if has_certifications %}
-      <a href="/portal/certifications"
-         class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'certifications' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
-        </svg>
-        <span data-i18n="portal.nav.certifications">Access Reviews</span>
-        <span id="nav-badge-certifications" role="status" aria-live="polite" class="hidden ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-[18px] text-center tabular-nums"></span>
-      </a>
-      {% endif %}
-      <a href="/portal/orders/new"
-         class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'new' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-        </svg>
-        <span data-i18n="portal.nav.request_access">Request Access</span>
-      </a>
-      <a href="/portal/packages"
-         class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors
-                {% if active_page == 'packages' %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-body{% endif %}">
-        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-        </svg>
-        <span data-i18n="portal.nav.packages">Packages</span>
-      </a>
-    </nav>
-
-    <!-- User info + sign out + theme + language -->
-    {% if user is defined and user %}
-    <div class="px-4 py-4 border-t border-token-border">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-[10px] uppercase tracking-[0.15em] text-muted" data-i18n="portal.language.label">Language</span>
-        {% include "_partials/language_switcher.html" %}
-      </div>
-      <div class="flex items-center justify-between mb-3">
-        <span class="text-[10px] uppercase tracking-[0.15em] text-muted" data-i18n="portal.theme.label">Theme</span>
-        {% include "_partials/theme_toggle.html" %}
-      </div>
-      <div class="flex items-center gap-2.5 mb-2.5">
-        <div class="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center
-                    text-white text-xs font-semibold select-none flex-shrink-0">
-          {{ user.name[0] | upper if user.name else '?' }}
-        </div>
-        <span class="text-xs text-body truncate leading-tight">{{ user.name }}</span>
-      </div>
-      <a href="/portal/logout"
-         class="text-xs text-muted hover:text-body hover:underline"
-         data-i18n="portal.user.sign_out">
-        Sign out
-      </a>
-      <div class="mt-3 text-[10px] text-muted/70">v{{ app_version }}</div>
-    </div>
-    {% else %}
-    <div class="px-4 py-4 border-t border-token-border space-y-2">
-      <div class="flex items-center justify-between">
-        <span class="text-[10px] uppercase tracking-[0.15em] text-muted" data-i18n="portal.language.label">Language</span>
-        {% include "_partials/language_switcher.html" %}
-      </div>
-      <div class="flex items-center justify-between">
-        <span class="text-[10px] uppercase tracking-[0.15em] text-muted" data-i18n="portal.theme.label">Theme</span>
-        {% include "_partials/theme_toggle.html" %}
-      </div>
-    </div>
+  {# One nav item, used for both the desktop bar and the mobile panel. #}
+  {% macro nav_link(href, page, key, label, badge_id=None, badge_color='bg-red-500', mobile=False) -%}
+  {%- set active = active_page == page -%}
+  <a href="{{ href }}" data-nav="{{ page }}"
+     {% if active %}aria-current="page"{% endif %}
+     class="{% if mobile %}flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium
+              {% if active %}bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300{% else %}text-muted hover:bg-surface-raised hover:text-heading{% endif %}
+            {% else %}relative inline-flex items-center gap-1.5 h-16 whitespace-nowrap text-sm font-medium border-b-2 transition-colors
+              {% if active %}border-blue-600 text-heading dark:border-blue-400{% else %}border-transparent text-muted hover:text-heading{% endif %}
+            {% endif %}">
+    <span data-i18n="{{ key }}">{{ label }}</span>
+    {% if badge_id %}
+    <span data-badge="{{ badge_id }}" role="status" aria-live="polite"
+          class="hidden min-w-[18px] h-[18px] px-1 rounded-full {{ badge_color }} text-white text-[10px] font-semibold leading-[18px] text-center tabular-nums"></span>
     {% endif %}
+  </a>
+  {%- endmacro %}
 
-  </aside>
+  {# Approvals / Access Reviews only for users who ever had one (flags cached in
+     the session by /portal/nav-badges; unknown on the very first page → shown). #}
+  {% macro nav_items(mobile=False) -%}
+    {%- set _pnav = request.session.get('portal_nav') if request is defined and 'session' in request.scope else None -%}
+    {%- set show_approvals = not _pnav or _pnav.approvals or active_page == 'approvals' -%}
+    {%- set show_reviews = has_certifications and (not _pnav or _pnav.certifications or active_page == 'certifications') -%}
+    {{ nav_link('/portal/', 'home', 'portal.nav.home', 'Home', mobile=mobile) }}
+    {{ nav_link('/portal/orders/new', 'new', 'portal.nav.catalog', 'Catalog', mobile=mobile) }}
+    {{ nav_link('/portal/packages', 'packages', 'portal.nav.packages', 'Packages', mobile=mobile) }}
+    {{ nav_link('/portal/my-it', 'my-it', 'portal.nav.my_it', 'My IT', mobile=mobile) }}
+    {{ nav_link('/portal/orders', 'orders', 'portal.nav.orders', 'Orders', mobile=mobile) }}
+    {% if show_approvals %}
+    {{ nav_link('/portal/approvals', 'approvals', 'portal.nav.approvals', 'Approvals', 'approvals', mobile=mobile) }}
+    {% endif %}
+    {% if show_reviews %}
+    {{ nav_link('/portal/certifications', 'certifications', 'portal.nav.certifications', 'Access Reviews', 'certifications', mobile=mobile) }}
+    {% endif %}
+  {%- endmacro %}
+
+  <!-- ── Top navigation ────────────────────────────────────────────────────── -->
+  <header class="sticky top-0 z-40 bg-surface border-b border-token-border">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center gap-3 sm:gap-6 xl:gap-8">
+
+      <!-- Logo / Brand (admin-configurable under Settings → Branding) -->
+      <a href="/portal/" class="flex items-center gap-2.5 shrink-0 min-w-0">
+        {% if app_logo %}
+          <img src="/portal/logo" alt="{{ app_title }}" class="h-9 w-auto max-w-[180px] object-contain">
+          {% if app_logo_show_title == 'true' %}
+          <span class="hidden sm:block text-sm font-semibold text-heading leading-tight truncate max-w-[200px]">{{ app_title }}</span>
+          {% endif %}
+        {% else %}
+          <img src="/static/logos/sunset_light.svg" alt="{{ app_title }}" class="block dark:hidden h-9 sm:h-11 w-auto">
+          <img src="/static/logos/sunset_dark.svg" alt="{{ app_title }}" class="hidden dark:block h-9 sm:h-11 w-auto">
+        {% endif %}
+      </a>
+
+      <nav class="hidden lg:flex items-center gap-4 xl:gap-6 min-w-0"
+           data-i18n-attr-aria-label="portal.nav.aria_label" aria-label="Main navigation">
+        {{ nav_items() }}
+      </nav>
+
+      <div class="ml-auto flex items-center gap-1.5 sm:gap-2">
+        {% with lang_menu_down = true %}{% include "_partials/language_switcher.html" %}{% endwith %}
+        {% include "_partials/theme_toggle.html" %}
+
+        {% if user is defined and user %}
+        <details class="portal-menu relative" data-portal-menu>
+          <summary class="flex items-center gap-2 h-9 pl-1 pr-2 rounded-lg border border-token-border hover:bg-surface-raised cursor-pointer select-none"
+                   data-i18n-attr-aria-label="portal.user.menu" aria-label="User menu">
+            <span class="relative w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold">
+              {{ user.name[0] | upper if user.name else '?' }}
+              <span data-badge-dot="delegations" class="hidden absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-surface"></span>
+            </span>
+            <span class="hidden sm:block lg:hidden xl:block text-sm font-medium text-body max-w-[140px] truncate">{{ (user.name or '').split(' ')[0] }}</span>
+            <svg class="w-3.5 h-3.5 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </summary>
+          <div class="absolute right-0 top-full mt-2 w-64 rounded-xl bg-surface border border-token-border shadow-lg z-50 py-2">
+            <div class="px-4 py-2 border-b border-token-border mb-1">
+              <div class="text-sm font-semibold text-heading truncate">{{ user.name }}</div>
+              <div class="text-xs text-muted truncate">{{ user.email }}</div>
+            </div>
+            <a href="/portal/delegations"
+               class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-surface-raised {% if active_page == 'delegations' %}text-blue-700 dark:text-blue-300{% else %}text-body{% endif %}">
+              <span data-i18n="portal.nav.delegations">Delegations</span>
+              <span data-badge="delegations" role="status" aria-live="polite"
+                    class="hidden ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-semibold leading-[18px] text-center tabular-nums"></span>
+            </a>
+            <a href="/portal/logout" class="block px-4 py-2 text-sm text-body hover:bg-surface-raised" data-i18n="portal.user.sign_out">Sign out</a>
+            <div class="px-4 pt-2 mt-1 border-t border-token-border text-[11px] text-muted">v{{ app_version }}</div>
+          </div>
+        </details>
+        {% endif %}
+
+        <button type="button" class="lg:hidden inline-flex items-center justify-center w-9 h-9 rounded-lg border border-token-border text-muted hover:text-body"
+                aria-controls="portal-mobile-nav" aria-expanded="false"
+                data-i18n-attr-aria-label="portal.nav.toggle_menu" aria-label="Menu"
+                onclick="var p=document.getElementById('portal-mobile-nav');var o=p.classList.toggle('hidden');this.setAttribute('aria-expanded',String(!o));">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <nav id="portal-mobile-nav" class="hidden lg:hidden border-t border-token-border px-4 py-3 space-y-0.5"
+         data-i18n-attr-aria-label="portal.nav.aria_label" aria-label="Main navigation">
+      {{ nav_items(mobile=True) }}
+    </nav>
+  </header>
+
+  {% if portal_announcement %}
+  <div role="status"
+       class="border-b {% if portal_announcement_level == 'warning' %}bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-500/10 dark:border-amber-500/30 dark:text-amber-200{% else %}bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-500/10 dark:border-blue-500/30 dark:text-blue-200{% endif %}">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-start gap-2.5 text-sm font-medium">
+      <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"/>
+      </svg>
+      <span class="whitespace-pre-line">{{ portal_announcement }}</span>
+    </div>
+  </div>
+  {% endif %}
+
+  {% block hero %}{% endblock %}
 
   <!-- ── Main content ───────────────────────────────────────────────────────── -->
-  <div class="flex-1 overflow-auto">
-    <main id="main-content" tabindex="-1" class="max-w-6xl mx-auto px-6 sm:px-8 py-8 focus:outline-none">
-      {% block content %}{% endblock %}
-    </main>
-  </div>
+  <main id="main-content" tabindex="-1" class="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 focus:outline-none">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="border-t border-token-border bg-surface">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+      <span>{{ app_title }}</span>
+      <span>ip·Solis v{{ app_version }}</span>
+    </div>
+  </footer>
 
 <script>
 (function () {
-  function applyBadge(id, count) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    if (count > 0) {
+  function applyBadge(name, count) {
+    if (!(count > 0)) return;
+    document.querySelectorAll('[data-badge="' + name + '"]').forEach(function (el) {
       el.textContent = count > 99 ? '99+' : count;
       el.classList.remove('hidden');
-    }
+    });
+    document.querySelectorAll('[data-badge-dot="' + name + '"]').forEach(function (el) {
+      el.classList.remove('hidden');
+    });
   }
   fetch('/portal/nav-badges')
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (d) {
       if (!d) return;
-      applyBadge('nav-badge-approvals', d.approvals);
-      applyBadge('nav-badge-delegations', d.delegations);
-      applyBadge('nav-badge-certifications', d.certifications);
+      applyBadge('approvals', d.approvals);
+      applyBadge('delegations', d.delegations);
+      applyBadge('certifications', d.certifications);
+      // Hide nav items that are irrelevant for this user (never an approver/reviewer).
+      if (d.show) {
+        ['approvals', 'certifications'].forEach(function (k) {
+          if (d.show[k] === false) {
+            document.querySelectorAll('a[data-nav="' + k + '"]:not([aria-current])').forEach(function (a) { a.remove(); });
+          }
+        });
+      }
     })
     .catch(function () {});
+
+  // Close the user menu on outside click / Escape.
+  document.addEventListener('click', function (e) {
+    document.querySelectorAll('details[data-portal-menu][open]').forEach(function (d) {
+      if (!d.contains(e.target)) d.removeAttribute('open');
+    });
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    document.querySelectorAll('details[data-portal-menu][open]').forEach(function (d) {
+      d.removeAttribute('open');
+      var s = d.querySelector('summary'); if (s) s.focus();
+    });
+  });
 })();
 </script>
 </body>

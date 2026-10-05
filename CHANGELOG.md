@@ -12,6 +12,61 @@ start, so a `docker compose pull && docker compose up -d` is the only
 operator step. See [`docs/UPGRADING.md`](docs/UPGRADING.md) (TODO) for
 the full upgrade procedure including DB backup recommendations.
 
+## [Unreleased]
+
+### Added
+- **Portal home dashboard.** `/portal/` is now a landing page instead of the bare order table: a
+  greeting with a catalog search and "frequently requested" shortcuts, a **To do** row (pending
+  approvals, access reviews, access expiring within 30 days, handovers to confirm), **My IT** with
+  remaining-term bars, **Running orders** with a 4-phase tracker (requested → approval →
+  provisioning → ready), catalog **Topics** per category, and **Recommended for you** — packages
+  whose assignment rules match the user's AD attributes plus what colleagues in the same department
+  order most (loaded via HTMX so a slow AD lookup never blocks the page). First-time users get a
+  three-step guide instead of empty tables.
+- **Portal announcement banner.** Admin → Settings → General → *Portal Announcement* (text + info /
+  warning style) shows a notice on every portal page, e.g. a maintenance window.
+- Catalog deep links: `/portal/orders/new?type=<id>` preselects a definition; `?q=` and
+  `?category=` prefill the catalog filter.
+
+### Changed
+- **Portal navigation moved to a top bar** (Home · Catalog · Packages · My IT · Orders · Approvals ·
+  Access Reviews; Delegations and sign-out in the user menu; collapsible on narrow screens). The
+  admin-uploaded logo is shown at header height.
+- The order list moved from `/portal/` to **`/portal/orders`**.
+- **Approvals / Access Reviews nav items only for users they concern** (anyone who ever had an
+  approval or review, or is an active delegate); everyone else gets a shorter navigation.
+- **One logo for the whole corporate identity.** The logo card (Admin → Settings → General) now
+  states every place the uploaded logo replaces the ip·Solis logo (portal header + home page,
+  sign-in pages, admin sidebar, emailed approval/review/handover pages) and previews it on light and
+  dark backgrounds. The sidebar-only *position* and *title size* controls were removed; *size* now
+  sets the logo size on the portal home page.
+- Portal catalog page is titled **Catalog**; its search box also appears for small catalogs when
+  the user arrives with a search or topic from the home page.
+
+### Fixed
+- **Stale stylesheet after updates.** `app.css` is now linked with a content-hash `?v=` parameter, so
+  browsers load the new stylesheet after an image update instead of a cached old one (which left new
+  layouts partly unstyled until a hard refresh).
+- **Required justification without an approver.** "Justification required" blocked every order even
+  when no approver would ever see it (e.g. an asset definition with only conditional approval rules,
+  or no approvers at all). It is now enforced only when the order actually goes to approval —
+  manager / app-owner approval, a matching conditional rule, or data-classification routing — which
+  the server decides on submit. The portal form explains the conditional case, and the asset
+  definition form documents the behaviour. The home page badge distinguishes *approval required* /
+  *approval may apply* / *no approval*.
+- **Emptied asset-definition fields were not saved.** Deleting all conditional approval rules (or
+  clearing approval owners, quorum, description, help text, capacity, lifetime, cost fields, RDS
+  gateway URL …) and saving kept the old values — the form sends `null` for "emptied", which the
+  update endpoint treated as "unchanged". Clearable fields are now applied by key presence.
+- **Saving an asset definition removed its logo** unless a new logo was uploaded in the same save
+  (also the eligible-requestors group on partial API updates). Absent keys now leave the stored
+  value untouched.
+- **Portal sign-in pages showed no logo** (they referenced an undefined template variable); they now
+  show the configured logo or the ip·Solis logo.
+
+### Migration
+- Adds `0015` (seeds `portal.announcement` + `portal.announcement_level` in `app_config`; additive).
+
 ## [0.7.1] — 2026-07-16
 
 ### Added

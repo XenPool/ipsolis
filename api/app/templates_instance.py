@@ -80,6 +80,22 @@ def _resolve_app_version() -> str:
 
 templates.env.globals["app_title"] = APP_TITLE_DEFAULT
 templates.env.globals["app_version"] = _resolve_app_version()
+
+
+def _static_rev(rel_path: str) -> str:
+    """Short content hash of a static asset, appended as ``?v=`` so browsers
+    fetch the new file after an image update instead of a heuristically
+    cached old one (StaticFiles sends no Cache-Control)."""
+    import hashlib
+    try:
+        path = os.path.join(os.path.dirname(__file__), "static", rel_path)
+        with open(path, "rb") as f:
+            return hashlib.md5(f.read()).hexdigest()[:10]
+    except OSError:
+        return templates.env.globals.get("app_version", "0")
+
+
+templates.env.globals["css_rev"] = _static_rev("css/app.css")
 templates.env.globals["app_logo"] = False          # bool: whether a logo is configured
 templates.env.globals["app_logo_position"] = "left"
 templates.env.globals["app_logo_size"] = "80"
@@ -114,6 +130,8 @@ _APP_CONFIG_KEYS = (
     "updates.check_enabled", "updates.latest_version",
     "updates.latest_url", "updates.latest_published_at",
     "updates.checked_at", "updates.check_error",
+    # Operator notice shown on every portal page (base_portal.html).
+    "portal.announcement", "portal.announcement_level",
 )
 _last_config_refresh_ts: float = 0.0
 _config_refresh_ttl_seconds: float = 5.0
@@ -232,6 +250,8 @@ templates.env.globals["updates_latest_published_at"] = ""
 templates.env.globals["updates_checked_at"] = ""
 templates.env.globals["updates_check_error"] = ""
 templates.env.globals["update_banner_state"] = _compute_banner_state
+templates.env.globals["portal_announcement"] = ""
+templates.env.globals["portal_announcement_level"] = "info"
 
 
 def set_license_globals(info) -> None:
@@ -282,6 +302,12 @@ async def refresh_app_config_if_stale(force: bool = False) -> None:
                     seen.add(cfg.key)
                     if cfg.key == "app.title":
                         set_app_title(cfg.value)
+                    elif cfg.key == "portal.announcement":
+                        templates.env.globals["portal_announcement"] = (cfg.value or "").strip()
+                    elif cfg.key == "portal.announcement_level":
+                        templates.env.globals["portal_announcement_level"] = (
+                            "warning" if (cfg.value or "").strip() == "warning" else "info"
+                        )
                     elif cfg.key.startswith("updates."):
                         # Buffered — pushed once at the end so the banner
                         # state is derived from the full snapshot, not
@@ -293,6 +319,8 @@ async def refresh_app_config_if_stale(force: bool = False) -> None:
                 # logo also reverts here (not just on the worker that wrote).
                 if "app.logo" not in seen:
                     set_app_logo_config("app.logo", "")
+                if "portal.announcement" not in seen:
+                    templates.env.globals["portal_announcement"] = ""
                 set_update_globals(update_rows)
             # Refresh license globals on the same TTL. ``load_license`` is
             # cheap when nothing changed (mtime-cached) — re-reads only

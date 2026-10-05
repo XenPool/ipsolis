@@ -67,27 +67,42 @@
     </div>
   </div>
 
-  <!-- Portal Logo -->
+  <!-- Logo / Corporate Identity -->
   <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl">
-    <h2 class="text-sm font-semibold text-body mb-1">Portal Logo</h2>
+    <h2 class="text-sm font-semibold text-body mb-1">Logo (Corporate Identity)</h2>
+    <p class="text-xs text-muted mb-3">
+      Replaces the ip·Solis logo <strong>everywhere</strong> with your own — one upload covers all places:
+    </p>
+    <ul class="text-xs text-muted mb-3 list-disc pl-5 space-y-0.5">
+      <li>Self-service portal: top-left in the header <em>and</em> large on the portal home page</li>
+      <li>Portal sign-in pages</li>
+      <li>This admin UI (sidebar)</li>
+      <li>Approval, access-review and handover pages opened from emails</li>
+    </ul>
     <p class="text-xs text-muted mb-4">
-      Shown in the self-service portal sidebar. Recommended: SVG or PNG with transparent background,
-      landscape orientation (e.g. 400 × 120 px), max 1 MB.
+      Recommended: SVG or PNG with a <strong>transparent background</strong>, landscape (e.g. 400 × 120 px),
+      max 1 MB. The same file is shown in light and dark mode — check both previews below.
+      Without an upload the ip·Solis logo is used.
     </p>
 
-    <!-- Current logo preview -->
-    <div id="logo-preview-wrap" class="mb-4 p-3 rounded border border-token-border bg-surface-raised min-h-[72px] flex items-center
-         {% if not app_logo %}hidden{% endif %}
-         {% if app_logo_position == 'center' %}justify-center{% elif app_logo_position == 'right' %}justify-end{% else %}justify-start{% endif %}">
-      <img id="logo-preview-img"
-           src="{% if app_logo %}/portal/logo?v={{ range(1, 999999) | random }}{% endif %}"
-           style="max-height: 64px; max-width: 100%;"
-           alt="Logo preview">
+    <!-- Preview on light + dark background -->
+    <div class="mb-4 grid grid-cols-2 gap-3">
+      <div class="rounded border border-slate-200 bg-white p-4 min-h-[88px] flex items-center justify-center">
+        <img src="{% if app_logo %}/portal/logo?v={{ range(1, 999999) | random }}{% else %}/static/logos/sunset_light.svg{% endif %}"
+             class="logo-preview-img max-h-16 max-w-full object-contain" alt="Logo preview on light background">
+      </div>
+      <div class="rounded border border-slate-700 bg-slate-900 p-4 min-h-[88px] flex items-center justify-center">
+        <img src="{% if app_logo %}/portal/logo?v={{ range(1, 999999) | random }}{% else %}/static/logos/sunset_dark.svg{% endif %}"
+             class="logo-preview-img max-h-16 max-w-full object-contain" alt="Logo preview on dark background">
+      </div>
     </div>
+    <p class="text-xs text-muted/70 -mt-2 mb-4">
+      {% if app_logo %}Custom logo active.{% else %}Currently showing the default ip·Solis logo.{% endif %}
+    </p>
 
     <!-- File picker -->
     <div class="mb-4">
-      <label class="block text-xs font-medium text-muted mb-1">Upload logo</label>
+      <label for="logo-file" class="block text-xs font-medium text-muted mb-1">Upload logo</label>
       <input type="file" id="logo-file" accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp"
              class="block text-sm text-muted
                     file:mr-3 file:py-1.5 file:px-4 file:rounded file:border file:border-token-border
@@ -95,50 +110,27 @@
       <p class="mt-1 text-xs text-muted/70">SVG, PNG, JPG or WebP · max 1 MB</p>
     </div>
 
-    <!-- Position + size -->
-    <div class="grid grid-cols-2 gap-4 mb-6">
+    <!-- Home-page size + header title -->
+    <div class="grid grid-cols-2 gap-4 mb-6 items-start">
       <div>
-        <label class="block text-xs font-medium text-muted mb-1">Position in sidebar</label>
-        <select id="logo-position"
-                class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
-          <option value="left"   {% if app_logo_position == 'left'   %}selected{% endif %}>Left</option>
-          <option value="center" {% if app_logo_position == 'center' %}selected{% endif %}>Center</option>
-          <option value="right"  {% if app_logo_position == 'right'  %}selected{% endif %}>Right</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-muted mb-1">
-          Size — <span id="logo-size-label">{{ app_logo_size }}%</span>
+        <label for="logo-size" class="block text-xs font-medium text-muted mb-1">
+          Size on the portal home page — <span id="logo-size-label">{{ app_logo_size }}%</span>
         </label>
         <input type="range" id="logo-size" min="20" max="100" step="5"
                value="{{ app_logo_size }}"
                oninput="document.getElementById('logo-size-label').textContent = this.value + '%'"
                class="w-full accent-blue-600">
+        <p class="mt-1 text-xs text-muted/70">Header and sign-in pages use a fixed height.</p>
       </div>
-    </div>
-
-    <!-- Show title + text size -->
-    <div class="grid grid-cols-2 gap-4 mb-6 items-start">
       <div>
-        <label class="block text-xs font-medium text-muted mb-2">Title below logo</label>
+        <span class="block text-xs font-medium text-muted mb-2">Application title</span>
         <label class="flex items-center gap-2.5 cursor-pointer select-none">
           <input type="checkbox" id="logo-show-title"
                  {% if app_logo_show_title == 'true' %}checked{% endif %}
                  class="rounded border-token-border text-blue-600 focus:ring-blue-500 cursor-pointer">
-          <span class="text-sm text-body">Show application title</span>
+          <span class="text-sm text-body">Show next to the logo in the portal header</span>
         </label>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-muted mb-1">
-          Text size — <span id="logo-title-size-label">{{ app_logo_title_size }}px</span>
-        </label>
-        <input type="range" id="logo-title-size" min="8" max="24" step="1"
-               value="{{ app_logo_title_size }}"
-               oninput="document.getElementById('logo-title-size-label').textContent = this.value + 'px'"
-               class="w-full accent-blue-600">
-        <div class="flex justify-between text-xs text-muted/70 mt-0.5">
-          <span>8px</span><span>24px</span>
-        </div>
+        <p class="mt-1 text-xs text-muted/70">Useful when your logo has no wordmark.</p>
       </div>
     </div>
 
@@ -151,7 +143,7 @@
       {% if app_logo %}
       <button onclick="removeLogo()"
               class="px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/30 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors">
-        Remove logo
+        Reset to ip·Solis logo
       </button>
       {% endif %}
     </div>
@@ -218,6 +210,32 @@
     </div>
     <div class="mt-6">
       <button onclick="saveOrderSettings()"
+              class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
+        Save
+      </button>
+    </div>
+  </div>
+
+  <!-- Portal Announcement -->
+  <div class="bg-surface rounded-xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-black/20 p-6 max-w-2xl mt-4">
+    <h2 class="text-sm font-semibold text-body mb-1">Portal Announcement</h2>
+    <p class="text-xs text-muted mb-4">
+      A notice shown at the top of every self-service portal page, e.g. a maintenance window.
+      Leave empty to hide the banner. Shown as entered (not translated).
+    </p>
+    <label for="cfg-portal-announcement" class="block text-xs font-medium text-muted mb-1">Text</label>
+    <textarea id="cfg-portal-announcement" rows="2" maxlength="500"
+              placeholder="Maintenance Sat 10.10., 20:00–23:00: the VDI pool is only partly available."
+              class="w-full rounded border border-token-border bg-surface text-body placeholder:text-muted/60 text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">{{ portal_config.get('portal.announcement', '') }}</textarea>
+    <label for="cfg-portal-announcement-level" class="block text-xs font-medium text-muted mt-4 mb-1">Style</label>
+    <select id="cfg-portal-announcement-level"
+            class="rounded border border-token-border bg-surface text-body text-sm px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+      {% set _lvl = portal_config.get('portal.announcement_level', 'info') %}
+      <option value="info" {% if _lvl != 'warning' %}selected{% endif %}>Info (blue)</option>
+      <option value="warning" {% if _lvl == 'warning' %}selected{% endif %}>Warning (amber)</option>
+    </select>
+    <div class="mt-6">
+      <button onclick="savePortalAnnouncement()"
               class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700">
         Save
       </button>
@@ -2456,6 +2474,33 @@ async function saveOrderSettings() {
   banner.classList.remove('hidden');
 }
 
+async function savePortalAnnouncement() {
+  var pairs = [
+    ['portal.announcement', document.getElementById('cfg-portal-announcement').value.trim()],
+    ['portal.announcement_level', document.getElementById('cfg-portal-announcement-level').value],
+  ];
+  var banner = document.getElementById('general-banner');
+  try {
+    for (var i = 0; i < pairs.length; i++) {
+      var resp = await fetch('/admin/config/' + pairs[i][0], {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({value: pairs[i][1]}),
+      });
+      if (!resp.ok) {
+        var err = {}; try { err = await resp.json(); } catch(e) {}
+        throw new Error(err.detail || ('HTTP ' + resp.status));
+      }
+    }
+    banner.className = 'mb-4 px-4 py-3 rounded-lg text-sm font-medium bg-green-50 text-green-800 border border-green-200 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/30';
+    banner.textContent = 'Portal announcement saved.';
+  } catch (e) {
+    banner.className = 'mb-4 px-4 py-3 rounded-lg text-sm font-medium bg-red-50 text-red-800 border border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30';
+    banner.textContent = 'Error saving announcement: ' + e.message;
+  }
+  banner.classList.remove('hidden');
+}
+
 // ── Logo ───────────────────────────────────────────────────────────────────────
 document.getElementById('logo-file').addEventListener('change', function() {
   var file = this.files[0];
@@ -2467,10 +2512,10 @@ document.getElementById('logo-file').addEventListener('change', function() {
   }
   var reader = new FileReader();
   reader.onload = function(e) {
-    var wrap = document.getElementById('logo-preview-wrap');
-    var img  = document.getElementById('logo-preview-img');
-    img.src  = e.target.result;
-    wrap.classList.remove('hidden');
+    // Live preview on both the light and the dark swatch.
+    document.querySelectorAll('.logo-preview-img').forEach(function (img) {
+      img.src = e.target.result;
+    });
   };
   reader.readAsDataURL(file);
 });
@@ -2507,10 +2552,8 @@ async function saveLogo() {
     if (!await _cfgPut('app.logo', dataUrl)) errors.push('logo');
   }
 
-  if (!await _cfgPut('app.logo_position',   document.getElementById('logo-position').value))                            errors.push('position');
   if (!await _cfgPut('app.logo_size',       document.getElementById('logo-size').value))                                errors.push('size');
   if (!await _cfgPut('app.logo_show_title',  document.getElementById('logo-show-title').checked ? 'true' : 'false'))  errors.push('show_title');
-  if (!await _cfgPut('app.logo_title_size',  document.getElementById('logo-title-size').value))                        errors.push('title_size');
 
   if (errors.length === 0) {
     banner.className = 'mb-4 px-4 py-3 rounded-lg text-sm font-medium bg-green-50 text-green-800 border border-green-200 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/30';
@@ -2524,7 +2567,7 @@ async function saveLogo() {
 }
 
 async function removeLogo() {
-  if (!confirm('Remove the portal logo?')) return;
+  if (!confirm('Remove the custom logo and go back to the ip·Solis logo everywhere?')) return;
   var ok = await _cfgPut('app.logo', '');
   if (ok) location.reload();
 }

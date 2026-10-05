@@ -27,10 +27,11 @@
 </style>
 
 <div class="mb-6">
-  <a href="/portal/" class="text-sm text-muted hover:text-heading" data-i18n="portal.common.back_to_orders">← Orders</a>
+  <a href="/portal/" class="text-sm text-muted hover:text-heading" data-i18n="portal.common.back_to_home">← Home</a>
 </div>
 
-<h1 class="text-lg font-semibold text-heading mb-6" data-i18n="portal.order_new.page_title">Request New Access</h1>
+<h1 class="text-lg font-semibold text-heading" data-i18n="portal.nav.catalog">Catalog</h1>
+<p class="text-sm text-muted mt-1 mb-6" data-i18n="portal.order_new.page_subtitle">Choose what you need — approval and provisioning start automatically.</p>
 
 {% if error %}
 <div class="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
@@ -45,8 +46,9 @@
     <h2 class="text-sm font-semibold text-body mb-4" data-i18n="portal.order_new.section_asset_type">Asset Definition</h2>
 
     {# Search + category filter — pure client-side, hidden when there are
-       only a handful of definitions because it just clutters the page. #}
-    {% if asset_types | length > 6 %}
+       only a handful of definitions because it just clutters the page —
+       unless the user arrived with a search/topic from the home page. #}
+    {% if asset_types | length > 6 or request.query_params.get('q') or request.query_params.get('category') %}
     <div class="mb-4 flex flex-col sm:flex-row gap-2">
       <div class="relative flex-1">
         <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted/60 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -227,7 +229,7 @@
   <!-- Order justification (shown / required per asset definition) -->
   <div id="justification-section" class="hidden bg-surface rounded-lg border border-token-border p-5">
     <h2 class="text-sm font-semibold text-body mb-1" data-i18n="portal.order_new.justification_label">Justification</h2>
-    <p class="text-xs text-muted/70 mb-3" data-i18n="portal.order_new.justification_hint">
+    <p id="justification-hint" class="text-xs text-muted/70 mb-3" data-i18n="portal.order_new.justification_hint">
       Briefly explain why you need this access. The approver will see it.
     </p>
     <textarea name="justification" id="justification-input" rows="3"
@@ -568,6 +570,10 @@ var _requiresManagerApproval = { {% for t in asset_types %}{{ t.id }}: {{ 'true'
 var _requiresOwnerApproval   = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.requires_owner_approval else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
 var _collectJustification    = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.collect_justification else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
 var _justificationRequired   = { {% for t in asset_types %}{{ t.id }}: {{ 'true' if t.justification_required else 'false' }}{% if not loop.last %}, {% endif %}{% endfor %} };
+// static = every order is approved · conditional = only if a rule / data
+// classification fires (decided by the server on submit) · none = never.
+var _approvalMode = {{ approval_modes | default({}) | tojson }};
+var _justificationForcedType = {{ justification_forced_type | default(none) | tojson }};
 
 function updateUserListsSection() {
   var checked = document.querySelector('[name="asset_type_id"]:checked');
@@ -585,10 +591,27 @@ function updateJustificationSection() {
   var input = document.getElementById('justification-input');
   var badge = document.getElementById('justification-required-badge');
   var collect = !!(typeId && _collectJustification[typeId]);
-  var required = collect && !!_justificationRequired[typeId];
+  var mode = (typeId && _approvalMode[typeId]) || 'static';
+  // "Required" only bites when the order really goes to an approver. For
+  // conditional types the server decides on submit (and re-renders with the
+  // field forced to required when a rule fired).
+  var required = collect && !!_justificationRequired[typeId]
+                 && (mode === 'static' || typeId === _justificationForcedType);
   if (section) section.classList.toggle('hidden', !collect);
   if (input) input.required = required;   // native + our submit guard
   if (badge) badge.classList.toggle('hidden', !required);
+  var hint = document.getElementById('justification-hint');
+  if (hint) {
+    var key = 'portal.order_new.justification_hint';
+    if (!required && mode === 'conditional') {
+      key = _justificationRequired[typeId] ? 'portal.order_new.justification_hint_conditional_required'
+                                           : 'portal.order_new.justification_hint_conditional';
+    } else if (mode === 'none') {
+      key = 'portal.order_new.justification_hint_none';
+    }
+    hint.setAttribute('data-i18n', key);
+    if (window.i18n && window.i18n.t) hint.textContent = window.i18n.t(key);
+  }
 }
 
 // ── Attribute section per asset type ─────────────────────────────────────────────
@@ -794,6 +817,21 @@ document.addEventListener('DOMContentLoaded', function() {
     applyCatalogFilter();
     if (searchInput) searchInput.focus();
   });
+
+  // Deep links from the home page: ?type=<id> preselects a definition,
+  // ?q=<text> / ?category=<key> prefill the catalog filter.
+  var params = new URLSearchParams(window.location.search);
+  var preType = params.get('type');
+  if (preType) {
+    var preRadio = document.querySelector('[name="asset_type_id"][value="' + CSS.escape(preType) + '"]:not([disabled])');
+    if (preRadio) {
+      preRadio.checked = true;
+      var preCard = preRadio.closest('.catalog-card');
+      if (preCard) preCard.scrollIntoView({block: 'center'});
+    }
+  }
+  if (searchInput && params.get('q')) searchInput.value = params.get('q');
+  if (categorySelect && params.get('category')) categorySelect.value = params.get('category');
 
   // Set initial state
   updateAttrSection();

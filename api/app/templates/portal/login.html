@@ -11,17 +11,20 @@
   <style>html.i18n-pending [data-i18n] { visibility: hidden; }</style>
 
   {% include "_partials/theme_vars.html" %}
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ css_rev }}">
   <script src="/static/js/i18n.js"></script>
 </head>
 <body class="h-full flex items-center justify-center">
   <div class="max-w-sm w-full mx-4">
 
-    {% if app_logo_url %}
     <div class="flex justify-center mb-6">
-      <img src="{{ app_logo_url }}" alt="{{ app_title }}" class="h-10 object-contain">
+      {% if app_logo %}
+      <img src="/portal/logo" alt="{{ app_title }}" class="h-14 max-w-[240px] object-contain">
+      {% else %}
+      <img src="/static/logos/sunset_light.svg" alt="{{ app_title }}" class="block dark:hidden h-14 w-auto">
+      <img src="/static/logos/sunset_dark.svg" alt="{{ app_title }}" class="hidden dark:block h-14 w-auto">
+      {% endif %}
     </div>
-    {% endif %}
 
     <div class="bg-surface rounded-lg border border-token-border shadow-sm p-8">
       <h1 class="text-lg font-semibold text-heading mb-1" data-i18n="portal.login.title">Sign in</h1>

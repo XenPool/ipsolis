@@ -293,6 +293,8 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
 
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
     client_max_body_size 2g;
 
     # WebSocket / HTMX support
@@ -311,6 +313,16 @@ server {
 ```
 
 > Verwenden Sie denselben Hostnamen im Schritt zur Zertifikatserzeugung (Option A/B/C oben).
+
+> **HSTS:** Der Header `Strict-Transport-Security` (1 Jahr, `includeSubDomains`) wird von
+> nginx im HTTPS-Server-Block gesetzt, sodass Browser nach dem ersten Besuch nie wieder auf
+> unverschlüsseltes HTTP zurückfallen. Die API selbst sendet ihn bewusst *nicht* — der
+> lokale Dev-Stack (HTTP auf `:8000`, ohne nginx) bleibt unberührt. Terminieren Sie TLS auf
+> einem eigenen Load Balancer / Reverse Proxy statt dem mitgelieferten nginx, setzen Sie den
+> Header dort. Stellen Sie vor `includeSubDomains` sicher, dass alle Subdomains des
+> ipSolis-FQDN HTTPS ausliefern. Prüfen mit
+> `curl -sk -D - -o /dev/null https://<fqdn>/ui/login | grep -i strict`
+> (GET-Ausgabe statt `curl -I` verwenden — die API beantwortet `HEAD` mit 405).
 
 ---
 
@@ -641,7 +653,7 @@ Arbeiten Sie diese Checkliste ab, um zu bestätigen, dass alles funktioniert:
 - [ ] **Health-Check**: `curl -fsk https://YOUR_HOSTNAME.YOUR_COMPANY.COM/health` gibt `{"status": "ok"}` zurück
 - [ ] *(optional)* **API-Tokens**: Stellen Sie ein integrationsspezifisches Token für jede Automatisierung aus, die zuvor `X-Admin-Key` verwendet hat
 - [ ] *(optional)* **SIEM-Streaming**: Unter *Einstellungen → Compliance* konfigurieren, falls Sie Splunk / Sentinel / einen generischen Webhook-Empfänger haben
-- [ ] *(optional)* **Prometheus**: `/metrics` aus Ihrem Monitoring scrapen; das Dashboard wird in [docs/grafana/](grafana/) ausgeliefert
+- [ ] *(optional)* **Prometheus**: `/metrics` aus Ihrem Monitoring scrapen; das Dashboard wird in `docs/grafana/` in diesem Repository ausgeliefert
 
 ---
 
