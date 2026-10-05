@@ -1007,6 +1007,16 @@ async def create_asset_type(
     return asset_type
 
 
+# AssetType columns an admin can empty again. Updated by key presence in
+# update_asset_type (see there); everything else keeps `is not None` semantics.
+_CLEARABLE_ASSET_TYPE_FIELDS = (
+    "description", "help_text", "pool_capacity", "lifecycle_ttl_days",
+    "lifecycle_reminder_days", "naming_pattern", "monthly_cost", "currency",
+    "cost_center", "rds_gateway_url", "approval_owners", "approval_rules",
+    "min_approvals_required", "eligible_requestors_dn", "logo",
+)
+
+
 @router.put(
     "/asset-types/{type_id}",
     response_model=AssetTypeRead,
@@ -1047,10 +1057,6 @@ async def update_asset_type(
     old_snap = _type_snap(asset_type)
     if payload.name is not None:
         asset_type.name = payload.name
-    if payload.description is not None:
-        asset_type.description = payload.description
-    if payload.help_text is not None:
-        asset_type.help_text = payload.help_text or None
     if payload.is_active is not None:
         asset_type.is_active = payload.is_active
     if payload.category is not None:
@@ -1059,39 +1065,23 @@ async def update_asset_type(
         asset_type.config = payload.config
     if payload.assignment_model is not None:
         asset_type.assignment_model = payload.assignment_model
-    if payload.pool_capacity is not None:
-        asset_type.pool_capacity = payload.pool_capacity
     if payload.automation_mode is not None:
         asset_type.automation_mode = payload.automation_mode
     if payload.targets is not None:
         _validate_target_types(payload.targets)
         asset_type.targets = payload.targets
-    if payload.lifecycle_ttl_days is not None:
-        asset_type.lifecycle_ttl_days = payload.lifecycle_ttl_days
     if payload.lifecycle_renewable is not None:
         asset_type.lifecycle_renewable = payload.lifecycle_renewable
-    if payload.lifecycle_reminder_days is not None:
-        asset_type.lifecycle_reminder_days = payload.lifecycle_reminder_days
     if payload.allow_rdp_users is not None:
         asset_type.allow_rdp_users = payload.allow_rdp_users
     if payload.allow_admin_users is not None:
         asset_type.allow_admin_users = payload.allow_admin_users
-    if payload.rds_gateway_url is not None:
-        asset_type.rds_gateway_url = payload.rds_gateway_url or None
     if payload.deprovision_policy is not None:
         asset_type.deprovision_policy = payload.deprovision_policy
     if payload.personal_provisioning_strategy is not None:
         asset_type.personal_provisioning_strategy = payload.personal_provisioning_strategy
-    if payload.naming_pattern is not None:
-        asset_type.naming_pattern = payload.naming_pattern
     if payload.max_per_user is not None:
         asset_type.max_per_user = payload.max_per_user
-    if payload.monthly_cost is not None:
-        asset_type.monthly_cost = payload.monthly_cost
-    if payload.currency is not None:
-        asset_type.currency = payload.currency or None
-    if payload.cost_center is not None:
-        asset_type.cost_center = payload.cost_center or None
     if payload.automation_strategy is not None:
         asset_type.automation_strategy = payload.automation_strategy
     if payload.composite_steps is not None:
@@ -1100,13 +1090,6 @@ async def update_asset_type(
         asset_type.requires_manager_approval = payload.requires_manager_approval
     if payload.requires_owner_approval is not None:
         asset_type.requires_owner_approval = payload.requires_owner_approval
-    if payload.approval_owners is not None:
-        asset_type.approval_owners = payload.approval_owners or None
-    if payload.approval_rules is not None:
-        asset_type.approval_rules = payload.approval_rules or None
-    if payload.min_approvals_required is not None:
-        # Treat 0 as "all required" — store NULL for cleanliness.
-        asset_type.min_approvals_required = payload.min_approvals_required or None
     if payload.requires_approval_on_modify is not None:
         asset_type.requires_approval_on_modify = payload.requires_approval_on_modify
     if payload.collect_justification is not None:
@@ -1116,8 +1099,18 @@ async def update_asset_type(
     if payload.portal_step_visibility is not None:
         _validate_step_visibility(payload.portal_step_visibility)
         asset_type.portal_step_visibility = payload.portal_step_visibility
-    asset_type.eligible_requestors_dn = payload.eligible_requestors_dn or None
-    asset_type.logo = payload.logo or None
+    # Clearable fields: honour *presence* (model_fields_set), not `is not None`.
+    # The admin form always sends these keys and uses null / "" / [] for
+    # "emptied" — with `is not None` an emptied field (e.g. all approval rules
+    # deleted) silently kept its old value. A key that is absent (logo not
+    # re-uploaded, partial API update) leaves the stored value untouched.
+    for field in _CLEARABLE_ASSET_TYPE_FIELDS:
+        if field in payload.model_fields_set:
+            value = getattr(payload, field)
+            # Empty string / list → NULL; quorum 0 means "all required" → NULL.
+            if value == "" or value == [] or (field == "min_approvals_required" and not value):
+                value = None
+            setattr(asset_type, field, value)
     if payload.show_on_dashboard is not None:
         asset_type.show_on_dashboard = payload.show_on_dashboard
     if payload.drift_monitor is not None:
