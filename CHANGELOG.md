@@ -12,7 +12,7 @@ start, so a `docker compose pull && docker compose up -d` is the only
 operator step. See [`docs/UPGRADING.md`](docs/UPGRADING.md) (TODO) for
 the full upgrade procedure including DB backup recommendations.
 
-## [Unreleased]
+## [0.7.2] — 2026-10-05
 
 ### Added
 - **Portal home dashboard.** `/portal/` is now a landing page instead of the bare order table: a
@@ -63,6 +63,12 @@ the full upgrade procedure including DB backup recommendations.
   value untouched.
 - **Portal sign-in pages showed no logo** (they referenced an undefined template variable); they now
   show the configured logo or the ip·Solis logo.
+
+### Security
+- **HSTS.** The bundled nginx now sends `Strict-Transport-Security: max-age=31536000;
+  includeSubDomains` on the HTTPS server block (also on error responses). The local dev stack (plain
+  HTTP, no nginx) is unaffected. Deployments terminating TLS on their own load balancer must set the
+  header there — see the deployment guide.
 
 ### Migration
 - Adds `0015` (seeds `portal.announcement` + `portal.announcement_level` in `app_config`; additive).
