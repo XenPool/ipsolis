@@ -8,9 +8,10 @@
     <p class="text-sm text-muted" data-i18n="portal.home.rec_subtitle">Popular with your colleagues</p>
     {% endif %}
   </div>
-  <div class="grid grid-cols-1 sm:grid-cols-[repeat(auto-fit,minmax(250px,1fr))] gap-4">
+  {# 3+ cards fill the row; 1–2 cards keep a normal card width instead of stretching. #}
+  <div class="grid grid-cols-1 gap-4 {% if cards | length >= 3 %}sm:grid-cols-[repeat(auto-fit,minmax(250px,1fr))]{% else %}sm:grid-cols-2 lg:grid-cols-4{% endif %}">
     {% for c in cards %}
-    <article class="flex flex-col gap-3 p-4 rounded-xl bg-surface border border-token-border">
+    <article class="flex flex-col gap-3 p-4 rounded-xl bg-surface border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-none">
       <div class="flex items-center gap-3">
         {% if c.kind == 'type' and c.has_logo %}
         <span class="w-11 h-11 shrink-0 rounded-xl bg-surface-raised border border-token-border flex items-center justify-center overflow-hidden">
