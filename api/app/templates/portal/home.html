@@ -94,7 +94,7 @@
 
   {% if is_new %}
   <!-- ── First visit: guide instead of empty tables ─────────────────────── -->
-  <section aria-labelledby="home-welcome-h" class="bg-surface rounded-2xl border border-token-border p-6 sm:p-7 space-y-5">
+  <section aria-labelledby="home-welcome-h" class="bg-surface rounded-2xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-none p-6 sm:p-7 space-y-5">
     <div>
       <h2 id="home-welcome-h" class="text-lg font-semibold text-heading" data-i18n="portal.home.new_title">Get access in three steps</h2>
       <p class="text-sm text-muted mt-1" data-i18n="portal.home.new_subtitle">You haven't requested anything yet. Here's how it works:</p>
@@ -125,7 +125,7 @@
     <h2 id="home-todo-h" class="text-base font-semibold text-heading" data-i18n="portal.home.todo_title">To do</h2>
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {% for t in todos %}
-      <a href="{{ t.href }}" class="flex gap-3.5 items-start p-4 rounded-xl bg-surface border border-token-border hover:border-blue-400 transition-colors">
+      <a href="{{ t.href }}" class="flex gap-3.5 items-start p-4 rounded-xl bg-surface border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-none hover:border-blue-400 transition-colors">
         <span class="w-11 h-11 shrink-0 rounded-xl flex items-center justify-center {{ t.tint }}">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
             d="{% if t.kind == 'approvals' %}M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z{% elif t.kind == 'reviews' %}M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z{% elif t.kind == 'expiring' %}M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z{% else %}M9 12l2 2 4-4M7 3h7l5 5v11a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z{% endif %}"/></svg>
@@ -162,7 +162,7 @@
   <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
 
     <!-- ── My IT ──────────────────────────────────────────────────────────── -->
-    <section aria-labelledby="home-it-h" class="lg:col-span-3 bg-surface rounded-2xl border border-token-border overflow-hidden">
+    <section aria-labelledby="home-it-h" class="lg:col-span-3 bg-surface rounded-2xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-none overflow-hidden">
       <div class="flex items-center justify-between px-5 py-4 border-b border-token-border">
         <h2 id="home-it-h" class="text-base font-semibold text-heading">
           <span data-i18n="portal.nav.my_it">My IT</span>
@@ -216,7 +216,7 @@
     </section>
 
     <!-- ── Running orders ─────────────────────────────────────────────────── -->
-    <section aria-labelledby="home-run-h" class="lg:col-span-2 bg-surface rounded-2xl border border-token-border overflow-hidden">
+    <section aria-labelledby="home-run-h" class="lg:col-span-2 bg-surface rounded-2xl border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-none overflow-hidden">
       <div class="flex items-center justify-between px-5 py-4 border-b border-token-border">
         <h2 id="home-run-h" class="text-base font-semibold text-heading" data-i18n="portal.home.running_title">Running orders</h2>
         <a href="/portal/orders" class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline" data-i18n="portal.home.history">History →</a>
@@ -245,7 +245,7 @@
           {% if st == 'scheduled' and r.order.requested_from %}
             <span data-i18n="portal.home.run_scheduled_note" data-i18n-params='{"date": {{ r.order.requested_from.strftime("%d.%m.%Y") | tojson }}}'></span>
           {% elif r.steps_total %}
-            <span data-i18n="portal.home.run_steps_note" data-i18n-params='{"done": {{ r.steps_done }}, "total": {{ r.steps_total }}}'></span>
+            <span data-i18n="portal.home.run_steps_note" data-i18n-params='{"done": {{ r.step_current }}, "total": {{ r.steps_total }}}'></span>
           {% else %}
             <span data-i18n="portal.home.run_created_note" data-i18n-params='{"date": {{ r.order.created_at.strftime("%d.%m.%Y") | tojson }}}'></span>
           {% endif %}
@@ -267,7 +267,7 @@
     </div>
     <div class="grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
       {% for c in topics %}
-      <a href="/portal/orders/new?category={{ c.key }}" class="flex flex-col gap-3 p-4 rounded-xl bg-surface border border-token-border hover:border-blue-400 transition-colors">
+      <a href="/portal/orders/new?category={{ c.key }}" class="flex flex-col gap-3 p-4 rounded-xl bg-surface border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-none hover:border-blue-400 transition-colors">
         <span class="w-11 h-11 rounded-xl flex items-center justify-center {{ c.tint }}">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="{{ c.icon }}"/></svg>
         </span>
@@ -278,7 +278,7 @@
       </a>
       {% endfor %}
       {% if bundle_count %}
-      <a href="/portal/packages" class="flex flex-col gap-3 p-4 rounded-xl bg-surface border border-token-border hover:border-blue-400 transition-colors">
+      <a href="/portal/packages" class="flex flex-col gap-3 p-4 rounded-xl bg-surface border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-none hover:border-blue-400 transition-colors">
         <span class="w-11 h-11 rounded-xl flex items-center justify-center bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
         </span>
@@ -298,7 +298,7 @@
     <section class="space-y-3" aria-busy="true">
       <div class="h-5 w-48 rounded bg-token-border/60 animate-pulse"></div>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {% for _ in range(4) %}<div class="h-40 rounded-xl bg-surface border border-token-border animate-pulse"></div>{% endfor %}
+        {% for _ in range(4) %}<div class="h-40 rounded-xl bg-surface border border-token-border shadow-sm shadow-slate-900/5 dark:shadow-none animate-pulse"></div>{% endfor %}
       </div>
     </section>
   </div>

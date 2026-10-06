@@ -49,6 +49,10 @@
     [tabindex]:focus-visible, summary:focus-visible {
       outline: 2px solid #2563eb; outline-offset: 2px; border-radius: 0.25rem;
     }
+    /* Light mode: a slightly darker page ground than the shared theme token so
+       white cards stand out (the shared #F8FAFC is almost white). Portal only;
+       dark mode and the admin UI keep the shared values. */
+    html:not(.dark) .portal-body { --surface-raised: 241 245 249; --token-border: 220 227 236; }
     details.portal-menu > summary { list-style: none; }
     details.portal-menu > summary::-webkit-details-marker { display: none; }
   </style>
@@ -56,7 +60,7 @@
   <script src="/static/vendor/htmx/htmx.min.js"></script>
   <script src="/static/js/i18n.js"></script>
 </head>
-<body class="min-h-full flex flex-col bg-surface-raised font-sans text-body">
+<body class="portal-body min-h-full flex flex-col bg-surface-raised font-sans text-body">
 
   <!-- A11y: skip link — first focusable element, jumps past the navigation. -->
   <a href="#main-content" class="skip-link" data-i18n="portal.a11y.skip_to_content">Skip to main content</a>

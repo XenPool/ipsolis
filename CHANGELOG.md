@@ -12,6 +12,21 @@ start, so a `docker compose pull && docker compose up -d` is the only
 operator step. See [`docs/UPGRADING.md`](docs/UPGRADING.md) (TODO) for
 the full upgrade procedure including DB backup recommendations.
 
+## [0.7.3] — 2026-10-06
+
+### Changed
+- **Calmer runbook step lists.** The red "critical" badge on (almost) every step is gone: stopping the
+  run on error is the default and is stated once in the step-list header. Only exceptions are marked
+  — a neutral *continues on error* and a blue *always runs*. The step form reads "Stop the run if this
+  step fails". Both runbook editors; behaviour unchanged.
+- **Portal light mode:** a slightly darker page ground and subtle card shadows so cards stand out.
+- Portal home: at most 4 "frequently requested" shortcuts (one row); one or two recommendations keep
+  a normal card width.
+
+### Fixed
+- Running orders on the portal home showed the number of *finished* steps ("Step 2 of 5" while step 3
+  was running); they now show the current step.
+
 ## [0.7.2] — 2026-10-05
 
 ### Added

@@ -323,12 +323,14 @@ async def portal_home(
     for o in running:
         t = types_by_id.get(o.asset_type_id)
         steps = list(o.steps or [])
+        done = sum(1 for s in steps if s.status.value in ("success", "skipped"))
         running_view.append({
             "order": o,
             "type_name": t.name if t else "–",
             # 4-phase tracker: 0 requested · 1 approval · 2 provisioning · 3 ready
             "phase": 1 if o.status == OrderStatus.PENDING_APPROVAL else 2,
-            "steps_done": sum(1 for s in steps if s.status.value in ("success", "skipped")),
+            # The step being worked on (1-based), not the count of finished ones.
+            "step_current": min(done + 1, len(steps)),
             "steps_total": len(steps),
         })
 
@@ -412,7 +414,7 @@ async def portal_home(
             )
             .group_by(AssetType.id, AssetType.name)
             .order_by(sa_func.count().desc(), AssetType.name)
-            .limit(5)
+            .limit(4)  # one row next to the hero logo
         )).all()
     ]
 
