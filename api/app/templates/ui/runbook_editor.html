@@ -28,6 +28,11 @@
 <div class="bg-surface rounded-lg border border-token-border mb-6">
   <div class="px-4 py-3 border-b border-token-border flex items-center justify-between bg-surface-raised">
     <h2 class="text-sm font-semibold text-body">Steps</h2>
+    <span class="hidden sm:inline-flex items-center gap-1.5 text-xs text-muted/80 ml-auto mr-4"
+          title="Default: a failing step stops the run. Steps marked 'continues on error' don't; steps marked 'always runs' execute even after a failure.">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      Each step stops the run if it fails, unless marked otherwise.
+    </span>
     <span class="text-xs text-muted/70">{{ steps | length }} Steps</span>
   </div>
 
@@ -44,18 +49,20 @@
       <span class="step-drag-handle text-muted/50 hover:text-body cursor-grab active:cursor-grabbing select-none flex-shrink-0 px-1"
             draggable="true" title="Drag to reorder">☰</span>
 
-      <!-- Step-Info -->
+      <!-- Step info -->
       <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span class="text-sm font-medium text-heading">{{ step.step_name }}</span>
           <span class="text-xs font-mono px-1.5 py-0.5 rounded bg-surface-raised text-muted">
             {% set mod = script_modules | selectattr('id', 'equalto', step.script_module_id) | first | default(None) %}
             {% if mod %}{{ mod.name }}{% else %}{{ step.module_key or '–' }}{% endif %}
           </span>
-          {% if step.is_critical %}
-          <span class="text-xs px-1 py-0.5 rounded bg-red-100 text-red-600">kritisch</span>
-          {% else %}
-          <span class="text-xs px-1 py-0.5 rounded bg-surface-raised text-muted/70">optional</span>
+          {# Only the exception is marked: stopping on error is the default. #}
+          {% if not step.is_critical %}
+          <span class="inline-flex items-center gap-1 whitespace-nowrap text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                title="If this step fails, the run continues with the next step.">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5-5 5M6 12h12"/></svg>
+            continues on error</span>
           {% endif %}
         </div>
         {% if step.params_template %}
@@ -65,7 +72,7 @@
         {% endif %}
       </div>
 
-      <!-- Aktionen -->
+      <!-- Actions -->
       <div class="flex items-center gap-1 flex-shrink-0">
         <button onclick="moveStep({{ step.id }}, 'up')"
                 class="p-1 text-muted/70 hover:text-body rounded" title="Move up">↑</button>
@@ -74,7 +81,7 @@
         <button onclick='editStep({{ step.id }}, {{ step | tojson | safe }})'
                 class="px-2 py-1 text-xs text-muted hover:text-blue-600 rounded">Edit</button>
         <button onclick="deleteStep({{ step.id }})"
-                class="px-2 py-1 text-xs text-muted/70 hover:text-red-500 rounded">Entfernen</button>
+                class="px-2 py-1 text-xs text-muted/70 hover:text-red-500 rounded">Remove</button>
       </div>
     </div>
     {% endfor %}
@@ -159,10 +166,10 @@
 
   <div class="grid grid-cols-3 gap-4 mb-4">
     <div>
-      <label class="block text-xs font-medium text-muted mb-1">Kritisch</label>
+      <label class="block text-xs font-medium text-muted mb-1">On error</label>
       <label class="flex items-center gap-2 text-sm cursor-pointer">
         <input type="checkbox" id="new-step-critical" checked class="w-4 h-4">
-        Yes (abort on error)
+        Stop the run if this step fails
       </label>
     </div>
     <div>
