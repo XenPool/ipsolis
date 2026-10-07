@@ -9,7 +9,7 @@ description: Active Directory, Microsoft Entra ID, SCIM 2.0, ServiceNow-Webhook,
 
 ip·Solis bindet sich an Ihre bestehende Infrastruktur an, anstatt sie zu ersetzen. Sämtliche Integrations-Zugangsdaten werden zur Laufzeit über **Admin → Einstellungen** konfiguriert und in der Tabelle `app_config` gespeichert — eine Neuerstellung des Containers ist beim Ändern von Zugangsdaten nicht erforderlich.
 
-![Settings integrations view](./screenshots/admin-integrations-settings.png)
+![Einstellungen mit Portal-SSO (OIDC)](./screenshots/admin-integrations-settings-light.png)
 
 ---
 
@@ -55,7 +55,7 @@ Verwenden Sie **Test** an einem Provider, um vor dem Speichern zu prüfen, ob de
 
 ---
 
-## Entra-ID-Gruppenprovisionierung — Microsoft Graph *(Pro)*
+## Entra-ID-Gruppenprovisionierung — Microsoft Graph
 
 Über die Entra-ID-*Anmeldung* (OIDC oben) hinaus kann ip·Solis Mitgliedschaft in **Entra-(Cloud-only-)Sicherheitsgruppen** als Zugriffsziel *provisionieren* — für M365-/Cloud-only-Kunden ohne On-Prem-AD. Ein Asset-Typ mit einem `entra_group`-Zugriffsziel gewährt/entzieht die Mitgliedschaft bei Bestellung und Widerruf, genau wie eine AD-Gruppe.
 
@@ -70,7 +70,7 @@ Die App-Registrierung benötigt die Anwendungsberechtigungen **`GroupMember.Read
 
 ---
 
-## SCIM 2.0 *(Pro)*
+## SCIM 2.0
 
 ip·Solis stellt unter `/scim/v2/*` einen vollständigen **Joiner-/Mover-/Leaver-**SCIM-2.0-Endpunkt bereit — ein Drop-in-Provisionierungsziel für Okta, SailPoint und Ping.
 
@@ -79,7 +79,7 @@ ip·Solis stellt unter `/scim/v2/*` einen vollständigen **Joiner-/Mover-/Leaver
 - `DELETE /scim/v2/Users/{id}` — löst die vollständige Leaver-Verarbeitung aus
 - `PATCH` / `PUT /scim/v2/Users/{id}` mit `active=false` — löst die vollständige Leaver-Verarbeitung aus
 
-**Joiner** (Opt-in, `scim.joiner_enabled`): Ein SCIM-**Create** (`POST /Users`) — oder eine Reaktivierung — mappt die SCIM-Attribute des Benutzers (Core + Enterprise-Extension: `department`, `costCenter`, `employeeNumber`, `organization`, `title`) auf ip·Solis-Attribute, wertet Ihre [Zuweisungsregeln](./lifecycle#onboarding-bundles-pro) aus und bestellt die passenden [Bundles](./lifecycle#onboarding-bundles-pro). Idempotent — bereits vorhandene Asset-Typen werden übersprungen.
+**Joiner** (Opt-in, `scim.joiner_enabled`): Ein SCIM-**Create** (`POST /Users`) — oder eine Reaktivierung — mappt die SCIM-Attribute des Benutzers (Core + Enterprise-Extension: `department`, `costCenter`, `employeeNumber`, `organization`, `title`) auf ip·Solis-Attribute, wertet Ihre [Zuweisungsregeln](./lifecycle#onboarding-bundles) aus und bestellt die passenden [Bundles](./lifecycle#onboarding-bundles). Idempotent — bereits vorhandene Asset-Typen werden übersprungen.
 
 **Mover** (`scim.mover_mode`): Bei einer Attribut-Änderung (`PUT`-Replace oder `PATCH`) wertet ip·Solis die Regeln gegen die neuen Attribute neu aus und gleicht die Berechtigungen ab:
 
@@ -95,21 +95,21 @@ Der Auto-Revoke ist strikt auf **regel-/SCIM-provisionierte** Zugriffe beschrän
 
 **Authentifizierung**: Erstellen Sie unter **Admin → API-Token** ein Token mit den Scopes `scim:read` + `scim:write` und fügen Sie es in den IdP-Konnektor ein. Joiner / Mover aktivieren Sie unter **Einstellungen → Compliance → SCIM**.
 
-Siehe [Lifecycle & Asset-Pool → HR-Leaver-Flow](./lifecycle#hr-leaver-flow) für das Leaver-Verhalten und [Onboarding-Bundles](./lifecycle#onboarding-bundles-pro) für die Regel-Engine.
+Siehe [Lifecycle & Asset-Pool → HR-Leaver-Flow](./lifecycle#hr-austrittsprozess) für das Leaver-Verhalten und [Onboarding-Bundles](./lifecycle#onboarding-bundles) für die Regel-Engine.
 
 ---
 
-## HR-Leaver-Webhook *(Pro)*
+## HR-Leaver-Webhook
 
 Ein speziell entwickelter Webhook unter `POST /hr/leaver` für HR-Systeme, die Kündigungsereignisse übermitteln. Nativ unterstützt für Workday, SAP SuccessFactors, Microsoft Graph sowie ein generisches ip·Solis-eigenes Format.
 
 **Authentifizierung**: gescopetes API-Token (Scope `hr:leaver`) oder HMAC-SHA256-Body-Signierung mit `WEBHOOK_SECRET_TOKEN`.
 
-Siehe [Lifecycle & Asset-Pool → HR-Leaver-Flow](./lifecycle#hr-leaver-flow) für Payload-Formate und die vollständige Dokumentation.
+Siehe [Lifecycle & Asset-Pool → HR-Leaver-Flow](./lifecycle#hr-austrittsprozess) für Payload-Formate und die vollständige Dokumentation.
 
 ---
 
-## ServiceNow-Webhook *(Pro)*
+## ServiceNow-Webhook
 
 ip·Solis kann Bestellauslöse-Anfragen von ServiceNow (oder jedem HTTP-fähigen Workflow-Tool) über einen eingehenden Webhook unter `POST /webhook/servicenow` empfangen. Der Webhook erstellt eine Bestellung und löst sofort das passende Runbook aus — von ServiceNow ausgehende Bestellungen durchlaufen dieselben Genehmigungs-Workflows, Kapazitätsprüfungen, Runbooks und denselben Audit-Trail wie Portal-Bestellungen.
 
@@ -304,7 +304,7 @@ SSL-Zertifikatsabfragen werden über stdin-Injektion automatisch beantwortet, so
 
 ---
 
-## SCCM *(Pro)*
+## SCCM
 
 Die SCCM-Integration ermöglicht automatisierte OS-Deployment-Workflows:
 
@@ -370,7 +370,7 @@ Konfigurationsfläche — bei geringem Mehrwert gegenüber einem Relay.
 
 ---
 
-## Chat-Benachrichtigungen — Microsoft Teams & Slack *(Pro)*
+## Chat-Benachrichtigungen — Microsoft Teams & Slack
 
 Genehmigungsanfragen (und Erinnerungen) können parallel zur E-Mail an **Microsoft Teams** und/oder **Slack** gesendet werden. Beide tragen denselben kanal-agnostischen **Ein-Klick-Genehmigungslink** (ein signiertes Token — der Genehmiger entscheidet ohne Portal-Login), sodass eine Anfrage gleichzeitig per E-Mail, Teams und Slack ankommen kann.
 
@@ -415,7 +415,7 @@ Reine String-Werte funktionieren unverändert weiter, sodass Sie eine Zugangsdat
 
 Pro-Integration benannte API-Token ersetzen den einzelnen gemeinsamen `X-Admin-Key` durch individuell widerrufbare, ablaufende, gescopete Bearer-Token.
 
-![API tokens page](./screenshots/admin-api-tokens.png)
+![API-Tokens](./screenshots/admin-api-tokens-light.png)
 
 Token werden als SHA-256-Hashes gespeichert. Das rohe Token (`xpat_…`) wird bei der Erstellung einmalig angezeigt und kann nicht wiederhergestellt werden — behandeln Sie es wie ein Passwort.
 

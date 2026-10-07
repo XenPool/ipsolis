@@ -40,7 +40,7 @@ This means auditors can filter not just by *who* but by *with what authority* �
 
 ### Audit Log Viewer
 
-![Audit log viewer](./screenshots/admin-audit-log.png)
+![Audit log viewer](./screenshots/admin-audit-log-light.png)
 
 The audit log UI at **Admin → Audit Log** provides:
 
@@ -61,7 +61,7 @@ The `order_change_log` table captures every mutation to an order as a separate d
 
 ---
 
-## Access Drift Reconciliation *(Pro)*
+## Access Drift Reconciliation
 
 ip·Solis grants AD group membership fire-and-forget; on its own it can't tell you whether someone was added to a managed group **out of band**, or removed from one it granted. The drift reconciliation task closes that gap.
 
@@ -77,7 +77,7 @@ Findings land on **Operations → Drift**, are audit-logged (and streamed to you
 
 ---
 
-## Attestation Artifacts *(Pro)*
+## Attestation Artifacts
 
 Two ISO-27001-relevant evidence artifacts, both opt-in per asset type and delivered as **signed HTML pages** (archival via browser print — no PDF dependency):
 
@@ -105,7 +105,7 @@ The classification is **written into every audit row** at the time the order is 
 
 ---
 
-## SIEM Audit-Log Streaming *(Pro)*
+## SIEM Audit-Log Streaming
 
 Every `audit_log` row can be streamed in real time to an external SIEM. Configure the SIEM backend at **Admin → Settings → SIEM**.
 

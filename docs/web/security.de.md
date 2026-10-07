@@ -9,7 +9,7 @@ description: Admin RBAC role ladder, per-asset-type ACL grants, separation of du
 
 ip·Solis ist für Umgebungen konzipiert, in denen IT-Governance entscheidend ist. Die Zugriffskontrolle ist mehrschichtig aufgebaut: Eine fünfstufige Admin-Rollenhierarchie steuert, was jeder Operator sehen und tun darf, ACL-Berechtigungen je Asset-Typ schränken einzelne Admins auf bestimmte Asset-Typen ein, und die Durchsetzung der Funktionstrennung verhindert, dass dieselbe Person den Zugriff auf einen Asset-Typ sowohl konfiguriert als auch genehmigt.
 
-![Admin users RBAC page](./screenshots/admin-rbac-users.png)
+![Admin-Benutzer mit Rollen (RBAC)](./screenshots/admin-rbac-users-light.png)
 
 ---
 
@@ -91,7 +91,7 @@ Ein Admin, der einen Asset-Typ konfiguriert hat, kann Zugriffsanfragen dagegen n
 
 ## Bearer-Token-Authentifizierung
 
-Benannte API-Tokens ersetzen den globalen `X-Admin-Key` durch individuell verwaltete, widerrufbare und ablaufende Anmeldedaten. Vollständige Dokumentation siehe [Integrations → API Tokens](./integrations#api-tokens).
+Benannte API-Tokens ersetzen den globalen `X-Admin-Key` durch individuell verwaltete, widerrufbare und ablaufende Anmeldedaten. Vollständige Dokumentation siehe [Integrations → API Tokens](./integrations#api-token).
 
 ### Rollenbindung
 

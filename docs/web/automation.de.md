@@ -40,7 +40,7 @@ Kombiniert sowohl Gruppenzugriffs- als auch Runbook-Schritte in einer definierte
 
 Asset-Typ-Runbooks werden unter **Admin → Asset Definitions → [Typ] → Runbooks** konfiguriert.
 
-![Runbook-Schritt-Editor](./screenshots/admin-runbook-editor.png)
+![Runbook-Schritt-Editor](./screenshots/admin-runbook-editor-light.png)
 
 Jede Runbook-Definition ist auf eine **Aktion** beschränkt:
 - `provision` — wird ausgeführt, wenn ein Auftrag genehmigt wird und die Bereitstellung beginnt
@@ -69,6 +69,8 @@ Die Auftragsdetailseite in der Admin-UI zeigt für jeden Auftrag ein einklappbar
 ## Skriptmodule
 
 Skriptmodule sind die Bausteine von Runbooks — benannte PowerShell-Skripte, die in der Datenbank gespeichert und als Runbook-Schritte aufrufbar sind.
+
+![Liste der Skriptmodule](./screenshots/admin-modules-light.png)
 
 Der integrierte Skript-Editor unter **Admin → Script Modules** unterstützt:
 - Schreiben und Bearbeiten von PowerShell-Skripten mit einem `param()`-Block
@@ -160,11 +162,11 @@ Im Runbook-Schritt-Editor werden Kontextvariablen im Dropdown **Context var** na
 
 ---
 
-## Eigenständige Runbooks *(Pro)*
+## Eigenständige Runbooks
 
 Eigenständige Runbooks sind an keinen Asset-Typ gebunden. Sie sind nützlich für Wartungsaufgaben, einmalige Vorgänge, Massen-Benutzerverwaltung und geplante Wartungsjobs.
 
-![Liste eigenständiger Runbooks](./screenshots/admin-standalone-runbook.png)
+![Editor für eigenständige Runbooks](./screenshots/admin-standalone-runbook-light.png)
 
 ### Ad-hoc-Ausführung
 
@@ -187,6 +189,8 @@ Der Cron-Ausdruck folgt der Standard-UNIX-Syntax (Minute, Stunde, Tag des Monats
 ## PowerShell-Modul-Store
 
 ip·Solis verwaltet eine Registry von PowerShell-Modulen, die von Skriptmodulen geladen werden können, die im Worker-Container ausgeführt werden.
+
+![PowerShell-Modul-Store](./screenshots/admin-ps-modules-light.png)
 
 **Admin → Modules** ermöglicht Bedienern:
 - **Install from PowerShell Gallery** — beliebige öffentliche PS-Gallery-Module suchen und installieren
