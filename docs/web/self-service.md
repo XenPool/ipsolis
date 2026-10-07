@@ -9,7 +9,22 @@ description: How end users request IT assets, track their orders, manage active 
 
 The self-service portal lets employees request IT assets, track order status, extend or return active resources, and manage their digital workspace — without raising a helpdesk ticket. The portal is accessible at `/portal` and is fully separated from the admin UI.
 
-![Portal catalog](./screenshots/portal-catalog.png)
+![Portal home page with to-dos, My IT and running orders](./screenshots/portal-home-en-light.png)
+
+---
+
+## Home Page and Navigation
+
+The portal opens on a personal home page (`/portal/`) that answers "what do I have, and what is waiting for me?" at a glance:
+
+- **Search** — find catalog items by name or keyword; the most frequently requested items appear as one-click chips below the search field.
+- **To do** — everything that needs the user's attention: pending approvals, access reviews, handovers to confirm, and assets that expire within 30 days.
+- **My IT** — the user's active assets with hostname, expiry date and a bar showing how much of the term has elapsed.
+- **Running orders** — open orders with a four-phase tracker (*Requested → Approval → Provisioning → Ready*); during provisioning it also shows the current runbook step (e.g. *Step 3 of 5*).
+- **Topics** — catalog categories with the number of available items.
+- **Recommended for you** — packages whose rules match the user, plus items popular in the user's department.
+
+The top navigation links to **Home**, **Catalog**, **Packages**, **My IT** and **Orders**. **Approvals** and **Access Reviews** appear only for users who actually have something to approve or review. Language and light/dark theme are switched in the top-right corner.
 
 ---
 
@@ -37,7 +52,7 @@ When more than one login method is enabled, users see a chooser; with exactly on
 
 The catalog (`/portal/orders/new`) shows all active asset definitions the logged-in user is eligible to request. Each card shows the asset name, description, category, and — where configured — the projected monthly cost.
 
-![New order form](./screenshots/portal-order-new.png)
+![Portal catalog](./screenshots/portal-catalog-en-light.png)
 
 **Search and filter** appear automatically for catalogs with more than six definitions. The search matches name, description, and help text; the category dropdown filters by asset type category. Both work client-side with no page reload.
 
@@ -48,6 +63,8 @@ The catalog (`/portal/orders/new`) shows all active asset definitions the logged
 Asset types can be restricted to specific Active Directory groups. Users who are not members of the configured group do not see the definition in the catalog.
 
 ### Filling in the Order Form
+
+![Catalog with a selected asset definition and its help text](./screenshots/portal-order-new-en-light.png)
 
 After selecting an asset type, the requester fills in any user-supplied attributes (e.g., hostname prefix, purpose, duration). Fields tagged with a **data classification** (`PII`, `PHI`, or `PCI`) show a warning badge so requesters are aware of the sensitivity before submitting.
 
@@ -61,15 +78,15 @@ When an asset type has a `monthly_cost` configured, the order form shows the pro
 
 ---
 
-## Ordering a Package *(Pro)*
+## Ordering a Package
 
-Beyond single assets, the **Packages** page offers ready-made bundles — a curated set of access ordered in one click (e.g. a role's standard toolkit). Items the user already has are skipped automatically; the rest go through the normal approval and provisioning flow as individual orders. Which packages appear here is controlled per bundle by administrators; see [Lifecycle → Onboarding Bundles](./lifecycle#onboarding-bundles-pro).
+Beyond single assets, the **Packages** page offers ready-made bundles — a curated set of access ordered in one click (e.g. a role's standard toolkit). Items the user already has are skipped automatically; the rest go through the normal approval and provisioning flow as individual orders. Which packages appear here is controlled per bundle by administrators; see [Lifecycle → Onboarding Bundles](./lifecycle#onboarding-bundles).
 
 ---
 
 ## Approval Workflow
 
-Orders that require approval enter a `pending_approval` state. The portal displays the current approval status on the order detail page. Provisioning does not begin until all required approvals are collected (subject to quorum — see below).
+Orders that require approval enter a `pending_approval` state. The portal displays the current approval status on the order detail page, in the **Orders** list (`/portal/orders`), and in the *Running orders* tracker on the home page. Provisioning does not begin until all required approvals are collected (subject to quorum — see below).
 
 ### Approval Types
 
@@ -229,7 +246,7 @@ Administrators who are also configured as rule approvers would normally be block
 
 The **My IT** view (`/portal/my-it`) shows all active assets assigned to the logged-in user.
 
-![My IT view](./screenshots/portal-my-it.png)
+![My IT view](./screenshots/portal-my-it-en-light.png)
 
 From here, users can:
 
@@ -237,6 +254,14 @@ From here, users can:
 - **Modify** — change user-supplied attributes on an existing order (subject to re-approval if the asset type has `reapproval_on_modify` enabled)
 - **Return** — trigger deprovisioning and release the asset back to the pool
 - **Cancel** — cancel a pending or scheduled order before it is processed
+
+---
+
+## Orders
+
+The **Orders** page (`/portal/orders`) lists every order the user placed or owns — including completed, revoked and expired ones — with status, hostname, validity and creation date. **Details** opens the order with its approval and provisioning history; **Request New Access** jumps to the catalog.
+
+![Orders list](./screenshots/portal-orders-en-light.png)
 
 ---
 
@@ -264,7 +289,7 @@ Scheduled orders appear in My IT with a `scheduled` status badge and the target 
 
 ---
 
-## Access Certifications *(Pro)*
+## Access Certifications
 
 When an access certification campaign is active and the logged-in user is a reviewer, a notification appears in the portal directing them to `/portal/certifications`. This page shows all pending review rows assigned to the user, with one-click **Confirm** (user keeps access) or **Revoke** (access is pulled immediately) for each.
 

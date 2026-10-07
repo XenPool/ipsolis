@@ -9,13 +9,15 @@ description: Asset-Status, Zuweisungsmodelle, Deprovisionierungsrichtlinien, Abl
 
 ip·Solis verwaltet den gesamten Lebenszyklus von IT-Assets — von der initialen Zuweisung über Ablauf, Verlängerung, Rückgabe, Deprovisionierung bis hin zum Entzug bei Austritt. Diese Seite beschreibt das Datenmodell und die Konfigurationsoptionen, die steuern, wie sich Assets durch ihre Zustände bewegen.
 
-![Asset-Pool-Ansicht](./screenshots/admin-pool.png)
+![Asset-Pool-Ansicht](./screenshots/admin-pool-light.png)
 
 ---
 
 ## Zuweisungsmodelle
 
 Jeder Asset-Typ wird mit einem von zwei Zuweisungsmodellen konfiguriert, die bestimmen, wie Assets zugeteilt werden.
+
+![Liste der Asset-Definitionen mit Zuweisungsmodell, Automatisierung und Pool-Auslastung](./screenshots/admin-asset-types-light.png)
 
 ### Capacity-Pooled
 
@@ -53,7 +55,7 @@ Das Admin-Dashboard zeigt Kachelzähler für Frei / In Nutzung / Fehlgeschlagen 
 
 Asset-Typen werden unter **Admin → Asset-Definitionen** definiert.
 
-![Konfigurationsformular für Asset-Typen](./screenshots/admin-asset-type.png)
+![Konfigurationsformular für Asset-Typen](./screenshots/admin-asset-type-light.png)
 
 Wichtige Felder:
 
@@ -90,6 +92,8 @@ Die Deprovisionierungsrichtlinie steuert, was ip·Solis tut, wenn eine Bestellun
 
 Jede bereitgestellte Bestellung hat ein Ablaufdatum. Ein Celery-Beat-Task (`check-expiring-assets`) läuft stündlich, um:
 
+![Operations-Seite mit fehlgeschlagenen Bereitstellungen, überfälligen Genehmigungen und anstehenden Abläufen](./screenshots/admin-operations-light.png)
+
 1. Erinnerungs-E-Mails an Benutzer zu senden, deren Assets innerhalb des konfigurierten Warnzeitfensters ablaufen
 2. Automatisch die Deprovisionierung für Assets auszulösen, deren Ablaufdatum überschritten ist
 
@@ -101,7 +105,7 @@ Benutzer können über die Portalseite **Meine IT** eine Verlängerung anfordern
 
 Zertifizierungskampagnen ermöglichen es Compliance-Teams, regelmäßig zu überprüfen, welche Benutzer aktiven Zugriff auf bestimmte Asset-Typen haben — eine Anforderung für ISO-27001-, SOX- und PCI-Audits.
 
-![Liste der Zertifizierungskampagnen](./screenshots/admin-certifications.png)
+![Liste der Zertifizierungskampagnen](./screenshots/admin-certifications-light.png)
 
 ### Eine Kampagne erstellen
 
@@ -129,7 +133,7 @@ Prüfer mit Entra-ID-SSO können ihre Überprüfungswarteschlange auch unter `/p
 
 ---
 
-## Onboarding-Bundles *(Pro)*
+## Onboarding-Bundles
 
 Ein **Bundle** fasst bestehende Asset-Definitionen zu einem Paket zusammen — die Standard-Ausstattung eines neuen Mitarbeiters (Laptop, VDI, M365-Gruppen, …), als Einheit bestellt. Bundles definieren keine neuen Assets; jede **Position** referenziert einen Asset-Typ (erforderlich oder optional, mit optionaler Attribut-Vorbelegung).
 
@@ -139,7 +143,7 @@ Die Bestellung eines Bundles erzeugt **eine Auftragsgruppe** mit einer Bestellun
 
 - **Onboarding**-Admin — *für einen Benutzer auswerten* (Attribute auflösen, passende Bundles + zu bestellende Positionen vorschauen), dann bestellen
 - den Self-Service-**Pakete**-Katalog — ein Benutzer bestellt ein Paket für sich selbst
-- einen **SCIM-Joiner** (siehe [Integrationen → SCIM](./integrations#scim-20-pro))
+- einen **SCIM-Joiner** (siehe [Integrationen → SCIM](./integrations#scim-20))
 - die **erste Portal-Anmeldung** eines Benutzers (Opt-in, `onboarding.eval_on_first_login`)
 
 Bundles und Regeln verwalten Sie unter **Onboarding**.

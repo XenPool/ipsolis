@@ -9,7 +9,7 @@ description: Cost model, cost centers, FX conversion, historical snapshots, port
 
 ip·Solis includes a built-in cost tracking and chargeback engine. Every asset type can be priced, and the cost report aggregates active orders into projected monthly spend per cost center — giving IT finance teams the data they need for internal chargeback, forecasting, and budget enforcement.
 
-![Cost report page](./screenshots/admin-cost-report.png)
+![Cost report page](./screenshots/admin-cost-report-light.png)
 
 ---
 
@@ -46,7 +46,7 @@ When an asset type has a `monthly_cost` configured, the portal's order form show
 
 ---
 
-## Software Licenses & Contracts *(Pro)*
+## Software Licenses & Contracts
 
 Beyond a made-up per-seat `monthly_cost`, ip·Solis can track the **real vendor contract** behind an asset type. A **contract** (vendor, product, contract value, billing interval, licensed seats, renewal date, notice period) binds **one contract to many asset types**.
 

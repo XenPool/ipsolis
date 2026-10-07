@@ -9,7 +9,7 @@ description: Active Directory, Microsoft Entra ID, SCIM 2.0, ServiceNow webhook,
 
 ip·Solis connects to your existing infrastructure rather than replacing it. All integration credentials are configured at runtime via **Admin → Settings** and stored in the `app_config` table — no container rebuild required when credentials change.
 
-![Settings integrations view](./screenshots/admin-integrations-settings.png)
+![Settings with portal SSO (OIDC)](./screenshots/admin-integrations-settings-light.png)
 
 ---
 
@@ -55,7 +55,7 @@ Use **Test** on a provider to verify its discovery document is reachable before 
 
 ---
 
-## Entra ID group provisioning — Microsoft Graph *(Pro)*
+## Entra ID group provisioning — Microsoft Graph
 
 Beyond Entra ID *login* (OIDC above), ip·Solis can *provision* **Entra (cloud-only) security-group** membership as an access target — for M365 / cloud-only customers who don't run on-prem AD. An asset type with an `entra_group` access target grants/revokes membership on order and revoke, exactly like an AD group.
 
@@ -70,7 +70,7 @@ The app registration needs Application permissions **`GroupMember.ReadWrite.All`
 
 ---
 
-## SCIM 2.0 *(Pro)*
+## SCIM 2.0
 
 ip·Solis exposes a full **joiner / mover / leaver** SCIM 2.0 endpoint at `/scim/v2/*` — a drop-in provisioning target for Okta, SailPoint, and Ping.
 
@@ -79,7 +79,7 @@ ip·Solis exposes a full **joiner / mover / leaver** SCIM 2.0 endpoint at `/scim
 - `DELETE /scim/v2/Users/{id}` — triggers full leaver processing
 - `PATCH` / `PUT /scim/v2/Users/{id}` with `active=false` — triggers full leaver processing
 
-**Joiner** (opt-in, `scim.joiner_enabled`): a SCIM **Create** (`POST /Users`) — or a reactivation — maps the user's SCIM attributes (core + enterprise extension: `department`, `costCenter`, `employeeNumber`, `organization`, `title`) to ip·Solis attributes, evaluates your [assignment rules](./lifecycle#onboarding-bundles-pro), and orders the matched [bundles](./lifecycle#onboarding-bundles-pro). Idempotent — asset types the user already holds are skipped.
+**Joiner** (opt-in, `scim.joiner_enabled`): a SCIM **Create** (`POST /Users`) — or a reactivation — maps the user's SCIM attributes (core + enterprise extension: `department`, `costCenter`, `employeeNumber`, `organization`, `title`) to ip·Solis attributes, evaluates your [assignment rules](./lifecycle#onboarding-bundles), and orders the matched [bundles](./lifecycle#onboarding-bundles). Idempotent — asset types the user already holds are skipped.
 
 **Mover** (`scim.mover_mode`): when an attribute change arrives (`PUT` replace or `PATCH`), ip·Solis re-evaluates the rules against the new attributes and reconciles entitlements:
 
@@ -95,11 +95,11 @@ Auto-revoke is strictly limited to **rule / SCIM-provisioned** access; self-serv
 
 **Authentication**: mint a token with `scim:read` + `scim:write` scopes from **Admin → API Tokens** and paste it into your IdP connector. Enable joiner / mover under **Settings → Compliance → SCIM**.
 
-See [Lifecycle & Asset Pool → HR Leaver Flow](./lifecycle#hr-leaver-flow) for leaver behaviour and [Onboarding bundles](./lifecycle#onboarding-bundles-pro) for the rule engine.
+See [Lifecycle & Asset Pool → HR Leaver Flow](./lifecycle#hr-leaver-flow) for leaver behaviour and [Onboarding bundles](./lifecycle#onboarding-bundles) for the rule engine.
 
 ---
 
-## HR Leaver Webhook *(Pro)*
+## HR Leaver Webhook
 
 A purpose-built webhook at `POST /hr/leaver` for HR systems that push termination events. Supported natively for Workday, SAP SuccessFactors, Microsoft Graph, and a generic ip·Solis-native format.
 
@@ -109,7 +109,7 @@ See [Lifecycle & Asset Pool → HR Leaver Flow](./lifecycle#hr-leaver-flow) for 
 
 ---
 
-## ServiceNow Webhook *(Pro)*
+## ServiceNow Webhook
 
 ip·Solis can receive order dispatch requests from ServiceNow (or any HTTP-capable workflow tool) via an inbound webhook at `POST /webhook/servicenow`. The webhook creates an order and immediately dispatches the appropriate runbook — ServiceNow-originated orders go through the same approval workflows, capacity checks, runbooks, and audit trail as portal orders.
 
@@ -304,7 +304,7 @@ SSL certificate prompts are auto-answered via stdin injection so scripts don't h
 
 ---
 
-## SCCM *(Pro)*
+## SCCM
 
 SCCM integration enables automated OS deployment workflows:
 
@@ -370,7 +370,7 @@ over a relay.
 
 ---
 
-## Chat notifications — Microsoft Teams & Slack *(Pro)*
+## Chat notifications — Microsoft Teams & Slack
 
 Approval requests (and reminders) can post to **Microsoft Teams** and/or **Slack** in parallel with email. Both carry the same channel-agnostic **one-click approve link** (a signed token — the approver decides without a portal login), so a request can arrive by email, Teams, and Slack at once.
 
@@ -415,7 +415,7 @@ Plain string values continue to work unchanged, so you can migrate one credentia
 
 Per-integration named API tokens replace the single shared `X-Admin-Key` with individually revocable, expiring, scoped bearer tokens.
 
-![API tokens page](./screenshots/admin-api-tokens.png)
+![API tokens page](./screenshots/admin-api-tokens-light.png)
 
 Tokens are stored as SHA-256 hashes. The raw token (`xpat_…`) is shown once on creation and cannot be recovered — treat it like a password.
 

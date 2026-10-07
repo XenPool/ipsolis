@@ -9,13 +9,15 @@ description: Asset statuses, assignment models, deprovision policies, expiry han
 
 ip·Solis manages the full lifecycle of IT assets — from initial assignment through expiry, extension, return, deprovisioning, and leaver revocation. This page covers the data model and configuration options that govern how assets move through their states.
 
-![Asset pool view](./screenshots/admin-pool.png)
+![Asset pool view](./screenshots/admin-pool-light.png)
 
 ---
 
 ## Assignment Models
 
 Every asset type is configured with one of two assignment models that determine how assets are allocated.
+
+![Asset definitions list with assignment model, automation and pool usage](./screenshots/admin-asset-types-light.png)
 
 ### Capacity-Pooled
 
@@ -53,7 +55,7 @@ The admin dashboard shows tile counts for Free / In Use / Failed / Reinstall / M
 
 Asset types are defined in **Admin → Asset Definitions**.
 
-![Asset type configuration form](./screenshots/admin-asset-type.png)
+![Asset type configuration form](./screenshots/admin-asset-type-light.png)
 
 Key fields:
 
@@ -90,6 +92,8 @@ The deprovision policy controls what ip·Solis does when an order is returned, e
 
 Every provisioned order has an expiry date. A Celery Beat task (`check-expiring-assets`) runs hourly to:
 
+![Operations page with failed provisionings, overdue approvals and upcoming expirations](./screenshots/admin-operations-light.png)
+
 1. Send reminder emails to users whose assets expire within the configured warning window
 2. Automatically trigger deprovision for assets past their expiry date
 
@@ -101,7 +105,7 @@ Users can request an extension from the **My IT** portal page if the asset type 
 
 Certification campaigns let compliance teams periodically review which users have active access to specific asset types — a requirement for ISO 27001, SOX, and PCI audits.
 
-![Certification campaign list](./screenshots/admin-certifications.png)
+![Certification campaign list](./screenshots/admin-certifications-light.png)
 
 ### Creating a Campaign
 
@@ -129,7 +133,7 @@ Reviewers with Entra ID SSO can also access their review queue at `/portal/certi
 
 ---
 
-## Onboarding Bundles *(Pro)*
+## Onboarding Bundles
 
 A **bundle** groups existing asset definitions into a package — a new hire's standard kit (laptop, VDI, M365 groups, …) ordered as a unit. Bundles define no new assets; each **position** references an asset type (required or optional, with an optional attribute pre-fill).
 
@@ -139,7 +143,7 @@ Ordering a bundle creates **one order group** with one order per resolvable posi
 
 - **Onboarding** admin — *evaluate for a user* (resolve their attributes, preview the matched bundles + which items would be ordered), then order
 - the self-service **Packages** catalog — a user orders a package for themselves
-- a **SCIM joiner** (see [Integrations → SCIM](./integrations#scim-20-pro))
+- a **SCIM joiner** (see [Integrations → SCIM](./integrations#scim-20))
 - a user's **first portal login** (opt-in, `onboarding.eval_on_first_login`)
 
 Manage bundles and rules under **Onboarding**.

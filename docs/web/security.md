@@ -9,7 +9,7 @@ description: Admin RBAC role ladder, per-asset-type ACL grants, separation of du
 
 ip·Solis is designed for environments where IT governance matters. Access control is layered: a five-tier admin role ladder controls what each operator can see and do, per-asset-type ACL grants scope individual admins to specific asset types, and separation-of-duties enforcement prevents the same person from both configuring and approving access to an asset type.
 
-![Admin users RBAC page](./screenshots/admin-rbac-users.png)
+![Admin users RBAC page](./screenshots/admin-rbac-users-light.png)
 
 ---
 

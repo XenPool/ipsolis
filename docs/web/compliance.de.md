@@ -40,7 +40,7 @@ Das bedeutet, dass Auditoren nicht nur nach dem *Wer*, sondern auch nach *mit we
 
 ### Audit-Log-Viewer
 
-![Audit-Log-Viewer](./screenshots/admin-audit-log.png)
+![Audit-Log-Viewer](./screenshots/admin-audit-log-light.png)
 
 Die Audit-Log-Oberfläche unter **Admin → Audit Log** bietet:
 
@@ -61,7 +61,7 @@ Die Tabelle `order_change_log` erfasst jede Mutation eines Auftrags als separate
 
 ---
 
-## Zugriffs-Drift-Abgleich *(Pro)*
+## Zugriffs-Drift-Abgleich
 
 ip·Solis gewährt AD-Gruppenmitgliedschaft nach dem Fire-and-forget-Prinzip; von sich aus kann es nicht erkennen, ob jemand **außerhalb der Reihe** (out of band) einer verwalteten Gruppe hinzugefügt oder aus einer entfernt wurde, die es gewährt hat. Die Drift-Abgleich-Aufgabe schließt diese Lücke.
 
@@ -77,7 +77,7 @@ Befunde erscheinen unter **Operations → Drift**, werden auditiert (und an Ihr 
 
 ---
 
-## Attestierungs-Artefakte *(Pro)*
+## Attestierungs-Artefakte
 
 Zwei ISO-27001-relevante Nachweis-Artefakte, beide pro Asset-Typ optional und als **signierte HTML-Seiten** ausgeliefert (Archivierung per Browser-Druck — keine PDF-Abhängigkeit):
 
@@ -105,7 +105,7 @@ Die Klassifizierung wird **zum Zeitpunkt der Auftragserstellung in jede Audit-Ze
 
 ---
 
-## SIEM-Audit-Log-Streaming *(Pro)*
+## SIEM-Audit-Log-Streaming
 
 Jede `audit_log`-Zeile kann in Echtzeit an ein externes SIEM gestreamt werden. Konfigurieren Sie das SIEM-Backend unter **Admin → Settings → SIEM**.
 

@@ -40,7 +40,7 @@ Combines both Group Access and Runbook steps in a defined sequence. Steps of typ
 
 Asset-type runbooks are configured in **Admin → Asset Definitions → [type] → Runbooks**.
 
-![Runbook step editor](./screenshots/admin-runbook-editor.png)
+![Runbook step editor](./screenshots/admin-runbook-editor-light.png)
 
 Each runbook definition is scoped to an **action**:
 - `provision` — runs when an order is approved and provisioning starts
@@ -69,6 +69,8 @@ The order detail page in the admin UI shows a collapsible step log for each orde
 ## Script Modules
 
 Script modules are the building blocks of runbooks — named PowerShell scripts stored in the database and callable as runbook steps.
+
+![Script modules list](./screenshots/admin-modules-light.png)
 
 The in-app script editor at **Admin → Script Modules** supports:
 - Writing and editing PowerShell scripts with a `param()` block
@@ -160,11 +162,11 @@ In the runbook step editor, context variables are offered in the **Context var**
 
 ---
 
-## Standalone Runbooks *(Pro)*
+## Standalone Runbooks
 
 Standalone runbooks are not tied to any asset type. They are useful for housekeeping tasks, one-off operations, bulk user management, and scheduled maintenance jobs.
 
-![Standalone runbooks list](./screenshots/admin-standalone-runbook.png)
+![Standalone runbook editor](./screenshots/admin-standalone-runbook-light.png)
 
 ### Ad-Hoc Execution
 
@@ -187,6 +189,8 @@ The cron expression follows standard UNIX syntax (minute, hour, day-of-month, mo
 ## PowerShell Module Store
 
 ip·Solis maintains a registry of PowerShell modules that can be loaded by script modules running in the worker container.
+
+![PowerShell module store](./screenshots/admin-ps-modules-light.png)
 
 **Admin → Modules** lets operators:
 - **Install from PowerShell Gallery** — search and install any public PS Gallery module

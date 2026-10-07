@@ -9,7 +9,22 @@ description: Wie Endanwender IT-Assets anfordern, ihre Bestellungen verfolgen, a
 
 Das Self-Service-Portal ermöglicht es Mitarbeitenden, IT-Assets anzufordern, den Bestellstatus zu verfolgen, aktive Ressourcen zu verlängern oder zurückzugeben und ihren digitalen Arbeitsplatz zu verwalten — ohne ein Helpdesk-Ticket zu eröffnen. Das Portal ist unter `/portal` erreichbar und vollständig von der Admin-UI getrennt.
 
-![Portal catalog](./screenshots/portal-catalog.png)
+![Startseite des Portals mit Aufgaben, Meine IT und laufenden Bestellungen](./screenshots/portal-home-de-light.png)
+
+---
+
+## Startseite und Navigation
+
+Das Portal öffnet mit einer persönlichen Startseite (`/portal/`), die auf einen Blick beantwortet: „Was habe ich, und was wartet auf mich?“
+
+- **Suche** — Katalogeinträge nach Name oder Stichwort finden; die am häufigsten angefragten Einträge erscheinen als Ein-Klick-Chips unter dem Suchfeld.
+- **Zu erledigen** — alles, was die Aufmerksamkeit des Benutzers braucht: offene Genehmigungen, Zugriffsprüfungen, zu bestätigende Übergaben und Assets, die innerhalb von 30 Tagen ablaufen.
+- **Meine IT** — die aktiven Assets des Benutzers mit Hostname, Ablaufdatum und einem Balken, der zeigt, wie viel der Laufzeit bereits verstrichen ist.
+- **Laufende Bestellungen** — offene Bestellungen mit einer Vier-Phasen-Anzeige (*Beantragt → Genehmigung → Bereitstellung → Bereit*); während der Bereitstellung zusätzlich mit dem aktuellen Runbook-Schritt (z. B. *Schritt 3 von 5*).
+- **Themen** — Katalogkategorien mit der Anzahl verfügbarer Einträge.
+- **Empfohlen für Sie** — Pakete, deren Regeln auf den Benutzer zutreffen, sowie Einträge, die in seiner Abteilung beliebt sind.
+
+Die Navigation oben führt zu **Start**, **Katalog**, **Pakete**, **Meine IT** und **Bestellungen**. **Freigaben** und **Zugriffsprüfungen** erscheinen nur bei Benutzern, die tatsächlich etwas zu genehmigen oder zu prüfen haben. Sprache und helles/dunkles Design werden oben rechts umgeschaltet.
 
 ---
 
@@ -37,7 +52,7 @@ Sind mehrere Anmeldemethoden aktiv, sehen die Benutzer eine Auswahl; bei genau e
 
 Der Katalog (`/portal/orders/new`) zeigt alle aktiven Asset-Definitionen, die der angemeldete Benutzer anfordern darf. Jede Karte zeigt den Asset-Namen, die Beschreibung, die Kategorie und — sofern konfiguriert — die voraussichtlichen monatlichen Kosten.
 
-![New order form](./screenshots/portal-order-new.png)
+![Portal-Katalog](./screenshots/portal-catalog-de-light.png)
 
 **Suche und Filter** erscheinen automatisch bei Katalogen mit mehr als sechs Definitionen. Die Suche berücksichtigt Name, Beschreibung und Hilfetext; das Kategorie-Dropdown filtert nach der Kategorie des Asset-Typs. Beides funktioniert clientseitig ohne Neuladen der Seite.
 
@@ -48,6 +63,8 @@ Der Katalog (`/portal/orders/new`) zeigt alle aktiven Asset-Definitionen, die de
 Asset-Typen können auf bestimmte Active-Directory-Gruppen beschränkt werden. Benutzer, die nicht Mitglied der konfigurierten Gruppe sind, sehen die Definition nicht im Katalog.
 
 ### Das Bestellformular ausfüllen
+
+![Katalog mit ausgewählter Asset-Definition und Hilfetext](./screenshots/portal-order-new-de-light.png)
 
 Nach der Auswahl eines Asset-Typs füllt der Anforderer alle vom Benutzer bereitzustellenden Attribute aus (z. B. Hostname-Präfix, Verwendungszweck, Laufzeit). Felder, die mit einer **Datenklassifizierung** (`PII`, `PHI` oder `PCI`) gekennzeichnet sind, zeigen ein Warnsymbol an, damit Anforderer sich vor dem Absenden der Sensibilität bewusst sind.
 
@@ -61,15 +78,15 @@ Wenn für einen Asset-Typ `monthly_cost` konfiguriert ist, zeigt das Bestellform
 
 ---
 
-## Ein Paket bestellen *(Pro)*
+## Ein Paket bestellen
 
-Über einzelne Assets hinaus bietet die Seite **Pakete** fertige Bundles — eine kuratierte Zugriffs-Zusammenstellung, mit einem Klick bestellt (z. B. die Standard-Ausstattung einer Rolle). Bereits vorhandene Elemente werden automatisch übersprungen; der Rest durchläuft als einzelne Bestellungen den normalen Genehmigungs- und Provisionierungs-Flow. Welche Pakete hier erscheinen, steuern Administratoren je Bundle; siehe [Lifecycle → Onboarding-Bundles](./lifecycle#onboarding-bundles-pro).
+Über einzelne Assets hinaus bietet die Seite **Pakete** fertige Bundles — eine kuratierte Zugriffs-Zusammenstellung, mit einem Klick bestellt (z. B. die Standard-Ausstattung einer Rolle). Bereits vorhandene Elemente werden automatisch übersprungen; der Rest durchläuft als einzelne Bestellungen den normalen Genehmigungs- und Provisionierungs-Flow. Welche Pakete hier erscheinen, steuern Administratoren je Bundle; siehe [Lifecycle → Onboarding-Bundles](./lifecycle#onboarding-bundles).
 
 ---
 
 ## Genehmigungsworkflow
 
-Bestellungen, die eine Genehmigung erfordern, gelangen in den Zustand `pending_approval`. Das Portal zeigt den aktuellen Genehmigungsstatus auf der Detailseite der Bestellung an. Die Bereitstellung beginnt erst, wenn alle erforderlichen Genehmigungen eingeholt wurden (vorbehaltlich des Quorums — siehe unten).
+Bestellungen, die eine Genehmigung erfordern, gelangen in den Zustand `pending_approval`. Das Portal zeigt den aktuellen Genehmigungsstatus auf der Detailseite der Bestellung, in der Liste **Bestellungen** (`/portal/orders`) und in der Anzeige *Laufende Bestellungen* auf der Startseite an. Die Bereitstellung beginnt erst, wenn alle erforderlichen Genehmigungen eingeholt wurden (vorbehaltlich des Quorums — siehe unten).
 
 ### Genehmigungstypen
 
@@ -229,7 +246,7 @@ Administratoren, die zugleich als Regelgenehmiger konfiguriert sind, würden nor
 
 Die Ansicht **My IT** (`/portal/my-it`) zeigt alle aktiven Assets, die dem angemeldeten Benutzer zugewiesen sind.
 
-![My IT view](./screenshots/portal-my-it.png)
+![Ansicht Meine IT](./screenshots/portal-my-it-de-light.png)
 
 Von hier aus können Benutzer:
 
@@ -237,6 +254,14 @@ Von hier aus können Benutzer:
 - **Ändern** — vom Benutzer bereitgestellte Attribute einer bestehenden Bestellung ändern (erneut genehmigungspflichtig, wenn beim Asset-Typ `reapproval_on_modify` aktiviert ist)
 - **Zurückgeben** — die Deprovisionierung auslösen und das Asset zurück in den Pool freigeben
 - **Stornieren** — eine ausstehende oder geplante Bestellung stornieren, bevor sie verarbeitet wird
+
+---
+
+## Bestellungen
+
+Die Seite **Bestellungen** (`/portal/orders`) listet alle Bestellungen, die der Benutzer aufgegeben hat oder besitzt — auch abgeschlossene, entzogene und abgelaufene — mit Status, Hostname, Gültigkeit und Erstellungsdatum. **Details** öffnet die Bestellung mit ihrem Genehmigungs- und Bereitstellungsverlauf; **Neuen Zugang anfordern** führt zum Katalog.
+
+![Bestellübersicht](./screenshots/portal-orders-de-light.png)
 
 ---
 
@@ -264,7 +289,7 @@ Geplante Bestellungen erscheinen in My IT mit einem `scheduled`-Statussymbol und
 
 ---
 
-## Zugriffszertifizierungen *(Pro)*
+## Zugriffszertifizierungen
 
 Wenn eine Zugriffszertifizierungskampagne aktiv ist und der angemeldete Benutzer ein Prüfer ist, erscheint im Portal eine Benachrichtigung, die ihn auf `/portal/certifications` verweist. Diese Seite zeigt alle dem Benutzer zugewiesenen, ausstehenden Prüfzeilen mit Ein-Klick-Optionen **Confirm** (Benutzer behält den Zugriff) oder **Revoke** (Zugriff wird sofort entzogen) für jede Zeile.
 

@@ -9,7 +9,7 @@ description: Kostenmodell, Kostenstellen, Währungsumrechnung, historische Snaps
 
 ip·Solis enthält eine integrierte Engine für Kostenerfassung und Rückverrechnung (Chargeback). Jeder Asset-Typ kann mit einem Preis versehen werden, und der Kostenbericht aggregiert aktive Bestellungen zu einer prognostizierten monatlichen Ausgabe pro Kostenstelle — und liefert IT-Finanzteams genau die Daten, die sie für interne Rückverrechnung, Prognosen und Budgetdurchsetzung benötigen.
 
-![Cost report page](./screenshots/admin-cost-report.png)
+![Kostenbericht](./screenshots/admin-cost-report-light.png)
 
 ---
 
@@ -46,7 +46,7 @@ Wenn für einen Asset-Typ ein `monthly_cost` konfiguriert ist, zeigt das Bestell
 
 ---
 
-## Software-Lizenzen & Verträge *(Pro)*
+## Software-Lizenzen & Verträge
 
 Über einen frei gesetzten `monthly_cost` pro Platz hinaus kann ip·Solis den **echten Herstellervertrag** hinter einem Asset-Typ abbilden. Ein **Vertrag** (Hersteller, Produkt, Vertragswert, Abrechnungsintervall, lizenzierte Plätze, Verlängerungsdatum, Kündigungsfrist) bindet **einen Vertrag an viele Asset-Typen**.
 
